@@ -1,0 +1,13 @@
+project: python
+
+version:y
+
+lib:(
+src.search,
+src.llm
+)
+
+bash: (
+  start: "python -m complete",
+  test: "pytest tests/ -v"
+)
