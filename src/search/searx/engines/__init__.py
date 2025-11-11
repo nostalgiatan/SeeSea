@@ -26,6 +26,13 @@ if t.TYPE_CHECKING:
 logger = logger.getChild('engines')
 ENGINE_DIR = dirname(realpath(__file__))
 
+# Engine loading mode: 'global' or 'settings'
+ENGINE_LOADING_MODE = getattr(settings, 'engine_loading_mode', 'settings')
+
+# Global engine registry for all discovered engines
+ALL_ENGINES_REGISTRY: "dict[str, dict[str, t.Any]]" = {}
+LOADED_ENGINES_MODE: str = 'unknown'  # Track which mode was used to load engines
+
 # Defaults for the namespace of an engine module, see load_engine()
 ENGINE_DEFAULT_ARGS: dict[str, int | str | list[t.Any] | dict[str, t.Any] | bool] = {
     # Common options in the engine module
@@ -207,6 +214,16 @@ def is_missing_required_attributes(engine: "Engine | types.ModuleType"):
     missing = False
     for engine_attr in dir(engine):
         if not engine_attr.startswith('_') and getattr(engine, engine_attr) is None:
+            # Special handling for template engines like xpath
+            # Template engines can have certain attributes as None because they're provided by the using engine
+            if hasattr(engine, 'engine') and engine.engine in ['xpath']:
+                # List of attributes that can be None for template engines
+                template_optional_attrs = [
+                    'search_url', 'results_xpath', 'url_xpath', 'title_xpath', 'content_xpath',
+                    'thumbnail_xpath', 'suggestion_xpath', 'cached_xpath', 'cached_url'
+                ]
+                if engine_attr in template_optional_attrs:
+                    continue
             logger.error('Missing engine config attribute: "{0}.{1}"'.format(engine.name, engine_attr))
             missing = True
     return missing
@@ -218,14 +235,16 @@ def using_tor_proxy(engine: "Engine | types.ModuleType"):
 
 
 def is_engine_active(engine: "Engine | types.ModuleType"):
-    # check if engine is inactive
-    if engine.inactive is True:
+    """Check if engine is active based on its disabled status and configuration."""
+    # Check if engine is explicitly disabled in configuration
+    if getattr(engine, 'disabled', False):
         return False
 
-    # exclude onion engines if not using tor
-    if 'onions' in engine.categories and not using_tor_proxy(engine):
+    # Check if engine is marked as inactive
+    if getattr(engine, 'inactive', False):
         return False
 
+    # Otherwise, engine is active
     return True
 
 
@@ -263,14 +282,207 @@ def register_engine(engine: "Engine | types.ModuleType"):
         categories.setdefault(category_name, []).append(engine)
 
 
-def load_engines(engine_list: list[dict[str, t.Any]]):
-    """usage: ``engine_list = settings['engines']``"""
+def discover_all_engines() -> "dict[str, dict[str, t.Any]]":
+    """Discover all available engine modules in the engines directory.
+
+    Returns:
+        Dictionary mapping engine names to their basic configuration.
+    """
+    import os
+    import re
+
+    discovered = {}
+    engine_files = []
+
+    # Find all Python files in the engines directory
+    for filename in os.listdir(ENGINE_DIR):
+        if filename.endswith('.py') and not filename.startswith('__'):
+            engine_name = filename[:-3]  # Remove .py extension
+            engine_files.append(engine_name)
+
+    # Create basic engine data for each discovered engine
+    for engine_name in engine_files:
+        # Skip special files
+        if engine_name in ['base', 'core', 'json_engine', 'command']:
+            continue
+
+        # Create minimal engine configuration
+        engine_data = {
+            'name': engine_name,
+            'engine': engine_name,
+            'shortcut': engine_name[:2] if len(engine_name) >= 2 else engine_name,
+            'categories': ['general'],  # Default category
+            'disabled': False,  # Will be overridden by settings if needed
+            'inactive': False
+        }
+
+        discovered[engine_name] = engine_data
+
+    logger.info(f"Discovered {len(discovered)} engines: {list(discovered.keys())}")
+    return discovered
+
+
+def load_engines_global():
+    """Load all discovered engines in global mode."""
+    global LOADED_ENGINES_MODE
+
+    logger.info("🌍 Loading engines in GLOBAL mode - all available engines will be loaded")
+
+    # Clear existing engines
     engines.clear()
     engine_shortcuts.clear()
     categories.clear()
     categories['general'] = []
-    for engine_data in engine_list:
-        engine = load_engine(engine_data)
-        if engine:
-            register_engine(engine)
+
+    # Discover all available engines
+    ALL_ENGINES_REGISTRY.clear()
+    ALL_ENGINES_REGISTRY.update(discover_all_engines())
+
+    loaded_count = 0
+    for engine_name, engine_data in ALL_ENGINES_REGISTRY.items():
+        try:
+            engine = load_engine(engine_data)
+            if engine:
+                register_engine(engine)
+                loaded_count += 1
+            else:
+                logger.warning(f"❌ Failed to load engine: {engine_name} - load_engine returned None")
+        except Exception as e:
+            logger.error(f"❌ Error loading engine {engine_name}: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+
+    LOADED_ENGINES_MODE = 'global'
+    logger.info(f"🎉 Global mode completed: {loaded_count}/{len(ALL_ENGINES_REGISTRY)} engines loaded")
+
+    # Initialize dynamic engine manager for global mode
+    try:
+        from searx.dynamic_engine_manager import initialize
+        initialize()
+    except Exception as e:
+        logger.error(f"Failed to initialize dynamic engine manager: {e}")
+
     return engines
+
+
+def load_engines_settings(engine_list: list[dict[str, t.Any]]):
+    """Load engines based on settings configuration."""
+    global LOADED_ENGINES_MODE
+
+    logger.info("⚙️ Loading engines in SETTINGS mode - only configured engines will be loaded")
+
+    # Clear existing engines
+    engines.clear()
+    engine_shortcuts.clear()
+    categories.clear()
+    categories['general'] = []
+
+    loaded_count = 0
+    for engine_data in engine_list:
+        try:
+            engine_name = engine_data.get('name', 'unknown')
+            # Check if engine is intentionally disabled or inactive
+            is_disabled = engine_data.get('disabled', False)
+            is_inactive = engine_data.get('inactive', False)
+
+            engine = load_engine(engine_data)
+            if engine:
+                register_engine(engine)
+                loaded_count += 1
+                logger.debug(f"✅ Loaded engine from settings: {engine.name}")
+            else:
+                # Only show warning for unexpected failures
+                if not is_disabled and not is_inactive:
+                    # Check if failure is due to missing required attributes or setup failure
+                    # These are expected failures, so we only log at debug level
+                    logger.debug(f"⚪ Engine not ready from settings: {engine_name}")
+                else:
+                    logger.debug(f"⚪ Skipping disabled/inactive engine from settings: {engine_name}")
+        except Exception as e:
+            # Log unexpected errors at error level, configuration issues at debug level
+            if engine_data.get('disabled', False) or engine_data.get('inactive', False):
+                logger.debug(f"⚪ Expected error for disabled/inactive engine {engine_data.get('name', 'unknown')}: {e}")
+            else:
+                logger.error(f"❌ Unexpected error loading engine from settings: {engine_data.get('name', 'unknown')} - {type(e).__name__}: {str(e)}")
+                import traceback
+                logger.error(f"Full traceback: {traceback.format_exc()}")
+
+    LOADED_ENGINES_MODE = 'settings'
+    logger.info(f"🎉 Settings mode completed: {loaded_count} engines loaded from configuration")
+    return engines
+
+
+def load_engines(engine_list: list[dict[str, t.Any]] | None = None):
+    """Load engines based on the configured mode.
+
+    Args:
+        engine_list: List of engine configurations (used only in settings mode)
+
+    Returns:
+        Dictionary of loaded engines.
+    """
+    if engine_list is None:
+        engine_list = settings.get('engines', [])
+
+    # Determine which mode to use
+    mode = getattr(settings, 'engine_loading_mode', 'settings')
+
+    if mode == 'global':
+        return load_engines_global()
+    elif mode == 'settings':
+        return load_engines_settings(engine_list)
+    else:
+        logger.warning(f"Unknown engine loading mode '{mode}', falling back to settings mode")
+        return load_engines_settings(engine_list)
+
+
+def get_engine_loading_info():
+    """Get information about the current engine loading state."""
+    return {
+        'mode': LOADED_ENGINES_MODE,
+        'config_mode': ENGINE_LOADING_MODE,
+        'loaded_engines_count': len(engines),
+        'discovered_engines_count': len(ALL_ENGINES_REGISTRY),
+        'loaded_engines': list(engines.keys()),
+        'categories': {cat: len(eng_list) for cat, eng_list in categories.items()},
+        'available_engines': list(ALL_ENGINES_REGISTRY.keys()) if ALL_ENGINES_REGISTRY else []
+    }
+
+
+def switch_engine_mode(new_mode: str) -> bool:
+    """Switch engine loading mode and reload engines.
+
+    Args:
+        new_mode: 'global' or 'settings'
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    global ENGINE_LOADING_MODE
+
+    if new_mode not in ['global', 'settings']:
+        logger.error(f"Invalid engine mode: {new_mode}. Must be 'global' or 'settings'")
+        return False
+
+    if new_mode == ENGINE_LOADING_MODE:
+        logger.info(f"Engine mode already set to: {new_mode}")
+        return True
+
+    logger.info(f"🔄 Switching engine mode from {ENGINE_LOADING_MODE} to {new_mode}")
+
+    # Update the mode in settings (temporary)
+    ENGINE_LOADING_MODE = new_mode
+
+    try:
+        # Reload engines with new mode
+        if new_mode == 'global':
+            load_engines_global()
+        else:
+            engine_list = settings.get('engines', [])
+            load_engines_settings(engine_list)
+
+        logger.info(f"✅ Successfully switched to {new_mode} mode")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to switch engine mode: {e}")
+        return False

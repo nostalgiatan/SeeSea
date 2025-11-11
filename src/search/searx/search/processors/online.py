@@ -20,6 +20,14 @@ from searx.exceptions import (
 from searx.metrics.error_recorder import count_error
 from .abstract import EngineProcessor, RequestParams
 
+# Import dynamic engine manager for failure tracking (global mode only)
+try:
+    from searx.dynamic_engine_manager import record_engine_failure, should_disable_engine
+    from searx import settings
+    DYNAMIC_ENGINE_MANAGER_AVAILABLE = settings.get('engine_loading_mode') == 'global'
+except ImportError:
+    DYNAMIC_ENGINE_MANAGER_AVAILABLE = False
+
 if t.TYPE_CHECKING:
     from searx.search.models import SearchQuery
     from searx.results import ResultContainer
@@ -202,6 +210,11 @@ class OnlineProcessor(EngineProcessor):
         # send the request
         response = req(params["url"], **request_args)
 
+        # Dynamic engine disabling based on HTTP status code (global mode only)
+        if DYNAMIC_ENGINE_MANAGER_AVAILABLE and response.status_code and response.status_code != 200:
+            if should_disable_engine(self.engine.name, response.status_code):
+                record_engine_failure(self.engine.name, response.status_code, response.reason_phrase or "Unknown error")
+
         # check soft limit of the redirect count
         if len(response.history) > soft_max_redirects:
             # unexpected redirect : record an error
@@ -254,6 +267,10 @@ class OnlineProcessor(EngineProcessor):
             self.logger.error("SSLError {}, verify={}".format(e, searx.network.get_network(self.engine.name).verify))
         except (httpx.TimeoutException, asyncio.TimeoutError) as e:
             # requests timeout (connect or read)
+            # Record engine failure for dynamic management (global mode only)
+            if DYNAMIC_ENGINE_MANAGER_AVAILABLE:
+                record_engine_failure(self.engine.name, 408, "Timeout: " + str(e))
+
             self.handle_exception(result_container, e, suspend=True)
             self.logger.error(
                 "HTTP requests timeout (search duration : {0} s, timeout: {1} s) : {2}".format(
@@ -261,20 +278,28 @@ class OnlineProcessor(EngineProcessor):
                 )
             )
         except (httpx.HTTPError, httpx.StreamError) as e:
-            # other requests exception
+            # Record engine failure for dynamic management (global mode only)
+            if DYNAMIC_ENGINE_MANAGER_AVAILABLE:
+                status_code = 500  # Default to 500 for generic HTTP errors
+                if hasattr(e, 'response') and e.response is not None:
+                    status_code = e.response.status_code
+                elif hasattr(e, 'status_code'):
+                    status_code = e.status_code
+                record_engine_failure(self.engine.name, status_code, str(e))
+
+            # other requests exception - reduce log noise
             self.handle_exception(result_container, e, suspend=True)
-            self.logger.exception(
-                "requests exception (search duration : {0} s, timeout: {1} s) : {2}".format(
-                    default_timer() - start_time, timeout_limit, e
-                )
-            )
         except (
             SearxEngineCaptchaException,
             SearxEngineTooManyRequestsException,
             SearxEngineAccessDeniedException,
         ) as e:
+            # Record engine failure for dynamic management (global mode only)
+            if DYNAMIC_ENGINE_MANAGER_AVAILABLE:
+                status_code = 403 if isinstance(e, SearxEngineAccessDeniedException) else 429
+                record_engine_failure(self.engine.name, status_code, str(e))
+
             self.handle_exception(result_container, e, suspend=True)
-            self.logger.exception(e.message)
         except Exception as e:  # pylint: disable=broad-except
             self.handle_exception(result_container, e)
             self.logger.exception("exception : {0}".format(e))

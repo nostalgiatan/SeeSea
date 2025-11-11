@@ -76,11 +76,21 @@ from searx.flaskfix import patch_application
 import searx.search
 from searx.network import stream as http_stream, set_context_network_name
 from searx.search.checker import get_result as checker_get_result
+from searx.network import request as http_request
+import asyncio
+import threading
+# Dynamic engine manager is only used in global mode
+try:
+    from searx.dynamic_engine_manager import get_engine_status, reenable_all_engines
+    DYNAMIC_ENGINE_AVAILABLE = True
+except ImportError:
+    DYNAMIC_ENGINE_AVAILABLE = False
 
 
 logger = logger.getChild('webapp_api')
 
-warnings.simplefilter("always")
+
+warnings.simplefilter("ignore")
 
 # Flask app (API-only)
 app = Flask(__name__, static_folder=None, template_folder=None)
@@ -138,6 +148,7 @@ def pre_request():
         preferences.parse_dict({"language": language})
         logger.debug('set language %s (default)', preferences.get_value("language"))
 
+  
     # request.user_plugins
     sxng_request.user_plugins = []  # pylint: disable=assigning-non-slot
     allowed_plugins = preferences.plugins.get_enabled()
@@ -192,51 +203,41 @@ def api_error(output_format: str, error_message: str, status_code: int = 400):
     # Default to JSON for API mode
     return Response(json.dumps({'error': error_message}), mimetype='application/json', status=status_code)
 
-
-def get_api_json_response(search_query, result_container):
-    """API-safe version of get_json_response that doesn't require Flask-Babel."""
-    from searx.search.models import UnresponsiveEngine
-
-    # API-safe error mapping (without translations)
-    api_exception_map = {
-        None: 'unexpected crash',
-        'timeout': 'timeout',
-        'asyncio.TimeoutError': 'timeout',
-        'httpx.TimeoutException': 'timeout',
-        'httpx.ConnectTimeout': 'timeout',
-        'httpx.ReadTimeout': 'timeout',
-        'httpx.WriteTimeout': 'timeout',
-        'httpx.HTTPStatusError': 'HTTP error',
-        'httpx.ConnectError': 'HTTP connection error',
-        'httpx.RemoteProtocolError': 'HTTP protocol error',
-        'httpx.LocalProtocolError': 'HTTP protocol error',
-        'httpx.ProtocolError': 'HTTP protocol error',
-        'httpx.ReadError': 'network error',
-        'httpx.WriteError': 'network error',
-        'httpx.ProxyError': 'proxy error',
-        'searx.exceptions.SearxEngineCaptchaException': 'CAPTCHA',
-        'searx.exceptions.SearxEngineTooManyRequestsException': 'too many requests',
-        'searx.exceptions.SearxEngineAccessDeniedException': 'access denied',
-        'searx.exceptions.SearxEngineAPIException': 'server API error',
-        'searx.exceptions.SearxEngineXPathException': 'parsing error',
-        'KeyError': 'parsing error',
-        'json.decoder.JSONDecodeError': 'parsing error',
-        'lxml.etree.ParserError': 'parsing error',
-        'ssl.SSLCertVerificationError': 'SSL error: certificate validation has failed',
-        'ssl.CertificateError': 'SSL error: certificate validation has failed',
-    }
-
     def get_api_errors(unresponsive_engines):
-        api_errors = []
+        if not unresponsive_engines:
+            return []
+
+        # Group errors by type for cleaner summary
+        error_groups = {}
         for unresponsive_engine in unresponsive_engines:
             error_user_text = api_exception_map.get(unresponsive_engine.error_type, api_exception_map[None])
             if unresponsive_engine.suspended:
                 error_user_text = 'Suspended: ' + error_user_text
-            api_errors.append({
-                'engine': unresponsive_engine.engine,
-                'error': error_user_text,
-                'parameter': unresponsive_engine.parameter
-            })
+
+            if error_user_text not in error_groups:
+                error_groups[error_user_text] = []
+            error_groups[error_user_text].append(unresponsive_engine.engine)
+
+        # Create summarized error list
+        api_errors = []
+        for error_type, engine_list in error_groups.items():
+            if len(engine_list) <= 3:
+                # List engines individually if few
+                for engine in engine_list:
+                    api_errors.append({
+                        'engine': engine,
+                        'error': error_type,
+                        'parameter': None
+                    })
+            else:
+                # Summarize if many engines have same error
+                api_errors.append({
+                    'engine': f"{len(engine_list)} engines ({', '.join(engine_list[:3])}...)",
+                    'error': error_type,
+                    'parameter': None,
+                    'engines': engine_list  # Full list for those who need details
+                })
+
         return api_errors
 
     results = result_container.get_ordered_results()
@@ -266,16 +267,55 @@ def get_api_json_response(search_query, result_container):
 
         api_results.append(api_result)
 
-    return json.dumps({
+    # Safely convert all container objects to JSON-serializable types
+    def safe_convert(obj):
+        if obj is None:
+            return []
+        if isinstance(obj, (list, tuple)):
+            return list(obj)
+        if isinstance(obj, set):
+            return list(obj)
+        if hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes)):
+            try:
+                return list(obj)
+            except TypeError:
+                # Handle case where object is not iterable (e.g., set with complex objects)
+                return [str(item) for item in obj]
+        # Single object, wrap in list
+        return [obj]
+
+    def make_json_safe(value):
+        """Recursively ensure values are JSON serializable"""
+        if isinstance(value, dict):
+            return {k: make_json_safe(v) for k, v in value.items()}
+        elif isinstance(value, (list, tuple)):
+            return [make_json_safe(item) for item in value]
+        elif isinstance(value, set):
+            return [make_json_safe(item) for item in value]
+        elif hasattr(value, '__dict__'):
+            # Convert objects with __dict__ to their string representation
+            return str(value)
+        elif hasattr(value, '__iter__') and not isinstance(value, (str, bytes)):
+            try:
+                return [make_json_safe(item) for item in value]
+            except TypeError:
+                return str(value)
+        else:
+            return value
+
+    # Build response safely
+    response_data = {
         'query': search_query.query,
         'number_of_results': len(api_results),
-        'results': api_results,
-        'answers': list(result_container.answers),
-        'corrections': list(result_container.corrections),
-        'infoboxes': list(result_container.infoboxes),
-        'suggestions': list(result_container.suggestions),
-        'unresponsive_engines': get_api_errors(result_container.unresponsive_engines),
-    })
+        'results': make_json_safe(api_results),
+        'answers': make_json_safe(result_container.answers),
+        'corrections': make_json_safe(result_container.corrections),
+        'infoboxes': make_json_safe(result_container.infoboxes),
+        'suggestions': make_json_safe(result_container.suggestions),
+        'unresponsive_engines': make_json_safe(result_container.unresponsive_engines),
+    }
+
+    return json.dumps(response_data, default=str)  # default=str handles any remaining non-serializable objects
 
 
 @app.route('/healthz', methods=['GET'])
@@ -336,10 +376,6 @@ def search():
     sxng_request.timings = result_container.get_timings()  # pylint: disable=assigning-non-slot
 
     # 3. formats without a template
-    if output_format == 'json':
-        response = get_api_json_response(search_query, result_container)
-        return Response(response, mimetype='application/json')
-
     if output_format == 'csv':
         csv = webutils.CSVWriter(StringIO())
         webutils.write_csv_response(csv, result_container)
@@ -546,6 +582,75 @@ def stats_checker():
     return jsonify(result)
 
 
+# Store engine test results globally for API access
+_engine_test_cache = {
+    'timestamp': 0,
+    'network_profile': None,
+    'working_engines': [],
+    'failed_engines': [],
+    'test_results': [],
+    'cn_working': 0,
+    'global_working': 0
+}
+
+
+@app.route('/engines/status', methods=['GET'])
+def engines_status():
+    """返回搜索引擎状态"""
+    try:
+        # 基本引擎信息
+        engines_info = {}
+        for engine_name, engine in engines.items():
+            engines_info[engine_name] = {
+                'name': engine_name,
+                'categories': getattr(engine, 'categories', []),
+                'disabled': getattr(engine, 'disabled', False),
+                'shortcut': getattr(engine, 'shortcut', '')
+            }
+
+        response_data = {
+            'engines': engines_info,
+            'categories': {cat: len(eng_list) for cat, eng_list in categories.items()},
+            'total_engines': len(engines),
+            'engine_mode': settings.get('engine_loading_mode', 'settings')
+        }
+
+        # 添加动态引擎管理器状态（仅全局模式）
+        if DYNAMIC_ENGINE_AVAILABLE and settings.get('engine_loading_mode') == 'global':
+            response_data['dynamic_status'] = get_engine_status()
+
+        return jsonify(response_data)
+
+    except Exception as e:
+        logger.error(f"获取引擎状态失败: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/engines/manage', methods=['GET', 'POST'])
+def engines_manage():
+    """管理动态引擎状态（仅全局模式）"""
+    if settings.get('engine_loading_mode') != 'global':
+        return jsonify({'error': '引擎管理功能仅在全局模式下可用'}), 403
+
+    if not DYNAMIC_ENGINE_AVAILABLE:
+        return jsonify({'error': '动态引擎管理器不可用'}), 503
+
+    if sxng_request.method == 'GET':
+        # 获取当前引擎状态
+        return jsonify(get_engine_status())
+
+    elif sxng_request.method == 'POST':
+        # 重置所有引擎状态
+        try:
+            reenable_all_engines()
+            return jsonify({'status': 'success', 'message': '所有引擎已重置'})
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+
+  
+
 @app.route('/metrics')
 def stats_open_metrics():
     password = settings['general'].get("open_metrics")
@@ -675,6 +780,8 @@ def page_not_found(_e):
     return jsonify({'error': 'Not Found'}), 404
 
 
+
+
 def run():
     """Runs the application on a local development server.
 
@@ -698,6 +805,7 @@ def run():
     host: str = get_setting("server.bind_address")  # type: ignore
     port: int = get_setting("server.port")  # type: ignore
 
+  
     if searx.sxng_debug:
         logger.debug("run API-only server (DEBUG) on %s:%s", host, port)
         app.run(
@@ -712,8 +820,10 @@ def run():
         app.run(port=port, host=host, threaded=True)
 
 
-def init():
 
+
+
+def init():
     if searx.sxng_debug or app.debug:
         app.debug = True
         searx.sxng_debug = True
@@ -725,8 +835,14 @@ def init():
 
     searx.plugins.initialize(app)
 
+    # Initialize search engines first (required for dynamic manager to work)
     metrics: bool = get_setting("general.enable_metrics")  # type: ignore
     searx.search.initialize(enable_checker=True, check_network=True, enable_metrics=metrics)
+
+    # Now initialize dynamic engine manager - this will enable all engines and apply dynamic state
+    from searx.dynamic_engine_manager import initialize as init_dynamic_manager
+    init_dynamic_manager()
+    logger.info("🔄 动态引擎管理器已初始化，所有引擎已启用并应用动态状态")
 
     limiter.initialize(app, settings)
 

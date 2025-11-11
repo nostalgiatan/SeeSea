@@ -29,11 +29,19 @@ def validate_engineref_list(
         List[EngineRef]: list of unknown engine
         List[EngineRef]: list of engine with invalid token according to the preferences
     """
+    # Import here to avoid circular imports
+    from searx.search.processors import PROCESSORS
+
     valid = []
     unknown = []
     no_token = []
     for engineref in engineref_list:
         if engineref.name not in engines:
+            unknown.append(engineref)
+            continue
+
+        # Check if the engine processor is available (initialization successful)
+        if engineref.name not in PROCESSORS:
             unknown.append(engineref)
             continue
 
