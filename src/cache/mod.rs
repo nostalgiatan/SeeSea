@@ -17,10 +17,10 @@
 //! # 使用示例
 //!
 //! ```rust,no_run
-//! use seesea::cache::{CacheInterface, CacheConfig, CacheMode};
+//! use seesea::cache::{CacheInterface, CacheImplConfig, CacheMode};
 //!
 //! // 创建缓存接口
-//! let config = CacheConfig {
+//! let config = CacheImplConfig {
 //!     db_path: "./data/cache.db".to_string(),
 //!     default_ttl_secs: 3600,
 //!     max_size_bytes: 1024 * 1024 * 1024, // 1GB
@@ -50,7 +50,7 @@ pub mod metadata;
 pub mod on;
 
 // 重新导出主要类型
-pub use types::{CacheConfig, CacheMode, CacheStats, CacheEntryMetadata};
+pub use types::{CacheImplConfig, CacheMode, CacheStats, CacheEntryMetadata};
 pub use manager::{CacheManager, CacheError, Result};
 pub use result::ResultCache;
 pub use metadata::MetadataCache;

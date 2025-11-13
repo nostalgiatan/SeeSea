@@ -2,10 +2,10 @@
 //!
 //! 提供缓存模块的公共 API 接口
 
-use crate::cache::manager::{CacheError, CacheManager, Result};
+use crate::cache::manager::{CacheManager, Result};
 use crate::cache::metadata::MetadataCache;
 use crate::cache::result::ResultCache;
-use crate::cache::types::CacheConfig;
+use crate::cache::types::CacheImplConfig;
 use std::sync::Arc;
 
 /// 统一的缓存接口
@@ -30,13 +30,13 @@ impl CacheInterface {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use seesea::cache::{CacheInterface, CacheConfig};
+    /// use seesea::cache::{CacheInterface, CacheImplConfig};
     ///
-    /// let config = CacheConfig::default();
+    /// let config = CacheImplConfig::default();
     /// let cache = CacheInterface::new(config)?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn new(config: CacheConfig) -> Result<Self> {
+    pub fn new(config: CacheImplConfig) -> Result<Self> {
         let manager = Arc::new(CacheManager::new(config)?);
 
         Ok(Self { manager })
@@ -83,7 +83,7 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!("test_cache_interface_{}", std::process::id()));
         
-        let config = CacheConfig {
+        let config = CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
             default_ttl_secs: 3600,
             max_size_bytes: 1024 * 1024,
@@ -101,7 +101,7 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!("test_cache_interface_2_{}", std::process::id()));
         
-        let config = CacheConfig {
+        let config = CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
             default_ttl_secs: 3600,
             max_size_bytes: 1024 * 1024,

@@ -2,7 +2,7 @@
 //!
 //! 提供搜索结果的专门缓存功能
 
-use crate::cache::manager::{CacheError, CacheManager, Result};
+use crate::cache::manager::{CacheManager, Result};
 use crate::derive::types::{SearchQuery, SearchResult};
 use std::sync::Arc;
 use std::time::Duration;
@@ -69,9 +69,11 @@ impl ResultCache {
         match self.manager.get(&key)? {
             Some(data) => {
                 // 反序列化搜索结果
-                let result: SearchResult = bincode::deserialize(&data).map_err(|e| {
-                    CacheError::SerializationError(format!("反序列化搜索结果失败: {}", e))
-                })?;
+                let result: SearchResult = bincode::serde::decode_from_slice(&data, bincode::config::standard())
+                    .map(|(res, _)| res)
+                    .map_err(|e| {
+                        CacheError::SerializationError(format!("反序列化搜索结果失败: {}", e))
+                    })?;
                 Ok(Some(result))
             }
             None => Ok(None),
@@ -96,7 +98,7 @@ impl ResultCache {
         let key = Self::generate_key(query, engine_name);
         
         // 序列化搜索结果
-        let data = bincode::serialize(result).map_err(|e| {
+        let data = bincode::serde::encode_to_vec(result, bincode::config::standard()).map_err(|e| {
             CacheError::SerializationError(format!("序列化搜索结果失败: {}", e))
         })?;
 
@@ -128,7 +130,7 @@ impl ResultCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cache::types::{CacheConfig, CacheMode};
+    use crate::cache::types::{CacheImplConfig, CacheMode};
     use crate::derive::types::{EngineType, TimeRange};
     use crate::config::common::SafeSearchLevel;
     use std::collections::HashMap;
@@ -137,7 +139,7 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!("test_result_cache_{}", std::process::id()));
         
-        let config = CacheConfig {
+        let config = CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
             default_ttl_secs: 10,
             max_size_bytes: 1024 * 1024,

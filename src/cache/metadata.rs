@@ -46,7 +46,7 @@ impl MetadataCache {
         let key = format!("{}{}", ENGINE_INFO_PREFIX, engine_name);
         
         // 序列化引擎信息
-        let data = bincode::serialize(info).map_err(|e| {
+        let data = bincode::serde::encode_to_vec(info, bincode::config::standard()).map_err(|e| {
             CacheError::SerializationError(format!("序列化引擎信息失败: {}", e))
         })?;
 
@@ -69,9 +69,11 @@ impl MetadataCache {
         
         match self.manager.get(&key)? {
             Some(data) => {
-                let info: EngineInfo = bincode::deserialize(&data).map_err(|e| {
-                    CacheError::SerializationError(format!("反序列化引擎信息失败: {}", e))
-                })?;
+                let info: EngineInfo = bincode::serde::decode_from_slice(&data, bincode::config::standard())
+                    .map(|(info, _)| info)
+                    .map_err(|e| {
+                        CacheError::SerializationError(format!("反序列化引擎信息失败: {}", e))
+                    })?;
                 Ok(Some(info))
             }
             None => Ok(None),
@@ -154,7 +156,7 @@ impl MetadataCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cache::types::{CacheConfig, CacheMode};
+    use crate::cache::types::{CacheImplConfig, CacheMode};
     use crate::derive::types::{
         AboutInfo, EngineCapabilities, EngineStatus, EngineType, ResultType,
     };
@@ -163,7 +165,7 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!("test_metadata_cache_{}", std::process::id()));
         
-        let config = CacheConfig {
+        let config = CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
             default_ttl_secs: 3600,
             max_size_bytes: 1024 * 1024,

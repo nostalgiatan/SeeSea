@@ -15,11 +15,11 @@ pub type CacheKey = String;
 /// 缓存的值以字节数组形式存储，支持任意可序列化的数据
 pub type CacheValue = Vec<u8>;
 
-/// 缓存配置
+/// 缓存实现配置
 ///
 /// 定义缓存的全局配置参数
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheConfig {
+pub struct CacheImplConfig {
     /// 缓存数据库路径
     pub db_path: String,
     /// 默认过期时间（秒）
@@ -34,7 +34,7 @@ pub struct CacheConfig {
     pub mode: CacheMode,
 }
 
-impl Default for CacheConfig {
+impl Default for CacheImplConfig {
     fn default() -> Self {
         Self {
             db_path: "./data/cache.db".to_string(),
@@ -43,6 +43,24 @@ impl Default for CacheConfig {
             enabled: true,
             compression: false,
             mode: CacheMode::HighThroughput,
+        }
+    }
+}
+
+impl CacheImplConfig {
+    /// 从配置模块的 CacheConfig 创建
+    pub fn from_config(config: &crate::config::cache::types::CacheConfig) -> Self {
+        Self {
+            db_path: config.database_path.to_string_lossy().to_string(),
+            default_ttl_secs: config.ttl,
+            max_size_bytes: config.max_size,
+            enabled: config.enable_result_cache || config.enable_metadata_cache,
+            compression: config.compression.enabled,
+            mode: match config.backend {
+                crate::config::cache::types::CacheBackend::Sled => CacheMode::HighThroughput,
+                crate::config::cache::types::CacheBackend::Memory => CacheMode::LowLatency,
+                _ => CacheMode::HighThroughput,
+            },
         }
     }
 }

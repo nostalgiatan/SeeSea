@@ -3,8 +3,6 @@
 //! 提供基于 sled 的缓存管理核心功能
 
 use crate::cache::types::*;
-use error::Error as ErrorTrait;
-use serde::{Deserialize, Serialize};
 use sled::Db;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -51,7 +49,7 @@ pub struct CacheManager {
     /// 元数据树
     metadata_tree: sled::Tree,
     /// 配置
-    config: CacheConfig,
+    config: CacheImplConfig,
     /// 统计信息
     stats: Arc<CacheStats>,
     /// 命中计数器（原子操作）
@@ -80,13 +78,13 @@ impl CacheManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use seesea::cache::{CacheManager, CacheConfig};
+    /// use seesea::cache::{CacheManager, CacheImplConfig};
     ///
-    /// let config = CacheConfig::default();
+    /// let config = CacheImplConfig::default();
     /// let manager = CacheManager::new(config)?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn new(config: CacheConfig) -> Result<Self> {
+    pub fn new(config: CacheImplConfig) -> Result<Self> {
         // 创建数据库目录
         if let Some(parent) = Path::new(&config.db_path).parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
@@ -274,9 +272,11 @@ impl CacheManager {
                 CacheError::DatabaseError(format!("遍历元数据失败: {}", e))
             })?;
 
-            let metadata: CacheEntryMetadata = bincode::deserialize(&value).map_err(|e| {
-                CacheError::SerializationError(format!("反序列化元数据失败: {}", e))
-            })?;
+            let metadata: CacheEntryMetadata = bincode::serde::decode_from_slice(&value, bincode::config::standard())
+                .map(|(meta, _)| meta)
+                .map_err(|e| {
+                    CacheError::SerializationError(format!("反序列化元数据失败: {}", e))
+                })?;
 
             if metadata.is_expired() {
                 let key_str = String::from_utf8_lossy(&key);
@@ -316,9 +316,11 @@ impl CacheManager {
     fn get_metadata(&self, key: &str) -> Result<Option<CacheEntryMetadata>> {
         match self.metadata_tree.get(key.as_bytes()) {
             Ok(Some(data)) => {
-                let metadata = bincode::deserialize(&data).map_err(|e| {
-                    CacheError::SerializationError(format!("反序列化元数据失败: {}", e))
-                })?;
+                let metadata: CacheEntryMetadata = bincode::serde::decode_from_slice(&data, bincode::config::standard())
+                    .map(|(meta, _)| meta)
+                    .map_err(|e| {
+                        CacheError::SerializationError(format!("反序列化元数据失败: {}", e))
+                    })?;
                 Ok(Some(metadata))
             }
             Ok(None) => Ok(None),
@@ -327,7 +329,7 @@ impl CacheManager {
     }
 
     fn set_metadata(&self, key: &str, metadata: &CacheEntryMetadata) -> Result<()> {
-        let data = bincode::serialize(metadata).map_err(|e| {
+        let data = bincode::serde::encode_to_vec(metadata, bincode::config::standard()).map_err(|e| {
             CacheError::SerializationError(format!("序列化元数据失败: {}", e))
         })?;
 
@@ -357,11 +359,11 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn temp_cache_config() -> CacheConfig {
+    fn temp_cache_config() -> CacheImplConfig {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!("test_cache_{}", std::process::id()));
         
-        CacheConfig {
+        CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
             default_ttl_secs: 10,
             max_size_bytes: 1024 * 1024, // 1MB for tests
