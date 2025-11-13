@@ -567,6 +567,149 @@ pub enum DocumentationType {
     Custom,
 }
 
+
+impl Default for RouteConfig {
+    fn default() -> Self {
+        Self {
+            search_path: "/search".to_string(),
+            config_path: "/config".to_string(),
+            health_path: "/health".to_string(),
+            metrics_path: "/metrics".to_string(),
+            autocomplete_path: "/autocomplete".to_string(),
+            suggestions_path: "/suggestions".to_string(),
+            engines_path: "/engines".to_string(),
+            stats_path: "/stats".to_string(),
+            proxy_path: None,
+            custom_routes: vec![],
+        }
+    }
+}
+
+impl Default for MiddlewareConfig {
+    fn default() -> Self {
+        Self {
+            enabled_middleware: vec!["cors".to_string(), "logging".to_string()],
+            custom_middleware: vec![],
+        }
+    }
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            enable_csrf: true,
+            csrf_token_length: 32,
+            enable_xss_protection: true,
+            enable_clickjacking_protection: true,
+            security_headers: SecurityHeadersConfig::default(),
+            input_validation: InputValidationConfig::default(),
+            output_filtering: OutputFilteringConfig::default(),
+        }
+    }
+}
+
+impl Default for SecurityHeadersConfig {
+    fn default() -> Self {
+        Self {
+            x_frame_options: Some("DENY".to_string()),
+            x_content_type_options: Some("nosniff".to_string()),
+            x_xss_protection: Some("1; mode=block".to_string()),
+        }
+    }
+}
+
+impl Default for InputValidationConfig {
+    fn default() -> Self {
+        Self {
+            max_query_length: 1000,
+            allowed_query_characters: "".to_string(),
+            sanitize_html: true,
+        }
+    }
+}
+
+impl Default for OutputFilteringConfig {
+    fn default() -> Self {
+        Self {
+            filter_sensitive_data: true,
+            redact_patterns: vec![],
+            allowed_html_tags: vec!["b".to_string(), "i".to_string(), "em".to_string()],
+            strip_javascript: true,
+        }
+    }
+}
+
+impl Default for DocumentationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            doc_type: DocumentationType::OpenApi3,
+            title: "SeeSea API".to_string(),
+            version: "1.0.0".to_string(),
+            description: Some("SeeSea Meta Search Engine API".to_string()),
+            path: "/docs".to_string(),
+            include_examples: true,
+            custom_css: None,
+        }
+    }
+}
+
+impl Default for ApiKeyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_keys: vec![],
+            header_name: "X-API-Key".to_string(),
+            query_param_name: Some("api_key".to_string()),
+            require_https: true,
+        }
+    }
+}
+
+impl Default for JwtConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            secret: String::new(),
+            algorithm: "HS256".to_string(),
+            expiration_seconds: 3600,
+            issuer: Some("SeeSea".to_string()),
+            audience: None,
+            refresh_enabled: false,
+            refresh_expiration_seconds: 86400,
+            claims_namespace: None,
+        }
+    }
+}
+
+impl Default for BasicAuthConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            users: vec![],
+            realm: "SeeSea API".to_string(),
+        }
+    }
+}
+
+impl Default for ResponseCompressionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_size: 1024,
+        }
+    }
+}
+
+impl Default for PaginationConfig {
+    fn default() -> Self {
+        Self {
+            default_page_size: 10,
+            max_page_size: 100,
+            allow_custom_page_size: true,
+        }
+    }
+}
 impl Default for ApiConfig {
     fn default() -> Self {
         Self {

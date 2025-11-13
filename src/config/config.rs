@@ -132,6 +132,37 @@ pub enum ConfigError {
     Conflict(String),
 }
 
+impl ConfigError {
+    /// IoError 别名（兼容性）
+    pub fn IoError(msg: String) -> Self {
+        Self::Io(msg)
+    }
+    
+    /// ParseError 别名（兼容性）
+    pub fn ParseError(msg: String) -> Self {
+        Self::Parse(msg)
+    }
+    
+    /// ValidationFailed 别名（兼容性）
+    pub fn ValidationFailed(errors: Vec<String>) -> Self {
+        let mut result = ConfigValidationResult::default();
+        for error in errors {
+            result.add_error(error);
+        }
+        Self::Validation(result)
+    }
+    
+    /// FileNotFound 别名（兼容性）
+    pub fn FileNotFound(path: String) -> Self {
+        Self::NotFound(path)
+    }
+    
+    /// EnvironmentError 别名（兼容性）
+    pub fn EnvironmentError(msg: String) -> Self {
+        Self::Environment(msg)
+    }
+}
+
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -296,17 +327,3 @@ impl ConfigLoader {
     }
 }
 
-impl Default for SeeSeaConfig {
-    fn default() -> Self {
-        Self {
-            environment: Environment::Development,
-            server: crate::config::server::ServerConfig::default(),
-            search: crate::config::search::SearchConfig::default(),
-            privacy: crate::config::privacy::PrivacyConfig::default(),
-            cache: crate::config::cache::CacheConfig::default(),
-            api: crate::config::api::ApiConfig::default(),
-            logging: crate::config::logging::LoggingConfig::default(),
-            engines: crate::config::engines::EnginesConfig::default(),
-        }
-    }
-}
