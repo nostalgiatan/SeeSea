@@ -1,9 +1,7 @@
 //! 搜索查询处理 trait
-//!
-//! 本模块定义了搜索查询的构建、预处理、优化和验证功能。
 
 use crate::derive::types::*;
-use crate::derive::error::{DeriveError, Result};
+use std::error::Error;
 
 /// 查询构建器 trait
 pub trait QueryBuilder {
@@ -23,7 +21,7 @@ pub trait QueryBuilder {
     }
 
     /// 设置语言偏好
-    fn with_language(self, _language: impl Into<String>) -> Self
+    fn with_language(mut self, language: impl Into<String>) -> Self
     where
         Self: Sized,
     {
@@ -32,7 +30,7 @@ pub trait QueryBuilder {
     }
 
     /// 设置地区偏好
-    fn with_region(self, _region: impl Into<String>) -> Self
+    fn with_region(mut self, region: impl Into<String>) -> Self
     where
         Self: Sized,
     {
@@ -41,7 +39,7 @@ pub trait QueryBuilder {
     }
 
     /// 设置分页
-    fn with_pagination(self, _page: usize, _page_size: usize) -> Self
+    fn with_pagination(mut self, page: usize, page_size: usize) -> Self
     where
         Self: Sized,
     {
@@ -50,7 +48,7 @@ pub trait QueryBuilder {
     }
 
     /// 设置安全搜索级别
-    fn with_safe_search(self, _level: crate::config::common::SafeSearchLevel) -> Self
+    fn with_safe_search(mut self, level: crate::config::common::SafeSearchLevel) -> Self
     where
         Self: Sized,
     {
@@ -59,7 +57,7 @@ pub trait QueryBuilder {
     }
 
     /// 设置时间范围
-    fn with_time_range(self, _range: TimeRange) -> Self
+    fn with_time_range(mut self, range: TimeRange) -> Self
     where
         Self: Sized,
     {
@@ -68,7 +66,7 @@ pub trait QueryBuilder {
     }
 
     /// 添加自定义参数
-    fn with_param(self, _key: impl Into<String>, _value: impl Into<String>) -> Self
+    fn with_param(mut self, key: impl Into<String>, value: impl Into<String>) -> Self
     where
         Self: Sized,
     {
@@ -80,7 +78,7 @@ pub trait QueryBuilder {
 /// 查询预处理 trait
 pub trait QueryPreprocessor {
     /// 预处理查询
-    fn preprocess(&self, query: &mut SearchQuery) -> Result<()>;
+    fn preprocess(&self, query: &mut SearchQuery) -> Result<(), Box<dyn Error>>;
 
     /// 清理查询字符串
     fn clean_query(&self, query: &str) -> String {
@@ -106,7 +104,7 @@ pub trait QueryPreprocessor {
 /// 查询优化 trait
 pub trait QueryOptimizer {
     /// 优化查询
-    fn optimize(&self, query: &mut SearchQuery) -> Result<()>;
+    fn optimize(&self, query: &mut SearchQuery) -> Result<(), Box<dyn Error>>;
 
     /// 调整页面大小
     fn optimize_page_size(&self, query: &mut SearchQuery, max_size: usize) {
@@ -135,34 +133,34 @@ pub trait QueryOptimizer {
 /// 查询验证 trait
 pub trait QueryValidator {
     /// 验证查询
-    fn validate(&self, query: &SearchQuery) -> Result<()>;
+    fn validate(&self, query: &SearchQuery) -> Result<(), ValidationError>;
 
     /// 验证查询字符串
-    fn validate_query_string(&self, query: &str) -> Result<()> {
+    fn validate_query_string(&self, query: &str) -> Result<(), ValidationError> {
         if query.trim().is_empty() {
-            return Err(DeriveError::Validation { message: "查询不能为空".to_string(), field: Some("query".to_string()) });
+            return Err(ValidationError::EmptyQuery);
         }
 
         if query.len() > 1000 {
-            return Err(DeriveError::Validation { message: "查询过长，最多1000字符".to_string(), field: Some("query".to_string()) });
+            return Err(ValidationError::QueryTooLong);
         }
 
         // 检查是否包含潜在的恶意内容
         if self.contains_malicious_content(query) {
-            return Err(DeriveError::Validation { message: "包含潜在的恶意内容".to_string(), field: None });
+            return Err(ValidationError::InvalidParameter("包含潜在的恶意内容".to_string()));
         }
 
         Ok(())
     }
 
     /// 验证分页参数
-    fn validate_pagination(&self, page: usize, page_size: usize) -> Result<()> {
+    fn validate_pagination(&self, page: usize, page_size: usize) -> Result<(), ValidationError> {
         if page < 1 {
-            return Err(DeriveError::Validation { message: "页码无效，必须大于0".to_string(), field: None });
+            return Err(ValidationError::InvalidParameter("页码无效，必须大于0".to_string()));
         }
 
         if page_size < 1 || page_size > 100 {
-            return Err(DeriveError::Validation { message: "页面大小无效，必须在1-100之间".to_string(), field: None });
+            return Err(ValidationError::InvalidParameter("页面大小无效，必须在1-100之间".to_string()));
         }
 
         Ok(())
@@ -183,7 +181,7 @@ pub trait QueryValidator {
 /// 查询转换 trait
 pub trait QueryTransformer {
     /// 转换查询格式
-    fn transform(&self, query: &SearchQuery, target_format: &str) -> Result<String>;
+    fn transform(&self, query: &SearchQuery, target_format: &str) -> Result<String, Box<dyn Error>>;
 
     /// 转换为URL参数
     fn to_url_params(&self, query: &SearchQuery) -> String {
@@ -214,12 +212,12 @@ pub trait QueryTransformer {
     }
 
     /// 转换为JSON
-    fn to_json(&self, query: &SearchQuery) -> Result<String> {
+    fn to_json(&self, query: &SearchQuery) -> Result<String, Box<dyn Error>> {
         serde_json::to_string(query).map_err(Into::into)
     }
 
     /// 从JSON创建查询
-    fn from_json(&self, json: &str) -> Result<SearchQuery> {
+    fn from_json(&self, json: &str) -> Result<SearchQuery, Box<dyn Error>> {
         serde_json::from_str(json).map_err(Into::into)
     }
 }
