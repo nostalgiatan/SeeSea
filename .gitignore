@@ -16,44 +16,28 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
-
-# Virtual environments
 venv/
 ENV/
-env/
 .venv
 
-# PyCharm
-.idea/
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
 
-# VS Code
+# IDEs
+.idea/
 .vscode/
+*.swp
+*.swo
 
 # Testing
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
 .pytest_cache/
-nosetests.xml
-coverage.xml
-*.cover
-*.log
+.coverage
 htmlcov/
-.hypothesis/
-
-# Type checking
-.mypy_cache/
-.dmypy.json
-dmypy.json
-.pyre/
 
 # Nost specific
 .nost/

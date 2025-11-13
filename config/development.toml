@@ -1,0 +1,69 @@
+# SeeSea 开发环境配置
+# 这个配置针对开发环境进行了优化
+
+# 继承默认配置，只覆盖必要项
+extends = "default.toml"
+
+# =============================================================================
+# 开发环境特定配置
+# =============================================================================
+[general]
+# 启用调试模式
+debug = true
+# 开发环境
+environment = "development"
+
+[server]
+# 本地开发端口
+port = 3000
+# 绑定到本地地址
+bind_address = "127.0.0.1"
+
+[api]
+# 不强制 HTTPS
+force_https = false
+# 启用 API 文档
+[api.documentation]
+enabled = true
+
+[logging]
+# 调试日志级别
+level = "debug"
+# 彩色输出
+colored = true
+# 结构化日志（可选）
+structured = false
+
+[search]
+# 减少超时时间以加速开发
+search_timeout = 15
+# 减少并发数以便调试
+max_concurrent_engines = 3
+
+[privacy]
+# 简化隐私保护以加快速度
+[privacy.fingerprint_protection]
+protection_level = "none"
+
+# 禁用 User-Agent 轮换
+[privacy.user_agent_rotation]
+enabled = false
+
+[cache]
+# 可以禁用缓存以获得最新结果
+# enable_result_cache = false
+
+[engines]
+# 启用热重载以便动态添加引擎
+[engines.discovery]
+enable_hot_reload = true
+# 更短的重载间隔以快速响应变化
+reload_interval = 10
+
+[engines.health_check]
+# 更频繁的健康检查以快速发现问题
+check_interval = 60
+
+# 性能监控（开发环境可选）
+# enable_monitoring = false
+# performance_stats = false
