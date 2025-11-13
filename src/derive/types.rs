@@ -1,8 +1,11 @@
 //! 搜索引擎抽象骨架的核心类型定义
+//!
+//! 本模块定义了搜索引擎抽象层的所有核心数据结构和类型，
+//! 包括搜索查询、搜索结果、引擎信息等。
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use async_trait::async_trait;
+use crate::derive::error::{DeriveError, Result};
 
 /// 搜索引擎类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -236,7 +239,10 @@ pub struct EngineInfo {
     pub last_checked: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-/// 验证错误
+/// 验证错误已移至 error.rs 模块
+/// 
+/// 请使用 `crate::derive::error::DeriveError::Validation` 替代此类型
+#[deprecated(since = "0.1.0", note = "请使用 DeriveError::Validation")]
 #[derive(Debug, Clone)]
 pub enum ValidationError {
     /// 查询不能为空
@@ -272,3 +278,13 @@ impl std::fmt::Display for ValidationError {
 }
 
 impl std::error::Error for ValidationError {}
+
+/// 从 ValidationError 转换为 DeriveError
+impl From<ValidationError> for DeriveError {
+    fn from(err: ValidationError) -> Self {
+        DeriveError::Validation {
+            message: err.to_string(),
+            field: None,
+        }
+    }
+}

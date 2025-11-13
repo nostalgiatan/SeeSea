@@ -1,17 +1,19 @@
 //! 搜索结果处理 trait
+//!
+//! 本模块定义了搜索结果的解析、过滤、排序和格式化功能。
 
 use crate::derive::types::*;
-use std::error::Error;
+use crate::derive::error::{DeriveError, Result};
 use async_trait::async_trait;
 
 /// 结果解析器 trait
 #[async_trait]
 pub trait ResultParser {
     /// 解析响应为搜索结果
-    async fn parse(&self, response: &str, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
+    async fn parse(&self, response: &str, query: &SearchQuery) -> Result<SearchResult>;
 
     /// 解析单个结果项
-    fn parse_item(&self, raw: &serde_json::Value) -> Result<SearchResultItem, Box<dyn Error + Send + Sync>> {
+    fn parse_item(&self, raw: &serde_json::Value) -> Result<SearchResultItem> {
         Ok(SearchResultItem {
             title: self.extract_title(raw)?,
             url: self.extract_url(raw)?,
@@ -27,31 +29,31 @@ pub trait ResultParser {
     }
 
     /// 提取标题
-    fn extract_title(&self, raw: &serde_json::Value) -> Result<String, Box<dyn Error + Send + Sync>>;
+    fn extract_title(&self, raw: &serde_json::Value) -> Result<String>;
 
     /// 提取URL
-    fn extract_url(&self, raw: &serde_json::Value) -> Result<String, Box<dyn Error + Send + Sync>>;
+    fn extract_url(&self, raw: &serde_json::Value) -> Result<String>;
 
     /// 提取内容
-    fn extract_content(&self, raw: &serde_json::Value) -> Result<String, Box<dyn Error + Send + Sync>>;
+    fn extract_content(&self, raw: &serde_json::Value) -> Result<String>;
 
     /// 提取显示URL
-    fn extract_display_url(&self, raw: &serde_json::Value) -> Result<String, Box<dyn Error + Send + Sync>>;
+    fn extract_display_url(&self, raw: &serde_json::Value) -> Result<String>;
 
     /// 提取网站名称
-    fn extract_site_name(&self, raw: &serde_json::Value) -> Result<String, Box<dyn Error + Send + Sync>>;
+    fn extract_site_name(&self, raw: &serde_json::Value) -> Result<String>;
 
     /// 提取评分
-    fn extract_score(&self, raw: &serde_json::Value) -> Result<f64, Box<dyn Error + Send + Sync>>;
+    fn extract_score(&self, raw: &serde_json::Value) -> Result<f64>;
 
     /// 提取结果类型
-    fn extract_result_type(&self, raw: &serde_json::Value) -> Result<ResultType, Box<dyn Error + Send + Sync>>;
+    fn extract_result_type(&self, raw: &serde_json::Value) -> Result<ResultType>;
 
     /// 提取缩略图
-    fn extract_thumbnail(&self, raw: &serde_json::Value) -> Result<String, Box<dyn Error + Send + Sync>>;
+    fn extract_thumbnail(&self, raw: &serde_json::Value) -> Result<String>;
 
     /// 提取发布日期
-    fn extract_published_date(&self, raw: &serde_json::Value) -> Result<chrono::DateTime<chrono::Utc>, Box<dyn Error + Send + Sync>>;
+    fn extract_published_date(&self, raw: &serde_json::Value) -> Result<chrono::DateTime<chrono::Utc>>;
 
     /// 提取元数据
     fn extract_metadata(&self, raw: &serde_json::Value) -> Result<std::collections::HashMap<String, String>, Box<dyn Error + Send + Sync>>;
@@ -60,7 +62,7 @@ pub trait ResultParser {
 /// 结果过滤器 trait
 pub trait ResultFilter {
     /// 过滤结果
-    fn filter(&self, results: &mut Vec<SearchResultItem>) -> Result<(), Box<dyn Error>>;
+    fn filter(&self, results: &mut Vec<SearchResultItem>) -> Result<()>;
 
     /// 过滤重复结果
     fn deduplicate(&self, results: &mut Vec<SearchResultItem>) {
@@ -198,10 +200,10 @@ pub trait ResultSorter {
 /// 结果增强 trait
 pub trait ResultEnhancer {
     /// 增强结果
-    fn enhance(&self, results: &mut Vec<SearchResultItem>) -> Result<(), Box<dyn Error>>;
+    fn enhance(&self, results: &mut Vec<SearchResultItem>) -> Result<()>;
 
     /// 添加网站图标
-    fn add_favicons(&self, results: &mut Vec<SearchResultItem>) -> Result<(), Box<dyn Error>> {
+    fn add_favicons(&self, results: &mut Vec<SearchResultItem>) -> Result<()> {
         for item in results.iter_mut() {
             if let Some(domain) = self.extract_domain(&item.url) {
                 let favicon_url = format!("https://www.google.com/s2/favicons?domain={}&sz=32", domain);
@@ -221,7 +223,7 @@ pub trait ResultEnhancer {
     }
 
     /// 添加语言检测
-    fn add_language_detection(&self, results: &mut Vec<SearchResultItem>) -> Result<(), Box<dyn Error>> {
+    fn add_language_detection(&self, results: &mut Vec<SearchResultItem>) -> Result<()> {
         for item in results.iter_mut() {
             // 简单的语言检测逻辑
             let language = self.detect_language(&item.title, &item.content);
@@ -246,7 +248,7 @@ pub trait ResultEnhancer {
     }
 
     /// 添加页面信息
-    fn add_page_info(&self, results: &mut Vec<SearchResultItem>) -> Result<(), Box<dyn Error>> {
+    fn add_page_info(&self, results: &mut Vec<SearchResultItem>) -> Result<()> {
         for item in results.iter_mut() {
             if let Ok(parsed) = url::Url::parse(&item.url) {
                 item.metadata.insert("scheme".to_string(), parsed.scheme().to_string());
@@ -266,15 +268,15 @@ pub trait ResultEnhancer {
 /// 结果格式化 trait
 pub trait ResultFormatter {
     /// 格式化结果
-    fn format(&self, results: &[SearchResultItem]) -> Result<String, Box<dyn Error>>;
+    fn format(&self, results: &[SearchResultItem]) -> Result<String>;
 
     /// 格式化为JSON
-    fn to_json(&self, results: &[SearchResultItem]) -> Result<String, Box<dyn Error>> {
+    fn to_json(&self, results: &[SearchResultItem]) -> Result<String> {
         serde_json::to_string(results).map_err(Into::into)
     }
 
     /// 格式化为HTML
-    fn to_html(&self, results: &[SearchResultItem]) -> Result<String, Box<dyn Error>> {
+    fn to_html(&self, results: &[SearchResultItem]) -> Result<String> {
         let mut html = String::from("<div class=\"search-results\">");
 
         for item in results {
@@ -298,7 +300,7 @@ pub trait ResultFormatter {
     }
 
     /// 格式化为纯文本
-    fn to_text(&self, results: &[SearchResultItem]) -> Result<String, Box<dyn Error>> {
+    fn to_text(&self, results: &[SearchResultItem]) -> Result<String> {
         let mut text = String::new();
 
         for (i, item) in results.iter().enumerate() {

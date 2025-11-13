@@ -1,7 +1,9 @@
 //! 搜索查询处理 trait
+//!
+//! 本模块定义了搜索查询的构建、预处理、优化和验证功能。
 
 use crate::derive::types::*;
-use std::error::Error;
+use crate::derive::error::{DeriveError, Result};
 
 /// 查询构建器 trait
 pub trait QueryBuilder {
@@ -78,7 +80,7 @@ pub trait QueryBuilder {
 /// 查询预处理 trait
 pub trait QueryPreprocessor {
     /// 预处理查询
-    fn preprocess(&self, query: &mut SearchQuery) -> Result<(), Box<dyn Error>>;
+    fn preprocess(&self, query: &mut SearchQuery) -> Result<()>;
 
     /// 清理查询字符串
     fn clean_query(&self, query: &str) -> String {
@@ -104,7 +106,7 @@ pub trait QueryPreprocessor {
 /// 查询优化 trait
 pub trait QueryOptimizer {
     /// 优化查询
-    fn optimize(&self, query: &mut SearchQuery) -> Result<(), Box<dyn Error>>;
+    fn optimize(&self, query: &mut SearchQuery) -> Result<()>;
 
     /// 调整页面大小
     fn optimize_page_size(&self, query: &mut SearchQuery, max_size: usize) {
@@ -133,34 +135,34 @@ pub trait QueryOptimizer {
 /// 查询验证 trait
 pub trait QueryValidator {
     /// 验证查询
-    fn validate(&self, query: &SearchQuery) -> Result<(), ValidationError>;
+    fn validate(&self, query: &SearchQuery) -> Result<()>;
 
     /// 验证查询字符串
-    fn validate_query_string(&self, query: &str) -> Result<(), ValidationError> {
+    fn validate_query_string(&self, query: &str) -> Result<()> {
         if query.trim().is_empty() {
-            return Err(ValidationError::EmptyQuery);
+            return Err(DeriveError::Validation { message: "查询不能为空".to_string(), field: Some("query".to_string()) });
         }
 
         if query.len() > 1000 {
-            return Err(ValidationError::QueryTooLong);
+            return Err(DeriveError::Validation { message: "查询过长，最多1000字符".to_string(), field: Some("query".to_string()) });
         }
 
         // 检查是否包含潜在的恶意内容
         if self.contains_malicious_content(query) {
-            return Err(ValidationError::InvalidParameter("包含潜在的恶意内容".to_string()));
+            return Err(DeriveError::Validation { message: "包含潜在的恶意内容".to_string(), field: None });
         }
 
         Ok(())
     }
 
     /// 验证分页参数
-    fn validate_pagination(&self, page: usize, page_size: usize) -> Result<(), ValidationError> {
+    fn validate_pagination(&self, page: usize, page_size: usize) -> Result<()> {
         if page < 1 {
-            return Err(ValidationError::InvalidParameter("页码无效，必须大于0".to_string()));
+            return Err(DeriveError::Validation { message: "页码无效，必须大于0".to_string(), field: None });
         }
 
         if page_size < 1 || page_size > 100 {
-            return Err(ValidationError::InvalidParameter("页面大小无效，必须在1-100之间".to_string()));
+            return Err(DeriveError::Validation { message: "页面大小无效，必须在1-100之间".to_string(), field: None });
         }
 
         Ok(())
@@ -181,7 +183,7 @@ pub trait QueryValidator {
 /// 查询转换 trait
 pub trait QueryTransformer {
     /// 转换查询格式
-    fn transform(&self, query: &SearchQuery, target_format: &str) -> Result<String, Box<dyn Error>>;
+    fn transform(&self, query: &SearchQuery, target_format: &str) -> Result<String>;
 
     /// 转换为URL参数
     fn to_url_params(&self, query: &SearchQuery) -> String {
@@ -212,12 +214,12 @@ pub trait QueryTransformer {
     }
 
     /// 转换为JSON
-    fn to_json(&self, query: &SearchQuery) -> Result<String, Box<dyn Error>> {
+    fn to_json(&self, query: &SearchQuery) -> Result<String> {
         serde_json::to_string(query).map_err(Into::into)
     }
 
     /// 从JSON创建查询
-    fn from_json(&self, json: &str) -> Result<SearchQuery, Box<dyn Error>> {
+    fn from_json(&self, json: &str) -> Result<SearchQuery> {
         serde_json::from_str(json).map_err(Into::into)
     }
 }

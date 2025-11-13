@@ -1,8 +1,10 @@
 //! 搜索引擎核心 trait 定义
+//!
+//! 本模块定义了搜索引擎的核心接口，包括基础搜索、配置、缓存和重试功能。
 
 use async_trait::async_trait;
 use crate::derive::types::*;
-use std::error::Error;
+use crate::derive::error::{DeriveError, Result};
 
 /// 搜索引擎核心 trait
 #[async_trait]
@@ -11,7 +13,7 @@ pub trait SearchEngine: Send + Sync {
     fn info(&self) -> &EngineInfo;
 
     /// 执行搜索
-    async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
+    async fn search(&self, query: &SearchQuery) -> Result<SearchResult>;
 
     /// 检查引擎是否可用
     async fn is_available(&self) -> bool {
@@ -19,7 +21,7 @@ pub trait SearchEngine: Send + Sync {
     }
 
     /// 获取引擎健康状态
-    async fn health_check(&self) -> Result<EngineHealth, Box<dyn Error + Send + Sync>> {
+    async fn health_check(&self) -> Result<EngineHealth> {
         Ok(EngineHealth {
             status: EngineStatus::Active,
             response_time_ms: 0,
@@ -28,32 +30,46 @@ pub trait SearchEngine: Send + Sync {
     }
 
     /// 验证查询参数
-    fn validate_query(&self, query: &SearchQuery) -> Result<(), ValidationError> {
+    fn validate_query(&self, query: &SearchQuery) -> Result<()> {
         // 基础验证
         if query.query.trim().is_empty() {
-            return Err(ValidationError::EmptyQuery);
+            return Err(DeriveError::Validation {
+                message: "查询不能为空".to_string(),
+                field: Some("query".to_string()),
+            });
         }
 
         if query.query.len() > 1000 {
-            return Err(ValidationError::QueryTooLong);
+            return Err(DeriveError::Validation {
+                message: "查询过长，最多1000字符".to_string(),
+                field: Some("query".to_string()),
+            });
         }
 
         // 页面大小验证
         if query.page_size > self.info().capabilities.max_page_size {
-            return Err(ValidationError::PageSizeTooLarge {
-                max_size: self.info().capabilities.max_page_size
+            return Err(DeriveError::Validation {
+                message: format!("页面大小超出限制，最大{}个结果", 
+                    self.info().capabilities.max_page_size),
+                field: Some("page_size".to_string()),
             });
         }
 
         // 时间范围验证
         if query.time_range.is_some() && !self.info().capabilities.supports_time_range {
-            return Err(ValidationError::UnsupportedTimeRange);
+            return Err(DeriveError::Validation {
+                message: "不支持时间范围过滤".to_string(),
+                field: Some("time_range".to_string()),
+            });
         }
 
         // 自定义参数验证
         for param in query.params.keys() {
             if !self.info().capabilities.supported_params.contains(param) {
-                return Err(ValidationError::UnsupportedParameter(param.clone()));
+                return Err(DeriveError::Validation {
+                    message: format!("不支持的参数: {}", param),
+                    field: Some("params".to_string()),
+                });
             }
         }
 
@@ -80,13 +96,13 @@ pub trait BaseEngine: SearchEngine {
     fn client(&self) -> &reqwest::Client;
 
     /// 构建请求URL
-    fn build_url(&self, query: &SearchQuery) -> Result<String, ValidationError>;
+    fn build_url(&self, query: &SearchQuery) -> Result<String>;
 
     /// 解析响应
-    async fn parse_response(&self, response: reqwest::Response, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
+    async fn parse_response(&self, response: reqwest::Response, query: &SearchQuery) -> Result<SearchResult>;
 
     /// 默认搜索实现
-    async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
+    async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
         // 验证查询
         self.validate_query(query)?;
 
@@ -109,12 +125,12 @@ pub trait ConfigurableEngine: SearchEngine {
     type Config;
 
     /// 从配置创建引擎
-    fn from_config(config: Self::Config) -> Result<Self, Box<dyn Error + Send + Sync>>
+    fn from_config(config: Self::Config) -> Result<Self>
     where
         Self: Sized;
 
     /// 更新配置
-    fn update_config(&mut self, config: Self::Config) -> Result<(), Box<dyn Error + Send + Sync>>;
+    fn update_config(&mut self, config: Self::Config) -> Result<()>;
 }
 
 /// 支持缓存的搜索引擎
@@ -127,10 +143,10 @@ pub trait CacheableEngine: SearchEngine {
     async fn get_from_cache(&self, key: &str) -> Option<SearchResult>;
 
     /// 存储到缓存
-    async fn store_to_cache(&self, key: &str, result: &SearchResult, ttl: Option<std::time::Duration>) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn store_to_cache(&self, key: &str, result: &SearchResult, ttl: Option<std::time::Duration>) -> Result<()>;
 
     /// 带缓存的搜索
-    async fn cached_search(&self, query: &SearchQuery, ttl: Option<std::time::Duration>) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
+    async fn cached_search(&self, query: &SearchQuery, ttl: Option<std::time::Duration>) -> Result<SearchResult> {
         let cache_key = self.cache_key(query);
 
         // 尝试从缓存获取
@@ -162,20 +178,20 @@ pub trait RetryableEngine: SearchEngine {
     }
 
     /// 判断是否应该重试
-    fn should_retry(&self, error: &Box<dyn Error + Send + Sync>, attempt: usize) -> bool {
-        attempt < self.max_retries() && self.is_retryable_error(error.as_ref())
+    fn should_retry(&self, error: &DeriveError, attempt: usize) -> bool {
+        attempt < self.max_retries() && self.is_retryable_error(error)
     }
 
     /// 判断错误是否可重试
-    fn is_retryable_error(&self, error: &dyn Error) -> bool {
-        // 网络错误、超时等可以重试
-        error.to_string().contains("timeout") ||
-        error.to_string().contains("network") ||
-        error.to_string().contains("connection")
+    fn is_retryable_error(&self, error: &DeriveError) -> bool {
+        matches!(
+            error,
+            DeriveError::Network { .. } | DeriveError::Timeout { .. }
+        )
     }
 
     /// 带重试的搜索
-    async fn retryable_search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
+    async fn retryable_search(&self, query: &SearchQuery) -> Result<SearchResult> {
         let mut last_error = None;
 
         for attempt in 0..=self.max_retries() {
@@ -196,6 +212,8 @@ pub trait RetryableEngine: SearchEngine {
             }
         }
 
-        Err(last_error.unwrap_or_else(|| "未知错误".into()))
+        Err(last_error.unwrap_or_else(|| DeriveError::Internal {
+            message: "所有重试尝试均失败".to_string(),
+        }))
     }
 }
