@@ -1,6 +1,6 @@
 //! SeeSea 主程序入口
 
-use seesea::config::{ConfigManager, ConfigLoader, ConfigValidator, SeeSeaConfig};
+use SeeSea::config::{ConfigManager, ConfigLoader, ConfigValidator, SeeSeaConfig};
 use std::path::PathBuf;
 
 #[tokio::main]

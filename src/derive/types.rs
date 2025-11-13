@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use async_trait::async_trait;
 
 /// 搜索引擎类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

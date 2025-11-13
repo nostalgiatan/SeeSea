@@ -2,7 +2,7 @@
 //!
 //! 提供灵活的配置文件加载功能
 
-use crate::config::{SeeSeaConfig, ConfigError, ConfigLoadResult, ConfigValidationResult};
+use crate::config::{SeeSeaConfig, ConfigError, ConfigLoadResult};
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use tokio::fs;
@@ -105,12 +105,15 @@ impl ConfigLoader {
         }
 
         warnings.extend(validation_result.warnings);
+        let summary = final_config.get_summary();
 
         let load_result = ConfigLoadResult {
             config: final_config,
-            file_path: loaded_files.first().cloned().unwrap_or_default(),
-            used_defaults: !loaded_files.is_empty(),
+            file_path: loaded_files.first().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+            used_defaults: loaded_files.is_empty(),
             warnings,
+            summary,
+            load_time: chrono::Utc::now(),
         };
 
         Ok(load_result)
@@ -177,7 +180,7 @@ impl ConfigLoader {
         let default_path = self.search_paths
             .first()
             .map(|p| p.join(&self.file_patterns[0]))
-            .ok_or_else(|| ConfigError::FileNotFound(PathBuf::new()))?;
+            .ok_or_else(|| ConfigError::NotFound(String::new()))?;
 
         Ok(default_path)
     }
@@ -192,7 +195,8 @@ impl ConfigLoader {
                 serde_json::from_str(content).map_err(|e| ConfigError::ParseError(format!("JSON 解析错误: {}", e)))
             }
             Some("yaml") | Some("yml") => {
-                serde_yaml::from_str(content).map_err(|e| ConfigError::ParseError(format!("YAML 解析错误: {}", e)))
+                // TODO: Add serde_yaml dependency if needed
+                Err(ConfigError::Parse(format!("YAML support not yet implemented")))
             }
             Some(ext) => {
                 Err(ConfigError::ParseError(format!("不支持的配置文件格式: {}", ext)))
@@ -413,12 +417,15 @@ impl ConfigLoader {
 
     /// 确保目录存在
     async fn ensure_directories_exist(&self, config: &SeeSeaConfig) -> Result<(), ConfigError> {
-        let dirs = [
-            &config.general.config_directory,
-            &config.general.data_directory,
-            &config.general.temp_directory,
-            &config.cache.database_path.parent().unwrap_or(&PathBuf::from("./")),
+        let mut dirs: Vec<&std::path::Path> = vec![
+            config.general.config_directory.as_path(),
+            config.general.data_directory.as_path(),
+            config.general.temp_directory.as_path(),
         ];
+        
+        if let Some(parent) = config.cache.database_path.parent() {
+            dirs.push(parent);
+        }
 
         for dir in dirs {
             if !dir.exists() {

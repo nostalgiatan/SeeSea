@@ -23,6 +23,7 @@ pub trait ResultParser {
             thumbnail: self.extract_thumbnail(raw).ok(),
             published_date: self.extract_published_date(raw).ok(),
             metadata: self.extract_metadata(raw)?,
+            template: None, // 默认无特殊模板
         })
     }
 
@@ -126,7 +127,8 @@ pub trait ResultSorter {
 
     /// 计算相关性评分
     fn calculate_relevance(&self, item: &SearchResultItem, query: &str) -> f64 {
-        let query_terms: Vec<&str> = query.to_lowercase().split_whitespace().collect();
+        let query_lower = query.to_lowercase();
+        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
         let title_lower = item.title.to_lowercase();
         let content_lower = item.content.to_lowercase();
 

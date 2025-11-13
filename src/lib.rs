@@ -7,6 +7,9 @@ pub mod cache;
 pub mod derive;
 
 // 重新导出主要类型
-pub use config::*;
-pub use cache::*;
-pub use derive::*;
+pub use config::{SeeSeaConfig, ConfigManager, ConfigError};
+pub use cache::{CacheInterface, CacheImplConfig, CacheMode};
+pub use derive::{
+    SearchEngine, SearchQuery, SearchResult, EngineInfo,
+    QueryBuilder, ResultParser,
+};

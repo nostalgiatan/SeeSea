@@ -2,10 +2,12 @@
 //!
 //! 提供搜索结果的专门缓存功能
 
-use crate::cache::manager::{CacheManager, Result};
+use crate::cache::manager::{CacheManager, CacheError};
 use crate::derive::types::{SearchQuery, SearchResult};
 use std::sync::Arc;
 use std::time::Duration;
+
+type Result<T> = std::result::Result<T, CacheError>;
 
 /// 搜索结果缓存键前缀
 const RESULT_KEY_PREFIX: &str = "result:";

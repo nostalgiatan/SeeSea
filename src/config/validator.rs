@@ -5,7 +5,6 @@
 use crate::config::{
     SeeSeaConfig, ConfigValidationResult, Environment, LogLevel, EngineLoadingMode,
 };
-use std::collections::HashMap;
 
 /// 配置验证器
 pub struct ConfigValidator {

@@ -26,17 +26,22 @@ pub mod on;
 pub mod loader;
 pub mod validator;
 
-// 重新导出所有公共类型
-pub use common::*;
-pub use server::*;
-pub use search::*;
-pub use privacy::*;
-pub use cache::*;
-pub use api::*;
-pub use logging::*;
-pub use engines::*;
-pub use types::*;
-pub use config::*;
-pub use on::*;
-pub use loader::*;
-pub use validator::*;
+// 重新导出关键公共类型
+pub use common::{
+    ConfigValidationResult, BaseEngineConfig,
+    EngineLoadingMode, LogLevel, LogFormat, LogOutput,
+    EngineType as CommonEngineType,
+    AuthType, FingerprintLevel,
+};
+pub use server::ServerConfig;
+pub use search::SearchConfig;
+pub use privacy::PrivacyConfig;
+pub use cache::CacheConfig;
+pub use api::ApiConfig;
+pub use logging::LoggingConfig;
+pub use engines::EnginesConfig;
+pub use types::Environment;
+pub use config::{SeeSeaConfig, ConfigLoadResult, ConfigSummary, ConfigError, ConfigSource};
+pub use on::{ConfigManager, get_global_config, init_config, init_config_with_env};
+pub use loader::ConfigLoader;
+pub use validator::{ConfigValidator, validate_config};

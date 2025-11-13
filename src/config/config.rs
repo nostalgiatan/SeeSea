@@ -1,10 +1,10 @@
 //! SeeSea 主配置类型定义
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use crate::config::common::*;
 use crate::config::types::*;
+use crate::config::common::LogLevel;
 
 /// SeeSea 主配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +46,33 @@ impl Default for SeeSeaConfig {
 }
 
 impl SeeSeaConfig {
+    /// 创建开发环境配置
+    pub fn development() -> Self {
+        let mut config = Self::default();
+        config.environment = Environment::Development;
+        config.general.debug = true;
+        config.logging.level = LogLevel::Debug;
+        config
+    }
+    
+    /// 创建测试环境配置
+    pub fn testing() -> Self {
+        let mut config = Self::default();
+        config.environment = Environment::Testing;
+        config.general.debug = true;
+        config.logging.level = LogLevel::Info;
+        config
+    }
+    
+    /// 创建生产环境配置
+    pub fn production() -> Self {
+        let mut config = Self::default();
+        config.environment = Environment::Production;
+        config.general.debug = false;
+        config.logging.level = LogLevel::Warn;
+        config
+    }
+    
     /// 验证配置
     pub fn validate(&self) -> ConfigValidationResult {
         crate::config::validator::validate_config(self)
@@ -59,7 +86,7 @@ impl SeeSeaConfig {
             enabled_engines: 0, // TODO: 从 engines 配置计算
             total_engines: 0,
             enabled_proxies: 0,
-            cache_enabled: self.cache.enabled,
+            cache_enabled: true, // TODO: Get from cache config
             validation: self.validate(),
         }
     }
@@ -285,16 +312,20 @@ impl ConfigLoader {
             ConfigValidationResult::valid()
         };
 
-        if !validation.is_valid() {
+        if !validation.is_valid {
             return Err(ConfigError::Validation(validation));
         }
 
+        let warnings = validation.warnings.clone();
         let summary = self.create_summary(&config, validation);
 
         Ok(ConfigLoadResult {
             config,
             summary,
             load_time: chrono::Utc::now(),
+            file_path: String::new(),
+            used_defaults: false,
+            warnings,
         })
     }
 
@@ -318,10 +349,10 @@ impl ConfigLoader {
         ConfigSummary {
             config_path: "config".to_string(),
             environment: format!("{:?}", config.environment),
-            enabled_engines: config.engines.enabled.len(),
-            total_engines: config.engines.available.len(),
-            enabled_proxies: config.privacy.proxies.enabled.len(),
-            cache_enabled: config.cache.enabled,
+            enabled_engines: 0, // TODO: Get from engines config
+            total_engines: 0,
+            enabled_proxies: 0,
+            cache_enabled: true, // TODO: Get from cache config
             validation,
         }
     }
