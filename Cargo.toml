@@ -21,7 +21,7 @@ html-escape = "0.2.13"
 num_cpus = "1.17.0"
 proc-macro2 = { version = "1.0.103", optional = true }
 quote = { version = "1.0.42", optional = true }
-reqwest = { version = "0.12.24", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12.24", features = ["brotli", "cookies", "deflate", "gzip", "json", "rustls-tls", "stream"] }
 scraper = "0.24.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
@@ -38,6 +38,8 @@ error = { path = "src/crates/error" }
 error-derive = { path = "src/crates/error-derive" }
 urlencoding = "2.1.3"
 bincode = { version = "2.0.1", features = ["serde"] }
+tokio-rustls = "0.26.4"
+trust-dns-resolver = "0.23.2"
 
 
 [dev-dependencies]
