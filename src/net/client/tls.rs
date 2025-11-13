@@ -70,7 +70,13 @@ fn apply_full_fingerprint_protection(builder: ClientBuilder) -> ClientBuilder {
 /// 生成随机 TLS 扩展顺序
 ///
 /// 用于对抗基于 TLS 扩展顺序的指纹识别
+///
+/// # 返回
+///
+/// 随机打乱顺序的 TLS 扩展 ID 列表
 pub fn randomize_tls_extensions() -> Vec<u16> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    
     // 常见的 TLS 扩展
     let mut extensions = vec![
         0,    // server_name
@@ -85,7 +91,20 @@ pub fn randomize_tls_extensions() -> Vec<u16> {
         51,   // key_share
     ];
 
-    // 随机打乱顺序（这里简化实现，实际应使用随机数生成器）
+    // 使用 Fisher-Yates 洗牌算法打乱顺序
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    
+    let mut rng_state = seed;
+    for i in (1..extensions.len()).rev() {
+        // 线性同余生成器
+        rng_state = rng_state.wrapping_mul(1103515245).wrapping_add(12345);
+        let j = (rng_state as usize) % (i + 1);
+        extensions.swap(i, j);
+    }
+    
     extensions
 }
 

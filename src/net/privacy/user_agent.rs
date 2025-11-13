@@ -29,10 +29,21 @@ impl UserAgentGenerator {
     }
 
     /// 获取随机 User-Agent
+    ///
+    /// # 返回
+    ///
+    /// 随机选择的 User-Agent 字符串引用
     pub fn random(&self) -> &str {
-        // 简化实现：使用第一个
-        // 实际应使用随机数生成器
-        &self.user_agents[0]
+        use std::time::{SystemTime, UNIX_EPOCH};
+        
+        // 使用系统时间生成随机索引
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as usize;
+        
+        let index = seed % self.user_agents.len();
+        &self.user_agents[index]
     }
 }
 
@@ -71,11 +82,23 @@ pub fn get_user_agent(config: &PrivacyConfig) -> String {
 }
 
 /// 获取随机 User-Agent
+///
+/// # 返回
+///
+/// 随机选择的 User-Agent 字符串
 pub fn get_random_user_agent() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    
     let agents = get_realistic_user_agents();
-    // 简化实现：返回第一个
-    // 实际应使用随机数生成器选择
-    agents[0].clone()
+    
+    // 使用系统时间生成随机索引
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as usize;
+    
+    let index = seed % agents.len();
+    agents[index].clone()
 }
 
 /// 获取真实的浏览器 User-Agent 列表

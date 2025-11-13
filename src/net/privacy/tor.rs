@@ -38,10 +38,58 @@ impl TorManager {
     /// # 返回
     ///
     /// 成功返回 Ok(())，失败返回错误
+    ///
+    /// # 注意
+    ///
+    /// 需要 Tor 控制端口（默认 9051）开启并配置认证
     pub async fn new_circuit(&self) -> Result<()> {
         // Tor 的新电路请求需要通过控制端口（默认 9051）
-        // 这里简化实现，实际需要实现 Tor 控制协议
-        Err(crate::error::network_error("Tor circuit renewal not implemented yet".to_string()))
+        // 发送 SIGNAL NEWNYM 命令
+        
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpStream;
+        
+        // 提取控制端口地址（假设格式为 host:port）
+        let control_addr = self.config.address.replace(":9050", ":9051");
+        
+        // 连接到 Tor 控制端口
+        let mut stream = TcpStream::connect(&control_addr)
+            .await
+            .map_err(|e| crate::error::network_error(format!("Failed to connect to Tor control port: {}", e)))?;
+        
+        // 发送 AUTHENTICATE 命令（空密码）
+        stream.write_all(b"AUTHENTICATE \"\"\r\n")
+            .await
+            .map_err(|e| crate::error::network_error(format!("Failed to authenticate: {}", e)))?;
+        
+        // 读取认证响应
+        let mut auth_response = vec![0u8; 1024];
+        let n = stream.read(&mut auth_response)
+            .await
+            .map_err(|e| crate::error::network_error(format!("Failed to read auth response: {}", e)))?;
+        
+        let response = String::from_utf8_lossy(&auth_response[..n]);
+        if !response.starts_with("250") {
+            return Err(crate::error::network_error(format!("Authentication failed: {}", response)));
+        }
+        
+        // 发送 SIGNAL NEWNYM 命令请求新电路
+        stream.write_all(b"SIGNAL NEWNYM\r\n")
+            .await
+            .map_err(|e| crate::error::network_error(format!("Failed to send NEWNYM signal: {}", e)))?;
+        
+        // 读取响应
+        let mut signal_response = vec![0u8; 1024];
+        let n = stream.read(&mut signal_response)
+            .await
+            .map_err(|e| crate::error::network_error(format!("Failed to read signal response: {}", e)))?;
+        
+        let response = String::from_utf8_lossy(&signal_response[..n]);
+        if !response.starts_with("250") {
+            return Err(crate::error::network_error(format!("NEWNYM signal failed: {}", response)));
+        }
+        
+        Ok(())
     }
 
     /// 获取当前 Tor IP 地址
@@ -49,10 +97,37 @@ impl TorManager {
     /// # 返回
     ///
     /// 成功返回 IP 地址，失败返回错误
+    ///
+    /// # 注意
+    ///
+    /// 通过访问 https://api.ipify.org 获取外部 IP
     pub async fn get_current_ip(&self) -> Result<String> {
-        // 通过检查 IP 服务获取当前 IP
-        // 这里简化实现
-        Ok("Unknown".to_string())
+        use reqwest::Client;
+        
+        // 创建使用 Tor 代理的 HTTP 客户端
+        let proxy_url = format!("socks5://{}", self.config.address);
+        let proxy = reqwest::Proxy::all(&proxy_url)
+            .map_err(|e| crate::error::network_error(format!("Failed to create proxy: {}", e)))?;
+        
+        let client = Client::builder()
+            .proxy(proxy)
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| crate::error::network_error(format!("Failed to build client: {}", e)))?;
+        
+        // 通过 IP 查询服务获取当前 IP
+        let response = client
+            .get("https://api.ipify.org")
+            .send()
+            .await
+            .map_err(|e| crate::error::network_error(format!("Failed to get IP: {}", e)))?;
+        
+        let ip = response
+            .text()
+            .await
+            .map_err(|e| crate::error::network_error(format!("Failed to read response: {}", e)))?;
+        
+        Ok(ip.trim().to_string())
     }
 
     /// 验证是否通过 Tor 连接
