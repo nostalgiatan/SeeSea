@@ -6,6 +6,7 @@
 pub mod common;
 
 // 子模块
+pub mod general;
 pub mod server;
 pub mod search;
 pub mod privacy;

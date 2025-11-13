@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 /// API 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiConfig {
+    /// 是否启用 API
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     /// API 版本
     pub version: String,
     /// 是否启用 CORS
@@ -26,6 +29,44 @@ pub struct ApiConfig {
     pub security: SecurityConfig,
     /// API 文档配置
     pub documentation: DocumentationConfig,
+    /// 指标配置
+    pub metrics: MetricsConfig,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// 指标配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetricsConfig {
+    /// 是否启用指标
+    #[serde(default)]
+    pub enabled: bool,
+    /// 指标端口
+    #[serde(default = "default_metrics_port")]
+    pub port: u16,
+    /// 指标路径
+    #[serde(default = "default_metrics_path")]
+    pub path: String,
+}
+
+fn default_metrics_port() -> u16 {
+    9090
+}
+
+fn default_metrics_path() -> String {
+    "/metrics".to_string()
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: default_metrics_port(),
+            path: default_metrics_path(),
+        }
+    }
 }
 
 /// CORS 配置

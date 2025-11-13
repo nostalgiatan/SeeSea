@@ -104,7 +104,7 @@ pub enum AuthType {
 }
 
 /// 日志级别
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     /// 错误级别

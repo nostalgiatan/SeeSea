@@ -9,6 +9,8 @@ use crate::config::types::*;
 /// SeeSea 主配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeeSeaConfig {
+    /// 通用配置
+    pub general: crate::config::general::GeneralConfig,
     /// 环境标识
     pub environment: Environment,
     /// 服务器配置
@@ -27,6 +29,54 @@ pub struct SeeSeaConfig {
     pub engines: crate::config::engines::EnginesConfig,
 }
 
+impl Default for SeeSeaConfig {
+    fn default() -> Self {
+        Self {
+            general: crate::config::general::GeneralConfig::default(),
+            environment: Environment::default(),
+            server: crate::config::server::ServerConfig::default(),
+            search: crate::config::search::SearchConfig::default(),
+            privacy: crate::config::privacy::PrivacyConfig::default(),
+            cache: crate::config::cache::CacheConfig::default(),
+            api: crate::config::api::ApiConfig::default(),
+            logging: crate::config::logging::LoggingConfig::default(),
+            engines: crate::config::engines::EnginesConfig::default(),
+        }
+    }
+}
+
+impl SeeSeaConfig {
+    /// 验证配置
+    pub fn validate(&self) -> ConfigValidationResult {
+        crate::config::validator::validate_config(self)
+    }
+    
+    /// 获取配置摘要
+    pub fn get_summary(&self) -> ConfigSummary {
+        ConfigSummary {
+            config_path: String::new(),
+            environment: format!("{:?}", self.environment),
+            enabled_engines: 0, // TODO: 从 engines 配置计算
+            total_engines: 0,
+            enabled_proxies: 0,
+            cache_enabled: self.cache.enabled,
+            validation: self.validate(),
+        }
+    }
+    
+    /// 检查是否为生产就绪状态
+    pub fn is_production_ready(&self) -> bool {
+        let validation = self.validate();
+        validation.is_valid && validation.errors.is_empty()
+    }
+    
+    /// 获取配置建议
+    pub fn get_config_recommendations(&self) -> Vec<String> {
+        let validation = self.validate();
+        validation.warnings.clone()
+    }
+}
+
 /// 配置加载结果
 #[derive(Debug, Clone)]
 pub struct ConfigLoadResult {
@@ -36,6 +86,12 @@ pub struct ConfigLoadResult {
     pub summary: ConfigSummary,
     /// 加载时间戳
     pub load_time: chrono::DateTime<chrono::Utc>,
+    /// 配置文件路径
+    pub file_path: String,
+    /// 是否使用默认值
+    pub used_defaults: bool,
+    /// 警告信息
+    pub warnings: Vec<String>,
 }
 
 /// 配置摘要
