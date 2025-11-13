@@ -88,37 +88,6 @@ pub struct EngineHealth {
     pub error_message: Option<String>,
 }
 
-
-/// 基础搜索引擎实现
-#[async_trait]
-pub trait BaseEngine: SearchEngine {
-    /// 获取客户端
-    fn client(&self) -> &reqwest::Client;
-
-    /// 构建请求URL
-    fn build_url(&self, query: &SearchQuery) -> Result<String>;
-
-    /// 解析响应
-    async fn parse_response(&self, response: reqwest::Response, query: &SearchQuery) -> Result<SearchResult>;
-
-    /// 默认搜索实现
-    async fn search(&self, query: &SearchQuery) -> Result<SearchResult> {
-        // 验证查询
-        self.validate_query(query)?;
-
-        // 构建URL
-        let url = self.build_url(query)?;
-
-        // 发送请求
-        let response = self.client().get(&url).send().await?;
-
-        // 解析响应
-        let result = self.parse_response(response, query).await?;
-
-        Ok(result)
-    }
-}
-
 /// 可配置的搜索引擎
 pub trait ConfigurableEngine: SearchEngine {
     /// 配置类型
