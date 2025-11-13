@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use crate::derive::types::*;
+use std::collections::HashMap;
 use std::error::Error;
 
 /// 搜索引擎核心 trait
@@ -154,6 +155,58 @@ pub trait ConfigurableEngine: SearchEngine {
 
     /// 更新配置
     fn update_config(&mut self, config: Self::Config) -> Result<(), Box<dyn Error + Send + Sync>>;
+}
+
+/// 基于 request/response 模式的搜索引擎（类似 searxng）
+///
+/// 这个 trait 模仿 searxng 的引擎结构：
+/// - `request()` 方法准备请求参数
+/// - `response()` 方法解析响应
+#[async_trait]
+pub trait RequestResponseEngine: SearchEngine {
+    /// 响应类型（抽象）
+    type Response;
+
+    /// 准备请求参数（类似 searxng 的 request() 函数）
+    /// 
+    /// 接收查询字符串和请求参数，修改参数以设置 URL、headers 等
+    fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>>;
+
+    /// 发送请求并获取响应
+    /// 
+    /// 由实现者提供具体的 HTTP 请求逻辑
+    async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>>;
+
+    /// 解析响应为结果列表（类似 searxng 的 response() 函数）
+    /// 
+    /// 接收响应对象，返回搜索结果项列表
+    fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>>;
+
+    /// 默认搜索实现（使用 request/response 模式）
+    async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
+        let start_time = std::time::Instant::now();
+        
+        // 1. 准备请求参数
+        let mut params = RequestParams::from_query(query);
+        self.request(&query.query, &mut params)?;
+
+        // 2. 发送请求
+        let resp = self.fetch(&params).await?;
+
+        // 3. 解析响应
+        let items = self.response(resp)?;
+
+        // 4. 构建搜索结果
+        Ok(SearchResult {
+            engine_name: self.info().name.clone(),
+            total_results: None,
+            elapsed_ms: start_time.elapsed().as_millis() as u64,
+            items,
+            pagination: None,
+            suggestions: Vec::new(),
+            metadata: HashMap::new(),
+        })
+    }
 }
 
 /// 支持缓存的搜索引擎
