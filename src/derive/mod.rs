@@ -12,6 +12,7 @@ pub mod result;
 pub mod query;
 pub mod client;
 pub mod rate_limit;
+pub mod cache;
 pub mod macros;
 
 // 重新导出主要类型
@@ -22,3 +23,4 @@ pub use result::*;
 pub use query::*;
 pub use client::{HttpClient, ClientBuilder, ClientConfig};
 pub use rate_limit::{RateLimiter, RateLimiterConfig};
+pub use cache::{MemoryCache, CacheConfig};
