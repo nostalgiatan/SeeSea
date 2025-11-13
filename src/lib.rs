@@ -3,6 +3,7 @@
 //! 一个基于 Rust 实现的隐私保护型元搜索引擎
 
 pub mod config;
+pub mod cache;
 
 // 搜索引擎抽象骨架模块（可选特性）
 #[cfg(feature = "derive")]
