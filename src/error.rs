@@ -15,3 +15,9 @@ pub fn network_error(message: impl Into<String>) -> ErrorInfo {
     ErrorInfo::new(1000, message.into())
         .with_category(ErrorCategory::Network)
 }
+
+/// 创建搜索错误
+pub fn search_error(message: impl Into<String>) -> ErrorInfo {
+    ErrorInfo::new(2000, message.into())
+        .with_category(ErrorCategory::Search)
+}

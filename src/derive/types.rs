@@ -56,6 +56,22 @@ pub struct SearchQuery {
     pub params: HashMap<String, String>,
 }
 
+impl Default for SearchQuery {
+    fn default() -> Self {
+        Self {
+            query: String::new(),
+            engine_type: EngineType::default(),
+            language: None,
+            region: None,
+            page_size: 10,
+            page: 1,
+            safe_search: crate::config::common::SafeSearchLevel::Moderate,
+            time_range: None,
+            params: HashMap::new(),
+        }
+    }
+}
+
 /// 请求参数（类似 searxng 的 params）
 ///
 /// 用于构建和传递 HTTP 请求的参数
