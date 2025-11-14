@@ -11,6 +11,9 @@ pub mod yahoo;
 pub mod baidu;
 pub mod yandex;
 pub mod brave;
+pub mod qwant;
+pub mod startpage;
+pub mod mojeek;
 
 pub use duckduckgo::DuckDuckGoEngine;
 pub use google::GoogleEngine;
@@ -19,6 +22,9 @@ pub use yahoo::YahooEngine;
 pub use baidu::BaiduEngine;
 pub use yandex::YandexEngine;
 pub use brave::BraveEngine;
+pub use qwant::QwantEngine;
+pub use startpage::StartpageEngine;
+pub use mojeek::MojeekEngine;
 
 /// 搜索引擎注册表
 /// 
