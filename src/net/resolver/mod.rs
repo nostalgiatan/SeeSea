@@ -39,7 +39,7 @@ impl DnsResolver {
             // 使用 DoH
             match doh::resolve_via_doh(hostname, &self.config).await {
                 Ok(ips) => Ok(ips),
-                Err(e) if self.config.fallback_to_system => {
+                Err(_e) if self.config.fallback_to_system => {
                     // 回退到系统 DNS
                     self.resolve_system(hostname).await
                 }

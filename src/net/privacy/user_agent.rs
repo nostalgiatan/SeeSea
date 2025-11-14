@@ -37,7 +37,7 @@ impl UserAgentGenerator {
     ///
     /// 随机选择的 User-Agent 字符串引用
     pub fn random(&self) -> &str {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         self.user_agents
             .choose(&mut rng)
             .map(|s| s.as_str())
@@ -88,7 +88,7 @@ pub fn get_user_agent(config: &PrivacyConfig) -> String {
 /// 随机选择的 User-Agent 字符串
 pub fn get_random_user_agent() -> String {
     let agents = get_realistic_user_agents();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     
     agents
         .choose(&mut rng)

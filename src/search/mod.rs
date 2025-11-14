@@ -13,7 +13,7 @@ pub mod query;
 pub mod types;
 
 pub use aggregator::*;
-pub use engines::*;
+pub use engines::EngineRegistry;
 pub use on::*;
 pub use orchestrator::*;
 pub use query::*;
