@@ -3,6 +3,7 @@
 //! 提供浏览器指纹识别的对抗功能
 
 use crate::net::types::TlsFingerprintLevel;
+use rand::Rng;
 
 /// 指纹保护器
 pub struct FingerprintProtector {
@@ -57,8 +58,6 @@ impl FingerprintProtector {
     }
 
     fn apply_full_obfuscation(&self) -> ObfuscatedTlsParams {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        
         // 完全随机化 TLS 参数
         let mut base_params = self.apply_advanced_obfuscation();
         
@@ -69,14 +68,11 @@ impl FingerprintProtector {
             "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256".to_string(),
         ];
         
-        // 使用系统时间随机选择要添加的套件
-        let seed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as usize;
+        // 使用 rand crate 随机选择要添加的套件
+        let mut rng = rand::thread_rng();
         
         // 随机添加 1-3 个额外套件
-        let count = (seed % 3) + 1;
+        let count = rng.gen_range(1..=3);
         for i in 0..count.min(additional_suites.len()) {
             if !base_params.cipher_suites.contains(&additional_suites[i]) {
                 base_params.cipher_suites.push(additional_suites[i].clone());
@@ -111,43 +107,27 @@ impl Default for ObfuscatedTlsParams {
 /// 生成 Canvas 指纹混淆数据
 ///
 /// 用于对抗基于 Canvas 的浏览器指纹识别
+/// 使用 rand crate 生成高质量随机噪声
 ///
 /// # 返回
 ///
-/// 随机生成的噪声数据向量
+/// 随机生成的 256 字节噪声数据向量
 pub fn generate_canvas_noise() -> Vec<u8> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    
-    // 使用系统时间生成种子
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64;
-    
-    // 使用简单的伪随机数生成器生成噪声
-    // 对于生产环境，建议使用 rand crate
-    let mut noise = Vec::with_capacity(256);
-    let mut state = seed;
-    
-    for _ in 0..256 {
-        // 线性同余生成器
-        state = state.wrapping_mul(1103515245).wrapping_add(12345);
-        noise.push((state >> 16) as u8);
-    }
-    
+    let mut rng = rand::thread_rng();
+    let mut noise = vec![0u8; 256];
+    rng.fill(&mut noise[..]);
     noise
 }
 
 /// 生成 WebGL 指纹混淆数据
 ///
 /// 用于对抗基于 WebGL 的浏览器指纹识别
+/// 使用 rand crate 从真实渲染器列表中随机选择
 ///
 /// # 返回
 ///
 /// 随机选择的 WebGL 渲染器字符串
 pub fn generate_webgl_noise() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    
     // 常见的 WebGL 渲染器字符串
     let renderers = vec![
         "ANGLE (Intel, Intel(R) UHD Graphics 620, OpenGL 4.5)",
@@ -160,13 +140,9 @@ pub fn generate_webgl_noise() -> String {
         "ANGLE (AMD, Radeon RX Vega 8 Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
     ];
     
-    // 使用系统时间生成索引
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as usize;
-    
-    let index = seed % renderers.len();
+    // 使用 rand crate 随机选择
+    let mut rng = rand::thread_rng();
+    let index = rng.gen_range(0..renderers.len());
     renderers[index].to_string()
 }
 
@@ -205,7 +181,7 @@ mod tests {
     #[test]
     fn test_generate_canvas_noise() {
         let noise = generate_canvas_noise();
-        assert!(!noise.is_empty());
+        assert_eq!(noise.len(), 256);
     }
 
     #[test]

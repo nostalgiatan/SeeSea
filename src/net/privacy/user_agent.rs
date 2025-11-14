@@ -3,6 +3,7 @@
 //! 提供真实的浏览器 User-Agent 生成和轮换功能
 
 use crate::net::types::{PrivacyConfig, UserAgentStrategy};
+use rand::prelude::*;
 
 /// User-Agent 生成器
 pub struct UserAgentGenerator {
@@ -30,20 +31,17 @@ impl UserAgentGenerator {
 
     /// 获取随机 User-Agent
     ///
+    /// 使用 rand crate 提供高质量随机选择
+    ///
     /// # 返回
     ///
     /// 随机选择的 User-Agent 字符串引用
     pub fn random(&self) -> &str {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        
-        // 使用系统时间生成随机索引
-        let seed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as usize;
-        
-        let index = seed % self.user_agents.len();
-        &self.user_agents[index]
+        let mut rng = rand::thread_rng();
+        self.user_agents
+            .choose(&mut rng)
+            .map(|s| s.as_str())
+            .unwrap_or("Mozilla/5.0")
     }
 }
 
@@ -83,22 +81,19 @@ pub fn get_user_agent(config: &PrivacyConfig) -> String {
 
 /// 获取随机 User-Agent
 ///
+/// 使用 rand crate 提供高质量随机选择
+///
 /// # 返回
 ///
 /// 随机选择的 User-Agent 字符串
 pub fn get_random_user_agent() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    
     let agents = get_realistic_user_agents();
+    let mut rng = rand::thread_rng();
     
-    // 使用系统时间生成随机索引
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as usize;
-    
-    let index = seed % agents.len();
-    agents[index].clone()
+    agents
+        .choose(&mut rng)
+        .cloned()
+        .unwrap_or_else(|| agents[0].clone())
 }
 
 /// 获取真实的浏览器 User-Agent 列表
