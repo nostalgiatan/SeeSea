@@ -5,8 +5,10 @@ use std::sync::Arc;
 
 // 引入各个引擎实现
 pub mod duckduckgo;
+pub mod google;
 
 pub use duckduckgo::DuckDuckGoEngine;
+pub use google::GoogleEngine;
 
 /// 搜索引擎注册表
 /// 
