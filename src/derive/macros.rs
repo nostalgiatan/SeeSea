@@ -1,67 +1,62 @@
 //! 搜索引擎便利宏定义
 //!
-//! 提供简化搜索引擎实现的宏（暂时简化版本）
+//! 提供简化搜索引擎实现的宏
 
-/// 创建简单搜索引擎的宏
+/// 定义引擎元数据的宏（类似 searxng 的模块级变量）
+///
+/// # 示例
+///
+/// ```ignore
+/// engine_metadata! {
+///     name: "MyEngine",
+///     categories: ["general"],
+///     paging: true,
+///     time_range_support: false,
+///     safesearch: true,
+///     about: {
+///         website: "https://example.com",
+///         wikidata_id: "Q12345",
+///         use_official_api: false,
+///         require_api_key: false,
+///         results: "HTML"
+///     }
+/// }
+/// ```
 #[macro_export]
-macro_rules! simple_engine {
+macro_rules! engine_metadata {
     (
-        $(#[$struct_meta:meta])*
-        pub struct $name:ident {
-            client: reqwest::Client,
-            $($field:ident: $field_type:ty),* $(,)?
-        }
+        name: $name:expr,
+        categories: [$($category:expr),* $(,)?],
+        paging: $paging:expr,
+        time_range_support: $time_range:expr,
+        safesearch: $safesearch:expr
+        $(, about: {
+            website: $website:expr,
+            wikidata_id: $wikidata:expr,
+            use_official_api: $use_api:expr,
+            require_api_key: $require_key:expr,
+            results: $results:expr
+        })?
+        $(,)?
     ) => {
-        $(#[$struct_meta])*
-        pub struct $name {
-            client: reqwest::Client,
-            $($field: $field_type),*
-        }
-
-        impl $name {
-            /// 创建新的搜索引擎实例
-            pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-                let client = reqwest::Client::builder()
-                    .user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")))
-                    .timeout(std::time::Duration::from_secs(30))
-                    .build()?;
-
-                Ok(Self {
-                    client,
-                    $($field: Default::default()),*
-                })
-            }
-
-            /// 带自定义客户端的构造函数
-            pub fn with_client(client: reqwest::Client) -> Self {
-                Self {
-                    client,
-                    $($field: Default::default()),*
+        pub const ENGINE_NAME: &str = $name;
+        pub const CATEGORIES: &[&str] = &[$($category),*];
+        pub const PAGING: bool = $paging;
+        pub const TIME_RANGE_SUPPORT: bool = $time_range;
+        pub const SAFESEARCH: bool = $safesearch;
+        
+        $(
+            pub fn about_info() -> $crate::derive::AboutInfo {
+                $crate::derive::AboutInfo {
+                    website: Some($website.to_string()),
+                    wikidata_id: Some($wikidata.to_string()),
+                    use_official_api: $use_api,
+                    require_api_key: $require_key,
+                    results: $results.to_string(),
+                    official_api_documentation: None,
                 }
             }
-
-            /// 带超时时间的构造函数
-            pub fn with_timeout(timeout_secs: u64) -> Result<Self, Box<dyn std::error::Error>> {
-                let client = reqwest::Client::builder()
-                    .user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")))
-                    .timeout(std::time::Duration::from_secs(timeout_secs))
-                    .build()?;
-
-                Ok(Self {
-                    client,
-                    $($field: Default::default()),*
-                })
-            }
-        }
-
-        impl Default for $name {
-            fn default() -> Self {
-                Self {
-                    client: reqwest::Client::new(),
-                    $($field: Default::default()),*
-                }
-            }
-        }
+        )?
     };
 }
 

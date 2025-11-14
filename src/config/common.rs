@@ -104,7 +104,7 @@ pub enum AuthType {
 }
 
 /// 日志级别
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     /// 错误级别
@@ -169,7 +169,7 @@ pub struct BaseEngineConfig {
 }
 
 /// 配置验证结果
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ConfigValidationResult {
     /// 是否验证通过
     pub is_valid: bool,
@@ -187,6 +187,11 @@ impl ConfigValidationResult {
             errors: Vec::new(),
             warnings: Vec::new(),
         }
+    }
+    
+    /// 创建有效的验证结果（别名，兼容性）
+    pub fn valid() -> Self {
+        Self::success()
     }
 
     /// 创建失败的验证结果

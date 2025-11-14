@@ -1,6 +1,6 @@
 //! 引擎配置类型定义
 
-use crate::config::common::{BaseEngineConfig, ConfigValidationResult, EngineType};
+use crate::config::common::{BaseEngineConfig, ConfigValidationResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

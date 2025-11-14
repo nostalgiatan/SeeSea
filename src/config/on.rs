@@ -77,16 +77,19 @@ impl ConfigManager {
     pub async fn load_config(&self) -> Result<ConfigLoadResult, ConfigError> {
         let config = Self::load_from_file(&self.config_path).await?;
         let validation_result = config.validate();
+        let summary = config.get_summary();
 
         let load_result = ConfigLoadResult {
-            file_path: self.config_path.clone(),
+            file_path: self.config_path.to_string_lossy().to_string(),
             used_defaults: !self.config_path.exists(),
             warnings: validation_result.warnings.clone(),
             config: config.clone(),
+            summary,
+            load_time: chrono::Utc::now(),
         };
 
         if !validation_result.is_valid {
-            return Err(ConfigError::ValidationFailed(validation_result.errors));
+            return Err(ConfigError::Validation(validation_result));
         }
 
         // 更新配置
@@ -210,24 +213,26 @@ static GLOBAL_CONFIG: std::sync::OnceLock<Arc<ConfigManager>> = std::sync::OnceL
 
 /// 初始化全局配置管理器
 pub async fn init_config() -> Result<Arc<ConfigManager>, ConfigError> {
-    GLOBAL_CONFIG
-        .get_or_try_init(|| async { ConfigManager::new(None).await.map(Arc::new) })
-        .await
-        .cloned()
+    if let Some(config) = GLOBAL_CONFIG.get() {
+        return Ok(config.clone());
+    }
+    
+    let manager = Arc::new(ConfigManager::new(None).await?);
+    let _ = GLOBAL_CONFIG.set(manager.clone());
+    Ok(manager)
 }
 
 /// 初始化带环境的全局配置管理器
 pub async fn init_config_with_env(
     environment: &str,
 ) -> Result<Arc<ConfigManager>, ConfigError> {
-    GLOBAL_CONFIG
-        .get_or_try_init(|| async {
-            ConfigManager::with_environment(None, environment)
-                .await
-                .map(Arc::new)
-        })
-        .await
-        .cloned()
+    if let Some(config) = GLOBAL_CONFIG.get() {
+        return Ok(config.clone());
+    }
+    
+    let manager = Arc::new(ConfigManager::with_environment(None, environment).await?);
+    let _ = GLOBAL_CONFIG.set(manager.clone());
+    Ok(manager)
 }
 
 /// 获取全局配置管理器
@@ -237,17 +242,26 @@ pub fn get_global_config() -> Option<Arc<ConfigManager>> {
 
 /// 便利函数：获取当前配置
 pub async fn get_config() -> Option<SeeSeaConfig> {
-    get_global_config().map(|manager| manager.get_config().await)
+    match get_global_config() {
+        Some(manager) => Some(manager.get_config().await),
+        None => None,
+    }
 }
 
 /// 便利函数：验证当前配置
 pub async fn validate_config() -> Option<ConfigValidationResult> {
-    get_global_config().map(|manager| manager.validate().await)
+    match get_global_config() {
+        Some(manager) => Some(manager.validate().await),
+        None => None,
+    }
 }
 
 /// 便利函数：检查生产就绪
 pub async fn is_production_ready() -> Option<bool> {
-    get_global_config().map(|manager| manager.is_production_ready().await)
+    match get_global_config() {
+        Some(manager) => Some(manager.is_production_ready().await),
+        None => None,
+    }
 }
 
 

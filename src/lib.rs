@@ -2,24 +2,25 @@
 //!
 //! 一个基于 Rust 实现的隐私保护型元搜索引擎
 
-pub mod config;
+// 重新导出 error crate
+pub use error as error_crate;
 
-// 搜索引擎抽象骨架模块（可选特性）
-#[cfg(feature = "derive")]
+pub mod error;
+pub mod config;
+pub mod cache;
 pub mod derive;
+pub mod net;
+
+// 创建便利的 Error 和 Result 类型别名
+pub type Error = error_crate::ErrorInfo;
+pub type Result<T> = error_crate::Result<T>;
 
 // 重新导出主要类型
-pub use config::*;
-
-// 重新导出 derive 模块类型（可选特性）
-#[cfg(feature = "derive")]
-pub use derive::*;
-
-// 导入error模块供其他模块使用
+pub use config::{SeeSeaConfig, ConfigManager, ConfigError};
+pub use cache::{CacheInterface, CacheImplConfig, CacheMode};
+pub use derive::{
+    SearchEngine, SearchQuery, SearchResult, EngineInfo,
+    QueryBuilder, ResultParser,
+};
+pub use net::{NetworkInterface, NetworkConfig, HttpClient};
 pub mod search;
-
-// 公开error_derive宏
-#[cfg(feature = "derive")]
-pub extern crate error_derive;
-#[cfg(feature = "derive")]
-pub use error_derive::Error;

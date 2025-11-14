@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use async_trait::async_trait;
 
 /// 搜索引擎类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -57,6 +56,86 @@ pub struct SearchQuery {
     pub params: HashMap<String, String>,
 }
 
+impl Default for SearchQuery {
+    fn default() -> Self {
+        Self {
+            query: String::new(),
+            engine_type: EngineType::default(),
+            language: None,
+            region: None,
+            page_size: 10,
+            page: 1,
+            safe_search: crate::config::common::SafeSearchLevel::Moderate,
+            time_range: None,
+            params: HashMap::new(),
+        }
+    }
+}
+
+/// 请求参数（类似 searxng 的 params）
+///
+/// 用于构建和传递 HTTP 请求的参数
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestParams {
+    /// 请求 URL（在 request() 函数中设置）
+    pub url: Option<String>,
+    /// HTTP 方法
+    pub method: String,
+    /// HTTP 头
+    pub headers: HashMap<String, String>,
+    /// POST 数据
+    pub data: Option<HashMap<String, String>>,
+    /// Cookies
+    pub cookies: HashMap<String, String>,
+    /// 页码
+    pub pageno: usize,
+    /// 语言
+    pub language: Option<String>,
+    /// 时间范围
+    pub time_range: Option<String>,
+    /// 安全搜索级别（0, 1, 2）
+    pub safesearch: i32,
+    /// 自定义参数
+    pub custom: HashMap<String, String>,
+}
+
+impl Default for RequestParams {
+    fn default() -> Self {
+        Self {
+            url: None,
+            method: "GET".to_string(),
+            headers: HashMap::new(),
+            data: None,
+            cookies: HashMap::new(),
+            pageno: 1,
+            language: None,
+            time_range: None,
+            safesearch: 0,
+            custom: HashMap::new(),
+        }
+    }
+}
+
+impl RequestParams {
+    /// 从 SearchQuery 创建 RequestParams
+    pub fn from_query(query: &SearchQuery) -> Self {
+        let mut params = Self::default();
+        params.pageno = query.page;
+        params.language = query.language.clone();
+        params.time_range = query.time_range.map(|tr| format!("{:?}", tr).to_lowercase());
+        
+        // 将 SafeSearchLevel 转换为数字
+        params.safesearch = match query.safe_search {
+            crate::config::common::SafeSearchLevel::None => 0,
+            crate::config::common::SafeSearchLevel::Moderate => 1,
+            crate::config::common::SafeSearchLevel::Strict => 2,
+        };
+        
+        params.custom = query.params.clone();
+        params
+    }
+}
+
 /// 时间范围
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -81,6 +160,42 @@ impl Default for TimeRange {
     }
 }
 
+/// 结果类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ResultType {
+    /// 网页
+    Web,
+    /// 图片
+    Image,
+    /// 视频
+    Video,
+    /// 新闻
+    News,
+    /// 学术论文
+    Academic,
+    /// 代码
+    Code,
+    /// 购物
+    Shopping,
+    /// 音乐
+    Music,
+    /// 种子文件/Torrent
+    Torrent,
+    /// 文件
+    File,
+    /// 地图/位置
+    Map,
+    /// 其他
+    Other,
+}
+
+impl Default for ResultType {
+    fn default() -> Self {
+        Self::Web
+    }
+}
+
 /// 搜索结果项
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResultItem {
@@ -102,36 +217,10 @@ pub struct SearchResultItem {
     pub thumbnail: Option<String>,
     /// 发布时间（如果有）
     pub published_date: Option<chrono::DateTime<chrono::Utc>>,
-    /// 元数据
+    /// 模板名称（用于特殊显示，如 torrent.html）
+    pub template: Option<String>,
+    /// 元数据（可扩展字段，如种子的 seed/leech/filesize 等）
     pub metadata: HashMap<String, String>,
-}
-
-/// 结果类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ResultType {
-    /// 网页
-    Web,
-    /// 图片
-    Image,
-    /// 视频
-    Video,
-    /// 新闻
-    News,
-    /// 学术论文
-    Academic,
-    /// 代码
-    Code,
-    /// 购物
-    Shopping,
-    /// 音乐
-    Music,
-}
-
-impl Default for ResultType {
-    fn default() -> Self {
-        Self::Web
-    }
 }
 
 /// 搜索结果
@@ -211,6 +300,38 @@ impl Default for EngineStatus {
     }
 }
 
+/// 引擎关于信息（类似 searxng 的 about 字段）
+///
+/// 提供引擎的元数据信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AboutInfo {
+    /// 官方网站
+    pub website: Option<String>,
+    /// Wikidata ID
+    pub wikidata_id: Option<String>,
+    /// 官方 API 文档链接
+    pub official_api_documentation: Option<String>,
+    /// 是否使用官方 API
+    pub use_official_api: bool,
+    /// 是否需要 API 密钥
+    pub require_api_key: bool,
+    /// 结果格式（HTML, JSON, XML 等）
+    pub results: String,
+}
+
+impl Default for AboutInfo {
+    fn default() -> Self {
+        Self {
+            website: None,
+            wikidata_id: None,
+            official_api_documentation: None,
+            use_official_api: false,
+            require_api_key: false,
+            results: "HTML".to_string(),
+        }
+    }
+}
+
 /// 搜索引擎信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineInfo {
@@ -220,20 +341,34 @@ pub struct EngineInfo {
     pub engine_type: EngineType,
     /// 引擎描述
     pub description: String,
-    /// 官方网站
-    pub website: Option<String>,
     /// 引擎状态
     pub status: EngineStatus,
     /// 引擎分类
     pub categories: Vec<String>,
     /// 引擎能力
     pub capabilities: EngineCapabilities,
+    /// 关于信息
+    pub about: AboutInfo,
+    /// 快捷键（用于快速选择引擎）
+    pub shortcut: Option<String>,
     /// 超时时间（秒）
     pub timeout: Option<u64>,
+    /// 是否禁用
+    pub disabled: bool,
+    /// 是否不活跃
+    pub inactive: bool,
     /// 版本信息
     pub version: Option<String>,
     /// 最后检查时间
     pub last_checked: Option<chrono::DateTime<chrono::Utc>>,
+    /// 是否通过 Tor 代理
+    pub using_tor_proxy: bool,
+    /// 是否显示错误消息
+    pub display_error_messages: bool,
+    /// Token 列表（用于某些需要认证的引擎）
+    pub tokens: Vec<String>,
+    /// 最大页码限制（0 表示无限制）
+    pub max_page: usize,
 }
 
 /// 验证错误

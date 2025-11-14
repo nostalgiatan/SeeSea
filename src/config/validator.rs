@@ -5,7 +5,6 @@
 use crate::config::{
     SeeSeaConfig, ConfigValidationResult, Environment, LogLevel, EngineLoadingMode,
 };
-use std::collections::HashMap;
 
 /// 配置验证器
 pub struct ConfigValidator {
@@ -118,7 +117,7 @@ impl ConfigValidator {
                     result.add_warning("预生产环境不建议启用调试模式".to_string());
                 }
 
-                if !config.logging.level == LogLevel::Info {
+                if config.logging.level != LogLevel::Info {
                     result.add_warning("预生产环境建议使用 Info 日志级别".to_string());
                 }
             }
@@ -512,6 +511,13 @@ pub struct ValidationRule {
     pub name: String,
     /// 验证器
     pub validator: Box<dyn Fn(&SeeSeaConfig) -> ConfigValidationResult + Send + Sync>,
+}
+
+impl ValidationRule {
+    /// 执行验证
+    pub fn validate(&self, config: &SeeSeaConfig) -> ConfigValidationResult {
+        (self.validator)(config)
+    }
 }
 
 /// 验证器配置

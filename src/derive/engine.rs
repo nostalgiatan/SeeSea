@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use crate::derive::types::*;
+use std::collections::HashMap;
 use std::error::Error;
 
 /// 搜索引擎核心 trait
@@ -73,30 +74,69 @@ pub struct EngineHealth {
 }
 
 
-/// 基础搜索引擎实现
+/// 基础搜索引擎实现模板
+///
+/// 这个 trait 提供了基于 HTTP 请求的搜索引擎的抽象模板。
+/// 具体的 HTTP 客户端实现应该在 `net/client/` 模块中提供。
+///
+/// # 设计说明
+///
+/// - `HttpClient`: 关联类型，表示 HTTP 客户端的抽象
+/// - `HttpResponse`: 关联类型，表示 HTTP 响应的抽象
+/// 
+/// 这种设计允许不同的 HTTP 客户端实现（如 reqwest, hyper 等）
+/// 都可以通过实现这些关联类型来使用此模板。
 #[async_trait]
 pub trait BaseEngine: SearchEngine {
-    /// 获取客户端
-    fn client(&self) -> &reqwest::Client;
+    /// HTTP 客户端类型（抽象）
+    /// 
+    /// 具体实现应由 net/client 模块提供
+    type HttpClient;
+    
+    /// HTTP 响应类型（抽象）
+    /// 
+    /// 具体实现应由 net/client 模块提供
+    type HttpResponse;
 
-    /// 构建请求URL
+    /// 获取 HTTP 客户端引用
+    fn http_client(&self) -> &Self::HttpClient;
+
+    /// 构建请求 URL
+    /// 
+    /// 根据查询参数构建完整的搜索引擎 API URL
     fn build_url(&self, query: &SearchQuery) -> Result<String, ValidationError>;
 
-    /// 解析响应
-    async fn parse_response(&self, response: reqwest::Response, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
+    /// 发送 HTTP GET 请求
+    /// 
+    /// 这是一个抽象方法，具体的 HTTP 请求逻辑由实现者提供。
+    /// 通常会调用 net/client 模块的功能。
+    async fn http_get(&self, url: &str) -> Result<Self::HttpResponse, Box<dyn Error + Send + Sync>>;
 
-    /// 默认搜索实现
+    /// 解析 HTTP 响应为搜索结果
+    /// 
+    /// 将搜索引擎返回的原始响应解析为标准化的 SearchResult
+    async fn parse_response(&self, response: Self::HttpResponse, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
+
+    /// 默认搜索实现（使用模板方法模式）
+    /// 
+    /// 这个方法提供了标准的搜索流程：
+    /// 1. 验证查询参数
+    /// 2. 构建请求 URL
+    /// 3. 发送 HTTP 请求
+    /// 4. 解析响应
+    /// 
+    /// 实现者只需要实现抽象方法即可复用这个流程。
     async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
-        // 验证查询
+        // 1. 验证查询参数
         self.validate_query(query)?;
 
-        // 构建URL
+        // 2. 构建请求 URL
         let url = self.build_url(query)?;
 
-        // 发送请求
-        let response = self.client().get(&url).send().await?;
+        // 3. 发送 HTTP 请求（抽象方法，由实现者提供）
+        let response = self.http_get(&url).await?;
 
-        // 解析响应
+        // 4. 解析响应
         let result = self.parse_response(response, query).await?;
 
         Ok(result)
@@ -115,6 +155,58 @@ pub trait ConfigurableEngine: SearchEngine {
 
     /// 更新配置
     fn update_config(&mut self, config: Self::Config) -> Result<(), Box<dyn Error + Send + Sync>>;
+}
+
+/// 基于 request/response 模式的搜索引擎（类似 searxng）
+///
+/// 这个 trait 模仿 searxng 的引擎结构：
+/// - `request()` 方法准备请求参数
+/// - `response()` 方法解析响应
+#[async_trait]
+pub trait RequestResponseEngine: SearchEngine {
+    /// 响应类型（抽象）
+    type Response;
+
+    /// 准备请求参数（类似 searxng 的 request() 函数）
+    /// 
+    /// 接收查询字符串和请求参数，修改参数以设置 URL、headers 等
+    fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>>;
+
+    /// 发送请求并获取响应
+    /// 
+    /// 由实现者提供具体的 HTTP 请求逻辑
+    async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>>;
+
+    /// 解析响应为结果列表（类似 searxng 的 response() 函数）
+    /// 
+    /// 接收响应对象，返回搜索结果项列表
+    fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>>;
+
+    /// 默认搜索实现（使用 request/response 模式）
+    async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
+        let start_time = std::time::Instant::now();
+        
+        // 1. 准备请求参数
+        let mut params = RequestParams::from_query(query);
+        self.request(&query.query, &mut params)?;
+
+        // 2. 发送请求
+        let resp = self.fetch(&params).await?;
+
+        // 3. 解析响应
+        let items = self.response(resp)?;
+
+        // 4. 构建搜索结果
+        Ok(SearchResult {
+            engine_name: self.info().name.clone(),
+            total_results: None,
+            elapsed_ms: start_time.elapsed().as_millis() as u64,
+            items,
+            pagination: None,
+            suggestions: Vec::new(),
+            metadata: HashMap::new(),
+        })
+    }
 }
 
 /// 支持缓存的搜索引擎

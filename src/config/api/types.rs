@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 /// API 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiConfig {
+    /// 是否启用 API
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     /// API 版本
     pub version: String,
     /// 是否启用 CORS
@@ -26,6 +29,44 @@ pub struct ApiConfig {
     pub security: SecurityConfig,
     /// API 文档配置
     pub documentation: DocumentationConfig,
+    /// 指标配置
+    pub metrics: MetricsConfig,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// 指标配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetricsConfig {
+    /// 是否启用指标
+    #[serde(default)]
+    pub enabled: bool,
+    /// 指标端口
+    #[serde(default = "default_metrics_port")]
+    pub port: u16,
+    /// 指标路径
+    #[serde(default = "default_metrics_path")]
+    pub path: String,
+}
+
+fn default_metrics_port() -> u16 {
+    9090
+}
+
+fn default_metrics_path() -> String {
+    "/metrics".to_string()
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: default_metrics_port(),
+            path: default_metrics_path(),
+        }
+    }
 }
 
 /// CORS 配置
@@ -526,9 +567,140 @@ pub enum DocumentationType {
     Custom,
 }
 
+
+impl Default for RouteConfig {
+    fn default() -> Self {
+        Self {
+            base_path: "/api".to_string(),
+            versioning: VersioningStrategy::None,
+            custom_routes: vec![],
+            route_groups: vec![],
+        }
+    }
+}
+
+impl Default for MiddlewareConfig {
+    fn default() -> Self {
+        Self {
+            enabled: vec!["cors".to_string(), "logging".to_string()],
+            configs: std::collections::HashMap::new(),
+            order: vec!["cors".to_string(), "logging".to_string()],
+        }
+    }
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            force_https: true,
+            security_headers: SecurityHeadersConfig::default(),
+            input_validation: InputValidationConfig::default(),
+            output_filtering: OutputFilteringConfig::default(),
+        }
+    }
+}
+
+impl Default for SecurityHeadersConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            custom_headers: std::collections::HashMap::new(),
+        }
+    }
+}
+
+impl Default for InputValidationConfig {
+    fn default() -> Self {
+        Self {
+            max_query_length: 1000,
+            allowed_characters: String::new(),
+            enable_sql_injection_protection: true,
+            enable_xss_protection: true,
+        }
+    }
+}
+
+impl Default for OutputFilteringConfig {
+    fn default() -> Self {
+        Self {
+            enable_content_filtering: true,
+            filter_rules: vec![],
+        }
+    }
+}
+
+impl Default for DocumentationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            doc_type: DocumentationType::OpenApi3,
+            path: "/docs".to_string(),
+            include_examples: true,
+            custom_css: None,
+        }
+    }
+}
+
+impl Default for ApiKeyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_keys: vec![],
+            header_name: "X-API-Key".to_string(),
+            query_param: "api_key".to_string(),
+            key_prefix: "sk_".to_string(),
+        }
+    }
+}
+
+impl Default for JwtConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            secret: String::new(),
+            algorithm: JwtAlgorithm::HS256,
+            expiry: 3600,
+            refresh_expiry: 86400,
+            issuer: "SeeSea".to_string(),
+            audience: "SeeSea".to_string(),
+        }
+    }
+}
+
+impl Default for BasicAuthConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            users: vec![],
+            realm: "SeeSea API".to_string(),
+        }
+    }
+}
+
+impl Default for ResponseCompressionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            algorithms: vec!["gzip".to_string(), "deflate".to_string()],
+            threshold: 1024,
+        }
+    }
+}
+
+impl Default for PaginationConfig {
+    fn default() -> Self {
+        Self {
+            default_page_size: 10,
+            max_page_size: 100,
+            page_param: "page".to_string(),
+            page_size_param: "page_size".to_string(),
+        }
+    }
+}
 impl Default for ApiConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
             version: "v1".to_string(),
             enable_cors: true,
             cors: CorsConfig::default(),
@@ -539,6 +711,7 @@ impl Default for ApiConfig {
             middleware: MiddlewareConfig::default(),
             security: SecurityConfig::default(),
             documentation: DocumentationConfig::default(),
+            metrics: MetricsConfig::default(),
         }
     }
 }
