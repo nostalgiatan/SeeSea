@@ -2,7 +2,7 @@
 //!
 //! 提供 HTTP、SOCKS5、Tor 等代理配置
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::net::types::{ProxyConfig, ProxyType};
 use reqwest::ClientBuilder;
 

@@ -2,7 +2,7 @@
 //!
 //! 提供 Tor 网络的集成和管理功能
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::net::types::ProxyConfig;
 
 /// Tor 连接管理器

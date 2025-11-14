@@ -2,8 +2,6 @@
 //!
 //! 负责解析和分析搜索查询，识别查询意图、语言、地区等
 
-use crate::derive::SearchQuery;
-
 /// 查询意图
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QueryIntent {

@@ -5,7 +5,7 @@
 pub mod doh;
 pub mod pool;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::net::types::DohConfig;
 use std::net::IpAddr;
 

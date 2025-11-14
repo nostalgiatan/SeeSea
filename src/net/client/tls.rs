@@ -2,7 +2,7 @@
 //!
 //! 提供 TLS 配置和浏览器指纹对抗功能
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::net::types::{TlsConfig, TlsFingerprintLevel};
 use rand::seq::SliceRandom;
 use reqwest::ClientBuilder;
@@ -92,7 +92,7 @@ pub fn randomize_tls_extensions() -> Vec<u16> {
     ];
 
     // 使用 rand crate 的 shuffle 方法（基于 Fisher-Yates 算法）
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     extensions.shuffle(&mut rng);
     
     extensions

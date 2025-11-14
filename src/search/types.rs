@@ -41,6 +41,10 @@ pub struct SearchResponse {
     pub total_count: usize,
     /// 查询时间（毫秒）
     pub query_time_ms: u64,
+    /// 原始查询
+    pub query: SearchQuery,
+    /// 是否从缓存获取
+    pub cached: bool,
 }
 
 /// 搜索配置

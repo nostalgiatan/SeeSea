@@ -2,7 +2,7 @@
 //!
 //! 提供基于 HTTPS 的 DNS 查询功能
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::net::types::DohConfig;
 use std::net::IpAddr;
 

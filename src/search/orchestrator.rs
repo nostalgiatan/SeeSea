@@ -9,7 +9,7 @@ use tokio::time::timeout;
 
 use crate::cache::CacheInterface;
 use crate::derive::{SearchEngine, SearchQuery, SearchResult};
-use crate::error::network_error;
+use crate::error::search_error;
 use crate::net::NetworkInterface;
 
 use super::types::{SearchRequest, SearchResponse, SearchConfig};

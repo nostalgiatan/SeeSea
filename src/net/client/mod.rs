@@ -6,7 +6,7 @@ pub mod pool;
 pub mod proxy;
 pub mod tls;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::net::types::{NetworkConfig, RequestOptions};
 use reqwest::{Client, ClientBuilder, Response};
 use std::sync::Arc;
