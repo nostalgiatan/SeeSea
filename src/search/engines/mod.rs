@@ -7,10 +7,14 @@ use std::sync::Arc;
 pub mod duckduckgo;
 pub mod google;
 pub mod bing;
+pub mod yahoo;
+pub mod baidu;
 
 pub use duckduckgo::DuckDuckGoEngine;
 pub use google::GoogleEngine;
 pub use bing::BingEngine;
+pub use yahoo::YahooEngine;
+pub use baidu::BaiduEngine;
 
 /// 搜索引擎注册表
 /// 
