@@ -70,6 +70,8 @@ pub enum ErrorCategory {
     Io,
     /// 网络错误
     Network,
+    /// 搜索错误
+    Search,
     /// 解析错误
     Parse,
     /// 验证错误
@@ -93,6 +95,7 @@ impl fmt::Display for ErrorCategory {
         match self {
             ErrorCategory::Io => write!(f, "IO错误"),
             ErrorCategory::Network => write!(f, "网络错误"),
+            ErrorCategory::Search => write!(f, "搜索错误"),
             ErrorCategory::Parse => write!(f, "解析错误"),
             ErrorCategory::Validation => write!(f, "验证错误"),
             ErrorCategory::Permission => write!(f, "权限错误"),
