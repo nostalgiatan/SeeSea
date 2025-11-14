@@ -23,3 +23,4 @@ pub use derive::{
     QueryBuilder, ResultParser,
 };
 pub use net::{NetworkInterface, NetworkConfig, HttpClient};
+pub mod search;

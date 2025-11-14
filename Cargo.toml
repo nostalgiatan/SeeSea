@@ -22,7 +22,7 @@ num_cpus = "1.17.0"
 proc-macro2 = { version = "1.0.103", optional = true }
 quote = { version = "1.0.42", optional = true }
 reqwest = { version = "0.12.24", features = ["brotli", "cookies", "deflate", "gzip", "json", "rustls-tls", "stream"] }
-scraper = { version = "0.24.0", optional = true }
+scraper = { version = "0.24.0", optional = true, features = ["default"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 sled = { version = "0.34.7", default-features = false }
