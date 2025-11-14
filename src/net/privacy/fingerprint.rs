@@ -141,7 +141,7 @@ pub fn generate_webgl_noise() -> String {
     ];
     
     // 使用 rand crate 随机选择
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let index = rng.gen_range(0..renderers.len());
     renderers[index].to_string()
 }
