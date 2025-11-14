@@ -144,7 +144,7 @@ impl SearchOrchestrator {
             let engine_name = &engine.info().name;
             if let Some(result) = results_cache
                 .get(query, engine_name)
-                .map_err(|e| search_error(&format!("缓存读取失败: {}", e)))?
+                .map_err(|e| format!("缓存读取失败: {}", e))?
             {
                 all_results.push(result);
                 engines_used.push(engine_name.clone());
@@ -152,10 +152,11 @@ impl SearchOrchestrator {
         }
 
         if !all_results.is_empty() {
+            let total_count: usize = all_results.iter().map(|r| r.items.len()).sum();
             Ok(Some(SearchResponse {
                 query: query.clone(),
                 results: all_results,
-                total_count: all_results.iter().map(|r| r.items.len()).sum(),
+                total_count,
                 engines_used,
                 query_time_ms: 0,
                 cached: true,
@@ -177,7 +178,7 @@ impl SearchOrchestrator {
         for (result, engine_name) in response.results.iter().zip(&response.engines_used) {
             results_cache
                 .set(query, engine_name, result, None)
-                .map_err(|e| search_error(&format!("缓存写入失败: {}", e)))?;
+                .map_err(|e| format!("缓存写入失败: {}", e))?;
         }
 
         Ok(())
@@ -194,8 +195,8 @@ impl SearchOrchestrator {
 
         for engine in &self.engines {
             let engine_info = engine.info().clone();
-            let query_clone = query.clone();
-            let timeout_duration = Duration::from_secs(self.config.timeout_secs);
+            let _query_clone = query.clone();
+            let timeout_duration = Duration::from_secs(self.config.default_timeout.as_secs());
             let stats = Arc::clone(&self.stats);
 
             // 为每个引擎创建一个异步任务
@@ -205,12 +206,13 @@ impl SearchOrchestrator {
                     // 实际执行搜索的逻辑将在具体引擎中实现
                     // 这里返回空结果作为占位符
                     Ok::<SearchResult, Box<dyn std::error::Error + Send + Sync>>(SearchResult {
-                        query: query_clone.clone(),
+                        engine_name: engine_info.name.clone(),
+                        total_results: Some(0),
+                        elapsed_ms: 0,
                         items: Vec::new(),
-                        engine: engine_info.name.clone(),
-                        total_results: 0,
-                        page: 1,
-                        has_next_page: false,
+                        pagination: None,
+                        suggestions: Vec::new(),
+                        metadata: std::collections::HashMap::new(),
                     })
                 })
                 .await
@@ -242,7 +244,7 @@ impl SearchOrchestrator {
             .collect();
 
         if successful_results.is_empty() {
-            return Err(search_error("所有引擎都失败了"));
+            return Err("所有引擎都失败了".into());
         }
 
         Ok(successful_results)

@@ -3,6 +3,29 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+// 引入各个引擎实现
+pub mod duckduckgo;
+pub mod google;
+pub mod bing;
+pub mod yahoo;
+pub mod baidu;
+pub mod yandex;
+pub mod brave;
+pub mod qwant;
+pub mod startpage;
+pub mod mojeek;
+
+pub use duckduckgo::DuckDuckGoEngine;
+pub use google::GoogleEngine;
+pub use bing::BingEngine;
+pub use yahoo::YahooEngine;
+pub use baidu::BaiduEngine;
+pub use yandex::YandexEngine;
+pub use brave::BraveEngine;
+pub use qwant::QwantEngine;
+pub use startpage::StartpageEngine;
+pub use mojeek::MojeekEngine;
+
 /// 搜索引擎注册表
 /// 
 /// 用于管理和注册搜索引擎实例

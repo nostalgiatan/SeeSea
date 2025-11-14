@@ -45,27 +45,31 @@ impl SearchAggregator {
 
     /// 聚合多个搜索结果
     pub fn aggregate(&self, results: Vec<SearchResult>) -> SearchResult {
+        use std::collections::HashMap;
+        
         if results.is_empty() {
             return SearchResult {
-                query: crate::derive::SearchQuery::default(),
+                engine_name: "aggregated".to_string(),
+                total_results: Some(0),
+                elapsed_ms: 0,
                 items: Vec::new(),
-                engine: "aggregated".to_string(),
-                total_results: 0,
-                page: 1,
-                has_next_page: false,
+                pagination: None,
+                suggestions: Vec::new(),
+                metadata: HashMap::new(),
             };
         }
 
-        let query = results[0].query.clone();
         let items = self.deduplicate_and_merge(results);
+        let total_results = items.len();
 
         SearchResult {
-            query,
+            engine_name: "aggregated".to_string(),
+            total_results: Some(total_results),
+            elapsed_ms: 0,
             items,
-            engine: "aggregated".to_string(),
-            total_results: 0,
-            page: 1,
-            has_next_page: false,
+            pagination: None,
+            suggestions: Vec::new(),
+            metadata: HashMap::new(),
         }
     }
 
@@ -146,17 +150,21 @@ impl Default for SearchAggregator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::derive::{SearchQuery, SearchResultItem, ResultType};
+    use crate::derive::{SearchResultItem, ResultType};
 
     fn create_test_item(url: &str, title: &str) -> SearchResultItem {
         SearchResultItem {
             title: title.to_string(),
             url: url.to_string(),
-            description: Some("test".to_string()),
-            result_type: ResultType::Web,
+            content: "test".to_string(),
+            display_url: None,
+            site_name: None,
             score: 1.0,
-            metadata: std::collections::HashMap::new(),
+            result_type: ResultType::Web,
+            thumbnail: None,
+            published_date: None,
             template: None,
+            metadata: std::collections::HashMap::new(),
         }
     }
 
@@ -176,31 +184,34 @@ mod tests {
 
     #[test]
     fn test_deduplication() {
+        use std::collections::HashMap;
+        
         let agg = SearchAggregator::default();
-        let query = SearchQuery::default();
         
         let result1 = SearchResult {
-            query: query.clone(),
+            engine_name: "engine1".to_string(),
+            total_results: Some(2),
+            elapsed_ms: 100,
             items: vec![
                 create_test_item("https://example.com/1", "Title 1"),
                 create_test_item("https://example.com/2", "Title 2"),
             ],
-            engine: "engine1".to_string(),
-            total_results: 2,
-            page: 1,
-            has_next_page: false,
+            pagination: None,
+            suggestions: Vec::new(),
+            metadata: HashMap::new(),
         };
 
         let result2 = SearchResult {
-            query: query.clone(),
+            engine_name: "engine2".to_string(),
+            total_results: Some(2),
+            elapsed_ms: 150,
             items: vec![
                 create_test_item("https://example.com/1", "Title 1"), // 重复
                 create_test_item("https://example.com/3", "Title 3"),
             ],
-            engine: "engine2".to_string(),
-            total_results: 2,
-            page: 1,
-            has_next_page: false,
+            pagination: None,
+            suggestions: Vec::new(),
+            metadata: HashMap::new(),
         };
 
         let aggregated = agg.aggregate(vec![result1, result2]);
@@ -209,31 +220,34 @@ mod tests {
 
     #[test]
     fn test_round_robin_strategy() {
+        use std::collections::HashMap;
+        
         let agg = SearchAggregator::new(AggregationStrategy::RoundRobin, SortBy::Relevance);
-        let query = SearchQuery::default();
         
         let result1 = SearchResult {
-            query: query.clone(),
+            engine_name: "engine1".to_string(),
+            total_results: Some(2),
+            elapsed_ms: 100,
             items: vec![
                 create_test_item("https://example.com/1", "A1"),
                 create_test_item("https://example.com/2", "A2"),
             ],
-            engine: "engine1".to_string(),
-            total_results: 2,
-            page: 1,
-            has_next_page: false,
+            pagination: None,
+            suggestions: Vec::new(),
+            metadata: HashMap::new(),
         };
 
         let result2 = SearchResult {
-            query: query.clone(),
+            engine_name: "engine2".to_string(),
+            total_results: Some(2),
+            elapsed_ms: 150,
             items: vec![
                 create_test_item("https://example.com/3", "B1"),
                 create_test_item("https://example.com/4", "B2"),
             ],
-            engine: "engine2".to_string(),
-            total_results: 2,
-            page: 1,
-            has_next_page: false,
+            pagination: None,
+            suggestions: Vec::new(),
+            metadata: HashMap::new(),
         };
 
         let aggregated = agg.aggregate(vec![result1, result2]);

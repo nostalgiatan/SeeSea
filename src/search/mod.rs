@@ -6,6 +6,7 @@
 //! 实现了解耦式的搜索功能。
 
 pub mod aggregator;
+pub mod engine_manager;
 pub mod engines;
 pub mod on;
 pub mod orchestrator;
@@ -13,6 +14,7 @@ pub mod query;
 pub mod types;
 
 pub use aggregator::*;
+pub use engine_manager::*;
 pub use engines::EngineRegistry;
 pub use on::*;
 pub use orchestrator::*;
