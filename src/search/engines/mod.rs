@@ -9,12 +9,16 @@ pub mod google;
 pub mod bing;
 pub mod yahoo;
 pub mod baidu;
+pub mod yandex;
+pub mod brave;
 
 pub use duckduckgo::DuckDuckGoEngine;
 pub use google::GoogleEngine;
 pub use bing::BingEngine;
 pub use yahoo::YahooEngine;
 pub use baidu::BaiduEngine;
+pub use yandex::YandexEngine;
+pub use brave::BraveEngine;
 
 /// 搜索引擎注册表
 /// 
