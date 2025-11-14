@@ -129,15 +129,55 @@ impl QwantEngine {
     ///
     /// 如果 JSON 解析失败返回错误
     fn parse_json_results(json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
-        // 简化版本的 JSON 解析
-        // 在实际实现中应该使用 serde_json 完整解析
-        let items = Vec::new();
-        
-        // TODO: 使用 serde_json 解析实际结果
+        use serde_json::Value;
         
         // 检查是否有有效的 JSON 数据
         if json_str.is_empty() {
-            return Ok(items);
+            return Ok(Vec::new());
+        }
+        
+        let json: Value = serde_json::from_str(json_str)?;
+        let mut items = Vec::new();
+        
+        // Qwant JSON API 通常返回的结构
+        if let Some(data) = json.get("data") {
+            if let Some(result) = data.get("result") {
+                if let Some(items_array) = result.get("items").and_then(|i| i.as_array()) {
+                    for item in items_array {
+                        let title = item.get("title")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        
+                        let url = item.get("url")
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        
+                        let content = item.get("desc")
+                            .or_else(|| item.get("description"))
+                            .and_then(|c| c.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        
+                        if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                            items.push(SearchResultItem {
+                                title,
+                                url: url.clone(),
+                                content,
+                                display_url: Some(url),
+                                site_name: None,
+                                score: 1.0,
+                                result_type: ResultType::Web,
+                                thumbnail: None,
+                                published_date: None,
+                                template: None,
+                                metadata: HashMap::new(),
+                            });
+                        }
+                    }
+                }
+            }
         }
         
         Ok(items)

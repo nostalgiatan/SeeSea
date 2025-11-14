@@ -165,15 +165,71 @@ impl MojeekEngine {
     ///
     /// 如果 HTML 解析失败返回错误
     fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
-        // 简化版本的 HTML 解析
-        // 在实际实现中应该使用 scraper 或 html5ever crate
-        let items = Vec::new();
-        
-        // TODO: 使用 HTML 解析器提取实际结果
+        use scraper::{Html, Selector};
         
         // 检查是否有结果
         if html.is_empty() {
-            return Ok(items);
+            return Ok(Vec::new());
+        }
+        
+        let document = Html::parse_document(html);
+        let mut items = Vec::new();
+        
+        // Mojeek 的搜索结果通常在 li.result 或类似元素中
+        let result_selectors = vec![
+            "li.result",
+            "div.result",
+            "article.result",
+        ];
+        
+        let mut results_found = false;
+        for selector_str in result_selectors {
+            let selector = match Selector::parse(selector_str) {
+                Ok(sel) => sel,
+                Err(_) => continue,
+            };
+            
+            for result in document.select(&selector) {
+                results_found = true;
+                
+                // 提取标题和 URL
+                let title_selector = Selector::parse("h2, h3, a.title").unwrap();
+                let link_selector = Selector::parse("a").unwrap();
+                let snippet_selector = Selector::parse("p.s, p.snippet, div.snippet").unwrap();
+                
+                let title = result.select(&title_selector).next()
+                    .map(|t| t.text().collect::<String>().trim().to_string())
+                    .unwrap_or_default();
+                
+                let url = result.select(&link_selector).next()
+                    .and_then(|a| a.value().attr("href"))
+                    .unwrap_or_default();
+                
+                let content = result.select(&snippet_selector).next()
+                    .map(|s| s.text().collect::<String>().trim().to_string())
+                    .unwrap_or_default();
+                
+                // 过滤有效结果
+                if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                    items.push(SearchResultItem {
+                        title,
+                        url: url.to_string(),
+                        content,
+                        display_url: Some(url.to_string()),
+                        site_name: None,
+                        score: 1.0,
+                        result_type: ResultType::Web,
+                        thumbnail: None,
+                        published_date: None,
+                        template: None,
+                        metadata: HashMap::new(),
+                    });
+                }
+            }
+            
+            if results_found {
+                break;
+            }
         }
         
         Ok(items)

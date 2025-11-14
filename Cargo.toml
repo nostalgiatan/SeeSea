@@ -61,7 +61,7 @@ lto = true
 codegen-units = 1
 
 [features]
-default = []
+default = ["scraper", "html5ever"]
 derive = ["proc-macro2", "quote", "syn"]
 proc-macro2 = ["dep:proc-macro2"]
 quote = ["dep:quote"]
