@@ -3,6 +3,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+// 引入各个引擎实现
+pub mod duckduckgo;
+
+pub use duckduckgo::DuckDuckGoEngine;
+
 /// 搜索引擎注册表
 /// 
 /// 用于管理和注册搜索引擎实例
