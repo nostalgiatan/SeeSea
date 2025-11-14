@@ -21,7 +21,7 @@ pub trait QueryBuilder {
     }
 
     /// 设置语言偏好
-    fn with_language(mut self, language: impl Into<String>) -> Self
+    fn with_language(self, _language: impl Into<String>) -> Self
     where
         Self: Sized,
     {
@@ -30,7 +30,7 @@ pub trait QueryBuilder {
     }
 
     /// 设置地区偏好
-    fn with_region(mut self, region: impl Into<String>) -> Self
+    fn with_region(self, _region: impl Into<String>) -> Self
     where
         Self: Sized,
     {
@@ -39,7 +39,7 @@ pub trait QueryBuilder {
     }
 
     /// 设置分页
-    fn with_pagination(mut self, page: usize, page_size: usize) -> Self
+    fn with_pagination(self, _page: usize, _page_size: usize) -> Self
     where
         Self: Sized,
     {
@@ -48,7 +48,7 @@ pub trait QueryBuilder {
     }
 
     /// 设置安全搜索级别
-    fn with_safe_search(mut self, level: crate::config::common::SafeSearchLevel) -> Self
+    fn with_safe_search(self, _level: crate::config::common::SafeSearchLevel) -> Self
     where
         Self: Sized,
     {
@@ -57,7 +57,7 @@ pub trait QueryBuilder {
     }
 
     /// 设置时间范围
-    fn with_time_range(mut self, range: TimeRange) -> Self
+    fn with_time_range(self, _range: TimeRange) -> Self
     where
         Self: Sized,
     {
@@ -66,7 +66,7 @@ pub trait QueryBuilder {
     }
 
     /// 添加自定义参数
-    fn with_param(mut self, key: impl Into<String>, value: impl Into<String>) -> Self
+    fn with_param(self, _key: impl Into<String>, _value: impl Into<String>) -> Self
     where
         Self: Sized,
     {

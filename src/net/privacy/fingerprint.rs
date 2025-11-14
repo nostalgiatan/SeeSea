@@ -72,7 +72,7 @@ impl FingerprintProtector {
         let mut rng = rand::thread_rng();
         
         // 随机添加 1-3 个额外套件
-        let count = rng.gen_range(1..=3);
+        let count = rng.random_range(1..=3);
         for i in 0..count.min(additional_suites.len()) {
             if !base_params.cipher_suites.contains(&additional_suites[i]) {
                 base_params.cipher_suites.push(additional_suites[i].clone());
@@ -142,7 +142,7 @@ pub fn generate_webgl_noise() -> String {
     
     // 使用 rand crate 随机选择
     let mut rng = rand::rng();
-    let index = rng.gen_range(0..renderers.len());
+    let index = rng.random_range(0..renderers.len());
     renderers[index].to_string()
 }
 

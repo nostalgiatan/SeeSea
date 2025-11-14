@@ -99,14 +99,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 测试配置摘要
     let summary = current_config.get_summary();
     println!("\n📊 配置摘要:");
-    println!("  实例名称: {}", summary.instance_name);
+    println!("  配置文件路径: {}", summary.config_path);
     println!("  环境: {}", summary.environment);
-    println!("  启用引擎: {}", summary.enabled_engines);
-    println!("  服务器端口: {}", summary.server_port);
-    println!("  HTTPS: {}", summary.https_enabled);
-    println!("  认证: {}", summary.auth_enabled);
+    println!("  启用引擎: {}/{}", summary.enabled_engines, summary.total_engines);
+    println!("  启用代理: {}", summary.enabled_proxies);
     println!("  缓存: {}", summary.cache_enabled);
-    println!("  指标: {}", summary.metrics_enabled);
 
     // 测试配置建议
     println!("\n💡 配置建议:");

@@ -93,6 +93,8 @@ mod tests {
             engines_used: vec!["google".to_string()],
             total_count: 0,
             query_time_ms: 100,
+            query: SearchQuery::default(),
+            cached: false,
         };
         assert_eq!(response.engines_used.len(), 1);
     }
