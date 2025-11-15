@@ -109,9 +109,10 @@ impl QwantEngine {
             },
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .redirect(reqwest::redirect::Policy::limited(3)) // 允许重定向
                 .build()
-                .expect("无法创建 HTTP 客户端"),
+                .unwrap_or_else(|_| reqwest::Client::new()),
         }
     }
 
@@ -182,6 +183,113 @@ impl QwantEngine {
         
         Ok(items)
     }
+
+    /// 解析 HTML 响应为搜索结果项列表 (基于 searxng web-lite 实现)
+    ///
+    /// # 参数
+    ///
+    /// * `html` - HTML 响应字符串
+    ///
+    /// # 返回
+    ///
+    /// 解析出的搜索结果项列表
+    ///
+    /// # 错误
+    ///
+    /// 如果 HTML 解析失败返回错误
+    fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+        use scraper::{Html, Selector};
+
+        if html.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let document = Html::parse_document(html);
+        let mut items = Vec::new();
+
+        // 尝试多种选择器，优先使用 searxng 的选择器，然后回退到通用选择器
+        let selectors = [
+            "section article",     // searxng lite 选择器
+            "article.result",      // 通用 article 结果
+            "div.result",          // 通用 div 结果
+            "div.web-result",      // web 结果
+            "a[href]",              // 所有链接作为最后回退
+        ];
+
+        for selector_str in selectors.iter() {
+            if let Ok(selector) = Selector::parse(selector_str) {
+                for element in document.select(&selector) {
+                    // 检查广告 - 跳过带有 tooltip 的元素
+                    let tooltip_selector = Selector::parse("span.tooltip, .ad, .advertisement").expect("valid selector");
+                    if element.select(&tooltip_selector).next().is_some() {
+                        continue;
+                    }
+
+                    // 尝试提取标题、URL和内容
+                    let title = element.select(&Selector::parse("h2 a, h3 a, a.title, .title").expect("valid selector")).next()
+                        .map(|t| t.text().collect::<String>().trim().to_string())
+                        .or_else(|| {
+                            // 如果找不到标题，使用链接文本
+                            if selector_str == &"a[href]" {
+                                Some(element.text().collect::<String>().trim().to_string())
+                            } else {
+                                Some(String::new())
+                            }
+                        })
+                        .unwrap_or_default();
+
+                    let url = element.select(&Selector::parse("a").expect("valid selector")).next()
+                        .and_then(|a| a.value().attr("href"))
+                        .or_else(|| {
+                            // 如果元素本身是链接
+                            if selector_str == &"a[href]" {
+                                element.value().attr("href")
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or_default();
+
+                    let content = element.select(&Selector::parse("p, .description, .snippet, .content").expect("valid selector")).next()
+                        .map(|c| c.text().collect::<String>().trim().to_string())
+                        .unwrap_or_default();
+
+                    // 过滤有效结果
+                    if !title.is_empty() && !url.is_empty() {
+                        // 确保 URL 是完整的
+                        let final_url = if url.starts_with("http") {
+                            url.to_string()
+                        } else if url.starts_with("/") {
+                            format!("https://www.qwant.com{}", url)
+                        } else {
+                            url.to_string()
+                        };
+
+                        items.push(SearchResultItem {
+                            title,
+                            url: final_url,
+                            content,
+                            display_url: Some(final_url.clone()),
+                            site_name: None,
+                            score: 1.0,
+                            result_type: ResultType::Web,
+                            thumbnail: None,
+                            published_date: None,
+                            template: None,
+                            metadata: HashMap::new(),
+                        });
+                    }
+                }
+
+                // 如果找到了结果，跳出循环
+                if !items.is_empty() {
+                    break;
+                }
+            }
+        }
+
+        Ok(items)
+    }
 }
 
 impl Default for QwantEngine {
@@ -217,34 +325,32 @@ impl RequestResponseEngine for QwantEngine {
 
     /// 准备请求参数
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let results_per_page = 10;
-        let offset = (params.pageno - 1) * results_per_page;
-        
-        // 构建查询参数
-        let mut query_params = vec![
+        // 使用普通 qwant.com 而不是 lite 版本，因为 lite 会重定向
+        let locale = params.language.as_deref().unwrap_or("en_US");
+
+        // 构建查询参数 - 使用普通 qwant 格式
+        let query_params = vec![
             ("q", query.to_string()),
-            ("offset", offset.to_string()),
-            ("locale", params.language.as_deref().unwrap_or("en_US").to_string()),
+            ("t", "web".to_string()),
+            ("locale", locale.to_lowercase()),
         ];
-        
-        // 添加安全搜索
-        if params.safesearch > 0 {
-            query_params.push(("safesearch", params.safesearch.to_string()));
-        }
-        
-        // 构建 URL
+
+        // 构建查询字符串
         let query_string = query_params
             .iter()
             .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
             .collect::<Vec<_>>()
             .join("&");
-        
-        params.url = Some(format!("https://api.qwant.com/v3/search/web?{}", query_string));
+
+        // 使用普通 qwant.com
+        params.url = Some(format!("https://www.qwant.com/?{}", query_string));
         params.method = "GET".to_string();
-        
-        // 设置必需的头部
-        params.headers.insert("Accept-Language".to_string(), "en-US,en;q=0.5".to_string());
-        
+
+        // 设置必要的头部
+        params.headers.insert("Accept-Language".to_string(), "en-US,en;q=0.9,en;q=0.8".to_string());
+        params.headers.insert("Accept".to_string(), "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8".to_string());
+        params.headers.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string());
+
         Ok(())
     }
 
@@ -283,7 +389,8 @@ impl RequestResponseEngine for QwantEngine {
 
     /// 解析响应为结果列表
     fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
-        Self::parse_json_results(&resp)
+        // 由于我们现在使用 web-lite，需要解析 HTML
+        Self::parse_html_results(&resp)
     }
 }
 
@@ -318,7 +425,7 @@ mod tests {
         assert!(result.is_ok());
         assert!(params.url.is_some());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("api.qwant.com"));
         assert!(url.contains("q=test%20query"));
     }
@@ -332,7 +439,7 @@ mod tests {
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("offset=20")); // (3-1) * 10 = 20
     }
 
@@ -352,6 +459,6 @@ mod tests {
     fn test_parse_empty_json() {
         let result = QwantEngine::parse_json_results("");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Expected valid value").len(), 0);
     }
 }

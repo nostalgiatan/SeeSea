@@ -118,8 +118,8 @@ impl BingEngine {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build()
-                .expect("无法创建 HTTP 客户端"),
+                .build().unwrap_or(reqwest::Client::new())
+                ,
         }
     }
 
@@ -232,8 +232,8 @@ impl BingEngine {
                 results_found = true;
                 
                 // 提取标题和 URL
-                let title_selector = Selector::parse("h2, h3").unwrap();
-                let link_selector = Selector::parse("a").unwrap();
+                let title_selector = Selector::parse("h2, h3").expect("Expected valid value");
+                let link_selector = Selector::parse("a").expect("Expected valid value");
                 let snippet_selectors = vec![
                     Selector::parse("p").ok(),
                     Selector::parse("div.b_caption > p").ok(),
@@ -503,7 +503,7 @@ mod tests {
         assert!(params.url.is_some());
         assert_eq!(params.method, "GET");
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("www.bing.com"));
         assert!(url.contains("q=test%20query"));
         assert!(url.contains("pq=test%20query"));
@@ -518,7 +518,7 @@ mod tests {
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("first=21")); // (3-1) * 10 + 1 = 21
         assert!(url.contains("FORM=PERE1")); // page 3 -> PERE1
     }
@@ -532,7 +532,7 @@ mod tests {
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("filters=ex1:%22ez2%22")); // week = 2
     }
 
@@ -564,7 +564,7 @@ mod tests {
     fn test_parse_empty_html() {
         let result = BingEngine::parse_html_results("");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Expected valid value").len(), 0);
     }
 
     #[test]
@@ -572,6 +572,6 @@ mod tests {
         let html = "<html><body>There are no results</body></html>";
         let result = BingEngine::parse_html_results(html);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Expected valid value").len(), 0);
     }
 }

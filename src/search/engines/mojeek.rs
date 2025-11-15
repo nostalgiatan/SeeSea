@@ -112,9 +112,9 @@ impl MojeekEngine {
             },
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .build()
-                .expect("无法创建 HTTP 客户端"),
+                .unwrap_or_else(|_| reqwest::Client::new()),
         }
     }
 
@@ -166,49 +166,65 @@ impl MojeekEngine {
     /// 如果 HTML 解析失败返回错误
     fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use scraper::{Html, Selector};
-        
+
         // 检查是否有结果
         if html.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let document = Html::parse_document(html);
         let mut items = Vec::new();
-        
-        // Mojeek 的搜索结果通常在 li.result 或类似元素中
-        let result_selectors = vec![
-            "li.result",
-            "div.result",
-            "article.result",
-        ];
-        
-        let mut results_found = false;
-        for selector_str in result_selectors {
-            let selector = match Selector::parse(selector_str) {
-                Ok(sel) => sel,
-                Err(_) => continue,
-            };
-            
-            for result in document.select(&selector) {
-                results_found = true;
-                
-                // 提取标题和 URL
-                let title_selector = Selector::parse("h2, h3, a.title").unwrap();
-                let link_selector = Selector::parse("a").unwrap();
-                let snippet_selector = Selector::parse("p.s, p.snippet, div.snippet").unwrap();
-                
-                let title = result.select(&title_selector).next()
+
+        // 使用与 searxng 完全相同的选择器
+        // 主要选择器：//ul[@class="results-standard"]/li/a[@class="ob"]
+        let result_selector = match Selector::parse("ul.results-standard li a.ob") {
+            Ok(sel) => sel,
+            Err(_) => {
+                // 回退到其他可能的选择器
+                let mut found_selector = None;
+                for fallback in [
+                    "ul.results-standard li",
+                    "li.result",
+                    "div.result",
+                    "article.result",
+                    "div[class*=\"result\"]"
+                ] {
+                    if let Ok(sel) = Selector::parse(fallback) {
+                        if document.select(&sel).next().is_some() {
+                            found_selector = Some(sel);
+                            break;
+                        }
+                    }
+                }
+                found_selector.unwrap_or_else(|| Selector::parse("li.result").expect("fallback selector"))
+            }
+        };
+
+        // 使用 searxng 的选择器结构
+        let url_selector = Selector::parse("a").expect("valid selector");
+        let title_selector = Selector::parse("h2 a, h3 a").expect("valid selector");
+        let content_selector = Selector::parse("p.s, p.snippet, div.snippet").expect("valid selector");
+
+        // 首先尝试使用 searxng 的标准结构
+        // 查找结果容器：ul.results-standard
+        if let Some(results_container) = document.select(&Selector::parse("ul.results-standard").unwrap_or_else(|_| Selector::parse("ul.results").expect("fallback"))).next() {
+            // 在容器内查找所有的 li 元素
+            for li_element in results_container.select(&Selector::parse("li").expect("valid selector")) {
+                // 查找标题 (h2 或 h3 中的链接)
+                let title = li_element.select(&title_selector).next()
                     .map(|t| t.text().collect::<String>().trim().to_string())
                     .unwrap_or_default();
-                
-                let url = result.select(&link_selector).next()
+
+                // 查找 URL (a.ob 或任何链接)
+                let url = li_element.select(&Selector::parse("a.ob, a[href]").expect("valid selector")).next()
                     .and_then(|a| a.value().attr("href"))
                     .unwrap_or_default();
-                
-                let content = result.select(&snippet_selector).next()
-                    .map(|s| s.text().collect::<String>().trim().to_string())
+
+                // 查找内容 (p.s)
+                let content = li_element.select(&content_selector).next()
+                    .map(|c| c.text().collect::<String>().trim().to_string())
                     .unwrap_or_default();
-                
+
                 // 过滤有效结果
                 if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
                     items.push(SearchResultItem {
@@ -226,12 +242,34 @@ impl MojeekEngine {
                     });
                 }
             }
-            
-            if results_found {
-                break;
+        }
+
+        // 如果没有找到结果，尝试备用方法
+        if items.is_empty() {
+            // 尝试查找所有链接
+            for result in document.select(&Selector::parse("a[href]").expect("valid selector")) {
+                let url = result.value().attr("href").unwrap_or_default();
+                let title = result.text().collect::<String>().trim().to_string();
+
+                if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                    items.push(SearchResultItem {
+                        title,
+                        url: url.to_string(),
+                        content: String::new(),
+                        display_url: Some(url.to_string()),
+                        site_name: None,
+                        score: 1.0,
+                        result_type: ResultType::Web,
+                        thumbnail: None,
+                        published_date: None,
+                        template: None,
+                        metadata: HashMap::new(),
+                    });
+                }
             }
         }
-        
+
+  
         Ok(items)
     }
 }
@@ -269,21 +307,27 @@ impl RequestResponseEngine for MojeekEngine {
 
     /// 准备请求参数
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let results_per_page = 10;
-        let offset = (params.pageno - 1) * results_per_page;
-        
-        // 构建查询参数
+        // 使用与 searxng 相同的参数结构
         let mut query_params = vec![
             ("q", query.to_string()),
             ("safe", if params.safesearch > 0 { "1" } else { "0" }.to_string()),
         ];
-        
-        // 添加偏移量
-        if offset > 0 {
-            query_params.push(("s", offset.to_string()));
+
+        // 添加语言和地区参数 (基于 searxng)
+        if let Some(ref language) = params.language {
+            query_params.push(("lb", language.clone()));
+        } else {
+            query_params.push(("lb", "en".to_string()));
         }
-        
-        // 添加时间范围
+
+        // 地区参数
+        query_params.push(("arc", "uk".to_string()));
+
+        // 分页 - searxng 使用 s 参数，偏移量 = 10 * (页码 - 1)
+        let offset = 10 * (params.pageno - 1);
+        query_params.push(("s", offset.to_string()));
+
+        // 添加时间范围 - 使用 searxng 的时间格式
         if let Some(ref time_range) = params.time_range {
             let since = match time_range.as_str() {
                 "day" => Self::time_range_to_mojeek(TimeRange::Day),
@@ -296,17 +340,25 @@ impl RequestResponseEngine for MojeekEngine {
                 query_params.push(("since", since));
             }
         }
-        
+
         // 构建 URL
         let query_string = query_params
             .iter()
             .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
             .collect::<Vec<_>>()
             .join("&");
-        
+
         params.url = Some(format!("https://www.mojeek.com/search?{}", query_string));
         params.method = "GET".to_string();
-        
+
+        // 添加重要的 HTTP 头以避免被阻止
+        params.headers.insert("Accept".to_string(), "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8".to_string());
+        params.headers.insert("Accept-Language".to_string(), "en-US,en;q=0.5".to_string());
+        params.headers.insert("Accept-Encoding".to_string(), "gzip, deflate".to_string());
+        params.headers.insert("DNT".to_string(), "1".to_string());
+        params.headers.insert("Connection".to_string(), "keep-alive".to_string());
+        params.headers.insert("Upgrade-Insecure-Requests".to_string(), "1".to_string());
+
         Ok(())
     }
 
@@ -326,8 +378,13 @@ impl RequestResponseEngine for MojeekEngine {
         let response = request.send().await?;
         
         // 检查状态码
-        if !response.status().is_success() {
-            return Err(format!("HTTP 错误: {}", response.status()).into());
+        let status = response.status();
+        match status.as_u16() {
+            403 => return Err("Mojeek 访问被拒绝，可能触发了反爬虫机制。请稍后重试或使用其他搜索引擎。".into()),
+            429 => return Err("Mojeek 请求过于频繁，请稍后重试。".into()),
+            503 => return Err("Mojeek 服务暂时不可用，请稍后重试。".into()),
+            _ if !status.is_success() => return Err(format!("HTTP 错误: {}", status).into()),
+            _ => {} // 继续处理
         }
         
         // 获取响应文本
@@ -373,7 +430,7 @@ mod tests {
         assert!(result.is_ok());
         assert!(params.url.is_some());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("mojeek.com"));
         assert!(url.contains("q=test%20query"));
     }
@@ -387,7 +444,7 @@ mod tests {
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("s=10")); // (2-1) * 10 = 10
     }
 
@@ -407,6 +464,6 @@ mod tests {
     fn test_parse_empty_html() {
         let result = MojeekEngine::parse_html_results("");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Expected valid value").len(), 0);
     }
 }

@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 use colored::*;
 use std::io::{self, Write};
 
-use SeeSea::derive::SearchQuery;
+use SeeSea::derive::{SearchQuery, SearchResultItem};
 use SeeSea::search::{EngineManager, EngineMode};
 
 /// SeeSea 命令行应用
@@ -37,6 +37,10 @@ enum Commands {
         /// 显示详细输出
         #[arg(short, long)]
         verbose: bool,
+
+        /// 调试模式 - 显示详细的引擎响应信息
+        #[arg(long)]
+        debug: bool,
     },
     
     /// 列出所有可用的搜索引擎
@@ -59,8 +63,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     
     match cli.command {
-        Some(Commands::Search { query, global, engines, verbose }) => {
-            execute_search(query, global, engines, verbose).await?;
+        Some(Commands::Search { query, global, engines, verbose, debug }) => {
+            execute_search(query, global, engines, verbose, debug).await?;
         }
         Some(Commands::ListEngines { stats }) => {
             list_engines(stats).await?;
@@ -83,6 +87,7 @@ async fn execute_search(
     use_global: bool,
     engines_str: Option<String>,
     verbose: bool,
+    debug: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "🌊 SeeSea 搜索".bright_cyan().bold());
     println!("{}", "━".repeat(60).bright_black());
@@ -135,30 +140,110 @@ async fn execute_search(
     // 显示结果
     let mut success_count = 0;
     let mut failure_count = 0;
-    
+    let mut all_results: Vec<(String, SearchResultItem)> = Vec::new();
+
+    // 收集所有成功的结果
     for (engine_name, result) in &results {
         match result {
             Ok(search_result) => {
                 success_count += 1;
-                println!("✅ {} - {} 个结果", 
+                println!("✅ {} - {} 个结果",
                     engine_name.bright_green(),
                     search_result.items.len().to_string().bright_white().bold()
                 );
-                
-                if verbose && !search_result.items.is_empty() {
-                    for (i, item) in search_result.items.iter().take(3).enumerate() {
-                        println!("   {}. {}", i + 1, item.title.bright_white());
-                        println!("      {}", item.url.bright_black());
+
+                if debug {
+                    println!("   ⏱️  响应时间: {} ms", search_result.elapsed_ms);
+                    println!("   📊 总结果数: {:?}", search_result.total_results);
+                    if !search_result.items.is_empty() {
+                        println!("   📋 前3个结果:");
+                        for (i, item) in search_result.items.iter().take(3).enumerate() {
+                            println!("     {}. {}", i + 1, item.title);
+                            println!("        URL: {}", item.url);
+                        }
                     }
+                }
+
+                // 收集结果用于统一显示
+                for item in &search_result.items {
+                    all_results.push((engine_name.clone(), item.clone()));
                 }
             }
             Err(e) => {
                 failure_count += 1;
-                println!("❌ {} - {}", 
+                println!("❌ {} - {}",
                     engine_name.bright_red(),
                     e.bright_red()
                 );
+
+                if debug {
+                    println!("   🔍 详细错误: {:?}", e);
+                }
             }
+        }
+    }
+
+    // 如果有结果，显示统一的搜索结果列表
+    if !all_results.is_empty() {
+        println!();
+        println!("{}", "🔍 搜索结果".bright_cyan().bold());
+        println!("{}", "━".repeat(60).bright_black());
+
+        // 按评分排序结果
+        all_results.sort_by(|a, b| b.1.score.partial_cmp(&a.1.score).unwrap_or_else(|| std::cmp::Ordering::Equal));
+
+        // 显示前20个结果
+        let results_to_show = if verbose {
+            all_results.len().min(50)
+        } else {
+            all_results.len().min(20)
+        };
+
+        for (i, (engine_name, item)) in all_results.iter().take(results_to_show).enumerate() {
+            println!("{}", format!("{}. {}", i + 1, item.title.bright_white().bold()));
+            println!("   {}", item.url.bright_blue());
+
+            // 显示内容摘要
+            if !item.content.is_empty() {
+                let content = if item.content.len() > 200 {
+                    // 安全地截断文本，避免在UTF-8字符中间截断
+                    let mut end = 200;
+                    while !item.content.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    format!("{}...", &item.content[..end])
+                } else {
+                    item.content.clone()
+                };
+                println!("   {}", content.bright_black());
+            }
+
+            // 显示显示URL（如果与URL不同）
+            if let Some(display_url) = &item.display_url {
+                if display_url != &item.url {
+                    println!("   {}", format!("🔗 {}", display_url).bright_black());
+                }
+            }
+
+            // 显示来源引擎
+            println!("   {}", format!("📌 来源: {}", engine_name.bright_green()));
+
+            // 显示发布时间（如果有）
+            if let Some(published_date) = &item.published_date {
+                println!("   {}", format!("📅 {}", published_date.format("%Y-%m-%d")).bright_black());
+            }
+
+            // 显示评分（如果大于0）
+            if item.score > 0.0 {
+                println!("   {}", format!("⭐ 评分: {:.2}", item.score).bright_black());
+            }
+
+            println!();
+        }
+
+        if all_results.len() > results_to_show {
+            println!("{}", format!("... 还有 {} 个结果（使用 --verbose 查看更多）",
+                all_results.len() - results_to_show).bright_yellow());
         }
     }
     
@@ -269,7 +354,7 @@ async fn interactive_mode(use_global: bool) -> Result<(), Box<dyn std::error::Er
                 manager = EngineManager::new(mode, configured_engines.clone());
             }
             _ => {
-                execute_search(input.to_string(), mode == EngineMode::Global, None, false).await?;
+                execute_search(input.to_string(), mode == EngineMode::Global, None, false, false).await?;
             }
         }
         

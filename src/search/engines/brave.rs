@@ -111,8 +111,8 @@ impl BraveEngine {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build()
-                .expect("无法创建 HTTP 客户端"),
+                .build().unwrap_or(reqwest::Client::new())
+                ,
         }
     }
 
@@ -177,9 +177,9 @@ impl BraveEngine {
                 results_found = true;
                 
                 // 提取标题和 URL
-                let title_selector = Selector::parse("h2, h3, div.title, span.snippet-title").unwrap();
-                let link_selector = Selector::parse("a").unwrap();
-                let snippet_selector = Selector::parse("p.snippet-description, div.snippet-description, span.snippet-description").unwrap();
+                let title_selector = Selector::parse("h2, h3, div.title, span.snippet-title").expect("Expected valid value");
+                let link_selector = Selector::parse("a").expect("Expected valid value");
+                let snippet_selector = Selector::parse("p.snippet-description, div.snippet-description, span.snippet-description").expect("Expected valid value");
                 
                 let title = result.select(&title_selector).next()
                     .map(|t| t.text().collect::<String>().trim().to_string())
@@ -253,20 +253,19 @@ impl RequestResponseEngine for BraveEngine {
 
     /// 准备请求参数
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let results_per_page = 20;
-        let offset = (params.pageno - 1) * results_per_page;
-        
-        // 构建查询参数
+        // 使用与 searxng 相同的参数结构
         let mut query_params = vec![
             ("q", query.to_string()),
+            ("source", "web".to_string()),
         ];
-        
-        // 添加偏移量（仅在非首页时）
-        if offset > 0 {
-            query_params.push(("offset", offset.to_string()));
+
+        // 添加偏移量（searxng 使用页码-1，而不是结果数）
+        let page_offset = params.pageno - 1;
+        if page_offset > 0 {
+            query_params.push(("offset", page_offset.to_string()));
         }
-        
-        // 添加时间范围过滤
+
+        // 添加时间范围（使用 searxng 的时间映射）
         if let Some(ref time_range) = params.time_range {
             let tf = match time_range.as_str() {
                 "day" => "pd",
@@ -279,17 +278,31 @@ impl RequestResponseEngine for BraveEngine {
                 query_params.push(("tf", tf.to_string()));
             }
         }
-        
-        // 构建 URL
+
         let query_string = query_params
             .iter()
             .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
             .collect::<Vec<_>>()
             .join("&");
-        
+
         params.url = Some(format!("https://search.brave.com/search?{}", query_string));
         params.method = "GET".to_string();
-        
+
+        // 添加与 searxng 相同的 cookies
+        params.cookies.insert("safesearch".to_string(), "moderate".to_string());
+        params.cookies.insert("useLocation".to_string(), "0".to_string());
+        params.cookies.insert("summarizer".to_string(), "0".to_string());
+        params.cookies.insert("country".to_string(), "us".to_string());
+        params.cookies.insert("ui_lang".to_string(), "en-us".to_string());
+
+        // 添加与 searxng 相同的关键头部
+        params.headers.insert("Sec-Fetch-Dest".to_string(), "document".to_string());
+        params.headers.insert("Sec-Fetch-Mode".to_string(), "navigate".to_string());
+        params.headers.insert("Sec-Fetch-Site".to_string(), "same-origin".to_string());
+        params.headers.insert("Sec-Fetch-User".to_string(), "?1".to_string());
+        params.headers.insert("Accept".to_string(), "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8".to_string());
+        params.headers.insert("Accept-Language".to_string(), "en-US,en;q=0.5".to_string());
+
         Ok(())
     }
 
@@ -365,7 +378,7 @@ mod tests {
         assert!(result.is_ok());
         assert!(params.url.is_some());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("search.brave.com"));
         assert!(url.contains("q=test%20query"));
     }
@@ -379,7 +392,7 @@ mod tests {
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("offset=20")); // (2-1) * 20 = 20
     }
 
@@ -392,7 +405,7 @@ mod tests {
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("tf=pw"));
     }
 
@@ -412,6 +425,6 @@ mod tests {
     fn test_parse_empty_html() {
         let result = BraveEngine::parse_html_results("");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Expected valid value").len(), 0);
     }
 }

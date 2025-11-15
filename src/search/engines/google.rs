@@ -120,10 +120,51 @@ impl GoogleEngine {
             },
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:144.0) Gecko/20100101 Firefox/144.0")
+                .default_headers({
+                    let mut headers = reqwest::header::HeaderMap::new();
+                    headers.insert("Accept", "*/*".parse().unwrap());
+                    headers
+                })
                 .build()
-                .expect("无法创建 HTTP 客户端"),
+                .unwrap_or_else(|_| reqwest::Client::new()),
         }
+    }
+
+    /// 生成 Google 的 async 参数
+    ///
+    /// 基于 SearXNG 的实现，格式为: "arc_id:srp_[23_random_chars]_1[page],use_ac:true,_fmt:prog"
+    ///
+    /// # 参数
+    ///
+    /// * `start` - 分页偏移量
+    ///
+    /// # 返回
+    ///
+    /// 格式化的 async 参数字符串
+    fn generate_async_param(start: u32) -> String {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Mutex;
+
+        static LAST_ARC_ID: Mutex<(String, u64)> = Mutex::new((String::new(), 0));
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or_else(|_| 0);
+
+        // 生成 ARC async 参数 (基于 SearXNG 的 ui_async 实现)
+        let page_num = start / 10;
+
+        // 生成23位随机字符串 (简化版本)
+        let random_part = format!("{:023}", std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_else(|_| 0) % 1000000000000000000000);
+        let arc_id = format!("srp_{random_part}_1{:02}", page_num);
+
+        format!("arc_id:{},use_ac:true,_fmt:prog", arc_id)
     }
 
     /// 将时间范围转换为 Google 的时间过滤参数
@@ -202,126 +243,172 @@ impl GoogleEngine {
     /// # 错误
     ///
     /// 如果 HTML 解析失败返回错误
-    fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn parse_html_results(response: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+        // 检查响应类型
+        if response.trim_start().starts_with(")]}") {
+            // 这是 Google AJAX API 响应
+            return Self::parse_ajax_response(response);
+        } else {
+            // 这是 HTML 响应（回退）
+            return Self::parse_html_response(response);
+        }
+    }
+
+    /// 解析 Google AJAX API 响应
+    fn parse_ajax_response(response: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+
+        // 移除响应前缀，找到JSON部分
+        // Google响应格式: )]}'
+        // 寻找实际的JSON数组开始
+        let mut json_start = None;
+        for i in 0..response.len() {
+            if response.chars().nth(i) == Some('[') {
+                // 检查这是否是结果数组的开始
+                let remaining = &response[i..];
+                if remaining.starts_with("[") {
+                    json_start = Some(i);
+                    break;
+                }
+            }
+        }
+
+        if let Some(start) = json_start {
+            // 寻找匹配的右括号
+            let mut bracket_count = 0;
+            let mut end = start;
+            for (i, ch) in response[start..].char_indices() {
+                match ch {
+                    '[' => bracket_count += 1,
+                    ']' => {
+                        bracket_count -= 1;
+                        if bracket_count == 0 {
+                            end = i;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            let json_str = &response[start..=end];
+
+            // 尝试解析为JSON
+            match serde_json::from_str::<serde_json::Value>(json_str) {
+                Ok(data) => {
+                    // 解析Google的AJAX响应格式
+                    Self::parse_google_ajax_data(data)
+                }
+                Err(e) => {
+                    println!("JSON解析失败: {}", e);
+                    // 输出原始JSON用于调试
+                    println!("原始JSON: {}", &json_str[..json_str.len().min(200)]);
+                    // 回退到HTML解析
+                    Self::parse_html_response(response)
+                }
+            }
+        } else {
+            // 回退到HTML解析
+            Self::parse_html_response(response)
+        }
+    }
+
+    /// 解析Google的AJAX数据结构
+    fn parse_google_ajax_data(data: serde_json::Value) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+        let mut items = Vec::new();
+
+        // Google AJAX响应的结构比较复杂，这里使用简化的解析方法
+        // 实际实现可能需要根据具体的数据结构调整
+
+        if let Some(array) = data.as_array() {
+            for (i, item) in array.iter().enumerate() {
+                if let Some(obj) = item.as_array() {
+                    if obj.len() >= 3 {
+                        // 尝试提取结果信息
+                        let title = obj.get(0).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let url = obj.get(1).and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+                        if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                            items.push(SearchResultItem {
+                                title,
+                                url: url.clone(),
+                                content: format!("搜索结果 #{}", i + 1), // 简化的内容
+                                display_url: Some(url),
+                                site_name: None,
+                                score: 1.0,
+                                result_type: ResultType::Web,
+                                thumbnail: None,
+                                published_date: None,
+                                template: None,
+                                metadata: HashMap::new(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        println!("从AJAX响应解析出 {} 个结果", items.len());
+        Ok(items)
+    }
+
+    /// 解析HTML响应（回退方法）
+    fn parse_html_response(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use scraper::{Html, Selector};
-        
+
         // 检查是否有 CAPTCHA
         if html.contains("sorry.google.com") || html.contains("/sorry") {
             return Err("检测到 Google CAPTCHA，请稍后重试".into());
         }
-        
+
         // 检查是否有结果
         if html.contains("did not match any documents") || html.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let document = Html::parse_document(html);
         let mut items = Vec::new();
-        
-        // Google 的搜索结果通常在 div.g 或 div[data-hveid] 元素中
-        // 尝试多个选择器以适应不同的 Google 页面版本
+
+        // 使用基础选择器
         let selectors = vec![
             "div.g",
             "div[data-hveid]",
             "div.Gx5Zad",
         ];
-        
-        let mut result_selector = None;
+
         for sel_str in selectors {
             if let Ok(sel) = Selector::parse(sel_str) {
-                if document.select(&sel).count() > 0 {
-                    result_selector = Some(sel);
-                    break;
-                }
-            }
-        }
-        
-        let result_sel = match result_selector {
-            Some(sel) => sel,
-            None => {
-                // 如果找不到标准的结果容器，尝试基本的链接提取
-                let link_selector = Selector::parse("a").unwrap();
-                let h3_selector = Selector::parse("h3").unwrap();
-                
-                for element in document.select(&link_selector) {
-                    if let Some(href) = element.value().attr("href") {
-                        // 过滤掉内部链接和无效链接
-                        if href.starts_with("http") && !href.contains("google.com") {
-                            let title = element.select(&h3_selector).next()
-                                .map(|h3| h3.text().collect::<String>())
-                                .unwrap_or_else(|| element.text().collect::<String>());
-                            
-                            if !title.is_empty() && title.len() > 3 {
-                                items.push(SearchResultItem {
-                                    title: title.trim().to_string(),
-                                    url: href.to_string(),
-                                    content: String::new(),
-                                    display_url: Some(href.to_string()),
-                                    site_name: None,
-                                    score: 1.0,
-                                    result_type: ResultType::Web,
-                                    thumbnail: None,
-                                    published_date: None,
-                                    template: None,
-                                    metadata: HashMap::new(),
-                                });
-                            }
-                        }
-                    }
-                }
-                return Ok(items);
-            }
-        };
-        
-        // 提取每个搜索结果
-        for result in document.select(&result_sel) {
-            // 提取标题和 URL
-            let title_selector = Selector::parse("h3").unwrap();
-            let link_selector = Selector::parse("a").unwrap();
-            let snippet_selectors = vec![
-                Selector::parse("div[data-sncf]").ok(),
-                Selector::parse("div.VwiC3b").ok(),
-                Selector::parse("span.aCOpRe").ok(),
-                Selector::parse("div.s").ok(),
-            ];
-            
-            let title = result.select(&title_selector).next()
-                .map(|t| t.text().collect::<String>().trim().to_string())
-                .unwrap_or_default();
-            
-            let url = result.select(&link_selector).next()
-                .and_then(|a| a.value().attr("href"))
-                .unwrap_or_default();
-            
-            // 提取摘要
-            let mut content = String::new();
-            for selector in snippet_selectors.iter().flatten() {
-                if let Some(snippet) = result.select(selector).next() {
-                    content = snippet.text().collect::<String>().trim().to_string();
-                    if !content.is_empty() {
-                        break;
+                for result in document.select(&sel) {
+                    let title = result.select(&Selector::parse("h3").expect("valid selector")).next()
+                        .map(|t| t.text().collect::<String>().trim().to_string())
+                        .unwrap_or_default();
+
+                    let url = result.select(&Selector::parse("a").expect("valid selector")).next()
+                        .and_then(|a| a.value().attr("href"))
+                        .unwrap_or_default();
+
+                    let content = result.select(&Selector::parse("div, span").expect("valid selector")).next()
+                        .map(|c| c.text().collect::<String>().trim().to_string())
+                        .unwrap_or_default();
+
+                    if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                        items.push(SearchResultItem {
+                            title,
+                            url: url.to_string(),
+                            content,
+                            display_url: Some(url.to_string()),
+                            site_name: None,
+                            score: 1.0,
+                            result_type: ResultType::Web,
+                            thumbnail: None,
+                            published_date: None,
+                            template: None,
+                            metadata: HashMap::new(),
+                        });
                     }
                 }
             }
-            
-            // 过滤有效结果
-            if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
-                items.push(SearchResultItem {
-                    title,
-                    url: url.to_string(),
-                    content,
-                    display_url: Some(url.to_string()),
-                    site_name: None,
-                    score: 1.0,
-                    result_type: ResultType::Web,
-                    thumbnail: None,
-                    published_date: None,
-                    template: None,
-                    metadata: HashMap::new(),
-                });
-            }
         }
-        
+
         Ok(items)
     }
 
@@ -397,13 +484,21 @@ impl RequestResponseEngine for GoogleEngine {
         // 计算分页偏移量
         let start = (params.pageno - 1) * 10;
         
-        // 构建查询参数
+        // 生成 ARC async 参数 (基于 SearXNG 实现)
+        let async_param = Self::generate_async_param(start as u32);
+
+        // 构建 ARC AJAX API 查询参数 (基于 SearXNG 的实现)
         let mut query_params = vec![
             ("q", query.to_string()),
             ("start", start.to_string()),
             ("ie", "utf8".to_string()),
             ("oe", "utf8".to_string()),
             ("filter", "0".to_string()),
+            ("hl", "en-US".to_string()), // Interface language
+            ("lr", "lang_en".to_string()), // Language restriction
+            ("cr", "countryUS".to_string()), // Country restriction
+            ("asearch", "arc".to_string()),
+            ("async", async_param),
         ];
         
         // 添加语言参数
@@ -485,12 +580,27 @@ impl RequestResponseEngine for GoogleEngine {
         let final_url = response.url().to_string();
         
         // 检查状态码
-        if !response.status().is_success() {
-            return Err(format!("HTTP 错误: {}", response.status()).into());
+        let status = response.status();
+        match status.as_u16() {
+            429 => return Err(format!("Google 请求过于频繁 (429)，URL: {}", final_url).into()),
+            403 => return Err(format!("Google 访问被拒绝 (403)，可能是 CAPTCHA。URL: {}", final_url).into()),
+            302 | 301 => return Err(format!("Google 重定向到: {}", final_url).into()),
+            _ if !status.is_success() => {
+                // 尝试获取响应内容来诊断问题
+                let error_text = response.text().await.unwrap_or_else(|_| "无法读取错误响应".to_string());
+                let preview = if error_text.len() > 200 {
+                    format!("{}...", &error_text[..200])
+                } else {
+                    error_text.clone()
+                };
+                return Err(format!("HTTP 错误: {}, URL: {}, 响应预览: {}", status, final_url, preview).into());
+            },
+            _ => {} // 继续处理
         }
         
         // 获取响应文本
         let text = response.text().await?;
+
         
         Ok((text, final_url))
     }
@@ -583,7 +693,7 @@ mod tests {
         assert!(params.url.is_some());
         assert_eq!(params.method, "GET");
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("www.google.com"));
         assert!(url.contains("q=test%20query"));
     }
@@ -597,7 +707,7 @@ mod tests {
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("lr=lang_en"));
     }
 
@@ -610,7 +720,7 @@ mod tests {
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("start=20")); // (3-1) * 10 = 20
     }
 
@@ -633,7 +743,7 @@ mod tests {
     fn test_parse_empty_html() {
         let result = GoogleEngine::parse_html_results("");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Expected valid value").len(), 0);
     }
 
     #[test]
@@ -641,7 +751,7 @@ mod tests {
         let html = "<html><body>did not match any documents</body></html>";
         let result = GoogleEngine::parse_html_results(html);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Expected valid value").len(), 0);
     }
 
     #[test]

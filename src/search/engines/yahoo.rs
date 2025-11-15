@@ -117,8 +117,8 @@ impl YahooEngine {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build()
-                .expect("无法创建 HTTP 客户端"),
+                .build().unwrap_or(reqwest::Client::new())
+                ,
         }
     }
 
@@ -270,7 +270,7 @@ impl YahooEngine {
                     Selector::parse("h4").ok(),
                     Selector::parse("a.ac-algo").ok(),
                 ];
-                let link_selector = Selector::parse("a").unwrap();
+                let link_selector = Selector::parse("a").expect("Expected valid value");
                 let snippet_selectors = vec![
                     Selector::parse("div.compText").ok(),
                     Selector::parse("p.fz-ms").ok(),
@@ -509,7 +509,7 @@ mod tests {
         assert!(result.is_ok());
         assert!(params.url.is_some());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("search.yahoo.com"));
         assert!(url.contains("p=test%20query"));
     }
@@ -523,7 +523,7 @@ mod tests {
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("b=15")); // page 2: 2 * 7 + 1 = 15
         assert!(url.contains("pz=7"));
     }
@@ -544,6 +544,6 @@ mod tests {
     fn test_parse_empty_html() {
         let result = YahooEngine::parse_html_results("");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Expected valid value").len(), 0);
     }
 }

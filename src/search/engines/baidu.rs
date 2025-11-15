@@ -113,10 +113,10 @@ impl BaiduEngine {
             },
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .redirect(reqwest::redirect::Policy::none()) // 禁用自动重定向以检测 CAPTCHA
                 .build()
-                .expect("无法创建 HTTP 客户端"),
+                .unwrap_or_else(|_| reqwest::Client::new()),
         }
     }
 
@@ -154,13 +154,30 @@ impl BaiduEngine {
     /// 如果 JSON 解析失败返回错误
     fn parse_json_results(json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use serde_json::Value;
-        
+
         // 检查是否有有效的 JSON 数据
         if json_str.is_empty() {
             return Ok(Vec::new());
         }
-        
-        let json: Value = serde_json::from_str(json_str)?;
+
+        // 检查是否收到了HTML/CAPTCHA而不是JSON
+        let trimmed = json_str.trim();
+        if trimmed.starts_with('<') ||
+           trimmed.starts_with("Found") ||
+           trimmed.contains("wappass.baidu.com") ||
+           trimmed.contains("captcha") ||
+           trimmed.to_lowercase().contains("please verify") {
+            return Err("Baidu返回HTML/CAPTTCHA页面而不是JSON，可能触发了反爬虫机制".into());
+        }
+
+        // 尝试解析JSON，如果失败提供更详细的错误信息
+        let json: Value = match serde_json::from_str(json_str) {
+            Ok(json) => json,
+            Err(e) => {
+                return Err(format!("Baidu JSON解析失败: {}。响应内容前100字符: {}",
+                    e, &json_str[..json_str.len().min(100)]).into());
+            }
+        };
         let mut items = Vec::new();
         
         // Baidu JSON API 通常返回的结构类似：
@@ -437,7 +454,7 @@ mod tests {
         assert!(result.is_ok());
         assert!(params.url.is_some());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("URL should be set after request preparation");
         assert!(url.contains("www.baidu.com"));
         assert!(url.contains("wd="));
         assert!(url.contains("tn=json"));
@@ -452,7 +469,7 @@ mod tests {
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("URL should be set after request preparation");
         assert!(url.contains("pn=10")); // (2-1) * 10 = 10
     }
 
@@ -472,13 +489,13 @@ mod tests {
     fn test_parse_empty_json() {
         let result = BaiduEngine::parse_json_results("");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Valid result expected").len(), 0);
     }
 
     #[test]
     fn test_parse_invalid_json() {
         let result = BaiduEngine::parse_json_results("{}");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Valid result expected").len(), 0);
     }
 }

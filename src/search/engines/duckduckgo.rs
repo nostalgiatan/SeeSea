@@ -114,8 +114,8 @@ impl DuckDuckGoEngine {
             },
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
-                .build()
-                .expect("无法创建 HTTP 客户端"),
+                .build().unwrap_or(reqwest::Client::new())
+                ,
         }
     }
 
@@ -179,61 +179,68 @@ impl DuckDuckGoEngine {
     /// 如果 HTML 解析失败返回错误
     fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use scraper::{Html, Selector};
-        
+
         // 检查是否有结果
         if html.contains("No results") || html.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let document = Html::parse_document(html);
         let mut items = Vec::new();
-        
-        // DuckDuckGo 的搜索结果通常在 article, div.result, 或 div[data-testid] 元素中
-        let result_selectors = vec![
-            "article[data-testid='result']",
-            "div.result",
-            "div.links_main",
-        ];
-        
-        let mut results_found = false;
-        for selector_str in result_selectors {
-            let selector = match Selector::parse(selector_str) {
-                Ok(sel) => sel,
-                Err(_) => continue,
-            };
-            
-            for result in document.select(&selector) {
-                results_found = true;
-                
-                // 提取标题和 URL
-                let title_selector = Selector::parse("h2, h3, a[data-testid='result-title-a']").unwrap();
-                let link_selector = Selector::parse("a").unwrap();
-                let snippet_selectors = vec![
-                    Selector::parse("div[data-result='snippet']").ok(),
-                    Selector::parse("div.result__snippet").ok(),
-                    Selector::parse("span.result__snippet").ok(),
-                ];
-                
-                let title = result.select(&title_selector).next()
-                    .map(|t| t.text().collect::<String>().trim().to_string())
-                    .unwrap_or_default();
-                
-                let url = result.select(&link_selector).next()
-                    .and_then(|a| a.value().attr("href"))
-                    .unwrap_or_default();
-                
-                let mut content = String::new();
-                for selector in snippet_selectors.iter().flatten() {
-                    if let Some(snippet) = result.select(selector).next() {
-                        content = snippet.text().collect::<String>().trim().to_string();
-                        if !content.is_empty() {
-                            break;
-                        }
+
+        // 基于 SearXNG 的精确解析逻辑
+        // 检查 CAPTCHA - 使用与 searxng 相同的选择器
+        let captcha_selector = Selector::parse("form#challenge-form").expect("valid selector");
+        if document.select(&captcha_selector).next().is_some() {
+            return Err("DuckDuckGo CAPTCHA detected - 请稍后重试或使用其他搜索引擎".into());
+        }
+
+        // 检查零点击信息框（答案框）
+        let zero_click_selector = Selector::parse("div#zero_click_abstract").expect("valid selector");
+        if document.select(&zero_click_selector).next().is_some() {
+            // 如果有答案框，可能没有常规搜索结果
+        }
+
+        // 主要结果选择器 (完全基于 SearXNG 的实现)
+        let result_selector = if let Ok(sel) = Selector::parse("div#links div.web-result") {
+            sel
+        } else {
+            // 回退选择器 - 尝试多种可能的结构
+            let mut found_selector = None;
+            for fallback in ["div.result", "article.result", "div.web-result", "li.result"] {
+                if let Ok(sel) = Selector::parse(fallback) {
+                    if document.select(&sel).next().is_some() {
+                        found_selector = Some(sel);
+                        break;
                     }
                 }
-                
-                // 过滤有效结果
-                if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+            }
+            found_selector.unwrap_or_else(|| Selector::parse("div.result").expect("fallback selector"))
+        };
+
+        // 使用与 searxng 相同的选择器
+        let title_selector = Selector::parse("h2 a").expect("valid selector");
+        let content_selector = Selector::parse("a.result__snippet").expect("valid selector");
+
+        for result in document.select(&result_selector) {
+            // 提取标题和 URL (必需) - 使用与 searxng 相同的方法
+            let title_link = result.select(&title_selector).next();
+            if let Some(title_element) = title_link {
+                let title = title_element.text().collect::<String>().trim().to_string();
+                let url = title_element.value().attr("href").unwrap_or_default();
+
+                // 跳过没有标题的结果 (通常是"No results"项目)
+                if title.is_empty() {
+                    continue;
+                }
+
+                // 提取内容 (必需)
+                let content = result.select(&content_selector).next()
+                    .map(|c| c.text().collect::<String>().trim().to_string())
+                    .unwrap_or_default();
+
+                // 严格验证：必须有标题、URL和内容
+                if !title.is_empty() && !url.is_empty() && url.starts_with("http") && !content.is_empty() {
                     items.push(SearchResultItem {
                         title,
                         url: url.to_string(),
@@ -249,12 +256,21 @@ impl DuckDuckGoEngine {
                     });
                 }
             }
-            
-            if results_found {
-                break;
+        }
+
+        // 如果没有找到结果，尝试调试输出
+        if items.is_empty() {
+            // 检查是否有其他可能的结果容器
+            for debug_selector in ["div.results", "div#links", "section.results"] {
+                if let Ok(sel) = Selector::parse(debug_selector) {
+                    if document.select(&sel).next().is_some() {
+                        // 找到了容器但解析失败，可能是选择器问题
+                        break;
+                    }
+                }
             }
         }
-        
+
         Ok(items)
     }
 }
@@ -318,27 +334,51 @@ impl RequestResponseEngine for DuckDuckGoEngine {
 
         // 转义 bang 语法
         let quoted_query = Self::quote_ddg_bangs(query);
-        
-        // 设置基础 URL
+
+        // 设置基础 URL - 使用标准 HTML 版本
         params.url = Some("https://html.duckduckgo.com/html/".to_string());
         params.method = "POST".to_string();
-        
+
+        // 添加关键的 Sec-Fetch 头来避免机器人检测
+        params.headers.insert("Content-Type".to_string(), "application/x-www-form-urlencoded".to_string());
+        params.headers.insert("Referer".to_string(), "https://html.duckduckgo.com/html/".to_string());
+        params.headers.insert("Sec-Fetch-Dest".to_string(), "document".to_string());
+        params.headers.insert("Sec-Fetch-Mode".to_string(), "navigate".to_string());
+        params.headers.insert("Sec-Fetch-Site".to_string(), "same-origin".to_string());
+        params.headers.insert("Sec-Fetch-User".to_string(), "?1".to_string());
+
         // 设置表单数据
         let mut data = HashMap::new();
         data.insert("q".to_string(), quoted_query);
-        
+
         // 第一页
         if params.pageno == 1 {
             data.insert("b".to_string(), String::new());
+        } else {
+            // 分页逻辑：第2页偏移10，第3页及以后偏移10 + (页码-2)*15
+            let offset = if params.pageno == 2 {
+                10
+            } else {
+                10 + (params.pageno - 2) * 15
+            };
+            data.insert("s".to_string(), offset.to_string());
+            data.insert("dc".to_string(), (offset + 1).to_string());
+            data.insert("v".to_string(), "l".to_string());
+            data.insert("o".to_string(), "json".to_string());
+            data.insert("api".to_string(), "d.js".to_string());
+
+            // 注意：VQD 令牌需要在 fetch 阶段动态获取
+            // 这里我们暂时跳过分页，因为需要先获取 VQD
+            return Err("分页需要 VQD 令牌，当前仅支持第一页搜索".into());
         }
-        
+
         // 设置地区
         if let Some(ref region) = params.language {
             if region != "wt-wt" {
                 data.insert("kl".to_string(), region.clone());
             }
         }
-        
+
         // 设置时间范围
         if let Some(ref time_range) = params.time_range {
             let df = match time_range.as_str() {
@@ -352,9 +392,9 @@ impl RequestResponseEngine for DuckDuckGoEngine {
                 data.insert("df".to_string(), df.to_string());
             }
         }
-        
+
         params.data = Some(data);
-        
+
         Ok(())
     }
 
@@ -397,7 +437,7 @@ impl RequestResponseEngine for DuckDuckGoEngine {
         
         // 获取响应文本
         let text = response.text().await?;
-        
+
         Ok(text)
     }
 
@@ -495,7 +535,7 @@ mod tests {
     fn test_parse_empty_html() {
         let result = DuckDuckGoEngine::parse_html_results("");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Expected valid value").len(), 0);
     }
 
     #[test]
@@ -503,6 +543,6 @@ mod tests {
         let html = "<html><body>No results found</body></html>";
         let result = DuckDuckGoEngine::parse_html_results(html);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Expected valid value").len(), 0);
     }
 }

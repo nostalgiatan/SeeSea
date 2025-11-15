@@ -109,8 +109,8 @@ impl StartpageEngine {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build()
-                .expect("无法创建 HTTP 客户端"),
+                .build().unwrap_or(reqwest::Client::new())
+                ,
         }
     }
 
@@ -156,9 +156,9 @@ impl StartpageEngine {
                 results_found = true;
                 
                 // 提取标题和 URL
-                let title_selector = Selector::parse("h2, h3, a.w-gl__result-title").unwrap();
-                let link_selector = Selector::parse("a").unwrap();
-                let snippet_selector = Selector::parse("p.w-gl__description, p.result-snippet, div.result-snippet").unwrap();
+                let title_selector = Selector::parse("h2, h3, a.w-gl__result-title").expect("Expected valid value");
+                let link_selector = Selector::parse("a").expect("Expected valid value");
+                let snippet_selector = Selector::parse("p.w-gl__description, p.result-snippet, div.result-snippet").expect("Expected valid value");
                 
                 let title = result.select(&title_selector).next()
                     .map(|t| t.text().collect::<String>().trim().to_string())
@@ -323,7 +323,7 @@ mod tests {
         assert!(result.is_ok());
         assert!(params.url.is_some());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("startpage.com"));
         assert!(url.contains("query=test%20query"));
     }
@@ -337,7 +337,7 @@ mod tests {
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
         
-        let url = params.url.unwrap();
+        let url = params.url.expect("Expected valid value");
         assert!(url.contains("page=2"));
     }
 
@@ -357,6 +357,6 @@ mod tests {
     fn test_parse_empty_html() {
         let result = StartpageEngine::parse_html_results("");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
+        assert_eq!(result.expect("Expected valid value").len(), 0);
     }
 }
