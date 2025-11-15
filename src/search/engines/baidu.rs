@@ -129,6 +129,7 @@ impl BaiduEngine {
     /// # 返回
     ///
     /// 时间范围的秒数
+    #[allow(dead_code)]
     fn time_range_to_seconds(time_range: TimeRange) -> u64 {
         match time_range {
             TimeRange::Day => 86400,      // 1 天

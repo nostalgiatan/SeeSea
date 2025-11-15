@@ -125,6 +125,7 @@ impl BraveEngine {
     /// # 返回
     ///
     /// Brave API 的时间过滤字符串
+    #[allow(dead_code)]
     fn time_range_to_brave(time_range: TimeRange) -> &'static str {
         match time_range {
             TimeRange::Day => "pd",    // past day

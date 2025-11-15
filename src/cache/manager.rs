@@ -51,6 +51,7 @@ pub struct CacheManager {
     /// 配置
     config: CacheImplConfig,
     /// 统计信息
+    #[allow(dead_code)]
     stats: Arc<CacheStats>,
     /// 命中计数器（原子操作）
     hits: Arc<AtomicU64>,

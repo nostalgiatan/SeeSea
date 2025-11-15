@@ -318,7 +318,8 @@ impl PrivacyConfig {
                 result.add_error(format!("代理 {} 地址不能为空", i + 1));
             }
 
-            if proxy.port == 0 || proxy.port > 65535 {
+            // u16 最大值为 65535，所以只需检查 0
+            if proxy.port == 0 {
                 result.add_error(format!("代理 {} 端口无效", i + 1));
             }
 
@@ -329,12 +330,14 @@ impl PrivacyConfig {
 
         // 验证 Tor 配置
         if self.enable_tor {
-            if self.tor_config.socks_port == 0 || self.tor_config.socks_port > 65535 {
+            // u16 最大值为 65535，所以只需检查 0
+            if self.tor_config.socks_port == 0 {
                 result.add_error("Tor SOCKS 端口无效".to_string());
             }
 
             if let Some(control_port) = self.tor_config.control_port {
-                if control_port == 0 || control_port > 65535 {
+                // u16 最大值为 65535，所以只需检查 0
+                if control_port == 0 {
                     result.add_error("Tor 控制端口无效".to_string());
                 }
             }

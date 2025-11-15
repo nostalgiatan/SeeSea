@@ -72,8 +72,8 @@ impl ServerConfig {
     pub fn validate(&self) -> ConfigValidationResult {
         let mut result = ConfigValidationResult::success();
 
-        // 检查端口范围
-        if self.port == 0 || self.port > 65535 {
+        // 检查端口范围 (u16 最大值为 65535，所以只需检查 0)
+        if self.port == 0 {
             result.add_error("端口号必须在 1-65535 范围内".to_string());
         }
 

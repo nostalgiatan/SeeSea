@@ -20,6 +20,7 @@ pub struct SearchOrchestrator {
     /// 搜索配置
     config: SearchConfig,
     /// 网络接口
+    #[allow(dead_code)]
     network: Arc<NetworkInterface>,
     /// 缓存接口
     cache: Arc<RwLock<CacheInterface>>,

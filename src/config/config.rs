@@ -161,16 +161,19 @@ pub enum ConfigError {
 
 impl ConfigError {
     /// IoError 别名（兼容性）
+    #[allow(non_snake_case)]
     pub fn IoError(msg: String) -> Self {
         Self::Io(msg)
     }
     
     /// ParseError 别名（兼容性）
+    #[allow(non_snake_case)]
     pub fn ParseError(msg: String) -> Self {
         Self::Parse(msg)
     }
     
     /// ValidationFailed 别名（兼容性）
+    #[allow(non_snake_case)]
     pub fn ValidationFailed(errors: Vec<String>) -> Self {
         let mut result = ConfigValidationResult::default();
         for error in errors {
@@ -180,11 +183,13 @@ impl ConfigError {
     }
     
     /// FileNotFound 别名（兼容性）
+    #[allow(non_snake_case)]
     pub fn FileNotFound(path: String) -> Self {
         Self::NotFound(path)
     }
     
     /// EnvironmentError 别名（兼容性）
+    #[allow(non_snake_case)]
     pub fn EnvironmentError(msg: String) -> Self {
         Self::Environment(msg)
     }

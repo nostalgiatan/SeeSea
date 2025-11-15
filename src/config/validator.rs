@@ -11,6 +11,7 @@ pub struct ConfigValidator {
     /// 验证规则
     rules: Vec<ValidationRule>,
     /// 验证器配置
+    #[allow(dead_code)]
     config: ValidatorConfig,
 }
 
@@ -183,7 +184,8 @@ impl ConfigValidator {
                     if proxy.address.is_empty() {
                         result.add_error(format!("代理 {} 的地址不能为空", i + 1));
                     }
-                    if proxy.port == 0 || proxy.port > 65535 {
+                    // u16 最大值为 65535，所以只需检查 0
+                    if proxy.port == 0 {
                         result.add_error(format!("代理 {} 的端口无效", i + 1));
                     }
                 }

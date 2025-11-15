@@ -129,6 +129,7 @@ impl QwantEngine {
     /// # 错误
     ///
     /// 如果 JSON 解析失败返回错误
+    #[allow(dead_code)]
     fn parse_json_results(json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use serde_json::Value;
         
@@ -138,7 +139,7 @@ impl QwantEngine {
         }
         
         let json: Value = serde_json::from_str(json_str)?;
-        let mut items = Vec::new();
+        let mut items = Vec::with_capacity(10);  // Pre-allocate for typical result count
         
         // Qwant JSON API 通常返回的结构
         if let Some(data) = json.get("data") {
@@ -205,86 +206,53 @@ impl QwantEngine {
         }
 
         let document = Html::parse_document(html);
-        let mut items = Vec::new();
+        let mut items = Vec::with_capacity(10);  // Pre-allocate for typical result count
 
-        // 尝试多种选择器，优先使用 searxng 的选择器，然后回退到通用选择器
-        let selectors = [
-            "section article",     // searxng lite 选择器
-            "article.result",      // 通用 article 结果
-            "div.result",          // 通用 div 结果
-            "div.web-result",      // web 结果
-            "a[href]",              // 所有链接作为最后回退
-        ];
+        // Python SearXNG uses: '//section/article'
+        // This matches Qwant Lite's structure
+        let article_selector = Selector::parse("section article").expect("valid selector");
+        
+        for item in document.select(&article_selector) {
+            // Python: if eval_xpath(item, "./span[contains(@class, 'tooltip')]"):
+            // Skip advertising (items with tooltip class)
+            let tooltip_selector = Selector::parse("span[class*=\"tooltip\"]").expect("valid selector");
+            if item.select(&tooltip_selector).next().is_some() {
+                continue;
+            }
 
-        for selector_str in selectors.iter() {
-            if let Ok(selector) = Selector::parse(selector_str) {
-                for element in document.select(&selector) {
-                    // 检查广告 - 跳过带有 tooltip 的元素
-                    let tooltip_selector = Selector::parse("span.tooltip, .ad, .advertisement").expect("valid selector");
-                    if element.select(&tooltip_selector).next().is_some() {
-                        continue;
-                    }
+            // Python: 'url': extract_text(eval_xpath(item, "./span[contains(@class, 'url partner')]"))
+            let url_selector = Selector::parse("span[class*=\"url\"][class*=\"partner\"]").expect("valid selector");
+            let url = item.select(&url_selector).next()
+                .map(|span| span.text().collect::<String>().trim().to_string())
+                .unwrap_or_default();
 
-                    // 尝试提取标题、URL和内容
-                    let title = element.select(&Selector::parse("h2 a, h3 a, a.title, .title").expect("valid selector")).next()
-                        .map(|t| t.text().collect::<String>().trim().to_string())
-                        .or_else(|| {
-                            // 如果找不到标题，使用链接文本
-                            if selector_str == &"a[href]" {
-                                Some(element.text().collect::<String>().trim().to_string())
-                            } else {
-                                Some(String::new())
-                            }
-                        })
-                        .unwrap_or_default();
+            // Python: 'title': extract_text(eval_xpath(item, './h2/a'))
+            let title_selector = Selector::parse("h2 a").expect("valid selector");
+            let title = item.select(&title_selector).next()
+                .map(|a| a.text().collect::<String>().trim().to_string())
+                .unwrap_or_default();
 
-                    let url = element.select(&Selector::parse("a").expect("valid selector")).next()
-                        .and_then(|a| a.value().attr("href"))
-                        .or_else(|| {
-                            // 如果元素本身是链接
-                            if selector_str == &"a[href]" {
-                                element.value().attr("href")
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or_default();
+            // Python: 'content': extract_text(eval_xpath(item, './p'))
+            let content_selector = Selector::parse("p").expect("valid selector");
+            let content = item.select(&content_selector).next()
+                .map(|p| p.text().collect::<String>().trim().to_string())
+                .unwrap_or_default();
 
-                    let content = element.select(&Selector::parse("p, .description, .snippet, .content").expect("valid selector")).next()
-                        .map(|c| c.text().collect::<String>().trim().to_string())
-                        .unwrap_or_default();
-
-                    // 过滤有效结果
-                    if !title.is_empty() && !url.is_empty() {
-                        // 确保 URL 是完整的
-                        let final_url = if url.starts_with("http") {
-                            url.to_string()
-                        } else if url.starts_with("/") {
-                            format!("https://www.qwant.com{}", url)
-                        } else {
-                            url.to_string()
-                        };
-
-                        items.push(SearchResultItem {
-                            title,
-                            url: final_url.clone(),
-                            content,
-                            display_url: Some(final_url),
-                            site_name: None,
-                            score: 1.0,
-                            result_type: ResultType::Web,
-                            thumbnail: None,
-                            published_date: None,
-                            template: None,
-                            metadata: HashMap::new(),
-                        });
-                    }
-                }
-
-                // 如果找到了结果，跳出循环
-                if !items.is_empty() {
-                    break;
-                }
+            // Only add if we have both title and URL
+            if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                items.push(SearchResultItem {
+                    title,
+                    url: url.clone(),
+                    content,
+                    display_url: Some(url),
+                    site_name: None,
+                    score: 1.0,
+                    result_type: ResultType::Web,
+                    thumbnail: None,
+                    published_date: None,
+                    template: None,
+                    metadata: HashMap::new(),
+                });
             }
         }
 
@@ -325,14 +293,23 @@ impl RequestResponseEngine for QwantEngine {
 
     /// 准备请求参数
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // 使用普通 qwant.com 而不是 lite 版本，因为 lite 会重定向
+        // Python SearXNG uses web-lite: https://lite.qwant.com/
         let locale = params.language.as_deref().unwrap_or("en_US");
 
-        // 构建查询参数 - 使用普通 qwant 格式
+        // Python SearXNG web-lite query params:
+        // - q: query
+        // - locale: locale (e.g., en_us)
+        // - l: language part (e.g., en)
+        // - s: safesearch (0, 1, 2)
+        // - p: page number
+        let lang_part = locale.split('_').next().unwrap_or("en");
+        
         let query_params = vec![
             ("q", query.to_string()),
-            ("t", "web".to_string()),
             ("locale", locale.to_lowercase()),
+            ("l", lang_part.to_string()),
+            ("s", params.safesearch.to_string()),
+            ("p", params.pageno.to_string()),
         ];
 
         // 构建查询字符串
@@ -342,14 +319,13 @@ impl RequestResponseEngine for QwantEngine {
             .collect::<Vec<_>>()
             .join("&");
 
-        // 使用普通 qwant.com
-        params.url = Some(format!("https://www.qwant.com/?{}", query_string));
+        // Use Qwant Lite like Python SearXNG
+        params.url = Some(format!("https://lite.qwant.com/?{}", query_string));
         params.method = "GET".to_string();
 
-        // 设置必要的头部
-        params.headers.insert("Accept-Language".to_string(), "en-US,en;q=0.9,en;q=0.8".to_string());
-        params.headers.insert("Accept".to_string(), "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8".to_string());
-        params.headers.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string());
+        // 设置必要的头部 - Python SearXNG sets Accept-Language
+        params.headers.insert("Accept-Language".to_string(), format!("{},en;q=0.9", locale.replace('_', "-")));
+        params.headers.insert("Accept".to_string(), "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8".to_string());
 
         Ok(())
     }
@@ -426,7 +402,7 @@ mod tests {
         assert!(params.url.is_some());
         
         let url = params.url.expect("Expected valid value");
-        assert!(url.contains("api.qwant.com"));
+        assert!(url.contains("lite.qwant.com"));
         assert!(url.contains("q=test%20query"));
     }
 
@@ -440,7 +416,7 @@ mod tests {
         assert!(result.is_ok());
         
         let url = params.url.expect("Expected valid value");
-        assert!(url.contains("offset=20")); // (3-1) * 10 = 20
+        assert!(url.contains("p=3"));
     }
 
     #[test]

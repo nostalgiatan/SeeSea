@@ -167,6 +167,7 @@ impl BingEngine {
     /// # 返回
     ///
     /// Bing API 的时间过滤字符串
+    #[allow(dead_code)]
     fn time_range_to_bing(time_range: TimeRange) -> &'static str {
         match time_range {
             TimeRange::Day => "1",

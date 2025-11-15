@@ -166,6 +166,7 @@ impl YahooEngine {
     /// # 返回
     ///
     /// Yahoo API 的时间过滤字符串
+    #[allow(dead_code)]
     fn time_range_to_yahoo(time_range: TimeRange) -> &'static str {
         match time_range {
             TimeRange::Day => "d",
@@ -243,41 +244,93 @@ impl YahooEngine {
         }
         
         let document = Html::parse_document(html);
-        let mut items = Vec::new();
+        // Pre-allocate with expected capacity for typical Yahoo results (~10 items)
+        let mut items = Vec::with_capacity(10);
         
-        // results_xpath = '//div[contains(@class, "algo")]'
-        let result_selector = Selector::parse("div[class*=\"algo\"]").expect("valid selector");
-        let title_selector = Selector::parse("h3 a, h4 a").expect("valid selector");
-        let content_selector = Selector::parse("div.compText, p").expect("valid selector");
+        // Python SearXNG uses: '//div[contains(@class,"algo-sr")]'
+        // This is the correct selector for Yahoo search results
+        let result_selector = Selector::parse("div[class*=\"algo-sr\"]")
+            .or_else(|_| Selector::parse("div[class*=\"algo\"]"))
+            .expect("valid selector");
         
         for result in document.select(&result_selector) {
-            let title = result.select(&title_selector).next()
-                .map(|t| t.text().collect::<String>().trim().to_string())
+            // Python: url_xpath = './/div[contains(@class,"compTitle")]/h3/a/@href'
+            // or for search.yahoo.com: './/div[contains(@class,"compTitle")]/a/@href'
+            let url_selector = Selector::parse("div[class*=\"compTitle\"] a").expect("valid selector");
+            let url_elem = result.select(&url_selector).next();
+            
+            if url_elem.is_none() {
+                continue;
+            }
+            
+            let url_elem = url_elem.unwrap();
+            let mut url = url_elem.value().attr("href").unwrap_or("").to_string();
+            
+            // Parse Yahoo tracking URL: remove /RU= and /RK= wrappers
+            if url.contains("/RU=") {
+                if let Some(start_pos) = url.find("/RU=") {
+                    let after_ru = &url[start_pos + 4..];
+                    if let Some(http_start) = after_ru.find("http") {
+                        let url_part = &after_ru[http_start..];
+                        // Find end marker /RS or /RK
+                        let mut end_pos = url_part.len();
+                        for marker in &["/RS", "/RK"] {
+                            if let Some(pos) = url_part.rfind(marker) {
+                                if pos < end_pos {
+                                    end_pos = pos;
+                                }
+                            }
+                        }
+                        url = urlencoding::decode(&url_part[..end_pos])
+                            .unwrap_or_else(|_| url_part[..end_pos].into())
+                            .to_string();
+                    }
+                }
+            }
+            
+            if url.is_empty() || !url.starts_with("http") {
+                continue;
+            }
+            
+            // Python: title_xpath = './/h3//a/@aria-label'
+            // or for search.yahoo.com: './/div[contains(@class,"compTitle")]/a/h3/span'
+            let title = url_elem.value().attr("aria-label")
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    // Try h3 text content
+                    let h3_selector = Selector::parse("h3").expect("valid selector");
+                    url_elem.select(&h3_selector).next()
+                        .map(|h3| h3.text().collect::<String>().trim().to_string())
+                })
+                .or_else(|| {
+                    // Fallback: use link text
+                    Some(url_elem.text().collect::<String>().trim().to_string())
+                })
                 .unwrap_or_default();
             
-            let url = result.select(&title_selector).next()
-                .and_then(|a| a.value().attr("href"))
-                .unwrap_or("");
+            if title.is_empty() {
+                continue;
+            }
             
+            // Python: content = eval_xpath_getindex(result, './/div[contains(@class, "compText")]', 0, default='')
+            let content_selector = Selector::parse("div[class*=\"compText\"]").expect("valid selector");
             let content = result.select(&content_selector).next()
                 .map(|c| c.text().collect::<String>().trim().to_string())
                 .unwrap_or_default();
             
-            if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
-                items.push(SearchResultItem {
-                    title,
-                    url: url.to_string(),
-                    content,
-                    display_url: Some(url.to_string()),
-                    site_name: None,
-                    score: 1.0,
-                    result_type: ResultType::Web,
-                    thumbnail: None,
-                    published_date: None,
-                    template: None,
-                    metadata: HashMap::new(),
-                });
-            }
+            items.push(SearchResultItem {
+                title,
+                url: url.clone(),
+                content,
+                display_url: Some(url),
+                site_name: None,
+                score: 1.0,
+                result_type: ResultType::Web,
+                thumbnail: None,
+                published_date: None,
+                template: None,
+                metadata: HashMap::new(),
+            });
         }
         
         Ok(items)
@@ -320,8 +373,9 @@ impl RequestResponseEngine for YahooEngine {
         let language = params.language.as_deref().unwrap_or("en");
         let region = params.language.as_deref();
         
-        // 构建查询参数
-        let mut query_params = vec![("p", query.to_string())];
+        // 构建查询参数 - pre-allocate capacity
+        let mut query_params = Vec::with_capacity(6);
+        query_params.push(("p", query.to_string()));
         
         // 添加时间范围
         if let Some(ref time_range) = params.time_range {
@@ -346,13 +400,21 @@ impl RequestResponseEngine for YahooEngine {
             query_params.push(("xargs", "0".to_string()));
         }
         
-        // 构建 URL
+        // 构建 URL - use estimated capacity
         let domain = Self::get_domain(region);
-        let query_string = query_params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        let estimated_size = query_params.iter()
+            .map(|(k, v)| k.len() + v.len() + 2)  // key + value + "=" + "&"
+            .sum::<usize>();
+        let mut query_string = String::with_capacity(estimated_size);
+        
+        for (i, (k, v)) in query_params.iter().enumerate() {
+            if i > 0 {
+                query_string.push('&');
+            }
+            query_string.push_str(k);
+            query_string.push('=');
+            query_string.push_str(&urlencoding::encode(v));
+        }
         
         params.url = Some(format!("https://{}/search?{}", domain, query_string));
         params.method = "GET".to_string();

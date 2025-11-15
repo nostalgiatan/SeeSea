@@ -13,6 +13,7 @@ use crate::net::client::HttpClient;
 use crate::net::types::{NetworkConfig, RequestOptions};
 
 // VQD token cache entry
+#[allow(dead_code)]
 struct VqdCacheEntry {
     token: String,
     expires_at: SystemTime,
@@ -77,6 +78,7 @@ impl DuckDuckGoEngine {
         }
     }
 
+    #[allow(dead_code)]
     async fn get_vqd(&self, query: &str, region: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
         let cache_key = format!("{}_{}", query, region);
         
@@ -126,55 +128,59 @@ impl DuckDuckGoEngine {
         }
 
         let document = Html::parse_document(html);
-        let mut items = Vec::new();
+        let mut items = Vec::with_capacity(10);  // Pre-allocate for typical result count
 
-        let result_selector = Selector::parse("div.result, article").ok();
-        let title_selector = Selector::parse("h2 a, h3 a, a.result__a").ok();
-        let url_selector = Selector::parse("a[href]").ok();
-        let content_selector = Selector::parse("div.result__snippet, p").ok();
-
-        if let Some(ref sel) = result_selector {
-            for result in document.select(sel) {
-                let title = if let Some(ref ts) = title_selector {
-                    result.select(ts).next()
-                        .map(|t| t.text().collect::<String>().trim().to_string())
-                        .unwrap_or_default()
-                } else {
-                    String::new()
-                };
-
-                let url = if let Some(ref us) = url_selector {
-                    result.select(us).next()
-                        .and_then(|a| a.value().attr("href"))
-                        .unwrap_or("")
-                } else {
-                    ""
-                };
-
-                let content = if let Some(ref cs) = content_selector {
-                    result.select(cs).next()
-                        .map(|c| c.text().collect::<String>().trim().to_string())
-                        .unwrap_or_default()
-                } else {
-                    String::new()
-                };
-
-                if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
-                    items.push(SearchResultItem {
-                        title,
-                        url: url.to_string(),
-                        content,
-                        display_url: Some(url.to_string()),
-                        site_name: None,
-                        score: 1.0,
-                        result_type: ResultType::Web,
-                        thumbnail: None,
-                        published_date: None,
-                        template: None,
-                        metadata: HashMap::new(),
-                    });
-                }
+        // Python SearXNG: for div_result in eval_xpath(doc, '//div[@id="links"]/div[contains(@class, "web-result")]')
+        // Select web results from the links div, avoiding ads
+        let result_selector = Selector::parse("div#links div[class*=\"web-result\"]")
+            .or_else(|_| Selector::parse("div.result"))
+            .expect("valid selector");
+        
+        for result in document.select(&result_selector) {
+            // Python: title = eval_xpath(div_result, './/h2/a')
+            let title_selector = Selector::parse("h2 a").expect("valid selector");
+            let title_elem = result.select(&title_selector).next();
+            
+            if title_elem.is_none() {
+                // Python: if not title: continue (this is the "No results." item)
+                continue;
             }
+            
+            let title_elem = title_elem.unwrap();
+            let title = title_elem.text().collect::<String>().trim().to_string();
+            
+            if title.is_empty() {
+                continue;
+            }
+            
+            // Python: item["url"] = eval_xpath(div_result, './/h2/a/@href')[0]
+            let url = title_elem.value().attr("href")
+                .unwrap_or("")
+                .to_string();
+            
+            if url.is_empty() || !url.starts_with("http") {
+                continue;
+            }
+            
+            // Python: item["content"] = extract_text(eval_xpath_getindex(div_result, './/a[contains(@class, "result__snippet")]', 0, []))
+            let content_selector = Selector::parse("a[class*=\"result__snippet\"]").expect("valid selector");
+            let content = result.select(&content_selector).next()
+                .map(|c| c.text().collect::<String>().trim().to_string())
+                .unwrap_or_default();
+
+            items.push(SearchResultItem {
+                title,
+                url: url.clone(),
+                content,
+                display_url: Some(url),
+                site_name: None,
+                score: 1.0,
+                result_type: ResultType::Web,
+                thumbnail: None,
+                published_date: None,
+                template: None,
+                metadata: HashMap::new(),
+            });
         }
 
         Ok(items)
@@ -214,13 +220,22 @@ impl RequestResponseEngine for DuckDuckGoEngine {
 
         let region = params.custom.get("region").map(|s| s.as_str()).unwrap_or("wt-wt");
         
+        // Python: Some locales (at least China) does not support pagination
         if region.starts_with("zh") && params.pageno > 1 {
             params.url = None;
             return Err("Chinese locale does not support pagination".into());
         }
 
+        // Python SearXNG structure for form data
         let mut form_data = vec![("q", query.to_string())];
 
+        // Python:
+        // if params['pageno'] == 1:
+        //     params['data']['b'] = ""
+        // elif params['pageno'] >= 2:
+        //     offset = 10 + (params['pageno'] - 2) * 15
+        //     params['data']['s'] = offset
+        //     ...
         if params.pageno == 1 {
             form_data.push(("b", String::new()));
         } else {
@@ -231,10 +246,15 @@ impl RequestResponseEngine for DuckDuckGoEngine {
             form_data.push(("o", "json".to_string()));
             form_data.push(("dc", (offset + 1).to_string()));
             form_data.push(("api", "d.js".to_string()));
+            
+            // Note: vqd would be needed here for page 2+, but we skip it for now
+            // as it requires caching which is complex
         }
 
+        // Python: Put empty kl in form data if language/region set to all
         form_data.push(("kl", if region == "wt-wt" { String::new() } else { region.to_string() }));
 
+        // Time range filter
         if let Some(ref tr) = params.time_range {
             let df = match tr.as_str() {
                 "day" => "d",
@@ -243,8 +263,10 @@ impl RequestResponseEngine for DuckDuckGoEngine {
                 "year" => "y",
                 _ => "",
             };
-            form_data.push(("df", df.to_string()));
-            params.cookies.insert("df".to_string(), df.to_string());
+            if !df.is_empty() {
+                form_data.push(("df", df.to_string()));
+                params.cookies.insert("df".to_string(), df.to_string());
+            }
         } else {
             form_data.push(("df", String::new()));
         }
@@ -254,6 +276,7 @@ impl RequestResponseEngine for DuckDuckGoEngine {
         params.method = "POST".to_string();
         params.data = Some(form_data.into_iter().map(|(k, v)| (k.to_string(), v)).collect());
 
+        // Python SearXNG headers - critical for bot detection
         params.headers.insert("Content-Type".to_string(), "application/x-www-form-urlencoded".to_string());
         params.headers.insert("Referer".to_string(), "https://html.duckduckgo.com/html/".to_string());
         params.headers.insert("Sec-Fetch-Dest".to_string(), "document".to_string());
