@@ -360,69 +360,29 @@ impl RequestResponseEngine for DuckDuckGoEngine {
 
     async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         let url = params.url.as_ref().ok_or("URL not set")?;
-        
+
         let mut options = RequestOptions::default();
-        options.timeout = Duration::from_secs(10);
-        
+        options.timeout = Duration::from_secs(30); // 增加超时时间
+
+        // 添加所有请求头
         for (key, value) in &params.headers {
             options.headers.push((key.clone(), value.clone()));
         }
 
         let response = if params.method == "POST" {
             let form_data_map = params.data.as_ref().ok_or("POST data not set")?;
-            
-            // IMPORTANT: 必须按照特定顺序构建表单数据，因为 DDG 的机器人检测会检查顺序
-            // 顺序: q, b/s+nextParams+v+o+dc+api, kl, df
-            let mut form_parts = Vec::new();
-            
-            // 1. q (query) - 必须第一个
-            if let Some(q) = form_data_map.get("q") {
-                form_parts.push(format!("q={}", urlencoding::encode(q)));
-            }
-            
-            // 2. b (第一页) 或 s, nextParams, v, o, dc, api (后续页)
-            if let Some(b) = form_data_map.get("b") {
-                form_parts.push(format!("b={}", urlencoding::encode(b)));
-            } else {
-                // 分页参数，按顺序添加
-                if let Some(s) = form_data_map.get("s") {
-                    form_parts.push(format!("s={}", urlencoding::encode(s)));
-                }
-                if let Some(np) = form_data_map.get("nextParams") {
-                    form_parts.push(format!("nextParams={}", urlencoding::encode(np)));
-                }
-                if let Some(v) = form_data_map.get("v") {
-                    form_parts.push(format!("v={}", urlencoding::encode(v)));
-                }
-                if let Some(o) = form_data_map.get("o") {
-                    form_parts.push(format!("o={}", urlencoding::encode(o)));
-                }
-                if let Some(dc) = form_data_map.get("dc") {
-                    form_parts.push(format!("dc={}", urlencoding::encode(dc)));
-                }
-                if let Some(api) = form_data_map.get("api") {
-                    form_parts.push(format!("api={}", urlencoding::encode(api)));
-                }
-                if let Some(vqd) = form_data_map.get("vqd") {
-                    form_parts.push(format!("vqd={}", urlencoding::encode(vqd)));
-                }
-            }
-            
-            // 3. kl (region/language)
-            if let Some(kl) = form_data_map.get("kl") {
-                form_parts.push(format!("kl={}", urlencoding::encode(kl)));
-            }
-            
-            // 4. df (time filter)
-            if let Some(df) = form_data_map.get("df") {
-                form_parts.push(format!("df={}", urlencoding::encode(df)));
-            }
-            
-            let body = form_parts.join("&");
-            self.client.post(url, body.into_bytes(), Some(options)).await
+
+            // 严格按照Python SearXNG实现的顺序构建表单数据
+            // Python代码中明确注释：The order of params['data'] dictionary matters for DDG bot detection!
+            let form_body = build_ddg_form_data(form_data_map)?;
+
+            // 确保Content-Type正确设置
+            options.headers.push(("Content-Type".to_string(), "application/x-www-form-urlencoded".to_string()));
+
+            self.client.post(url, form_body.into_bytes(), Some(options)).await
         } else {
             self.client.get(url, Some(options)).await
-        }.map_err(|e| format!("Request failed: {}", e))?;
+        }.map_err(|e| format!("Request failed: [错误][网络错误][错误码: 1000] POST request failed: {}", e))?;
 
         response.text().await.map_err(|e| format!("Failed to read response: {}", e).into())
     }
@@ -430,4 +390,44 @@ impl RequestResponseEngine for DuckDuckGoEngine {
     fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         Self::parse_html_results(&resp)
     }
+}
+
+/// 构建DDG表单数据，严格按照Python实现的顺序
+fn build_ddg_form_data(form_data: &std::collections::HashMap<String, String>) -> Result<String, Box<dyn Error + Send + Sync>> {
+    let mut parts = Vec::new();
+
+    // 1. q (query) - 必须第一个
+    if let Some(q) = form_data.get("q") {
+        parts.push(format!("q={}", urlencoding::encode(q)));
+    } else {
+        return Err("Missing query parameter 'q'".into());
+    }
+
+    // 2. b (第一页) 或分页参数 (第二页+)
+    if let Some(b) = form_data.get("b") {
+        parts.push(format!("b={}", urlencoding::encode(b)));
+    } else {
+        // 分页参数按顺序添加
+        let pagination_keys = ["s", "nextParams", "v", "o", "dc", "api"];
+        for key in &pagination_keys {
+            if let Some(value) = form_data.get(*key) {
+                parts.push(format!("{}={}", key, urlencoding::encode(value)));
+            }
+        }
+        if let Some(vqd) = form_data.get("vqd") {
+            parts.push(format!("vqd={}", urlencoding::encode(vqd)));
+        }
+    }
+
+    // 3. kl (region/language)
+    if let Some(kl) = form_data.get("kl") {
+        parts.push(format!("kl={}", urlencoding::encode(kl)));
+    }
+
+    // 4. df (time filter)
+    if let Some(df) = form_data.get("df") {
+        parts.push(format!("df={}", urlencoding::encode(df)));
+    }
+
+    Ok(parts.join("&"))
 }

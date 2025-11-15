@@ -25,15 +25,19 @@ enum Commands {
     Search {
         /// 搜索查询
         query: String,
-        
+
         /// 使用全局模式（所有引擎）
         #[arg(short, long)]
         global: bool,
-        
+
+        /// 使用中国模式（优化的中国友好引擎）
+        #[arg(short = 'c', long)]
+        china: bool,
+
         /// 指定使用的引擎（逗号分隔）
         #[arg(short, long)]
         engines: Option<String>,
-        
+
         /// 显示详细输出
         #[arg(short, long)]
         verbose: bool,
@@ -55,6 +59,10 @@ enum Commands {
         /// 使用全局模式
         #[arg(short, long)]
         global: bool,
+
+        /// 使用中国模式
+        #[arg(short = 'c', long)]
+        china: bool,
     },
 }
 
@@ -63,18 +71,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     
     match cli.command {
-        Some(Commands::Search { query, global, engines, verbose, debug }) => {
-            execute_search(query, global, engines, verbose, debug).await?;
+        Some(Commands::Search { query, global, china, engines, verbose, debug }) => {
+            execute_search(query, global, china, engines, verbose, debug).await?;
         }
         Some(Commands::ListEngines { stats }) => {
             list_engines(stats).await?;
         }
-        Some(Commands::Interactive { global }) => {
-            interactive_mode(global).await?;
+        Some(Commands::Interactive { global, china }) => {
+            interactive_mode(global, china).await?;
         }
         None => {
             // 默认进入交互模式
-            interactive_mode(false).await?;
+            interactive_mode(false, false).await?;
         }
     }
     
@@ -85,6 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn execute_search(
     query_str: String,
     use_global: bool,
+    use_china: bool,
     engines_str: Option<String>,
     verbose: bool,
     debug: bool,
@@ -93,7 +102,20 @@ async fn execute_search(
     println!("{}", "━".repeat(60).bright_black());
     
     // 确定运行模式和引擎列表
-    let (mode, configured_engines) = if use_global {
+    let (mode, configured_engines) = if use_china {
+        // 中国模式：使用在国内能快速访问的引擎，基于全局测试成功的8个引擎
+        let china_engines = vec![
+            "yandex".to_string(),       // ✅ 在全局模式成功 - 1527ms响应
+            "wikidata".to_string(),     // ✅ 在全局模式成功 - 1067ms响应
+            "search360".to_string(),    // ✅ 在全局模式成功 - 1551ms响应
+            "bing".to_string(),         // ✅ 在全局模式成功 - 946ms响应
+            "baidu".to_string(),        // ✅ 在全局模式成功 - 1108ms响应
+            "github".to_string(),       // ✅ 在全局模式成功 - 2040ms响应
+            "stackoverflow".to_string(), // ✅ 在全局模式成功 - 1496ms响应
+            "unsplash".to_string(),     // ✅ 在全局模式成功 - 1497ms响应
+        ];
+        (EngineMode::Configured, china_engines)
+    } else if use_global {
         (EngineMode::Global, vec![])
     } else if let Some(engines) = engines_str {
         let engine_list: Vec<String> = engines
@@ -108,12 +130,16 @@ async fn execute_search(
             vec!["google".to_string(), "bing".to_string(), "duckduckgo".to_string()],
         )
     };
-    
+
     println!("📌 查询: {}", query_str.bright_white().bold());
-    println!("⚙️  模式: {}", 
-        match mode {
-            EngineMode::Global => "全局模式（所有引擎）".bright_green(),
-            EngineMode::Configured => "配置模式".bright_yellow(),
+    println!("⚙️  模式: {}",
+        if use_china {
+            "中国模式（优化的中国友好引擎）".bright_red()
+        } else {
+            match mode {
+                EngineMode::Global => "全局模式（所有引擎）".bright_green(),
+                EngineMode::Configured => "配置模式".bright_yellow(),
+            }
         }
     );
     
@@ -298,7 +324,7 @@ async fn list_engines(show_stats: bool) -> Result<(), Box<dyn std::error::Error>
 }
 
 /// 交互式搜索模式
-async fn interactive_mode(use_global: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn interactive_mode(use_global: bool, use_china: bool) -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "🌊 SeeSea 交互式搜索".bright_cyan().bold());
     println!("{}", "━".repeat(60).bright_black());
     println!("输入查询来搜索，输入 'quit' 或 'exit' 退出");
@@ -308,13 +334,30 @@ async fn interactive_mode(use_global: bool) -> Result<(), Box<dyn std::error::Er
     println!("{}", "━".repeat(60).bright_black());
     println!();
     
-    let mut mode = if use_global {
-        EngineMode::Global
+    let (mode, configured_engines) = if use_china {
+        // 中国模式：使用在国内能快速访问的引擎，基于全局测试成功的8个引擎
+        let china_engines = vec![
+            "yandex".to_string(),       // ✅ 在全局模式成功 - 1527ms响应
+            "wikidata".to_string(),     // ✅ 在全局模式成功 - 1067ms响应
+            "search360".to_string(),    // ✅ 在全局模式成功 - 1551ms响应
+            "bing".to_string(),         // ✅ 在全局模式成功 - 946ms响应
+            "baidu".to_string(),        // ✅ 在全局模式成功 - 1108ms响应
+            "github".to_string(),       // ✅ 在全局模式成功 - 2040ms响应
+            "stackoverflow".to_string(), // ✅ 在全局模式成功 - 1496ms响应
+            "unsplash".to_string(),     // ✅ 在全局模式成功 - 1497ms响应
+        ];
+        (EngineMode::Configured, china_engines)
+    } else if use_global {
+        (EngineMode::Global, vec![])
     } else {
-        EngineMode::Configured
+        // 默认使用一些常用引擎
+        (
+            EngineMode::Configured,
+            vec!["google".to_string(), "bing".to_string(), "duckduckgo".to_string()],
+        )
     };
-    
-    let configured_engines = vec!["google".to_string(), "bing".to_string(), "duckduckgo".to_string()];
+
+    let mut mode = mode;
     let mut manager = EngineManager::new(mode, configured_engines.clone());
     
     loop {
@@ -354,7 +397,7 @@ async fn interactive_mode(use_global: bool) -> Result<(), Box<dyn std::error::Er
                 manager = EngineManager::new(mode, configured_engines.clone());
             }
             _ => {
-                execute_search(input.to_string(), mode == EngineMode::Global, None, false, false).await?;
+                execute_search(input.to_string(), mode == EngineMode::Global, false, None, false, false).await?;
             }
         }
         

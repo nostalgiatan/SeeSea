@@ -48,6 +48,8 @@ use crate::derive::{
     ResultType, SearchEngine, SearchQuery, SearchResult,
     SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
 };
+use crate::net::client::HttpClient;
+use crate::net::types::{NetworkConfig, RequestOptions};
 
 /// Yandex 搜索引擎
 ///
@@ -56,7 +58,7 @@ pub struct YandexEngine {
     /// 引擎信息
     info: EngineInfo,
     /// HTTP 客户端
-    client: reqwest::Client,
+    client: HttpClient,
 }
 
 impl YandexEngine {
@@ -107,11 +109,9 @@ impl YandexEngine {
                 tokens: Vec::new(),
                 max_page: 50,
             },
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build().unwrap_or(reqwest::Client::new())
-                ,
+            client: HttpClient::new(NetworkConfig::default()).unwrap_or_else(|_| {
+                    panic!("Failed to create HTTP client for Yandex")
+                }),
         }
     }
 
@@ -254,10 +254,7 @@ impl SearchEngine for YandexEngine {
 
     /// 检查引擎是否可用
     async fn is_available(&self) -> bool {
-        match self.client.get("https://yandex.com").send().await {
-            Ok(resp) => resp.status().is_success(),
-            Err(_) => false,
-        }
+        self.client.get("https://yandex.com", None).await.is_ok()
     }
 }
 
@@ -304,37 +301,35 @@ impl RequestResponseEngine for YandexEngine {
     async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         let url = params.url.as_ref()
             .ok_or("请求 URL 未设置")?;
-        
-        let mut request = self.client.get(url);
-        
+
+        // 创建请求选项
+        let mut options = RequestOptions::default();
+        options.timeout = std::time::Duration::from_secs(10);
+
         // 添加自定义头
         for (key, value) in &params.headers {
-            request = request.header(key, value);
+            options.headers.push((key.clone(), value.clone()));
         }
-        
-        // 添加 cookies
-        for (key, value) in &params.cookies {
-            request = request.header("Cookie", format!("{}={}", key, value));
-        }
-        
+
         // 发送请求
-        let response = request.send().await?;
-        
-        // 检查 CAPTCHA 头
-        let captcha_header = response.headers()
-            .get("x-yandex-captcha")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
-        
+        let response = self.client.get(url, Some(options)).await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
         // 检查状态码
-        if !response.status().is_success() {
-            return Err(format!("HTTP 错误: {}", response.status()).into());
+        let status = response.status();
+        match status.as_u16() {
+            403 => return Err("Yandex 检测到自动化访问，请稍后重试".into()),
+            429 => return Err("Yandex 请求过于频繁，请稍后重试".into()),
+            503 => return Err("Yandex 服务暂时不可用，请稍后重试".into()),
+            _ if !status.is_success() => return Err(format!("HTTP 错误: {}", status).into()),
+            _ => {} // 继续处理
         }
-        
+
         // 获取响应文本
-        let text = response.text().await?;
-        
-        Ok((text, captcha_header))
+        let text = response.text().await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
+
+        Ok((text, None))
     }
 
     /// 解析响应为结果列表

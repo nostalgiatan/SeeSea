@@ -50,6 +50,8 @@ use crate::derive::{
     ResultType, SearchEngine, SearchQuery, SearchResult,
     SearchResultItem, TimeRange, AboutInfo, RequestResponseEngine, RequestParams,
 };
+use crate::net::client::HttpClient;
+use crate::net::types::{NetworkConfig, RequestOptions};
 
 /// Baidu 搜索引擎
 ///
@@ -58,7 +60,7 @@ pub struct BaiduEngine {
     /// 引擎信息
     info: EngineInfo,
     /// HTTP 客户端
-    client: reqwest::Client,
+    client: HttpClient,
 }
 
 impl BaiduEngine {
@@ -111,12 +113,9 @@ impl BaiduEngine {
                 tokens: Vec::new(),
                 max_page: 50,
             },
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .redirect(reqwest::redirect::Policy::none()) // 禁用自动重定向以检测 CAPTCHA
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new()),
+            client: HttpClient::new(NetworkConfig::default()).unwrap_or_else(|_| {
+                    panic!("Failed to create HTTP client for Baidu")
+                }),
         }
     }
 
@@ -301,10 +300,7 @@ impl SearchEngine for BaiduEngine {
 
     /// 检查引擎是否可用
     async fn is_available(&self) -> bool {
-        match self.client.get("https://www.baidu.com").send().await {
-            Ok(resp) => resp.status().is_success(),
-            Err(_) => false,
-        }
+        self.client.get("https://www.baidu.com", None).await.is_ok()
     }
 }
 
@@ -362,37 +358,42 @@ impl RequestResponseEngine for BaiduEngine {
     async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         let url = params.url.as_ref()
             .ok_or("请求 URL 未设置")?;
-        
-        let mut request = self.client.get(url);
-        
+
+        // 创建请求选项
+        let mut options = RequestOptions::default();
+        options.timeout = std::time::Duration::from_secs(10);
+
         // 添加自定义头
         for (key, value) in &params.headers {
-            request = request.header(key, value);
+            options.headers.push((key.clone(), value.clone()));
         }
-        
+
         // 发送请求
-        let response = request.send().await?;
-        
+        let response = self.client.get(url, Some(options)).await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
+        // 检查状态码
+        let status = response.status();
+
         // 检查重定向（可能是 CAPTCHA）
         let location = response.headers()
             .get("location")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
-        
-        // 检查状态码
-        let status = response.status();
+
         if status.is_redirection() {
             // 可能是 CAPTCHA 重定向
             return Ok((String::new(), location));
         }
-        
+
         if !status.is_success() {
             return Err(format!("HTTP 错误: {}", status).into());
         }
-        
+
         // 获取响应文本
-        let text = response.text().await?;
-        
+        let text = response.text().await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
+
         Ok((text, location))
     }
 

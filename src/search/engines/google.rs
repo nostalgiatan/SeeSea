@@ -54,6 +54,8 @@ use crate::derive::{
     ResultType, SearchEngine, SearchQuery, SearchResult,
     SearchResultItem, TimeRange, AboutInfo, RequestResponseEngine, RequestParams,
 };
+use crate::net::client::HttpClient;
+use crate::net::types::{NetworkConfig, RequestOptions};
 
 /// Google 搜索引擎
 ///
@@ -62,7 +64,7 @@ pub struct GoogleEngine {
     /// 引擎信息
     info: EngineInfo,
     /// HTTP 客户端
-    client: reqwest::Client,
+    client: HttpClient,
 }
 
 impl GoogleEngine {

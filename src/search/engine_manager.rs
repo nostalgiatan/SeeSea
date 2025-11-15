@@ -166,6 +166,14 @@ impl EngineManager {
         self.register_engine("qwant", Box::new(QwantEngine::new()));
         self.register_engine("startpage", Box::new(StartpageEngine::new()));
         self.register_engine("mojeek", Box::new(MojeekEngine::new()));
+
+        // 添加剩余的6个引擎
+        self.register_engine("search360", Box::new(Search360Engine::new()));
+        self.register_engine("wikipedia", Box::new(WikipediaEngine::new()));
+        self.register_engine("wikidata", Box::new(WikidataEngine::new()));
+        self.register_engine("github", Box::new(GitHubEngine::new()));
+        self.register_engine("stackoverflow", Box::new(StackOverflowEngine::new()));
+        self.register_engine("unsplash", Box::new(UnsplashEngine::new()));
     }
 
     /// 注册引擎

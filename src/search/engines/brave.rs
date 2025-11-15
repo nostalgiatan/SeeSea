@@ -47,6 +47,8 @@ use crate::derive::{
     ResultType, SearchEngine, SearchQuery, SearchResult,
     SearchResultItem, TimeRange, AboutInfo, RequestResponseEngine, RequestParams,
 };
+use crate::net::client::HttpClient;
+use crate::net::types::{NetworkConfig, RequestOptions};
 
 /// Brave 搜索引擎
 ///
@@ -55,7 +57,7 @@ pub struct BraveEngine {
     /// 引擎信息
     info: EngineInfo,
     /// HTTP 客户端
-    client: reqwest::Client,
+    client: HttpClient,
 }
 
 impl BraveEngine {
@@ -108,11 +110,9 @@ impl BraveEngine {
                 tokens: Vec::new(),
                 max_page: 50,
             },
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build().unwrap_or(reqwest::Client::new())
-                ,
+            client: HttpClient::new(NetworkConfig::default()).unwrap_or_else(|_| {
+                    panic!("Failed to create HTTP client for Brave")
+                }),
         }
     }
 
@@ -166,11 +166,28 @@ impl BraveEngine {
             Ok(sel) => sel,
             Err(_) => return Ok(Vec::new()),
         };
-        
+
+        // 预解析所有 selectors 以避免在循环中重复解析
+        let link_selector = match Selector::parse("a[class*=\"h\"]") {
+            Ok(sel) => sel,
+            Err(e) => return Err(format!("Failed to parse link selector: {}", e).into()),
+        };
+        let title_selector = match Selector::parse("a[class*=\"h\"] div[class*=\"title\"]") {
+            Ok(sel) => sel,
+            Err(e) => return Err(format!("Failed to parse title selector: {}", e).into()),
+        };
+        let content_selector = match Selector::parse("div[class*=\"snippet-description\"]") {
+            Ok(sel) => sel,
+            Err(e) => return Err(format!("Failed to parse content selector: {}", e).into()),
+        };
+        let thumbnail_selector = match Selector::parse("img[class*=\"thumb\"]") {
+            Ok(sel) => sel,
+            Err(e) => return Err(format!("Failed to parse thumbnail selector: {}", e).into()),
+        };
+
         for result in document.select(&results_selector) {
             // Python XPath: './/a[contains(@class, "h")]/@href'
             // CSS: a.h or a[class*="h"]
-            let link_selector = Selector::parse("a[class*=\"h\"]").expect("valid selector");
             let url = match result.select(&link_selector).next() {
                 Some(link) => {
                     match link.value().attr("href") {
@@ -190,7 +207,6 @@ impl BraveEngine {
             
             // Python XPath: './/a[contains(@class, "h")]//div[contains(@class, "title")]'
             // CSS: a[class*="h"] div[class*="title"]
-            let title_selector = Selector::parse("a[class*=\"h\"] div[class*=\"title\"]").expect("valid selector");
             let title = match result.select(&title_selector).next() {
                 Some(title_elem) => title_elem.text().collect::<String>().trim().to_string(),
                 None => continue,
@@ -198,17 +214,15 @@ impl BraveEngine {
             
             // Python XPath: './/div[contains(@class, "snippet-description")]'
             // CSS: div[class*="snippet-description"]
-            let content_selector = Selector::parse("div[class*=\"snippet-description\"]").expect("valid selector");
             let content = result.select(&content_selector).next()
                 .map(|c| c.text().collect::<String>().trim().to_string())
-                .unwrap_or_default();
+                .unwrap_or_else(|| String::new());
             
             // Python: pub_date extraction from content
             // 暂时跳过发布日期解析，因为需要更复杂的逻辑
             
             // Python XPath: './/img[contains(@class, "thumb")]/@src'
             // CSS: img[class*="thumb"]
-            let thumbnail_selector = Selector::parse("img[class*=\"thumb\"]").expect("valid selector");
             let thumbnail = result.select(&thumbnail_selector).next()
                 .and_then(|img| img.value().attr("src"))
                 .map(|src| src.to_string());
@@ -252,10 +266,7 @@ impl SearchEngine for BraveEngine {
 
     /// 检查引擎是否可用
     async fn is_available(&self) -> bool {
-        match self.client.get("https://search.brave.com").send().await {
-            Ok(resp) => resp.status().is_success(),
-            Err(_) => false,
-        }
+        self.client.get("https://search.brave.com", None).await.is_ok()
     }
 }
 
@@ -322,24 +333,33 @@ impl RequestResponseEngine for BraveEngine {
     async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         let url = params.url.as_ref()
             .ok_or("请求 URL 未设置")?;
-        
-        let mut request = self.client.get(url);
-        
+
+        // 创建请求选项
+        let mut options = RequestOptions::default();
+        options.timeout = std::time::Duration::from_secs(10);
+
         // 添加自定义头
         for (key, value) in &params.headers {
-            request = request.header(key, value);
+            options.headers.push((key.clone(), value.clone()));
         }
-        
+
         // 发送请求
-        let response = request.send().await?;
-        
+        let response = self.client.get(url, Some(options)).await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
         // 检查状态码
-        if !response.status().is_success() {
-            return Err(format!("HTTP 错误: {}", response.status()).into());
+        let status = response.status();
+        match status.as_u16() {
+            403 => return Err("Brave 访问被拒绝，可能触发了反爬虫机制".into()),
+            429 => return Err("Brave 请求过于频繁，请稍后重试".into()),
+            503 => return Err("Brave 服务暂时不可用，请稍后重试".into()),
+            _ if !status.is_success() => return Err(format!("HTTP 错误: {}", status).into()),
+            _ => {} // 继续处理
         }
-        
+
         // 获取响应文本
-        let text = response.text().await?;
+        let text = response.text().await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
         
         Ok(text)
     }

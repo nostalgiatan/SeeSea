@@ -48,6 +48,8 @@ use crate::derive::{
     ResultType, SearchEngine, SearchQuery, SearchResult,
     SearchResultItem, TimeRange, AboutInfo, RequestResponseEngine, RequestParams,
 };
+use crate::net::client::HttpClient;
+use crate::net::types::{NetworkConfig, RequestOptions};
 
 /// Mojeek 搜索引擎
 ///
@@ -56,7 +58,7 @@ pub struct MojeekEngine {
     /// 引擎信息
     info: EngineInfo,
     /// HTTP 客户端
-    client: reqwest::Client,
+    client: HttpClient,
 }
 
 impl MojeekEngine {
@@ -110,11 +112,11 @@ impl MojeekEngine {
                 tokens: Vec::new(),
                 max_page: 10,
             },
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new()),
+            client: {
+                HttpClient::new(NetworkConfig::default()).unwrap_or_else(|_| {
+                    panic!("Failed to create HTTP client for Mojeek")
+                })
+            },
         }
     }
 
@@ -262,10 +264,7 @@ impl SearchEngine for MojeekEngine {
 
     /// 检查引擎是否可用
     async fn is_available(&self) -> bool {
-        match self.client.get("https://www.mojeek.com").send().await {
-            Ok(resp) => resp.status().is_success(),
-            Err(_) => false,
-        }
+        self.client.get("https://www.mojeek.com", None).await.is_ok()
     }
 }
 
@@ -278,14 +277,16 @@ impl RequestResponseEngine for MojeekEngine {
         let mut query_params = vec![
             ("q", query.to_string()),
             ("safe", std::cmp::min(params.safesearch, 1).to_string()),
-            ("lb", params.language.clone().unwrap_or_else(|| "en".to_string())),
-            ("arc", "uk".to_string()),
+            ("lb", params.language.clone().unwrap_or_else(|| "".to_string())), // 与 Python SearXNG 一致，默认为空
+            ("arc", "none".to_string()), // 与 Python SearXNG 的 engine_traits.json 一致，默认为 "none"
         ];
 
-        // s: pagination offset (10 * (pageno - 1))
-        query_params.push(("s", (10 * (params.pageno - 1)).to_string()));
+        // s: pagination offset - 避免在第一页添加s参数，防止触发反爬虫
+        if params.pageno > 1 {
+            query_params.push(("s", (10 * (params.pageno - 1)).to_string()));
+        }
 
-        // time range: since parameter (YYYYMMDD format)
+        // time range: since parameter (YYYYMMDD format) - 与 Python SearXNG 一致
         if let Some(ref time_range) = params.time_range {
             let since = match time_range.as_str() {
                 "day" => Self::time_range_to_mojeek(TimeRange::Day),
@@ -308,13 +309,10 @@ impl RequestResponseEngine for MojeekEngine {
         params.url = Some(format!("https://www.mojeek.com/search?{}", query_string));
         params.method = "GET".to_string();
 
-        // 添加重要的 HTTP 头以避免被阻止
+        // 使用简单的 headers，与 Python SearXNG 保持一致
+        // 不使用复杂的反爬虫头部，避免触发检测
         params.headers.insert("Accept".to_string(), "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8".to_string());
         params.headers.insert("Accept-Language".to_string(), "en-US,en;q=0.5".to_string());
-        params.headers.insert("Accept-Encoding".to_string(), "gzip, deflate".to_string());
-        params.headers.insert("DNT".to_string(), "1".to_string());
-        params.headers.insert("Connection".to_string(), "keep-alive".to_string());
-        params.headers.insert("Upgrade-Insecure-Requests".to_string(), "1".to_string());
 
         Ok(())
     }
@@ -323,18 +321,22 @@ impl RequestResponseEngine for MojeekEngine {
     async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         let url = params.url.as_ref()
             .ok_or("请求 URL 未设置")?;
-        
-        let mut request = self.client.get(url);
-        
+
+        // 创建请求选项
+        let mut options = RequestOptions::default();
+        options.timeout = std::time::Duration::from_secs(10);
+
         // 添加自定义头
         for (key, value) in &params.headers {
-            request = request.header(key, value);
+            options.headers.push((key.clone(), value.clone()));
         }
-        
+
         // 发送请求
-        let response = request.send().await?;
-        
-        // 检查状态码
+        let response = self.client.get(url, Some(options)).await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
+        // 检查状态码 - HttpClient 已经在底层处理了状态码检查
+        // 这里我们只需要检查是否成功
         let status = response.status();
         match status.as_u16() {
             403 => return Err("Mojeek 访问被拒绝，可能触发了反爬虫机制。请稍后重试或使用其他搜索引擎。".into()),
@@ -343,10 +345,11 @@ impl RequestResponseEngine for MojeekEngine {
             _ if !status.is_success() => return Err(format!("HTTP 错误: {}", status).into()),
             _ => {} // 继续处理
         }
-        
+
         // 获取响应文本
-        let text = response.text().await?;
-        
+        let text = response.text().await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
+
         Ok(text)
     }
 
