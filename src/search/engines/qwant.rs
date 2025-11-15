@@ -129,6 +129,7 @@ impl QwantEngine {
     /// # 错误
     ///
     /// 如果 JSON 解析失败返回错误
+    #[allow(dead_code)]
     fn parse_json_results(json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use serde_json::Value;
         
@@ -138,7 +139,7 @@ impl QwantEngine {
         }
         
         let json: Value = serde_json::from_str(json_str)?;
-        let mut items = Vec::new();
+        let mut items = Vec::with_capacity(10);  // Pre-allocate for typical result count
         
         // Qwant JSON API 通常返回的结构
         if let Some(data) = json.get("data") {
@@ -205,7 +206,7 @@ impl QwantEngine {
         }
 
         let document = Html::parse_document(html);
-        let mut items = Vec::new();
+        let mut items = Vec::with_capacity(10);  // Pre-allocate for typical result count
 
         // Python SearXNG uses: '//section/article'
         // This matches Qwant Lite's structure

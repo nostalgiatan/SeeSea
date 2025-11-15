@@ -166,6 +166,7 @@ impl YahooEngine {
     /// # 返回
     ///
     /// Yahoo API 的时间过滤字符串
+    #[allow(dead_code)]
     fn time_range_to_yahoo(time_range: TimeRange) -> &'static str {
         match time_range {
             TimeRange::Day => "d",
@@ -243,7 +244,8 @@ impl YahooEngine {
         }
         
         let document = Html::parse_document(html);
-        let mut items = Vec::new();
+        // Pre-allocate with expected capacity for typical Yahoo results (~10 items)
+        let mut items = Vec::with_capacity(10);
         
         // Python SearXNG uses: '//div[contains(@class,"algo-sr")]'
         // This is the correct selector for Yahoo search results
@@ -371,8 +373,9 @@ impl RequestResponseEngine for YahooEngine {
         let language = params.language.as_deref().unwrap_or("en");
         let region = params.language.as_deref();
         
-        // 构建查询参数
-        let mut query_params = vec![("p", query.to_string())];
+        // 构建查询参数 - pre-allocate capacity
+        let mut query_params = Vec::with_capacity(6);
+        query_params.push(("p", query.to_string()));
         
         // 添加时间范围
         if let Some(ref time_range) = params.time_range {
@@ -397,13 +400,21 @@ impl RequestResponseEngine for YahooEngine {
             query_params.push(("xargs", "0".to_string()));
         }
         
-        // 构建 URL
+        // 构建 URL - use estimated capacity
         let domain = Self::get_domain(region);
-        let query_string = query_params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        let estimated_size = query_params.iter()
+            .map(|(k, v)| k.len() + v.len() + 2)  // key + value + "=" + "&"
+            .sum::<usize>();
+        let mut query_string = String::with_capacity(estimated_size);
+        
+        for (i, (k, v)) in query_params.iter().enumerate() {
+            if i > 0 {
+                query_string.push('&');
+            }
+            query_string.push_str(k);
+            query_string.push('=');
+            query_string.push_str(&urlencoding::encode(v));
+        }
         
         params.url = Some(format!("https://{}/search?{}", domain, query_string));
         params.method = "GET".to_string();

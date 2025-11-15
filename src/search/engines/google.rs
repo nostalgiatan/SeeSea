@@ -165,6 +165,7 @@ impl GoogleEngine {
     /// # 返回
     ///
     /// Google API 的时间过滤字符串
+    #[allow(dead_code)]
     fn time_range_to_google(time_range: TimeRange) -> &'static str {
         match time_range {
             TimeRange::Hour => "h",
@@ -330,7 +331,7 @@ impl GoogleEngine {
 
     /// 解析Google的AJAX数据结构
     fn parse_google_ajax_data(data: serde_json::Value) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
-        let mut items = Vec::new();
+        let mut items = Vec::with_capacity(10);  // Pre-allocate for typical result count
 
         // Google AJAX响应的结构比较复杂，这里使用简化的解析方法
         // 实际实现可能需要根据具体的数据结构调整
@@ -382,7 +383,7 @@ impl GoogleEngine {
         }
 
         let document = Html::parse_document(html);
-        let mut items = Vec::new();
+        let mut items = Vec::with_capacity(10);  // Pre-allocate for typical result count
 
         // 使用 Python SearxNG 的选择器: div[contains(@jscontroller, "SC7lYd")]
         // 在 CSS 选择器中，我们使用属性包含选择器

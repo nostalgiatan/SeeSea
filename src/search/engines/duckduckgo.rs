@@ -13,6 +13,7 @@ use crate::net::client::HttpClient;
 use crate::net::types::{NetworkConfig, RequestOptions};
 
 // VQD token cache entry
+#[allow(dead_code)]
 struct VqdCacheEntry {
     token: String,
     expires_at: SystemTime,
@@ -77,6 +78,7 @@ impl DuckDuckGoEngine {
         }
     }
 
+    #[allow(dead_code)]
     async fn get_vqd(&self, query: &str, region: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
         let cache_key = format!("{}_{}", query, region);
         
@@ -126,7 +128,7 @@ impl DuckDuckGoEngine {
         }
 
         let document = Html::parse_document(html);
-        let mut items = Vec::new();
+        let mut items = Vec::with_capacity(10);  // Pre-allocate for typical result count
 
         // Python SearXNG: for div_result in eval_xpath(doc, '//div[@id="links"]/div[contains(@class, "web-result")]')
         // Select web results from the links div, avoiding ads

@@ -2,6 +2,9 @@
 //!
 //! 一个基于 Rust 实现的隐私保护型元搜索引擎
 
+// Allow non-snake-case for crate name
+#![allow(non_snake_case)]
+
 // 重新导出 error crate
 pub use error as error_crate;
 
