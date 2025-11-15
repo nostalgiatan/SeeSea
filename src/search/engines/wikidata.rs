@@ -11,6 +11,7 @@ use crate::derive::{
 };
 use crate::net::client::HttpClient;
 use crate::net::types::{NetworkConfig, RequestOptions};
+use super::utils::build_query_string_owned;
 
 pub struct WikidataEngine {
     info: EngineInfo,
@@ -148,17 +149,14 @@ impl RequestResponseEngine for WikidataEngine {
         let lang = params.language.as_deref().unwrap_or("en");
         
         let query_params = vec![
-            ("action", "wbsearchentities"),
-            ("search", query),
-            ("language", lang),
-            ("limit", "7"),
-            ("format", "json"),
+            ("action", "wbsearchentities".to_string()),
+            ("search", query.to_string()),
+            ("language", lang.to_string()),
+            ("limit", "7".to_string()),
+            ("format", "json".to_string()),
         ];
 
-        let query_string = query_params.iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        let query_string = build_query_string_owned(query_params.into_iter());
         
         params.url = Some(format!("https://www.wikidata.org/w/api.php?{}", query_string));
         params.method = "GET".to_string();

@@ -50,6 +50,7 @@ use crate::derive::{
 };
 use crate::net::client::HttpClient;
 use crate::net::types::{NetworkConfig, RequestOptions};
+use super::utils::build_query_string_owned;
 
 /// Yandex 搜索引擎
 ///
@@ -278,17 +279,13 @@ impl RequestResponseEngine for YandexEngine {
             query_params.push(("p", (params.pageno - 1).to_string()));
         }
         
-        // 构建 URL
-        let query_string = query_params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        // Build URL with optimized query string
+        let query_string = build_query_string_owned(query_params.into_iter());
         
         params.url = Some(format!("https://yandex.com/search/site/?{}", query_string));
         params.method = "GET".to_string();
         
-        // 设置 cookies
+        // Set cookies
         params.cookies.insert(
             "yp".to_string(),
             "1716337604.sp.family%3A0#1685406411.szm.1:1920x1080:1920x999".to_string()
