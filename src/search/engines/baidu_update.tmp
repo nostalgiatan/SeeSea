@@ -1,0 +1,99 @@
+// Baidu request aligned with Python
+fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let pn = (params.pageno - 1) * 10;
+    
+    let mut url_params = vec![
+        ("wd", query.to_string()),
+        ("rn", "10".to_string()),
+        ("pn", pn.to_string()),
+        ("tn", "json".to_string()),
+    ];
+    
+    if let Some(ref tr) = params.time_range {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let past = now - match tr.as_str() {
+            "day" => 86400,
+            "week" => 604800,
+            "month" => 2592000,
+            "year" => 31536000,
+            _ => 0,
+        };
+        if past > 0 {
+            url_params.push(("gpc", format!("stf={},{} |stftype=1", past, now)));
+        }
+    }
+    
+    let query_string = url_params.iter()
+        .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
+        .collect::<Vec<_>>()
+        .join("&");
+    
+    params.url = Some(format!("https://www.baidu.com/s?{}", query_string));
+    params.method = "GET".to_string();
+    Ok(())
+}
+
+// Baidu parsing (JSON-based)
+fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    use scraper::{Html, Selector};
+    
+    if html.is_empty() {
+        return Ok(Vec::new());
+    }
+    
+    let document = Html::parse_document(html);
+    let mut items = Vec::new();
+    
+    let result_selector = Selector::parse("div.result, div.c-container").ok();
+    let title_selector = Selector::parse("h3 a, a.t").ok();
+    let content_selector = Selector::parse("div.c-abstract, span.c-abstract, div.abstract").ok();
+    
+    if let Some(ref sel) = result_selector {
+        for result in document.select(sel) {
+            let title = if let Some(ref ts) = title_selector {
+                result.select(ts).next()
+                    .map(|t| t.text().collect::<String>().trim().to_string())
+                    .unwrap_or_default()
+            } else {
+                continue;
+            };
+            
+            let url = if let Some(ref ts) = title_selector {
+                result.select(ts).next()
+                    .and_then(|a| a.value().attr("href"))
+                    .unwrap_or("")
+            } else {
+                ""
+            };
+            
+            let content = if let Some(ref cs) = content_selector {
+                result.select(cs).next()
+                    .map(|c| c.text().collect::<String>().trim().to_string())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            
+            if !title.is_empty() && !url.is_empty() {
+                items.push(SearchResultItem {
+                    title,
+                    url: url.to_string(),
+                    content,
+                    display_url: Some(url.to_string()),
+                    site_name: None,
+                    score: 1.0,
+                    result_type: ResultType::Web,
+                    thumbnail: None,
+                    published_date: None,
+                    template: None,
+                    metadata: HashMap::new(),
+                });
+            }
+        }
+    }
+    
+    Ok(items)
+}
