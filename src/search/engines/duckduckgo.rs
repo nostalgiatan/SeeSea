@@ -308,7 +308,10 @@ impl RequestResponseEngine for DuckDuckGoEngine {
         
         params.url = Some("https://html.duckduckgo.com/html/".to_string());
         params.method = "POST".to_string();
-        params.data = Some(form_data);
+        
+        // 将 Vec 转换为 HashMap
+        // 注意：HashMap 的迭代顺序不确定，但我们会在 fetch() 中按正确顺序重建
+        params.data = Some(form_data.into_iter().collect());
 
         // Python SearXNG headers - critical for bot detection (lines 313-318)
         // params['headers']['Content-Type'] = 'application/x-www-form-urlencoded'
@@ -338,11 +341,56 @@ impl RequestResponseEngine for DuckDuckGoEngine {
         }
 
         let response = if params.method == "POST" {
-            let form_data = params.data.as_ref().ok_or("POST data not set")?;
-            let body = form_data.iter()
-                .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-                .collect::<Vec<_>>()
-                .join("&");
+            let form_data_map = params.data.as_ref().ok_or("POST data not set")?;
+            
+            // IMPORTANT: 必须按照特定顺序构建表单数据，因为 DDG 的机器人检测会检查顺序
+            // 顺序: q, b/s+nextParams+v+o+dc+api, kl, df
+            let mut form_parts = Vec::new();
+            
+            // 1. q (query) - 必须第一个
+            if let Some(q) = form_data_map.get("q") {
+                form_parts.push(format!("q={}", urlencoding::encode(q)));
+            }
+            
+            // 2. b (第一页) 或 s, nextParams, v, o, dc, api (后续页)
+            if let Some(b) = form_data_map.get("b") {
+                form_parts.push(format!("b={}", urlencoding::encode(b)));
+            } else {
+                // 分页参数，按顺序添加
+                if let Some(s) = form_data_map.get("s") {
+                    form_parts.push(format!("s={}", urlencoding::encode(s)));
+                }
+                if let Some(np) = form_data_map.get("nextParams") {
+                    form_parts.push(format!("nextParams={}", urlencoding::encode(np)));
+                }
+                if let Some(v) = form_data_map.get("v") {
+                    form_parts.push(format!("v={}", urlencoding::encode(v)));
+                }
+                if let Some(o) = form_data_map.get("o") {
+                    form_parts.push(format!("o={}", urlencoding::encode(o)));
+                }
+                if let Some(dc) = form_data_map.get("dc") {
+                    form_parts.push(format!("dc={}", urlencoding::encode(dc)));
+                }
+                if let Some(api) = form_data_map.get("api") {
+                    form_parts.push(format!("api={}", urlencoding::encode(api)));
+                }
+                if let Some(vqd) = form_data_map.get("vqd") {
+                    form_parts.push(format!("vqd={}", urlencoding::encode(vqd)));
+                }
+            }
+            
+            // 3. kl (region/language)
+            if let Some(kl) = form_data_map.get("kl") {
+                form_parts.push(format!("kl={}", urlencoding::encode(kl)));
+            }
+            
+            // 4. df (time filter)
+            if let Some(df) = form_data_map.get("df") {
+                form_parts.push(format!("df={}", urlencoding::encode(df)));
+            }
+            
+            let body = form_parts.join("&");
             self.client.post(url, body.into_bytes(), Some(options)).await
         } else {
             self.client.get(url, Some(options)).await
