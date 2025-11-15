@@ -50,6 +50,7 @@ use crate::derive::{
 };
 use crate::net::client::HttpClient;
 use crate::net::types::{NetworkConfig, RequestOptions};
+use super::utils::build_query_string_owned;
 
 /// Mojeek 搜索引擎
 ///
@@ -300,16 +301,12 @@ impl RequestResponseEngine for MojeekEngine {
             }
         }
 
-        let query_string = query_params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        let query_string = build_query_string_owned(query_params.into_iter());
 
         params.url = Some(format!("https://www.mojeek.com/search?{}", query_string));
         params.method = "GET".to_string();
 
-        // 使用简单的 headers，与 Python SearXNG 保持一致
+        // Use simple headers, consistent with Python SearXNG
         // 不使用复杂的反爬虫头部，避免触发检测
         params.headers.insert("Accept".to_string(), "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8".to_string());
         params.headers.insert("Accept-Language".to_string(), "en-US,en;q=0.5".to_string());

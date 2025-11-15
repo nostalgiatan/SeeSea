@@ -52,6 +52,7 @@ use crate::derive::{
 };
 use crate::net::client::HttpClient;
 use crate::net::types::{NetworkConfig, RequestOptions};
+use super::utils::build_query_string_owned;
 
 /// Baidu 搜索引擎
 ///
@@ -341,12 +342,8 @@ impl RequestResponseEngine for BaiduEngine {
             }
         }
         
-        // 构建 URL
-        let query_string = query_params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        // Build URL with optimized query string
+        let query_string = build_query_string_owned(query_params.into_iter());
         
         params.url = Some(format!("https://www.baidu.com/s?{}", query_string));
         params.method = "GET".to_string();

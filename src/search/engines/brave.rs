@@ -49,6 +49,7 @@ use crate::derive::{
 };
 use crate::net::client::HttpClient;
 use crate::net::types::{NetworkConfig, RequestOptions};
+use super::utils::build_query_string_owned;
 
 /// Brave 搜索引擎
 ///
@@ -302,16 +303,12 @@ impl RequestResponseEngine for BraveEngine {
             }
         }
 
-        let query_string = query_params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        let query_string = build_query_string_owned(query_params.into_iter());
 
         params.url = Some(format!("https://search.brave.com/search?{}", query_string));
         params.method = "GET".to_string();
 
-        // 添加与 searxng 相同的 cookies
+        // Add same cookies as searxng uses
         params.cookies.insert("safesearch".to_string(), "moderate".to_string());
         params.cookies.insert("useLocation".to_string(), "0".to_string());
         params.cookies.insert("summarizer".to_string(), "0".to_string());
