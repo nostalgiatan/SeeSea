@@ -50,6 +50,7 @@ select = { version = "0.6.1", optional = true }
 futures = "0.3.31"
 clap = { version = "4.5.51", features = ["derive"] }
 colored = "3.0.0"
+tower-http = { version = "0.6.6", features = ["cors"] }
 
 
 [dev-dependencies]

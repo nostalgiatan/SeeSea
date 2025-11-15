@@ -27,3 +27,4 @@ pub use derive::{
 };
 pub use net::{NetworkInterface, NetworkConfig, HttpClient};
 pub mod search;
+pub mod api;
