@@ -123,7 +123,10 @@ impl GoogleEngine {
                 .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:144.0) Gecko/20100101 Firefox/144.0")
                 .default_headers({
                     let mut headers = reqwest::header::HeaderMap::new();
-                    headers.insert("Accept", "*/*".parse().unwrap());
+                    // 安全地解析并插入 Accept 头
+                    if let Ok(accept_value) = "*/*".parse() {
+                        headers.insert("Accept", accept_value);
+                    }
                     headers
                 })
                 .build()
@@ -234,12 +237,21 @@ impl GoogleEngine {
     ///
     /// 如果 HTML 解析失败返回错误
     fn parse_html_results(response: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+        // 检查响应是否为空
+        if response.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
         // 检查响应类型
-        if response.trim_start().starts_with(")]}") {
+        let trimmed = response.trim_start();
+        if trimmed.starts_with(")]}") || trimmed.starts_with("[") {
             // 这是 Google AJAX API 响应
             return Self::parse_ajax_response(response);
-        } else {
+        } else if trimmed.starts_with("<") || trimmed.starts_with("<!") {
             // 这是 HTML 响应（回退）
+            return Self::parse_html_response(response);
+        } else {
+            // 未知格式，尝试HTML解析
             return Self::parse_html_response(response);
         }
     }
@@ -264,12 +276,11 @@ impl GoogleEngine {
             }
         }
 
-        if json_start.is_none() {
-            // 回退到HTML解析
-            return Self::parse_html_response(response);
-        }
-
-        let start = json_start.unwrap();
+        // 如果没有找到JSON开始标记，回退到HTML解析
+        let start = match json_start {
+            Some(s) => s,
+            None => return Self::parse_html_response(response),
+        };
         let mut end = start;
         
         // 正确地找到匹配的右括号，考虑字符串中的括号
@@ -448,9 +459,34 @@ impl GoogleEngine {
                 }
             }
             
-            // Python 中如果没有 content 就跳过
+            // Python 中如果没有 content，尝试其他选择器作为后备
             if content.is_empty() {
-                continue;
+                // 尝试查找任何包含文本的 div
+                let fallback_selectors = vec!["div[data-content-feature]", "div.VwiC3b", "div span"];
+                for fallback_sel_str in fallback_selectors {
+                    if let Ok(fallback_sel) = Selector::parse(fallback_sel_str) {
+                        for node in result.select(&fallback_sel) {
+                            let text = node.text()
+                                .filter(|t| !t.trim().is_empty())
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .trim()
+                                .to_string();
+                            if !text.is_empty() && text.len() > 10 {
+                                content = text;
+                                break;
+                            }
+                        }
+                        if !content.is_empty() {
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // 如果仍然没有 content，使用标题作为内容
+            if content.is_empty() {
+                content = format!("来自 {}", title);
             }
             
             // 提取缩略图 (thumbnail)

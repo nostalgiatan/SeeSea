@@ -221,13 +221,20 @@ impl QwantEngine {
             }
 
             // Python: 'url': extract_text(eval_xpath(item, "./span[contains(@class, 'url partner')]"))
-            let url_selector = Selector::parse("span[class*=\"url\"][class*=\"partner\"]").expect("valid selector");
-            let url = item.select(&url_selector).next()
-                .map(|span| span.text().collect::<String>().trim().to_string())
-                .unwrap_or_default();
+            // Note: The URL text is in a span, not an href attribute
+            let url_selector = Selector::parse("span[class*=\"url\"]").expect("valid selector");
+            let mut url = String::new();
+            for span in item.select(&url_selector) {
+                let text = span.text().collect::<String>().trim().to_string();
+                // 确保URL以http开头
+                if text.starts_with("http") {
+                    url = text;
+                    break;
+                }
+            }
 
             // Python: 'title': extract_text(eval_xpath(item, './h2/a'))
-            let title_selector = Selector::parse("h2 a").expect("valid selector");
+            let title_selector = Selector::parse("h2 a, h3 a, h2, h3").expect("valid selector");
             let title = item.select(&title_selector).next()
                 .map(|a| a.text().collect::<String>().trim().to_string())
                 .unwrap_or_default();
@@ -238,7 +245,8 @@ impl QwantEngine {
                 .map(|p| p.text().collect::<String>().trim().to_string())
                 .unwrap_or_default();
 
-            // Only add if we have both title and URL
+            // 只有当 URL 有效且以 http 开头时才添加结果
+            // Python 版本也会检查 URL 的有效性
             if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
                 items.push(SearchResultItem {
                     title,
