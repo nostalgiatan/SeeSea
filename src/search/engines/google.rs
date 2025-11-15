@@ -143,17 +143,6 @@ impl GoogleEngine {
     ///
     /// 格式化的 async 参数字符串
     fn generate_async_param(start: u32) -> String {
-        use std::sync::atomic::{AtomicU32, Ordering};
-        use std::sync::Mutex;
-
-        static LAST_ARC_ID: Mutex<(String, u64)> = Mutex::new((String::new(), 0));
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or_else(|_| 0);
-
         // 生成 ARC async 参数 (基于 SearXNG 的 ui_async 实现)
         let page_num = start / 10;
 
@@ -351,7 +340,7 @@ impl GoogleEngine {
         Ok(items)
     }
 
-    /// 解析HTML响应（回退方法）
+    /// 解析HTML响应（使用 Python SearxNG 的选择器）
     fn parse_html_response(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use scraper::{Html, Selector};
 
@@ -368,44 +357,99 @@ impl GoogleEngine {
         let document = Html::parse_document(html);
         let mut items = Vec::new();
 
-        // 使用基础选择器
-        let selectors = vec![
-            "div.g",
-            "div[data-hveid]",
-            "div.Gx5Zad",
-        ];
+        // 使用 Python SearxNG 的选择器: div[contains(@jscontroller, "SC7lYd")]
+        // 在 CSS 选择器中，我们使用属性包含选择器
+        let result_selector = match Selector::parse("div[jscontroller*=\"SC7lYd\"]") {
+            Ok(sel) => sel,
+            Err(_) => {
+                // 回退到通用选择器
+                match Selector::parse("div.g") {
+                    Ok(sel) => sel,
+                    Err(_) => return Ok(Vec::new()),
+                }
+            }
+        };
 
-        for sel_str in selectors {
-            if let Ok(sel) = Selector::parse(sel_str) {
-                for result in document.select(&sel) {
-                    let title = result.select(&Selector::parse("h3").expect("valid selector")).next()
-                        .map(|t| t.text().collect::<String>().trim().to_string())
-                        .unwrap_or_default();
-
-                    let url = result.select(&Selector::parse("a").expect("valid selector")).next()
-                        .and_then(|a| a.value().attr("href"))
-                        .unwrap_or_default();
-
-                    let content = result.select(&Selector::parse("div, span").expect("valid selector")).next()
-                        .map(|c| c.text().collect::<String>().trim().to_string())
-                        .unwrap_or_default();
-
-                    if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
-                        items.push(SearchResultItem {
-                            title,
-                            url: url.to_string(),
-                            content,
-                            display_url: Some(url.to_string()),
-                            site_name: None,
-                            score: 1.0,
-                            result_type: ResultType::Web,
-                            thumbnail: None,
-                            published_date: None,
-                            template: None,
-                            metadata: HashMap::new(),
-                        });
+        for result in document.select(&result_selector) {
+            // Python: title_tag = eval_xpath_getindex(result, './/a/h3[1]', 0, default=None)
+            // CSS: a > h3 或 a h3
+            let title_selector = Selector::parse("a > h3, a h3").expect("valid selector");
+            let title_elem = match result.select(&title_selector).next() {
+                Some(elem) => elem,
+                None => continue,
+            };
+            
+            let title = title_elem.text().collect::<String>().trim().to_string();
+            
+            // Python: url = eval_xpath_getindex(result, './/a[h3]/@href', 0, None)
+            // 找到包含 h3 的 a 标签
+            let link_selector = Selector::parse("a").expect("valid selector");
+            let h3_selector = Selector::parse("h3").expect("valid selector");
+            
+            let mut url = String::new();
+            for link in result.select(&link_selector) {
+                // 检查这个 a 标签是否包含 h3
+                if link.select(&h3_selector).next().is_some() {
+                    if let Some(href) = link.value().attr("href") {
+                        url = href.to_string();
+                        break;
                     }
                 }
+            }
+            
+            if url.is_empty() {
+                continue;
+            }
+            
+            // Python: content_nodes = eval_xpath(result, './/div[contains(@data-sncf, "1")]')
+            let content_selector = Selector::parse("div[data-sncf*=\"1\"]").expect("valid selector");
+            let mut content = String::new();
+            
+            for content_node in result.select(&content_selector) {
+                // 移除 script 标签的文本（Python 版本中的逻辑）
+                let text = content_node.text()
+                    .filter(|t| !t.trim().is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .trim()
+                    .to_string();
+                
+                if !text.is_empty() {
+                    content = text;
+                    break;
+                }
+            }
+            
+            // Python 中如果没有 content 就跳过
+            if content.is_empty() {
+                continue;
+            }
+            
+            // 提取缩略图 (thumbnail)
+            let thumbnail = if let Some(content_node) = result.select(&content_selector).next() {
+                let img_selector = Selector::parse("img").expect("valid selector");
+                content_node.select(&img_selector)
+                    .next()
+                    .and_then(|img| img.value().attr("src"))
+                    .map(|src| src.to_string())
+            } else {
+                None
+            };
+
+            if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                items.push(SearchResultItem {
+                    title,
+                    url: url.clone(),
+                    content,
+                    display_url: Some(url),
+                    site_name: None,
+                    score: 1.0,
+                    result_type: ResultType::Web,
+                    thumbnail,
+                    published_date: None,
+                    template: None,
+                    metadata: HashMap::new(),
+                });
             }
         }
 

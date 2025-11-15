@@ -1,7 +1,6 @@
 //! SeeSea 主程序入口
 
 use SeeSea::config::{ConfigManager, ConfigLoader, ConfigValidator, SeeSeaConfig};
-use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

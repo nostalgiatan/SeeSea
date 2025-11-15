@@ -267,9 +267,9 @@ impl QwantEngine {
 
                         items.push(SearchResultItem {
                             title,
-                            url: final_url,
+                            url: final_url.clone(),
                             content,
-                            display_url: Some(final_url.clone()),
+                            display_url: Some(final_url),
                             site_name: None,
                             score: 1.0,
                             result_type: ResultType::Web,

@@ -167,7 +167,6 @@ impl MojeekEngine {
     fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use scraper::{Html, Selector};
 
-        // 检查是否有结果
         if html.is_empty() {
             return Ok(Vec::new());
         }
@@ -175,78 +174,47 @@ impl MojeekEngine {
         let document = Html::parse_document(html);
         let mut items = Vec::new();
 
-        // 使用与 searxng 完全相同的选择器
-        // 主要选择器：//ul[@class="results-standard"]/li/a[@class="ob"]
-        let result_selector = match Selector::parse("ul.results-standard li a.ob") {
-            Ok(sel) => sel,
-            Err(_) => {
-                // 回退到其他可能的选择器
-                let mut found_selector = None;
-                for fallback in [
-                    "ul.results-standard li",
-                    "li.result",
-                    "div.result",
-                    "article.result",
-                    "div[class*=\"result\"]"
-                ] {
-                    if let Ok(sel) = Selector::parse(fallback) {
-                        if document.select(&sel).next().is_some() {
-                            found_selector = Some(sel);
-                            break;
-                        }
-                    }
-                }
-                found_selector.unwrap_or_else(|| Selector::parse("li.result").expect("fallback selector"))
-            }
-        };
+        // results_xpath = '//ul[@class="results-standard"]/li/a[@class="ob"]'
+        let results_selector = Selector::parse("ul.results-standard li").expect("valid selector");
+        let url_selector = Selector::parse("a.ob").expect("valid selector");
+        let title_selector = Selector::parse("h2 a").expect("valid selector");
+        let content_selector = Selector::parse("p.s").expect("valid selector");
 
-        // 使用 searxng 的选择器结构
-        let url_selector = Selector::parse("a").expect("valid selector");
-        let title_selector = Selector::parse("h2 a, h3 a").expect("valid selector");
-        let content_selector = Selector::parse("p.s, p.snippet, div.snippet").expect("valid selector");
+        for result in document.select(&results_selector) {
+            // url_xpath = './@href'
+            let url = result.select(&url_selector).next()
+                .and_then(|a| a.value().attr("href"))
+                .map(|s| s.to_string())
+                .unwrap_or_default();
 
-        // 首先尝试使用 searxng 的标准结构
-        // 查找结果容器：ul.results-standard
-        if let Some(results_container) = document.select(&Selector::parse("ul.results-standard").unwrap_or_else(|_| Selector::parse("ul.results").expect("fallback"))).next() {
-            // 在容器内查找所有的 li 元素
-            for li_element in results_container.select(&Selector::parse("li").expect("valid selector")) {
-                // 查找标题 (h2 或 h3 中的链接)
-                let title = li_element.select(&title_selector).next()
-                    .map(|t| t.text().collect::<String>().trim().to_string())
-                    .unwrap_or_default();
+            // title_xpath = '../h2/a'
+            let title = result.select(&title_selector).next()
+                .map(|t| t.text().collect::<String>().trim().to_string())
+                .unwrap_or_default();
 
-                // 查找 URL (a.ob 或任何链接)
-                let url = li_element.select(&Selector::parse("a.ob, a[href]").expect("valid selector")).next()
-                    .and_then(|a| a.value().attr("href"))
-                    .unwrap_or_default();
+            // content_xpath = '..//p[@class="s"]'
+            let content = result.select(&content_selector).next()
+                .map(|c| c.text().collect::<String>().trim().to_string())
+                .unwrap_or_default();
 
-                // 查找内容 (p.s)
-                let content = li_element.select(&content_selector).next()
-                    .map(|c| c.text().collect::<String>().trim().to_string())
-                    .unwrap_or_default();
-
-                // 过滤有效结果
-                if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
-                    items.push(SearchResultItem {
-                        title,
-                        url: url.to_string(),
-                        content,
-                        display_url: Some(url.to_string()),
-                        site_name: None,
-                        score: 1.0,
-                        result_type: ResultType::Web,
-                        thumbnail: None,
-                        published_date: None,
-                        template: None,
-                        metadata: HashMap::new(),
-                    });
-                }
+            if !url.is_empty() && !title.is_empty() {
+                items.push(SearchResultItem {
+                    title,
+                    url: url.clone(),
+                    content,
+                    display_url: Some(url),
+                    site_name: None,
+                    score: 1.0,
+                    result_type: ResultType::Web,
+                    thumbnail: None,
+                    published_date: None,
+                    template: None,
+                    metadata: HashMap::new(),
+                });
             }
         }
 
-        // 如果没有找到结果，尝试备用方法
         if items.is_empty() {
-            // 尝试查找所有链接
             for result in document.select(&Selector::parse("a[href]").expect("valid selector")) {
                 let url = result.value().attr("href").unwrap_or_default();
                 let title = result.text().collect::<String>().trim().to_string();
@@ -307,27 +275,17 @@ impl RequestResponseEngine for MojeekEngine {
 
     /// 准备请求参数
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // 使用与 searxng 相同的参数结构
         let mut query_params = vec![
             ("q", query.to_string()),
-            ("safe", if params.safesearch > 0 { "1" } else { "0" }.to_string()),
+            ("safe", std::cmp::min(params.safesearch, 1).to_string()),
+            ("lb", params.language.clone().unwrap_or_else(|| "en".to_string())),
+            ("arc", "uk".to_string()),
         ];
 
-        // 添加语言和地区参数 (基于 searxng)
-        if let Some(ref language) = params.language {
-            query_params.push(("lb", language.clone()));
-        } else {
-            query_params.push(("lb", "en".to_string()));
-        }
+        // s: pagination offset (10 * (pageno - 1))
+        query_params.push(("s", (10 * (params.pageno - 1)).to_string()));
 
-        // 地区参数
-        query_params.push(("arc", "uk".to_string()));
-
-        // 分页 - searxng 使用 s 参数，偏移量 = 10 * (页码 - 1)
-        let offset = 10 * (params.pageno - 1);
-        query_params.push(("s", offset.to_string()));
-
-        // 添加时间范围 - 使用 searxng 的时间格式
+        // time range: since parameter (YYYYMMDD format)
         if let Some(ref time_range) = params.time_range {
             let since = match time_range.as_str() {
                 "day" => Self::time_range_to_mojeek(TimeRange::Day),
@@ -341,7 +299,6 @@ impl RequestResponseEngine for MojeekEngine {
             }
         }
 
-        // 构建 URL
         let query_string = query_params
             .iter()
             .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))

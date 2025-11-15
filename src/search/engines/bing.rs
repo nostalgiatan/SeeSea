@@ -191,6 +191,51 @@ impl BingEngine {
         params.cookies.insert("_EDGE_S".to_string(), format!("mkt={}&ui={}", region, language));
     }
 
+    /// 解码 Bing 的 base64 编码 URL
+    ///
+    /// Bing 有时会返回 base64 编码的 URL，格式为：
+    /// https://www.bing.com/ck/a?!&&p=...&u=a1<base64_url>
+    ///
+    /// # 参数
+    ///
+    /// * `url` - 可能被编码的 URL
+    ///
+    /// # 返回
+    ///
+    /// 解码后的 URL，如果不是编码 URL 则返回原值
+    fn decode_bing_url(url: &str) -> String {
+        if !url.starts_with("https://www.bing.com/ck/a?") {
+            return url.to_string();
+        }
+        
+        // 解析 URL 获取查询参数
+        if let Ok(parsed_url) = url::Url::parse(url) {
+            // 获取 u 参数
+            if let Some(param_u) = parsed_url.query_pairs()
+                .find(|(k, _)| k == "u")
+                .map(|(_, v)| v.to_string())
+            {
+                // 移除前面的 "a1"
+                if param_u.len() > 2 {
+                    let encoded_url = &param_u[2..];
+                    // 添加 base64 padding
+                    let padding_len = (4 - (encoded_url.len() % 4)) % 4;
+                    let padded_url = format!("{}{}", encoded_url, "=".repeat(padding_len));
+                    
+                    // 解码 base64
+                    use base64::{Engine as _, engine::general_purpose::URL_SAFE};
+                    if let Ok(decoded_bytes) = URL_SAFE.decode(&padded_url) {
+                        if let Ok(decoded_url) = String::from_utf8(decoded_bytes) {
+                            return decoded_url;
+                        }
+                    }
+                }
+            }
+        }
+        
+        url.to_string()
+    }
+
     /// 解析 HTML 响应为搜索结果项列表
     ///
     /// # 参数
@@ -215,70 +260,61 @@ impl BingEngine {
         let document = Html::parse_document(html);
         let mut items = Vec::new();
         
-        // Bing 的搜索结果通常在 li.b_algo 元素中
-        let result_selectors = vec![
-            "li.b_algo",
-            "li.b_ans",
-        ];
+        // 使用 Python SearxNG 中完全相同的选择器
+        // //ol[@id="b_results"]/li[contains(@class, "b_algo")]
+        let results_selector = match Selector::parse("ol#b_results > li.b_algo") {
+            Ok(sel) => sel,
+            Err(_) => return Ok(Vec::new()),
+        };
         
-        let mut results_found = false;
-        for selector_str in result_selectors {
-            let selector = match Selector::parse(selector_str) {
-                Ok(sel) => sel,
-                Err(_) => continue,
+        for result in document.select(&results_selector) {
+            // 提取链接和标题 (h2/a)
+            let link_selector = Selector::parse("h2 > a").expect("valid selector");
+            let link_elem = match result.select(&link_selector).next() {
+                Some(elem) => elem,
+                None => continue,
             };
             
-            for result in document.select(&selector) {
-                results_found = true;
+            let title = link_elem.text().collect::<String>().trim().to_string();
+            let mut url = link_elem.value().attr("href").unwrap_or("").to_string();
+            
+            // 解码 base64 编码的 URL
+            url = Self::decode_bing_url(&url);
+            
+            // 提取内容 (p)
+            let content_selector = Selector::parse("p").expect("valid selector");
+            let mut content = String::new();
+            
+            for p_elem in result.select(&content_selector) {
+                // 移除 algoSlug_icon span (Python 版本中的逻辑)
+                let text = p_elem.text()
+                    .filter(|t| !t.trim().is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .trim()
+                    .to_string();
                 
-                // 提取标题和 URL
-                let title_selector = Selector::parse("h2, h3").expect("Expected valid value");
-                let link_selector = Selector::parse("a").expect("Expected valid value");
-                let snippet_selectors = vec![
-                    Selector::parse("p").ok(),
-                    Selector::parse("div.b_caption > p").ok(),
-                    Selector::parse("div.b_snippet").ok(),
-                ];
-                
-                let title = result.select(&title_selector).next()
-                    .map(|t| t.text().collect::<String>().trim().to_string())
-                    .unwrap_or_default();
-                
-                let url = result.select(&link_selector).next()
-                    .and_then(|a| a.value().attr("href"))
-                    .unwrap_or_default();
-                
-                // 提取摘要
-                let mut content = String::new();
-                for selector in snippet_selectors.iter().flatten() {
-                    if let Some(snippet) = result.select(selector).next() {
-                        content = snippet.text().collect::<String>().trim().to_string();
-                        if !content.is_empty() {
-                            break;
-                        }
-                    }
-                }
-                
-                // 过滤有效结果
-                if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
-                    items.push(SearchResultItem {
-                        title,
-                        url: url.to_string(),
-                        content,
-                        display_url: Some(url.to_string()),
-                        site_name: None,
-                        score: 1.0,
-                        result_type: ResultType::Web,
-                        thumbnail: None,
-                        published_date: None,
-                        template: None,
-                        metadata: HashMap::new(),
-                    });
+                if !text.is_empty() && text != "Web" {
+                    content = text;
+                    break;
                 }
             }
             
-            if results_found {
-                break;
+            // 只添加有效结果
+            if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                items.push(SearchResultItem {
+                    title,
+                    url: url.clone(),
+                    content,
+                    display_url: Some(url),
+                    site_name: None,
+                    score: 1.0,
+                    result_type: ResultType::Web,
+                    thumbnail: None,
+                    published_date: None,
+                    template: None,
+                    metadata: HashMap::new(),
+                });
             }
         }
         
