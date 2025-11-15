@@ -496,7 +496,7 @@ impl GoogleEngine {
                     title,
                     url: url.clone(),
                     content,
-                    display_url: Some(url),
+                    display_url: Some(url.clone()),
                     site_name: None,
                     score: 1.0,
                     result_type: ResultType::Web,
@@ -627,12 +627,20 @@ impl RequestResponseEngine for GoogleEngine {
             query_params.push(("safe", Self::safesearch_to_google(params.safesearch).to_string()));
         }
         
-        // 构建完整 URL
-        let query_string = query_params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        // 构建完整 URL - pre-allocate with estimated size
+        let estimated_size: usize = query_params.iter()
+            .map(|(k, v)| k.len() + v.len() + 2)
+            .sum();
+        let mut query_string = String::with_capacity(estimated_size);
+        
+        for (i, (k, v)) in query_params.iter().enumerate() {
+            if i > 0 {
+                query_string.push('&');
+            }
+            query_string.push_str(k);
+            query_string.push('=');
+            query_string.push_str(&urlencoding::encode(v));
+        }
         
         let url = format!("https://{}/search?{}", subdomain, query_string);
         params.url = Some(url);
@@ -691,9 +699,9 @@ impl RequestResponseEngine for GoogleEngine {
                 // 尝试获取响应内容来诊断问题
                 let error_text = response.text().await.unwrap_or_else(|_| "无法读取错误响应".to_string());
                 let preview = if error_text.len() > 200 {
-                    format!("{}...", &error_text[..200])
+                    &error_text[..200]
                 } else {
-                    error_text.clone()
+                    &error_text
                 };
                 return Err(format!("HTTP 错误: {}, URL: {}, 响应预览: {}", status, final_url, preview).into());
             },

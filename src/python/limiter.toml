@@ -1,6 +1,0 @@
-# Empty limiter configuration for local development
-[botdetection.ip_limit]
-link_token = false
-
-[botdetection.ip_lists]
-pass_searxng_org = []

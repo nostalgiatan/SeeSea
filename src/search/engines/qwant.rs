@@ -318,12 +318,20 @@ impl RequestResponseEngine for QwantEngine {
             ("p", params.pageno.to_string()),
         ];
 
-        // 构建查询字符串
-        let query_string = query_params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        // 构建查询字符串 - pre-allocate with estimated size
+        let estimated_size: usize = query_params.iter()
+            .map(|(k, v)| k.len() + v.len() + 2)
+            .sum();
+        let mut query_string = String::with_capacity(estimated_size);
+        
+        for (i, (k, v)) in query_params.iter().enumerate() {
+            if i > 0 {
+                query_string.push('&');
+            }
+            query_string.push_str(k);
+            query_string.push('=');
+            query_string.push_str(&urlencoding::encode(v));
+        }
 
         // Use Qwant Lite like Python SearXNG
         params.url = Some(format!("https://lite.qwant.com/?{}", query_string));
