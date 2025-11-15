@@ -135,14 +135,23 @@ impl StartpageEngine {
             return Ok(Vec::new());
         }
         
+        // 检查是否被重定向到 CAPTCHA 页面（基于 SearXNG 的检查）
+        // SearXNG: if str(resp.url).startswith('https://www.startpage.com/sp/captcha'):
+        if html.contains("www.startpage.com/sp/captcha") || html.contains("/sp/captcha") {
+            return Err("检测到 Startpage CAPTCHA，请稍后重试".into());
+        }
+        
         let document = Html::parse_document(html);
         let mut items = Vec::new();
         
-        // Startpage 的搜索结果
+        // Startpage 的搜索结果选择器（多个后备选项）
+        // 基于 SearXNG 的实现，Startpage 使用 React 和 JSON 嵌入在 HTML 中
+        // 但我们也提供基于 HTML 结构的解析作为后备
         let result_selectors = vec![
             "div.w-gl__result",
             "div.result",
-            "article",
+            "article.result",
+            "div[class*=\"result\"]",
         ];
         
         let mut results_found = false;
@@ -155,24 +164,55 @@ impl StartpageEngine {
             for result in document.select(&selector) {
                 results_found = true;
                 
-                // 提取标题和 URL
-                let title_selector = Selector::parse("h2, h3, a.w-gl__result-title").expect("Expected valid value");
+                // 提取标题和 URL - 尝试多个选择器
+                let title_selectors = vec!["h2", "h3", "a.w-gl__result-title", "a[class*=\"title\"]"];
+                let mut title = String::new();
+                for title_sel_str in title_selectors {
+                    if let Ok(title_selector) = Selector::parse(title_sel_str) {
+                        if let Some(t) = result.select(&title_selector).next() {
+                            title = t.text().collect::<String>().trim().to_string();
+                            if !title.is_empty() {
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // 提取 URL
                 let link_selector = Selector::parse("a").expect("Expected valid value");
-                let snippet_selector = Selector::parse("p.w-gl__description, p.result-snippet, div.result-snippet").expect("Expected valid value");
+                let mut url = String::new();
+                for link in result.select(&link_selector) {
+                    if let Some(href) = link.value().attr("href") {
+                        // 确保是有效的 URL
+                        if href.starts_with("http") {
+                            url = href.to_string();
+                            break;
+                        }
+                    }
+                }
                 
-                let title = result.select(&title_selector).next()
-                    .map(|t| t.text().collect::<String>().trim().to_string())
-                    .unwrap_or_default();
+                // 提取内容片段
+                let snippet_selectors = vec![
+                    "p.w-gl__description",
+                    "p.result-snippet",
+                    "div.result-snippet",
+                    "p[class*=\"description\"]",
+                    "div[class*=\"description\"]",
+                    "p",
+                ];
+                let mut content = String::new();
+                for snippet_sel_str in snippet_selectors {
+                    if let Ok(snippet_selector) = Selector::parse(snippet_sel_str) {
+                        if let Some(s) = result.select(&snippet_selector).next() {
+                            content = s.text().collect::<String>().trim().to_string();
+                            if !content.is_empty() {
+                                break;
+                            }
+                        }
+                    }
+                }
                 
-                let url = result.select(&link_selector).next()
-                    .and_then(|a| a.value().attr("href"))
-                    .unwrap_or_default();
-                
-                let content = result.select(&snippet_selector).next()
-                    .map(|s| s.text().collect::<String>().trim().to_string())
-                    .unwrap_or_default();
-                
-                // 过滤有效结果
+                // 过滤有效结果 - 必须有标题和有效的 URL
                 if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
                     items.push(SearchResultItem {
                         title,
@@ -190,7 +230,7 @@ impl StartpageEngine {
                 }
             }
             
-            if results_found {
+            if results_found && !items.is_empty() {
                 break;
             }
         }
@@ -271,6 +311,13 @@ impl RequestResponseEngine for StartpageEngine {
         // 发送请求
         let response = request.send().await?;
         
+        // 检查响应的最终 URL 是否被重定向到 CAPTCHA 页面
+        // SearXNG: if str(resp.url).startswith('https://www.startpage.com/sp/captcha'):
+        let final_url = response.url().to_string();
+        if final_url.contains("/sp/captcha") {
+            return Err("检测到 Startpage CAPTCHA，请稍后重试".into());
+        }
+        
         // 检查状态码
         if !response.status().is_success() {
             return Err(format!("HTTP 错误: {}", response.status()).into());
@@ -279,8 +326,9 @@ impl RequestResponseEngine for StartpageEngine {
         // 获取响应文本
         let text = response.text().await?;
         
-        // 检查 CAPTCHA
-        if text.contains("captcha") {
+        // 再次检查响应内容中是否包含 CAPTCHA 标记
+        // 使用更严格的检查，避免误报
+        if text.contains("\"captchaUrl\"") || text.contains("sp/captcha") && text.contains("challenge") {
             return Err("检测到 Startpage CAPTCHA，请稍后重试".into());
         }
         
@@ -358,5 +406,50 @@ mod tests {
         let result = StartpageEngine::parse_html_results("");
         assert!(result.is_ok());
         assert_eq!(result.expect("Expected valid value").len(), 0);
+    }
+
+    #[test]
+    fn test_parse_captcha_detection() {
+        // 测试 CAPTCHA 检测
+        let html_with_captcha = "<html><body><div>Redirected to www.startpage.com/sp/captcha</div></body></html>";
+        let result = StartpageEngine::parse_html_results(html_with_captcha);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("CAPTCHA"));
+    }
+
+    #[test]
+    fn test_parse_html_with_results() {
+        // 测试包含搜索结果的 HTML
+        let html = "<html><body><div class=\"w-gl__result\"><h2>Example Title</h2><a href=\"https://example.com\">Link</a><p class=\"w-gl__description\">This is example content.</p></div></body></html>";
+        let result = StartpageEngine::parse_html_results(html);
+        assert!(result.is_ok());
+        let items = result.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Example Title");
+        assert_eq!(items[0].url, "https://example.com");
+        assert!(items[0].content.contains("example content"));
+    }
+
+    #[test]
+    fn test_parse_html_multiple_selectors() {
+        // 测试使用不同选择器的 HTML
+        let html = "<html><body><div class=\"result\"><h3>Test Title</h3><a href=\"https://test.com\">Link</a><p class=\"result-snippet\">Test content here.</p></div></body></html>";
+        let result = StartpageEngine::parse_html_results(html);
+        assert!(result.is_ok());
+        let items = result.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Test Title");
+        assert_eq!(items[0].url, "https://test.com");
+    }
+
+    #[test]
+    fn test_parse_html_invalid_url() {
+        // 测试无效 URL 被过滤
+        let html = "<html><body><div class=\"result\"><h2>Title</h2><a href=\"/relative/path\">Relative Link</a><p>Content</p></div></body></html>";
+        let result = StartpageEngine::parse_html_results(html);
+        assert!(result.is_ok());
+        let items = result.unwrap();
+        // 相对路径应该被过滤
+        assert_eq!(items.len(), 0);
     }
 }
