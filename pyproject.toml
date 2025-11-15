@@ -29,6 +29,9 @@ classifiers = [
 
 dependencies = []
 
+[project.scripts]
+seesea = "seesea.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",

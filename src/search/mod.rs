@@ -12,6 +12,8 @@ pub mod on;
 pub mod orchestrator;
 pub mod query;
 pub mod types;
+pub mod scoring;
+pub mod standardization;
 
 pub use aggregator::*;
 pub use engine_manager::*;
@@ -20,3 +22,5 @@ pub use on::*;
 pub use orchestrator::*;
 pub use query::*;
 pub use types::*;
+pub use scoring::*;
+pub use standardization::*;

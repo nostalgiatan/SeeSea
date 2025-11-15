@@ -42,6 +42,7 @@ from .search import SearchClient
 from .api import ApiServer
 from .config import Config
 from .utils import format_results, parse_query
+from .cli import main as cli_main
 
 __all__ = [
     # 主要类
@@ -58,6 +59,9 @@ __all__ = [
     # 工具函数
     'format_results',
     'parse_query',
+    
+    # CLI
+    'cli_main',
     
     # 版本信息
     '__version__',
