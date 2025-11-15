@@ -1,18 +1,18 @@
 [build-system]
-requires = ["setuptools>=65.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
 
 [project]
-name = "SeeSea"
-version = "y"
-description = ""
+name = "seesea"
+version = "0.1.0"
+description = "SeeSea - Privacy-focused metasearch engine with Rust backend"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
+keywords = ["search", "metasearch", "privacy", "rust"]
 authors = [
-    
+    {name = "SeeSea Team"}
 ]
-keywords = []
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -23,49 +23,40 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
 ]
-dependencies = [
-    
-]
+
+dependencies = []
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "flake8>=6.0.0",
-    "mypy>=1.0.0",
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "black>=23.0",
+    "mypy>=1.0",
+    "ruff>=0.1",
 ]
 
-[project.scripts]
+[project.urls]
+Homepage = "https://github.com/nostalgiatan/SeeSea"
+Repository = "https://github.com/nostalgiatan/SeeSea"
+Documentation = "https://github.com/nostalgiatan/SeeSea/blob/main/docs"
 
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_functions = ["test_*"]
-addopts = "-v --cov=SeeSea --cov-report=term-missing"
-
-[tool.coverage.run]
-source = ["SeeSea"]
-omit = ["*/tests/*", "*/test_*"]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
-]
+[tool.maturin]
+features = ["python"]
+python-source = "."
+module-name = "seesea.seesea_core"
 
 [tool.black]
-line-length = 88
-target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
-include = '\.pyi?$'
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311']
 
 [tool.mypy]
 python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"

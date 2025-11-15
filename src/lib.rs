@@ -28,3 +28,26 @@ pub use derive::{
 pub use net::{NetworkInterface, NetworkConfig, HttpClient};
 pub mod search;
 pub mod api;
+
+#[cfg(feature = "python")]
+pub mod python_bindings;
+
+// Python module definition
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
+
+#[cfg(feature = "python")]
+#[pymodule]
+fn seesea_core(_py: Python, m: &PyModule) -> PyResult<()> {
+    use python_bindings::*;
+    
+    m.add_class::<py_search::PySearchClient>()?;
+    m.add_class::<py_api::PyApiServer>()?;
+    m.add_class::<py_config::PyConfig>()?;
+    m.add_class::<py_cache::PyCacheStats>()?;
+    
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    m.add("__doc__", "SeeSea - Privacy-focused metasearch engine")?;
+    
+    Ok(())
+}
