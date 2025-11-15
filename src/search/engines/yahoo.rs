@@ -44,6 +44,7 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::error::Error;
 
 use crate::derive::{
@@ -62,7 +63,7 @@ pub struct YahooEngine {
     /// 引擎信息
     info: EngineInfo,
     /// HTTP 客户端
-    client: HttpClient,
+    client: Arc<HttpClient>,
 }
 
 impl YahooEngine {
@@ -76,6 +77,12 @@ impl YahooEngine {
     /// let engine = YahooEngine::new();
     /// ```
     pub fn new() -> Self {
+        let client = HttpClient::new(NetworkConfig::default())
+            .unwrap_or_else(|_| panic!("Failed to create HTTP client"));
+        Self::with_client(Arc::new(client))
+    }
+
+    pub fn with_client(client: Arc<HttpClient>) -> Self {
         Self {
             info: EngineInfo {
                 name: "Yahoo".to_string(),
@@ -117,8 +124,7 @@ impl YahooEngine {
                 tokens: Vec::new(),
                 max_page: 50,
             },
-            client: HttpClient::new(NetworkConfig::default())
-                .unwrap_or_else(|_| panic!("Failed to create HTTP client for Yahoo")),
+            client,
         }
     }
 

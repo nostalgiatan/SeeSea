@@ -47,6 +47,7 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::error::Error;
 
 use crate::derive::{
@@ -65,7 +66,7 @@ pub struct GoogleEngine {
     /// 引擎信息
     info: EngineInfo,
     /// HTTP 客户端
-    client: HttpClient,
+    client: Arc<HttpClient>,
 }
 
 impl GoogleEngine {
@@ -79,6 +80,12 @@ impl GoogleEngine {
     /// let engine = GoogleEngine::new();
     /// ```
     pub fn new() -> Self {
+        let client = HttpClient::new(NetworkConfig::default())
+            .unwrap_or_else(|_| panic!("Failed to create HTTP client"));
+        Self::with_client(Arc::new(client))
+    }
+
+    pub fn with_client(client: Arc<HttpClient>) -> Self {
         Self {
             info: EngineInfo {
                 name: "Google".to_string(),
@@ -121,8 +128,7 @@ impl GoogleEngine {
                 tokens: Vec::new(),
                 max_page: 50, // Google 最多支持 50 页
             },
-            client: HttpClient::new(NetworkConfig::default())
-                .unwrap_or_else(|_| panic!("Failed to create HTTP client for Google")),
+            client,
         }
     }
 

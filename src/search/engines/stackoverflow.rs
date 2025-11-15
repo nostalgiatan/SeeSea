@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::error::Error;
 use std::time::Duration;
 use serde_json::Value;
@@ -14,16 +15,17 @@ use crate::net::types::{NetworkConfig, RequestOptions};
 
 pub struct StackOverflowEngine {
     info: EngineInfo,
-    client: HttpClient,
+    client: Arc<HttpClient>,
 }
 
 impl StackOverflowEngine {
     pub fn new() -> Self {
-        let net_config = NetworkConfig::default();
-        let client = HttpClient::new(net_config).unwrap_or_else(|_| {
-            panic!("Failed to create HTTP client for StackOverflow")
-        });
-        
+        let client = HttpClient::new(NetworkConfig::default())
+            .unwrap_or_else(|_| panic!("Failed to create HTTP client"));
+        Self::with_client(Arc::new(client))
+    }
+
+    pub fn with_client(client: Arc<HttpClient>) -> Self {
         Self {
             info: EngineInfo {
                 name: "Stack Overflow".to_string(),

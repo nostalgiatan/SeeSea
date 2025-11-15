@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::error::Error;
 use std::time::Duration;
 
@@ -14,16 +15,17 @@ use super::utils::build_query_string_owned;
 
 pub struct Search360Engine {
     info: EngineInfo,
-    client: HttpClient,
+    client: Arc<HttpClient>,
 }
 
 impl Search360Engine {
     pub fn new() -> Self {
-        let net_config = NetworkConfig::default();
-        let client = HttpClient::new(net_config).unwrap_or_else(|_| {
-            panic!("Failed to create HTTP client for 360Search")
-        });
-        
+        let client = HttpClient::new(NetworkConfig::default())
+            .unwrap_or_else(|_| panic!("Failed to create HTTP client"));
+        Self::with_client(Arc::new(client))
+    }
+
+    pub fn with_client(client: Arc<HttpClient>) -> Self {
         Self {
             info: EngineInfo {
                 name: "360Search".to_string(),
