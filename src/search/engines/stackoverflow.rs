@@ -65,6 +65,17 @@ impl StackOverflowEngine {
         }
     }
 
+    /// HTML unescape helper function (Python: html.unescape)
+    fn html_unescape(text: &str) -> String {
+        text.replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace("&#x27;", "'")
+            .replace("&#x2F;", "/")
+    }
+
     fn parse_json_result(json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         let api_result: Value = serde_json::from_str(json_str)?;
         let mut items = Vec::new();
@@ -73,16 +84,19 @@ impl StackOverflowEngine {
         if let Some(items_array) = api_result.get("items").and_then(|i| i.as_array()) {
             for result in items_array {
                 // Python: 'title': html.unescape(result['title'])
-                let title = result.get("title")
+                let title_raw = result.get("title")
                     .and_then(|t| t.as_str())
                     .unwrap_or("")
                     .to_string();
                 
-                if title.is_empty() {
+                if title_raw.is_empty() {
                     continue;
                 }
+                
+                let title = Self::html_unescape(&title_raw);
 
                 // Python: 'url': "https://%s.com/q/%s" % (api_site, result['question_id'])
+                // api_site = 'stackoverflow'
                 let question_id = result.get("question_id")
                     .and_then(|q| q.as_i64())
                     .unwrap_or(0);
@@ -99,6 +113,7 @@ impl StackOverflowEngine {
                 // content += " // score: %s" % result['score']
                 let mut content_parts = Vec::new();
                 
+                // Tags
                 if let Some(tags) = result.get("tags").and_then(|t| t.as_array()) {
                     let tag_str = tags.iter()
                         .filter_map(|t| t.as_str())
@@ -109,21 +124,40 @@ impl StackOverflowEngine {
                     }
                 }
                 
+                // Owner display name
                 if let Some(owner) = result.get("owner").and_then(|o| o.get("display_name")).and_then(|d| d.as_str()) {
                     content_parts.push(owner.to_string());
                 }
                 
+                // Is answered
                 if let Some(is_answered) = result.get("is_answered").and_then(|a| a.as_bool()) {
                     if is_answered {
                         content_parts.push("is answered".to_string());
                     }
                 }
                 
+                // Score
                 if let Some(score) = result.get("score").and_then(|s| s.as_i64()) {
                     content_parts.push(format!("score: {}", score));
                 }
                 
-                let content = content_parts.join(" // ");
+                // Python: html.unescape(content)
+                let content = Self::html_unescape(&content_parts.join(" // "));
+
+                // Additional metadata
+                let mut metadata = HashMap::new();
+                if let Some(score) = result.get("score").and_then(|s| s.as_i64()) {
+                    metadata.insert("score".to_string(), score.to_string());
+                }
+                if let Some(answer_count) = result.get("answer_count").and_then(|a| a.as_i64()) {
+                    metadata.insert("answer_count".to_string(), answer_count.to_string());
+                }
+                if let Some(view_count) = result.get("view_count").and_then(|v| v.as_i64()) {
+                    metadata.insert("view_count".to_string(), view_count.to_string());
+                }
+                if let Some(is_answered) = result.get("is_answered").and_then(|a| a.as_bool()) {
+                    metadata.insert("is_answered".to_string(), is_answered.to_string());
+                }
 
                 items.push(SearchResultItem {
                     title,
@@ -136,7 +170,7 @@ impl StackOverflowEngine {
                     thumbnail: None,
                     published_date: None,
                     template: None,
-                    metadata: HashMap::new(),
+                    metadata,
                 });
             }
         }
@@ -174,6 +208,9 @@ impl RequestResponseEngine for StackOverflowEngine {
         // Python: search_api = 'https://api.stackexchange.com/2.3/search/advanced?'
         // args = urlencode({'q': query, 'page': params['pageno'], 'pagesize': pagesize, 
         //                   'site': api_site, 'sort': api_sort, 'order': 'desc'})
+        // pagesize = 10
+        // api_site = 'stackoverflow'
+        // api_sort = 'activity'
         let query_params = vec![
             ("q", query.to_string()),
             ("page", params.pageno.to_string()),

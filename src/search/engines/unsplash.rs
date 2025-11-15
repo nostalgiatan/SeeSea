@@ -65,6 +65,33 @@ impl UnsplashEngine {
         }
     }
 
+    /// Clean URL by removing ixid parameter
+    /// Python: def clean_url(url):
+    ///     parsed = urlparse(url)
+    ///     query = [(k, v) for (k, v) in parse_qsl(parsed.query) if k != 'ixid']
+    ///     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(query), parsed.fragment))
+    fn clean_url(url: &str) -> String {
+        // Simple implementation: just remove ixid parameter if present
+        if let Some(question_mark_pos) = url.find('?') {
+            let base = &url[..question_mark_pos];
+            let query_string = &url[question_mark_pos + 1..];
+            
+            let cleaned_params: Vec<String> = query_string
+                .split('&')
+                .filter(|param| !param.starts_with("ixid="))
+                .map(|s| s.to_string())
+                .collect();
+            
+            if cleaned_params.is_empty() {
+                base.to_string()
+            } else {
+                format!("{}?{}", base, cleaned_params.join("&"))
+            }
+        } else {
+            url.to_string()
+        }
+    }
+
     fn parse_json_result(json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         let api_result: Value = serde_json::from_str(json_str)?;
         let mut items = Vec::new();
@@ -73,15 +100,16 @@ impl UnsplashEngine {
         if let Some(results_array) = api_result.get("results").and_then(|r| r.as_array()) {
             for result in results_array {
                 // Python: 'url': clean_url(result['links']['html'])
-                let url = result.get("links")
+                let url_raw = result.get("links")
                     .and_then(|l| l.get("html"))
                     .and_then(|h| h.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                    .unwrap_or("");
                 
-                if url.is_empty() {
+                if url_raw.is_empty() {
                     continue;
                 }
+                
+                let url = Self::clean_url(url_raw);
 
                 // Python: 'title': result.get('alt_description') or 'unknown'
                 let title = result.get("alt_description")
@@ -100,12 +128,33 @@ impl UnsplashEngine {
                 let thumbnail = result.get("urls")
                     .and_then(|u| u.get("thumb"))
                     .and_then(|t| t.as_str())
-                    .map(|s| s.to_string());
+                    .map(|s| Self::clean_url(s));
 
                 // Python: 'img_src': clean_url(result['urls']['regular'])
+                // 'template': 'images.html'
                 let mut metadata = HashMap::new();
                 if let Some(img_src) = result.get("urls").and_then(|u| u.get("regular")).and_then(|r| r.as_str()) {
-                    metadata.insert("img_src".to_string(), img_src.to_string());
+                    metadata.insert("img_src".to_string(), Self::clean_url(img_src));
+                }
+                
+                // Additional metadata from Unsplash
+                if let Some(user) = result.get("user") {
+                    if let Some(username) = user.get("name").and_then(|n| n.as_str()) {
+                        metadata.insert("photographer".to_string(), format!("by {}", username));
+                    }
+                    if let Some(profile_url) = user.get("links").and_then(|l| l.get("html")).and_then(|h| h.as_str()) {
+                        metadata.insert("photographer_url".to_string(), profile_url.to_string());
+                    }
+                }
+                
+                if let Some(width) = result.get("width").and_then(|w| w.as_i64()) {
+                    metadata.insert("width".to_string(), width.to_string());
+                }
+                if let Some(height) = result.get("height").and_then(|h| h.as_i64()) {
+                    metadata.insert("height".to_string(), height.to_string());
+                }
+                if let Some(color) = result.get("color").and_then(|c| c.as_str()) {
+                    metadata.insert("color".to_string(), color.to_string());
                 }
 
                 items.push(SearchResultItem {
@@ -118,7 +167,7 @@ impl UnsplashEngine {
                     result_type: ResultType::Image,
                     thumbnail,
                     published_date: None,
-                    template: None,
+                    template: Some("images.html".to_string()), // Python: 'template': 'images.html'
                     metadata,
                 });
             }
@@ -156,6 +205,8 @@ impl RequestResponseEngine for UnsplashEngine {
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Python: params['url'] = search_url + urlencode({'query': query, 'page': params['pageno'], 'per_page': page_size})
         // search_url = base_url + 'napi/search/photos?'
+        // base_url = 'https://unsplash.com/'
+        // page_size = 20
         let query_params = vec![
             ("query", query.to_string()),
             ("page", params.pageno.to_string()),

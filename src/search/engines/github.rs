@@ -93,7 +93,7 @@ impl GitHubEngine {
                 }
 
                 // Python: content = [item.get(i) for i in ['language', 'description'] if item.get(i)]
-                // content': ' / '.join(content)
+                // 'content': ' / '.join(content)
                 let mut content_parts = Vec::new();
                 if let Some(lang) = item.get("language").and_then(|l| l.as_str()) {
                     if !lang.is_empty() {
@@ -113,13 +113,73 @@ impl GitHubEngine {
                     .and_then(|a| a.as_str())
                     .map(|s| s.to_string());
 
-                // Python: 'popularity': item.get('stargazers_count')
+                // Python: Detailed metadata matching SearXNG
                 let mut metadata = HashMap::new();
+                
+                // 'package_name': item.get('name')
+                if let Some(name) = item.get("name").and_then(|n| n.as_str()) {
+                    metadata.insert("package_name".to_string(), name.to_string());
+                }
+                
+                // 'maintainer': item.get('owner', {}).get('login')
+                if let Some(maintainer) = item.get("owner").and_then(|o| o.get("login")).and_then(|l| l.as_str()) {
+                    metadata.insert("maintainer".to_string(), maintainer.to_string());
+                }
+                
+                // 'popularity': item.get('stargazers_count')
                 if let Some(stars) = item.get("stargazers_count").and_then(|s| s.as_i64()) {
                     metadata.insert("stars".to_string(), stars.to_string());
+                    metadata.insert("popularity".to_string(), stars.to_string());
                 }
+                
+                // forks_count
                 if let Some(forks) = item.get("forks_count").and_then(|f| f.as_i64()) {
                     metadata.insert("forks".to_string(), forks.to_string());
+                }
+                
+                // Python: license handling
+                // lic = item.get('license') or {}
+                // if lic.get('spdx_id'):
+                //     lic_url = f"https://spdx.org/licenses/{lic.get('spdx_id')}.html"
+                if let Some(license) = item.get("license").and_then(|l| l.as_object()) {
+                    if let Some(spdx_id) = license.get("spdx_id").and_then(|s| s.as_str()) {
+                        if !spdx_id.is_empty() && spdx_id != "NOASSERTION" {
+                            metadata.insert("license_url".to_string(), 
+                                format!("https://spdx.org/licenses/{}.html", spdx_id));
+                        }
+                    }
+                    if let Some(license_name) = license.get("name").and_then(|n| n.as_str()) {
+                        metadata.insert("license_name".to_string(), license_name.to_string());
+                    }
+                }
+                
+                // 'homepage': item.get('homepage')
+                if let Some(homepage) = item.get("homepage").and_then(|h| h.as_str()) {
+                    if !homepage.is_empty() {
+                        metadata.insert("homepage".to_string(), homepage.to_string());
+                    }
+                }
+                
+                // 'source_code_url': item.get('clone_url')
+                if let Some(clone_url) = item.get("clone_url").and_then(|c| c.as_str()) {
+                    metadata.insert("source_code_url".to_string(), clone_url.to_string());
+                }
+                
+                // 'tags': item.get('topics', [])
+                if let Some(topics) = item.get("topics").and_then(|t| t.as_array()) {
+                    let tags: Vec<String> = topics.iter()
+                        .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                        .collect();
+                    if !tags.is_empty() {
+                        metadata.insert("tags".to_string(), tags.join(", "));
+                    }
+                }
+                
+                // Python: 'publishedDate': parser.parse(item.get("updated_at") or item.get("created_at"))
+                if let Some(updated_at) = item.get("updated_at").and_then(|u| u.as_str()) {
+                    metadata.insert("updated_at".to_string(), updated_at.to_string());
+                } else if let Some(created_at) = item.get("created_at").and_then(|c| c.as_str()) {
+                    metadata.insert("created_at".to_string(), created_at.to_string());
                 }
 
                 items.push(SearchResultItem {
@@ -132,7 +192,7 @@ impl GitHubEngine {
                     result_type: ResultType::Web,
                     thumbnail,
                     published_date: None,
-                    template: None,
+                    template: Some("packages.html".to_string()), // Python: 'template': 'packages.html'
                     metadata,
                 });
             }
