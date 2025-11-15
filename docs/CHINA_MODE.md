@@ -2,19 +2,145 @@
 
 ## 概述 (Overview)
 
-China Mode (中国模式) 是 SeeSea 的特殊配置模式，专为中国大陆网络环境设计。该模式只启用在中国真正可访问的搜索引擎，排除了被防火墙屏蔽的服务。
+China Mode (中国模式) 是 SeeSea 的特殊配置模式。根据实际测试，在中国大陆只有**9个搜索引擎**稳定可用。
 
-**重要说明**: 本模式基于网络可访问性筛选，已排除 Google、Wikipedia、YouTube、Facebook、Twitter 等被墙服务。
+**重要**: 本配置基于实际网络测试结果，只包含真正可用的引擎。
 
-## 功能特性 (Features)
+## 中国可用的搜索引擎 (9个)
 
-- **65个真实可用引擎**: 所有引擎均在中国大陆可访问
-- **核心搜索引擎**: Yandex, Bing, Baidu, Sogou, 360search, ChinaSo
-- **专业领域覆盖**: 学术、开发、视频、地图、新闻等
-- **网络优化**: 针对中国网络环境优化的超时和重试配置
-- **国内DNS**: 优先使用阿里云、腾讯等国内DNS服务
+### Bing 系列 (4个) - ✅ 可用
+- **bing** - 通用搜索
+- **bing images** - 图片搜索
+- **bing news** - 新闻搜索
+- **bing videos** - 视频搜索
 
-## 可访问的搜索引擎 (Accessible Engines)
+### 360搜索 (2个) - ✅ 可用
+- **360search** - 通用搜索 (中国本土)
+- **360search videos** - 视频搜索
+
+### 开发工具 (3个) - ✅ 可用
+- **github** - 代码仓库 (可能不稳定)
+- **github code** - GitHub代码搜索
+- **stackoverflow** - 开发问答
+
+## 在中国被墙的引擎 (已禁用)
+
+以下引擎在中国被墙，已被禁用：
+
+- ❌ **DuckDuckGo** - 被墙
+- ❌ **Brave Search** - 被墙
+- ❌ **Startpage** - 被墙
+- ❌ **Wikipedia** - 被墙
+- ❌ **Wikidata** - 被墙
+- ❌ **Unsplash** - 被墙
+
+## 全球模式引擎列表 (11个核心引擎)
+
+在非中国地区，SeeSea 默认启用以下11个核心搜索引擎：
+
+| 名称 | 类别 | 快捷码 | 中国可用 |
+|------|------|--------|----------|
+| Bing | 通用搜索 | `bi` | ✅ |
+| DuckDuckGo | 通用搜索 | `ddg` | ❌ |
+| Brave | 通用搜索 | `br` | ❌ |
+| Startpage | 通用搜索 | `sp` | ❌ |
+| 360搜索 | 通用搜索 | `360so` | ✅ |
+| Wikipedia | 百科 | `wp` | ❌ |
+| Wikidata | 知识库 | `wd` | ❌ |
+| GitHub | 代码仓库 | `gh` | ✅ |
+| Stack Overflow | 开发问答 | `st` | ✅ |
+| Unsplash | 免费图库 | `us` | ❌ |
+
+**说明**: 
+- 全球模式: 24个引擎 (包括主引擎和images/news/videos变体)
+- 中国模式: 9个引擎 (只保留可访问的引擎)
+
+## 配置方式
+
+### 启用中国模式
+
+编辑 `config/default.toml`:
+
+```toml
+[general]
+region_mode = "china"  # 可选: "global", "china", "custom"
+```
+
+### 中国模式配置
+
+详见 `config/china_mode.toml`，包含：
+- DNS 配置 (国内DNS优先)
+- 网络优化 (延长超时、增加重试)
+- 缓存设置 (2小时缓存)
+- 引擎优先级
+
+## 网络优化
+
+### DNS 配置
+使用国内 DNS 服务器:
+```toml
+preferred_dns = [
+    "https://dns.alidns.com/dns-query",    # 阿里云
+    "https://doh.pub/dns-query",            # 腾讯 DNSPod
+    "https://doh.360.cn/dns-query",         # 360 DoH
+]
+```
+
+### 超时设置
+```toml
+request_timeout = 45  # 秒
+connect_timeout = 15  # 秒
+max_retries = 4
+```
+
+### 缓存配置
+```toml
+enabled = true
+ttl = 7200           # 2小时
+max_size_mb = 2048
+```
+
+## 引擎优先级
+
+```toml
+"360search" = 1.5    # 中国本土引擎优先
+bing = 1.0           # 国际引擎
+github = 1.0
+stackoverflow = 1.0
+```
+
+## 统计信息
+
+- **全球模式**: 24个引擎
+- **中国模式**: 9个引擎
+- **被墙引擎**: 15个
+
+## 使用建议
+
+1. **中国用户**: 建议启用中国模式，只使用可访问的9个引擎
+2. **国际用户**: 使用全球模式，享受完整的24个引擎
+3. **GitHub访问**: 在中国可能不稳定，建议配置代理
+
+## 注意事项
+
+1. 网络环境随时可能变化
+2. GitHub 在中国访问可能不稳定
+3. 建议定期更新引擎配置
+4. 遵守当地法律法规
+
+## 更新日志
+
+### v1.1.0 (2024-11-15)
+- ✅ 重新调整为11个核心引擎
+- ✅ 中国模式精简为9个真实可用引擎
+- ✅ 移除不可用的引擎配置
+- ✅ 更新文档说明
+
+### v1.0.0 (2024-11-15)
+- ✅ 初始发布 China Mode
+- ✅ 网络优化配置
+- ✅ DNS 和缓存设置
+
 
 ### 核心搜索引擎 (19个)
 

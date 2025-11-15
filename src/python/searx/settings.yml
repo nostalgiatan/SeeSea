@@ -142,7 +142,7 @@ engines:
 - name: acfun
   engine: acfun
   shortcut: acf
-  disabled: false
+  disabled: true
 - name: adobe stock
   engine: adobe_stock
   shortcut: asi
@@ -202,25 +202,25 @@ engines:
   engine: astrophysics_data_system
   shortcut: ads
   api_key: ''
-  inactive: false
+  disabled: true
 - name: alpine linux packages
   engine: alpinelinux
-  disabled: false
+  disabled: true
   shortcut: alp
 - name: annas archive
   engine: annas_archive
-  disabled: false
+  disabled: true
   shortcut: aa
   timeout: 5
 - name: ansa
   engine: ansa
   shortcut: ans
-  disabled: false
+  disabled: true
 - name: apk mirror
   engine: apkmirror
   timeout: 4.0
   shortcut: apkm
-  disabled: false
+  disabled: true
 - name: apple app store
   engine: apple_app_store
   shortcut: aps
@@ -237,10 +237,11 @@ engines:
   categories: it
   timeout: 6.0
   shortcut: conda
-  disabled: false
+  disabled: true
 - name: arch linux wiki
   engine: archlinux
   shortcut: al
+  disabled: true
 - name: nixos wiki
   engine: mediawiki
   shortcut: nixw
@@ -254,9 +255,11 @@ engines:
   engine: artic
   shortcut: arc
   timeout: 4.0
+  disabled: true
 - name: arxiv
   engine: arxiv
   shortcut: arx
+  disabled: true
 - name: ask
   engine: ask
   shortcut: ask
@@ -265,27 +268,28 @@ engines:
   engine: bandcamp
   shortcut: bc
   categories: music
+  disabled: true
 - name: baidu
   baidu_category: general
   categories:
   - general
   engine: baidu
   shortcut: bd
-  disabled: false
+  disabled: true
 - name: baidu images
   baidu_category: images
   categories:
   - images
   engine: baidu
   shortcut: bdi
-  disabled: false
+  disabled: true
 - name: baidu kaifa
   baidu_category: it
   categories:
   - it
   engine: baidu
   shortcut: bdk
-  disabled: false
+  disabled: true
 - name: wikipedia
   engine: wikipedia
   shortcut: wp
@@ -293,11 +297,11 @@ engines:
   - infobox
   categories:
   - general
-  disabled: true
+  disabled: false
 - name: bilibili
   engine: bilibili
   shortcut: bil
-  disabled: false
+  disabled: true
 - name: bing
   engine: bing
   shortcut: bi
@@ -305,12 +309,15 @@ engines:
 - name: bing images
   engine: bing_images
   shortcut: bii
+  disabled: false
 - name: bing news
   engine: bing_news
   shortcut: bin
+  disabled: false
 - name: bing videos
   engine: bing_videos
   shortcut: biv
+  disabled: false
 - name: bitchute
   engine: bitchute
   shortcut: bit
@@ -355,6 +362,7 @@ engines:
 - name: chefkoch
   engine: chefkoch
   shortcut: chef
+  disabled: true
 - name: chinaso news
   engine: chinaso
   shortcut: chinaso
@@ -362,8 +370,7 @@ engines:
   - news
   chinaso_category: news
   chinaso_news_source: all
-  disabled: false
-  inactive: false
+  disabled: true
 - name: chinaso images
   engine: chinaso
   network: chinaso news
@@ -371,8 +378,7 @@ engines:
   categories:
   - images
   chinaso_category: images
-  disabled: false
-  inactive: false
+  disabled: true
 - name: chinaso videos
   engine: chinaso
   network: chinaso news
@@ -380,8 +386,7 @@ engines:
   categories:
   - videos
   chinaso_category: videos
-  disabled: false
-  inactive: false
+  disabled: true
 - name: cloudflareai
   engine: cloudflareai
   shortcut: cfai
@@ -395,12 +400,12 @@ engines:
   engine: core
   shortcut: cor
   api_key: ''
-  inactive: true
+  disabled: true
 - name: crossref
   engine: crossref
   shortcut: cr
   timeout: 30
-  disabled: false
+  disabled: true
 - name: crowdview
   engine: json_engine
   shortcut: cv
@@ -438,6 +443,7 @@ engines:
 - name: currency
   engine: currency_convert
   shortcut: cc
+  disabled: true
 - name: deezer
   engine: deezer
   shortcut: dz
@@ -463,6 +469,7 @@ engines:
   categories:
   - it
   - packages
+  disabled: true
 - name: encyclosearch
   engine: json_engine
   shortcut: es
@@ -509,11 +516,11 @@ engines:
   tests: *id001
   categories:
   - general
-  disabled: true
+  disabled: false
 - name: duckduckgo
   engine: duckduckgo
   shortcut: ddg
-  disabled: true
+  disabled: false
 - name: duckduckgo images
   engine: duckduckgo_extra
   categories:
@@ -521,7 +528,7 @@ engines:
   - web
   ddg_category: images
   shortcut: ddi
-  disabled: true
+  disabled: false
 - name: duckduckgo videos
   engine: duckduckgo_extra
   categories:
@@ -529,7 +536,7 @@ engines:
   - web
   ddg_category: videos
   shortcut: ddv
-  disabled: true
+  disabled: false
 - name: duckduckgo news
   engine: duckduckgo_extra
   categories:
@@ -537,11 +544,11 @@ engines:
   - web
   ddg_category: news
   shortcut: ddn
-  disabled: true
+  disabled: false
 - name: duckduckgo weather
   engine: duckduckgo_weather
   shortcut: ddw
-  disabled: true
+  disabled: false
 - name: apple maps
   engine: apple_maps
   shortcut: apm
@@ -575,6 +582,7 @@ engines:
     use_official_api: false
     require_api_key: false
     results: HTML
+  disabled: true
 - name: 1x
   engine: www1x
   shortcut: 1x
@@ -622,6 +630,7 @@ engines:
 - name: genius
   engine: genius
   shortcut: gen
+  disabled: true
 - name: gentoo
   engine: mediawiki
   shortcut: ge
@@ -632,6 +641,7 @@ engines:
   api_path: api.php
   search_type: text
   timeout: 10
+  disabled: true
 - name: gitlab
   engine: gitlab
   base_url: https://gitlab.com
@@ -643,6 +653,7 @@ engines:
 - name: github
   engine: github
   shortcut: gh
+  disabled: false
 - name: github code
   engine: github_code
   shortcut: ghc
@@ -739,7 +750,7 @@ engines:
 - name: crates.io
   engine: crates
   shortcut: crates
-  disabled: false
+  disabled: true
   timeout: 6.0
 - name: hoogle
   engine: xpath
@@ -760,6 +771,7 @@ engines:
     use_official_api: false
     require_api_key: false
     results: JSON
+  disabled: true
 - name: il post
   engine: il_post
   shortcut: pst
@@ -861,7 +873,6 @@ engines:
   shortcut: zlib
   timeout: 7.0
   disabled: true
-  inactive: true
 - name: library of congress
   engine: loc
   shortcut: loc
@@ -899,7 +910,6 @@ engines:
   engine: marginalia
   shortcut: mar
   disabled: true
-  inactive: true
 - name: mastodon users
   engine: mastodon
   mastodon_type: accounts
@@ -931,6 +941,7 @@ engines:
     use_official_api: false
     require_api_key: false
     results: JSON
+  disabled: true
 - name: metacpan
   engine: metacpan
   shortcut: cpan
@@ -985,6 +996,7 @@ engines:
     use_official_api: true
     require_api_key: false
     results: JSON
+  disabled: true
 - name: mullvadleta
   engine: mullvad_leta
   disabled: true
@@ -1029,6 +1041,7 @@ engines:
     use_official_api: false
     require_api_key: false
     results: JSON
+  disabled: true
 - name: openairepublications
   engine: json_engine
   paging: true
@@ -1048,6 +1061,7 @@ engines:
     use_official_api: false
     require_api_key: false
     results: JSON
+  disabled: true
 - name: openalex
   engine: openalex
   shortcut: oa
@@ -1056,7 +1070,6 @@ engines:
 - name: openclipart
   engine: openclipart
   shortcut: ocl
-  inactive: true
   disabled: true
   timeout: 30
 - name: openlibrary
@@ -1071,6 +1084,7 @@ engines:
 - name: openstreetmap
   engine: openstreetmap
   shortcut: osm
+  disabled: true
 - name: openrepos
   engine: xpath
   paging: true
@@ -1113,9 +1127,11 @@ engines:
 - name: pdbe
   engine: pdbe
   shortcut: pdb
+  disabled: true
 - name: photon
   engine: photon
   shortcut: ph
+  disabled: true
 - name: pinterest
   engine: pinterest
   shortcut: pin
@@ -1126,11 +1142,11 @@ engines:
   categories: videos
   piped_filter: videos
   timeout: 3.0
-  inactive: true
   frontend_url: https://srv.piped.video
   backend_url:
   - https://pipedapi.ducks.party
   - https://api.piped.private.coffee
+  disabled: true
 - name: piped.music
   engine: piped
   network: piped
@@ -1138,7 +1154,7 @@ engines:
   categories: music
   piped_filter: music_songs
   timeout: 3.0
-  inactive: true
+  disabled: true
 - name: piratebay
   engine: piratebay
   shortcut: tpb
@@ -1161,7 +1177,6 @@ engines:
   shortcut: pv
   engine: pixiv
   disabled: true
-  inactive: true
   pixiv_image_proxies:
   - https://pximg.example.org
 - name: podcastindex
@@ -1235,9 +1250,11 @@ engines:
 - name: pubmed
   engine: pubmed
   shortcut: pub
+  disabled: true
 - name: pypi
   shortcut: pypi
   engine: pypi
+  disabled: true
 - name: quark
   quark_category: general
   categories:
@@ -1259,7 +1276,7 @@ engines:
   categories:
   - general
   - web
-  disabled: false
+  disabled: true
   additional_tests:
     rosebud: *id002
 - name: qwant news
@@ -1267,6 +1284,7 @@ engines:
   engine: qwant
   shortcut: qwn
   categories: news
+  disabled: true
 - name: qwant images
   qwant_categ: images
   engine: qwant
@@ -1274,6 +1292,7 @@ engines:
   categories:
   - images
   - web
+  disabled: true
 - name: qwant videos
   qwant_categ: videos
   engine: qwant
@@ -1281,9 +1300,11 @@ engines:
   categories:
   - videos
   - web
+  disabled: true
 - name: radio browser
   engine: radio_browser
   shortcut: rb
+  disabled: true
 - name: reddit
   engine: reddit
   shortcut: re
@@ -1292,6 +1313,7 @@ engines:
 - name: reuters
   engine: reuters
   shortcut: reu
+  disabled: true
 - name: right dao
   engine: xpath
   paging: true
@@ -1337,19 +1359,19 @@ engines:
 - name: sogou
   engine: sogou
   shortcut: sogou
-  disabled: false
+  disabled: true
 - name: sogou images
   engine: sogou_images
   shortcut: sogoui
-  disabled: false
+  disabled: true
 - name: sogou videos
   engine: sogou_videos
   shortcut: sogouv
-  disabled: false
+  disabled: true
 - name: sogou wechat
   engine: sogou_wechat
   shortcut: sogouw
-  disabled: false
+  disabled: true
 - name: soundcloud
   engine: soundcloud
   shortcut: sc
@@ -1361,6 +1383,7 @@ engines:
   categories:
   - it
   - q&a
+  disabled: false
 - name: askubuntu
   engine: stackexchange
   shortcut: ubuntu
@@ -1368,6 +1391,7 @@ engines:
   categories:
   - it
   - q&a
+  disabled: true
 - name: superuser
   engine: stackexchange
   shortcut: su
@@ -1375,6 +1399,7 @@ engines:
   categories:
   - it
   - q&a
+  disabled: true
 - name: discuss.python
   engine: discourse
   shortcut: dpy
@@ -1403,16 +1428,16 @@ engines:
   engine: searchcode_code
   shortcut: scc
   disabled: true
-  inactive: true
 - name: semantic scholar
   engine: semantic_scholar
   shortcut: se
+  disabled: true
 - name: springer nature
   engine: springer
   shortcut: springer
   timeout: 5
   api_key: ''
-  inactive: true
+  disabled: true
 - name: startpage
   engine: startpage
   shortcut: sp
@@ -1422,7 +1447,7 @@ engines:
   - web
   additional_tests:
     rosebud: *id002
-  disabled: true
+  disabled: false
 - name: startpage news
   engine: startpage
   startpage_categ: news
@@ -1430,7 +1455,7 @@ engines:
   - news
   - web
   shortcut: spn
-  disabled: true
+  disabled: false
 - name: startpage images
   engine: startpage
   startpage_categ: images
@@ -1438,7 +1463,7 @@ engines:
   - images
   - web
   shortcut: spi
-  disabled: true
+  disabled: false
 - name: steam
   engine: steam
   shortcut: stm
@@ -1460,26 +1485,23 @@ engines:
 - name: unsplash
   engine: unsplash
   shortcut: us
-  disabled: true
+  disabled: false
 - name: yandex
   engine: yandex
   categories: general
   search_type: web
   shortcut: yd
-  disabled: false
-  inactive: false
+  disabled: true
 - name: yandex images
   engine: yandex
   categories: images
   search_type: images
   shortcut: ydi
-  disabled: false
-  inactive: false
+  disabled: true
 - name: yandex music
   engine: yandex_music
   shortcut: ydm
-  disabled: false
-  inactive: false
+  disabled: true
 - name: yahoo
   engine: yahoo
   shortcut: yh
@@ -1663,10 +1685,12 @@ engines:
 - name: dictzone
   engine: dictzone
   shortcut: dc
+  disabled: true
 - name: mymemory translated
   engine: translated
   shortcut: tl
   timeout: 5.0
+  disabled: true
 - name: 1337x
   engine: 1337x
   shortcut: 1337x
@@ -1799,7 +1823,6 @@ engines:
   engine: repology
   shortcut: rep
   disabled: true
-  inactive: true
 - name: livespace
   engine: livespace
   shortcut: ls
@@ -1810,6 +1833,7 @@ engines:
   engine: wordnik
   shortcut: wnik
   timeout: 5.0
+  disabled: true
 - name: woxikon.de synonyme
   engine: xpath
   shortcut: woxi
@@ -1862,6 +1886,7 @@ engines:
 - name: tootfinder
   engine: tootfinder
   shortcut: toot
+  disabled: true
 - name: uxwing
   engine: uxwing
   shortcut: ux
@@ -1894,6 +1919,7 @@ engines:
   engine: wttr
   shortcut: wttr
   timeout: 9.0
+  disabled: true
 - name: brave
   engine: brave
   shortcut: br
@@ -1903,7 +1929,7 @@ engines:
   - general
   - web
   brave_category: search
-  disabled: true
+  disabled: false
 - name: brave.images
   engine: brave
   network: brave
@@ -1912,7 +1938,7 @@ engines:
   - images
   - web
   brave_category: images
-  disabled: true
+  disabled: false
 - name: brave.videos
   engine: brave
   network: brave
@@ -1921,14 +1947,14 @@ engines:
   - videos
   - web
   brave_category: videos
-  disabled: true
+  disabled: false
 - name: brave.news
   engine: brave
   network: brave
   shortcut: brnews
   categories: news
   brave_category: news
-  disabled: true
+  disabled: false
 - name: lib.rs
   shortcut: lrs
   engine: lib_rs

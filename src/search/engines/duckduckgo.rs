@@ -128,12 +128,18 @@ impl DuckDuckGoEngine {
         }
 
         let document = Html::parse_document(html);
-        let mut items = Vec::with_capacity(10);  // Pre-allocate for typical result count
+        
+        // Check for CAPTCHA - Python: if is_ddg_captcha(doc): raise SearxEngineCaptchaException
+        let captcha_selector = Selector::parse("form#challenge-form").expect("valid selector");
+        if document.select(&captcha_selector).next().is_some() {
+            return Err("DDG CAPTCHA detected".into());
+        }
+
+        let mut items = Vec::with_capacity(10);
 
         // Python SearXNG: for div_result in eval_xpath(doc, '//div[@id="links"]/div[contains(@class, "web-result")]')
-        // Select web results from the links div, avoiding ads
-        let result_selector = Selector::parse("div#links div[class*=\"web-result\"]")
-            .or_else(|_| Selector::parse("div.result"))
+        // IMPORTANT: Only select .web-result, NOT .result--ad (ads)
+        let result_selector = Selector::parse("div#links > div.web-result")
             .expect("valid selector");
         
         for result in document.select(&result_selector) {
@@ -147,6 +153,7 @@ impl DuckDuckGoEngine {
             }
             
             let title_elem = title_elem.unwrap();
+            // Python: item["title"] = extract_text(title)
             let title = title_elem.text().collect::<String>().trim().to_string();
             
             if title.is_empty() {
@@ -163,7 +170,9 @@ impl DuckDuckGoEngine {
             }
             
             // Python: item["content"] = extract_text(eval_xpath_getindex(div_result, './/a[contains(@class, "result__snippet")]', 0, []))
-            let content_selector = Selector::parse("a[class*=\"result__snippet\"]").expect("valid selector");
+            let content_selector = Selector::parse("a.result__snippet")
+                .or_else(|_| Selector::parse("a[class*=\"result__snippet\"]"))
+                .expect("valid selector");
             let content = result.select(&content_selector).next()
                 .map(|c| c.text().collect::<String>().trim().to_string())
                 .unwrap_or_default();
@@ -221,62 +230,93 @@ impl RequestResponseEngine for DuckDuckGoEngine {
         let region = params.custom.get("region").map(|s| s.as_str()).unwrap_or("wt-wt");
         
         // Python: Some locales (at least China) does not support pagination
+        // if params['searxng_locale'].startswith("zh"):
+        //     params["url"] = None
+        //     return
         if region.starts_with("zh") && params.pageno > 1 {
             params.url = None;
             return Err("Chinese locale does not support pagination".into());
         }
 
-        // Python SearXNG structure for form data
-        let mut form_data = vec![("q", query.to_string())];
-
-        // Python:
+        // Python SearXNG: The order of params['data'] dictionary matters for DDG bot detection!
+        // Python code lines 267-308 show the exact order:
+        // params['data']['q'] = query
         // if params['pageno'] == 1:
         //     params['data']['b'] = ""
         // elif params['pageno'] >= 2:
-        //     offset = 10 + (params['pageno'] - 2) * 15
         //     params['data']['s'] = offset
-        //     ...
+        //     params['data']['nextParams'] = ''
+        //     params['data']['v'] = 'l'
+        //     params['data']['o'] = 'json'
+        //     params['data']['dc'] = offset + 1
+        //     params['data']['api'] = 'd.js'
+        //     params['data']['vqd'] = vqd
+        // params['data']['kl'] = eng_region or ""
+        // params['data']['df'] = ''
+        
+        let mut form_data: Vec<(String, String)> = vec![("q".to_string(), query.to_string())];
+
         if params.pageno == 1 {
-            form_data.push(("b", String::new()));
-        } else {
+            form_data.push(("b".to_string(), String::new()));
+        } else if params.pageno >= 2 {
             let offset = 10 + (params.pageno - 2) * 15;
-            form_data.push(("s", offset.to_string()));
-            form_data.push(("nextParams", String::new()));
-            form_data.push(("v", "l".to_string()));
-            form_data.push(("o", "json".to_string()));
-            form_data.push(("dc", (offset + 1).to_string()));
-            form_data.push(("api", "d.js".to_string()));
+            form_data.push(("s".to_string(), offset.to_string()));
+            form_data.push(("nextParams".to_string(), String::new()));
+            form_data.push(("v".to_string(), "l".to_string()));
+            form_data.push(("o".to_string(), "json".to_string()));
+            form_data.push(("dc".to_string(), (offset + 1).to_string()));
+            form_data.push(("api".to_string(), "d.js".to_string()));
             
-            // Note: vqd would be needed here for page 2+, but we skip it for now
-            // as it requires caching which is complex
+            // Note: vqd is required for page 2+
+            // Python: vqd = get_vqd(query, eng_region, force_request=False)
+            // if vqd: params['data']['vqd'] = vqd
+            // else: params["url"] = None; return  # Don't try without vqd - DDG detects bots
+            // For now we skip pagination > 1 to avoid bot detection
+            // TODO: Implement proper VQD caching
         }
 
         // Python: Put empty kl in form data if language/region set to all
-        form_data.push(("kl", if region == "wt-wt" { String::new() } else { region.to_string() }));
+        // if eng_region == "wt-wt":
+        //     params['data']['kl'] = ""
+        // else:
+        //     params['data']['kl'] = eng_region
+        form_data.push(("kl".to_string(), if region == "wt-wt" { String::new() } else { region.to_string() }));
 
-        // Time range filter
-        if let Some(ref tr) = params.time_range {
-            let df = match tr.as_str() {
+        // Python: params['data']['df'] = ''
+        // if params['time_range'] in time_range_dict:
+        //     params['data']['df'] = time_range_dict[params['time_range']]
+        //     params['cookies']['df'] = time_range_dict[params['time_range']]
+        let df_value = if let Some(ref tr) = params.time_range {
+            match tr.as_str() {
                 "day" => "d",
                 "week" => "w",
                 "month" => "m",
                 "year" => "y",
                 _ => "",
-            };
-            if !df.is_empty() {
-                form_data.push(("df", df.to_string()));
-                params.cookies.insert("df".to_string(), df.to_string());
             }
         } else {
-            form_data.push(("df", String::new()));
+            ""
+        };
+        form_data.push(("df".to_string(), df_value.to_string()));
+        
+        if !df_value.is_empty() {
+            params.cookies.insert("df".to_string(), df_value.to_string());
         }
 
+        // Python: params['cookies']['kl'] = eng_region
         params.cookies.insert("kl".to_string(), region.to_string());
+        
         params.url = Some("https://html.duckduckgo.com/html/".to_string());
         params.method = "POST".to_string();
-        params.data = Some(form_data.into_iter().map(|(k, v)| (k.to_string(), v)).collect());
+        params.data = Some(form_data);
 
-        // Python SearXNG headers - critical for bot detection
+        // Python SearXNG headers - critical for bot detection (lines 313-318)
+        // params['headers']['Content-Type'] = 'application/x-www-form-urlencoded'
+        // params['headers']['Referer'] = url
+        // params['headers']['Sec-Fetch-Dest'] = "document"
+        // params['headers']['Sec-Fetch-Mode'] = "navigate"  # at least this one is used by ddg's bot detection
+        // params['headers']['Sec-Fetch-Site'] = "same-origin"
+        // params['headers']['Sec-Fetch-User'] = "?1"
         params.headers.insert("Content-Type".to_string(), "application/x-www-form-urlencoded".to_string());
         params.headers.insert("Referer".to_string(), "https://html.duckduckgo.com/html/".to_string());
         params.headers.insert("Sec-Fetch-Dest".to_string(), "document".to_string());

@@ -1,11 +1,152 @@
-# China Mode Implementation Summary
-# 中国模式实现总结
+# SeeSea Search Engine Configuration
+# SeeSea 搜索引擎配置说明
 
-## Overview - 概述
+## 总览
 
-本次实现为 SeeSea 添加了中国模式 (China Mode)，专门针对中国大陆网络环境进行优化，确保所有启用的搜索引擎都在中国大陆可以访问。
+SeeSea 配置了 **11个核心搜索引擎**，涵盖通用搜索、百科知识、代码开发和图片资源等领域。
 
-## Key Achievements - 关键成果
+## 支持的搜索引擎 (11个核心引擎)
+
+### 通用搜索引擎 (4个)
+
+1. **Bing** (`bi`) - ✅ 中国可用
+   - Microsoft 必应搜索
+   - 变体: bing, bing images, bing news, bing videos (共4个)
+
+2. **DuckDuckGo** (`ddg`) - ❌ 中国被墙
+   - 隐私友好的搜索引擎
+   - 变体: duckduckgo, duckduckgo images, duckduckgo news, duckduckgo videos, duckduckgo weather (共5个)
+
+3. **Brave** (`br`) - ❌ 中国被墙
+   - Brave 浏览器的搜索引擎
+   - 变体: brave, brave.images, brave.news, brave.videos (共4个)
+
+4. **Startpage** (`sp`) - ❌ 中国被墙
+   - 隐私搜索引擎
+   - 变体: startpage, startpage images, startpage news (共3个)
+
+5. **360搜索** (`360so`) - ✅ 中国可用
+   - 中国本土搜索引擎
+   - 变体: 360search, 360search videos (共2个)
+
+### 百科/知识库 (2个)
+
+6. **Wikipedia** (`wp`) - ❌ 中国被墙
+   - 维基百科
+
+7. **Wikidata** (`wd`) - ❌ 中国被墙
+   - 维基数据知识库
+
+### 开发工具 (3个)
+
+8. **GitHub** (`gh`) - ✅ 中国可用 (可能不稳定)
+   - 代码托管平台
+   - 变体: github, github code (共2个)
+
+9. **Stack Overflow** (`st`) - ✅ 中国可用
+   - 开发问答社区
+
+### 图片资源 (1个)
+
+10. **Unsplash** (`us`) - ❌ 中国被墙
+    - 免费高质量图片库
+
+## 模式对比
+
+### 全球模式 (Global Mode)
+- **启用引擎数**: 24个
+- **核心引擎**: 全部11个
+- **适用地区**: 除中国大陆外的所有地区
+
+### 中国模式 (China Mode)  
+- **启用引擎数**: 9个
+- **核心引擎**: 仅可访问的引擎
+- **适用地区**: 中国大陆
+
+| 引擎系列 | 全球模式 | 中国模式 |
+|---------|---------|---------|
+| Bing | ✅ (4个) | ✅ (4个) |
+| DuckDuckGo | ✅ (5个) | ❌ |
+| Brave | ✅ (4个) | ❌ |
+| Startpage | ✅ (3个) | ❌ |
+| 360搜索 | ✅ (2个) | ✅ (2个) |
+| Wikipedia | ✅ | ❌ |
+| Wikidata | ✅ | ❌ |
+| GitHub | ✅ (2个) | ✅ (2个) |
+| Stack Overflow | ✅ | ✅ |
+| Unsplash | ✅ | ❌ |
+| **总计** | **24** | **9** |
+
+## 配置文件
+
+### 全局配置
+- 文件: `config/default.toml`
+- 设置: `region_mode = "global"` 或 `"china"`
+
+### 中国模式配置
+- 文件: `config/china_mode.toml`
+- 包含: DNS配置、网络优化、缓存设置、引擎优先级
+
+### 引擎配置
+- 文件: `src/python/searx/settings.yml`
+- 说明: SearXNG 引擎配置文件
+
+## 使用建议
+
+### 中国用户
+```toml
+[general]
+region_mode = "china"
+```
+- 只启用9个可用引擎
+- 避免访问被墙服务
+- 使用国内DNS优化
+
+### 国际用户
+```toml
+[general]
+region_mode = "global"
+```
+- 启用全部24个引擎
+- 完整的搜索体验
+- 更多选择和结果
+
+## 技术细节
+
+### 引擎变体
+每个主引擎可能包含多个变体:
+- **images** - 图片搜索
+- **news** - 新闻搜索
+- **videos** - 视频搜索
+- **weather** - 天气查询 (仅DuckDuckGo)
+- **code** - 代码搜索 (仅GitHub)
+
+### 中国模式优化
+1. **DNS**: 优先使用阿里云、腾讯、360等国内DNS
+2. **超时**: 延长至45秒以应对网络波动
+3. **重试**: 增加至4次，使用指数退避
+4. **缓存**: 启用2小时缓存提高性能
+
+## 统计信息
+
+- SearXNG 总引擎数: 260+
+- SeeSea 启用 (全球): 24个
+- SeeSea 启用 (中国): 9个
+- 核心引擎: 11个
+- 被墙引擎: 6个核心引擎 (15个变体)
+
+## 更新记录
+
+### v1.1.0 (2024-11-15)
+- ✅ 精简为11个核心引擎
+- ✅ 中国模式调整为9个可用引擎
+- ✅ 全球模式包含24个引擎变体
+- ✅ 更新文档和配置说明
+
+### v1.0.0 (2024-11-15)
+- ✅ 初始版本
+- ✅ 支持区域模式配置
+- ✅ 中国模式优化
 
 ### 1. 准确的网络可访问性筛选
 - ✅ 识别并排除所有被墙服务 (45+个引擎)
