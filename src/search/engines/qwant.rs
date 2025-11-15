@@ -50,6 +50,7 @@ use crate::derive::{
 };
 use crate::net::client::HttpClient;
 use crate::net::types::NetworkConfig;
+use super::utils::build_query_string_owned;
 
 /// Qwant 搜索引擎
 ///
@@ -308,6 +309,7 @@ impl RequestResponseEngine for QwantEngine {
         // - l: language part (e.g., en)
         // - s: safesearch (0, 1, 2)
         // - p: page number
+        // Build query parameters for Qwant Lite API
         let lang_part = locale.split('_').next().unwrap_or("en");
         
         let query_params = vec![
@@ -318,20 +320,8 @@ impl RequestResponseEngine for QwantEngine {
             ("p", params.pageno.to_string()),
         ];
 
-        // 构建查询字符串 - pre-allocate with estimated size
-        let estimated_size: usize = query_params.iter()
-            .map(|(k, v)| k.len() + v.len() + 2)
-            .sum();
-        let mut query_string = String::with_capacity(estimated_size);
-        
-        for (i, (k, v)) in query_params.iter().enumerate() {
-            if i > 0 {
-                query_string.push('&');
-            }
-            query_string.push_str(k);
-            query_string.push('=');
-            query_string.push_str(&urlencoding::encode(v));
-        }
+        // Use optimized query string builder
+        let query_string = build_query_string_owned(query_params.into_iter());
 
         // Use Qwant Lite like Python SearXNG
         params.url = Some(format!("https://lite.qwant.com/?{}", query_string));

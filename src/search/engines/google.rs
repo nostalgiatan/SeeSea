@@ -56,6 +56,7 @@ use crate::derive::{
 };
 use crate::net::client::HttpClient;
 use crate::net::types::NetworkConfig;
+use super::utils::build_query_string_owned;
 
 /// Google 搜索引擎
 ///
@@ -125,22 +126,20 @@ impl GoogleEngine {
         }
     }
 
-    /// 生成 Google 的 async 参数
+    /// Generate Google's ARC async parameter for AJAX API requests
     ///
-    /// 基于 SearXNG 的实现，格式为: "arc_id:srp_[23_random_chars]_1[page],use_ac:true,_fmt:prog"
+    /// Google's ARC (Asynchronous Result Component) uses a specific format to track
+    /// pagination state and enable progressive loading. This implementation follows
+    /// SearXNG's ui_async pattern.
     ///
-    /// # 参数
+    /// Format: `arc_id:srp_{23_random_chars}_{page_marker},use_ac:true,_fmt:prog`
     ///
-    /// * `start` - 分页偏移量
-    ///
-    /// # 返回
-    ///
-    /// 格式化的 async 参数字符串
+    /// The random component helps prevent cache collisions, while the page marker
+    /// ensures results are fetched for the correct page.
     fn generate_async_param(start: u32) -> String {
-        // 生成 ARC async 参数 (基于 SearXNG 的 ui_async 实现)
         let page_num = start / 10;
 
-        // 生成23位随机字符串 (简化版本)
+        // Use nanosecond timestamp for pseudo-random ID (deterministic but unique enough)
         let random_part = format!("{:023}", std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
@@ -150,15 +149,9 @@ impl GoogleEngine {
         format!("arc_id:{},use_ac:true,_fmt:prog", arc_id)
     }
 
-    /// 将时间范围转换为 Google 的时间过滤参数
+    /// Map internal TimeRange enum to Google's time filter codes
     ///
-    /// # 参数
-    ///
-    /// * `time_range` - 时间范围枚举值
-    ///
-    /// # 返回
-    ///
-    /// Google API 的时间过滤字符串
+    /// Google uses single-letter codes: h(hour), d(day), w(week), m(month), y(year)
     #[allow(dead_code)]
     fn time_range_to_google(time_range: TimeRange) -> &'static str {
         match time_range {
@@ -587,27 +580,27 @@ impl RequestResponseEngine for GoogleEngine {
         let async_param = Self::generate_async_param(start as u32);
 
         // 构建 ARC AJAX API 查询参数 (基于 SearXNG 的实现)
-        let mut query_params = vec![
-            ("q", query.to_string()),
-            ("start", start.to_string()),
-            ("ie", "utf8".to_string()),
-            ("oe", "utf8".to_string()),
-            ("filter", "0".to_string()),
-            ("hl", "en-US".to_string()), // Interface language
-            ("lr", "lang_en".to_string()), // Language restriction
-            ("cr", "countryUS".to_string()), // Country restriction
-            ("asearch", "arc".to_string()),
-            ("async", async_param),
-        ];
+        // Construct query parameters with optimal capacity
+        let mut query_params = Vec::with_capacity(15);
+        query_params.push(("q", query.to_string()));
+        query_params.push(("start", start.to_string()));
+        query_params.push(("ie", "utf8".to_string()));
+        query_params.push(("oe", "utf8".to_string()));
+        query_params.push(("filter", "0".to_string()));
+        query_params.push(("hl", "en-US".to_string()));
+        query_params.push(("lr", "lang_en".to_string()));
+        query_params.push(("cr", "countryUS".to_string()));
+        query_params.push(("asearch", "arc".to_string()));
+        query_params.push(("async", async_param));
         
-        // 添加语言参数
+        // Add optional language parameter
         if let Some(ref lang) = params.language {
             if !lang.is_empty() && lang != "all" {
                 query_params.push(("lr", format!("lang_{}", lang)));
             }
         }
         
-        // 添加时间范围
+        // Add time range filter if specified
         if let Some(ref time_range) = params.time_range {
             let tr = match time_range.as_str() {
                 "hour" => "h",
@@ -622,25 +615,13 @@ impl RequestResponseEngine for GoogleEngine {
             }
         }
         
-        // 添加安全搜索
+        // Add safe search level
         if params.safesearch > 0 {
             query_params.push(("safe", Self::safesearch_to_google(params.safesearch).to_string()));
         }
         
-        // 构建完整 URL - pre-allocate with estimated size
-        let estimated_size: usize = query_params.iter()
-            .map(|(k, v)| k.len() + v.len() + 2)
-            .sum();
-        let mut query_string = String::with_capacity(estimated_size);
-        
-        for (i, (k, v)) in query_params.iter().enumerate() {
-            if i > 0 {
-                query_string.push('&');
-            }
-            query_string.push_str(k);
-            query_string.push('=');
-            query_string.push_str(&urlencoding::encode(v));
-        }
+        // Build query string using optimized utility function
+        let query_string = build_query_string_owned(query_params.into_iter());
         
         let url = format!("https://{}/search?{}", subdomain, query_string);
         params.url = Some(url);

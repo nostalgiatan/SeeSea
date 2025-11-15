@@ -49,6 +49,7 @@ use crate::derive::{
 };
 use crate::net::client::HttpClient;
 use crate::net::types::NetworkConfig;
+use super::utils::build_query_string_owned;
 
 /// Startpage 搜索引擎
 ///
@@ -271,31 +272,19 @@ impl RequestResponseEngine for StartpageEngine {
 
     /// 准备请求参数
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // 构建查询参数
+        // Build query parameters
         let mut query_params = vec![
             ("query", query.to_string()),
             ("page", params.pageno.to_string()),
         ];
         
-        // 添加语言
+        // Add language if specified
         if let Some(ref lang) = params.language {
             query_params.push(("language", lang.clone()));
         }
         
-        // 构建 URL - pre-allocate with estimated size
-        let estimated_size: usize = query_params.iter()
-            .map(|(k, v)| k.len() + v.len() + 2)
-            .sum();
-        let mut query_string = String::with_capacity(estimated_size);
-        
-        for (i, (k, v)) in query_params.iter().enumerate() {
-            if i > 0 {
-                query_string.push('&');
-            }
-            query_string.push_str(k);
-            query_string.push('=');
-            query_string.push_str(&urlencoding::encode(v));
-        }
+        // Use optimized query string builder
+        let query_string = build_query_string_owned(query_params.into_iter());
         
         params.url = Some(format!("https://www.startpage.com/sp/search?{}", query_string));
         params.method = "GET".to_string();

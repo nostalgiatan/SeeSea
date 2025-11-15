@@ -53,6 +53,7 @@ use crate::derive::{
 };
 use crate::net::client::HttpClient;
 use crate::net::types::NetworkConfig;
+use super::utils::build_query_string_owned;
 
 /// Yahoo 搜索引擎
 ///
@@ -372,11 +373,11 @@ impl RequestResponseEngine for YahooEngine {
         let language = params.language.as_deref().unwrap_or("en");
         let region = params.language.as_deref();
         
-        // 构建查询参数 - pre-allocate capacity
-        let mut query_params = Vec::with_capacity(6);
+        // Build query parameters with pre-allocated capacity
+        let mut query_params = Vec::with_capacity(7);
         query_params.push(("p", query.to_string()));
         
-        // 添加时间范围
+        // Add time range filter if specified
         if let Some(ref time_range) = params.time_range {
             let btf = match time_range.as_str() {
                 "day" => "d",
@@ -389,7 +390,7 @@ impl RequestResponseEngine for YahooEngine {
             }
         }
         
-        // 添加分页参数
+        // Configure pagination parameters
         if params.pageno == 1 {
             query_params.push(("iscqry", String::new()));
         } else if params.pageno >= 2 {
@@ -399,21 +400,9 @@ impl RequestResponseEngine for YahooEngine {
             query_params.push(("xargs", "0".to_string()));
         }
         
-        // 构建 URL - use estimated capacity
+        // Build URL with optimized query string builder
         let domain = Self::get_domain(region);
-        let estimated_size = query_params.iter()
-            .map(|(k, v)| k.len() + v.len() + 2)  // key + value + "=" + "&"
-            .sum::<usize>();
-        let mut query_string = String::with_capacity(estimated_size);
-        
-        for (i, (k, v)) in query_params.iter().enumerate() {
-            if i > 0 {
-                query_string.push('&');
-            }
-            query_string.push_str(k);
-            query_string.push('=');
-            query_string.push_str(&urlencoding::encode(v));
-        }
+        let query_string = build_query_string_owned(query_params.into_iter());
         
         params.url = Some(format!("https://{}/search?{}", domain, query_string));
         params.method = "GET".to_string();
