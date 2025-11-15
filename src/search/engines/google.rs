@@ -250,54 +250,81 @@ impl GoogleEngine {
         // Google响应格式: )]}'
         // 寻找实际的JSON数组开始
         let mut json_start = None;
-        for i in 0..response.len() {
-            if response.chars().nth(i) == Some('[') {
-                // 检查这是否是结果数组的开始
-                let remaining = &response[i..];
-                if remaining.starts_with("[") {
-                    json_start = Some(i);
-                    break;
-                }
+        let mut bracket_count = 0;
+        let mut in_string = false;
+        let mut escape_next = false;
+        
+        // 首先找到第一个 '['
+        for (i, ch) in response.char_indices() {
+            if ch == '[' && json_start.is_none() {
+                json_start = Some(i);
+                bracket_count = 1;
+                break;
             }
         }
 
-        if let Some(start) = json_start {
-            // 寻找匹配的右括号
-            let mut bracket_count = 0;
-            let mut end = start;
-            for (i, ch) in response[start..].char_indices() {
-                match ch {
-                    '[' => bracket_count += 1,
-                    ']' => {
-                        bracket_count -= 1;
-                        if bracket_count == 0 {
-                            end = i;
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            let json_str = &response[start..=end];
-
-            // 尝试解析为JSON
-            match serde_json::from_str::<serde_json::Value>(json_str) {
-                Ok(data) => {
-                    // 解析Google的AJAX响应格式
-                    Self::parse_google_ajax_data(data)
-                }
-                Err(e) => {
-                    println!("JSON解析失败: {}", e);
-                    // 输出原始JSON用于调试
-                    println!("原始JSON: {}", &json_str[..json_str.len().min(200)]);
-                    // 回退到HTML解析
-                    Self::parse_html_response(response)
-                }
-            }
-        } else {
+        if json_start.is_none() {
             // 回退到HTML解析
-            Self::parse_html_response(response)
+            return Self::parse_html_response(response);
+        }
+
+        let start = json_start.unwrap();
+        let mut end = start;
+        
+        // 正确地找到匹配的右括号，考虑字符串中的括号
+        for (i, ch) in response[start + 1..].char_indices() {
+            let actual_i = start + 1 + i;
+            
+            if escape_next {
+                escape_next = false;
+                continue;
+            }
+            
+            match ch {
+                '\\' if in_string => {
+                    escape_next = true;
+                }
+                '"' => {
+                    in_string = !in_string;
+                }
+                '[' if !in_string => {
+                    bracket_count += 1;
+                }
+                ']' if !in_string => {
+                    bracket_count -= 1;
+                    if bracket_count == 0 {
+                        end = actual_i;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if bracket_count != 0 {
+            // JSON is incomplete/truncated
+            println!("JSON解析失败: EOF while parsing a list at line 1 column {}", end);
+            println!("原始JSON: {}", &response[start..response.len().min(start + 100)]);
+            // 回退到HTML解析
+            return Self::parse_html_response(response);
+        }
+
+        let json_str = &response[start..=end];
+
+        // 尝试解析为JSON
+        match serde_json::from_str::<serde_json::Value>(json_str) {
+            Ok(data) => {
+                // 解析Google的AJAX响应格式
+                Self::parse_google_ajax_data(data)
+            }
+            Err(e) => {
+                println!("JSON解析失败: {}", e);
+                // 输出原始JSON用于调试（限制长度）
+                let preview_len = json_str.len().min(200);
+                println!("原始JSON: {}", &json_str[..preview_len]);
+                // 回退到HTML解析
+                Self::parse_html_response(response)
+            }
         }
     }
 
