@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
 use serde_json::Value;
+use chrono::{DateTime, Utc};
 
 use crate::derive::{
     EngineCapabilities, EngineInfo, EngineStatus, EngineType, 
@@ -175,7 +176,15 @@ impl GitHubEngine {
                     }
                 }
                 
-                // Python: 'publishedDate': parser.parse(item.get("updated_at") or item.get("created_at"))
+                // Python line 55: 'publishedDate': parser.parse(item.get("updated_at") or item.get("created_at"))
+                let published_date = if let Some(updated_at_str) = item.get("updated_at").and_then(|u| u.as_str()) {
+                    DateTime::parse_from_rfc3339(updated_at_str).ok().map(|dt| dt.with_timezone(&Utc))
+                } else if let Some(created_at_str) = item.get("created_at").and_then(|c| c.as_str()) {
+                    DateTime::parse_from_rfc3339(created_at_str).ok().map(|dt| dt.with_timezone(&Utc))
+                } else {
+                    None
+                };
+                
                 if let Some(updated_at) = item.get("updated_at").and_then(|u| u.as_str()) {
                     metadata.insert("updated_at".to_string(), updated_at.to_string());
                 } else if let Some(created_at) = item.get("created_at").and_then(|c| c.as_str()) {
@@ -191,7 +200,7 @@ impl GitHubEngine {
                     score: 1.0,
                     result_type: ResultType::Web,
                     thumbnail,
-                    published_date: None,
+                    published_date,
                     template: Some("packages.html".to_string()), // Python: 'template': 'packages.html'
                     metadata,
                 });

@@ -15,6 +15,7 @@ use crate::net::types::{NetworkConfig, RequestOptions};
 pub struct WikipediaEngine {
     info: EngineInfo,
     client: HttpClient,
+    display_type: Vec<String>, // Python: display_type = ["infobox"]
 }
 
 impl WikipediaEngine {
@@ -62,64 +63,131 @@ impl WikipediaEngine {
                 max_page: 1,
             },
             client,
+            // Python line 77: display_type = ["infobox"]
+            display_type: vec!["infobox".to_string()],
         }
     }
 
-    fn parse_json_result(json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    /// Python: utils.html_to_text() - decodes HTML entities and strips tags
+    fn html_to_text(html: &str) -> String {
+        // Basic HTML entity decoding
+        let text = html
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace("&#x27;", "'")
+            .replace("&#x2F;", "/")
+            .replace("&nbsp;", " ");
+        
+        // Remove HTML tags (simplified)
+        let re = regex::Regex::new(r"<[^>]*>").unwrap();
+        let text = re.replace_all(&text, "");
+        
+        // Normalize whitespace
+        let text = text.trim().to_string();
+        text
+    }
+
+    fn parse_json_result(&self, json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         let api_result: Value = serde_json::from_str(json_str)?;
         
         let mut items = Vec::new();
 
-        // Python: title = utils.html_to_text(api_result.get('titles', {}).get('display') or api_result.get('title'))
-        let title = api_result.get("titles")
+        // Python line 188: title = utils.html_to_text(api_result.get('titles', {}).get('display') or api_result.get('title'))
+        let title_raw = api_result.get("titles")
             .and_then(|t| t.get("display"))
             .and_then(|d| d.as_str())
             .or_else(|| api_result.get("title").and_then(|t| t.as_str()))
             .unwrap_or("")
             .to_string();
         
-        if title.is_empty() {
+        if title_raw.is_empty() {
             return Ok(items);
         }
+        
+        let title = Self::html_to_text(&title_raw);
 
-        // Python: wikipedia_link = api_result['content_urls']['desktop']['page']
-        let url = api_result.get("content_urls")
+        // Python line 189: wikipedia_link = api_result['content_urls']['desktop']['page']
+        let wikipedia_link = api_result.get("content_urls")
             .and_then(|c| c.get("desktop"))
             .and_then(|d| d.get("page"))
             .and_then(|p| p.as_str())
             .unwrap_or("")
             .to_string();
         
-        if url.is_empty() {
+        if wikipedia_link.is_empty() {
             return Ok(items);
         }
 
-        // Python: content = api_result.get('extract', '') or api_result.get('description', '')
-        let content = api_result.get("extract")
-            .and_then(|e| e.as_str())
-            .or_else(|| api_result.get("description").and_then(|d| d.as_str()))
-            .unwrap_or("")
-            .to_string();
+        // Python lines 191-194: if "list" in display_type or api_result.get('type') != 'standard':
+        //     results.append({'url': wikipedia_link, 'title': title, 'content': api_result.get('description', '')})
+        let api_type = api_result.get("type").and_then(|t| t.as_str()).unwrap_or("");
         
-        // Python: thumbnail = api_result.get('thumbnail', {}).get('source')
-        let thumbnail = api_result.get("thumbnail")
-            .and_then(|t| t.get("source"))
-            .and_then(|s| s.as_str())
-            .map(|s| s.to_string());
+        if self.display_type.contains(&"list".to_string()) || api_type != "standard" {
+            // show item in the result list if 'list' is in the display options or it
+            // is a item that can't be displayed in a infobox.
+            let description = api_result.get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("")
+                .to_string();
+            
+            items.push(SearchResultItem {
+                title: title.clone(),
+                url: wikipedia_link.clone(),
+                content: description,
+                display_url: Some(wikipedia_link.clone()),
+                site_name: Some("Wikipedia".to_string()),
+                score: 1.0,
+                result_type: ResultType::Web,
+                thumbnail: None,
+                published_date: None,
+                template: None,
+                metadata: HashMap::new(),
+            });
+        }
 
-        items.push(SearchResultItem {
-            title,
-            url: url.clone(),
-            content,
-            display_url: Some(url),
-            site_name: Some("Wikipedia".to_string()),
-            score: 1.0,
-            result_type: ResultType::Web,
-            thumbnail,
-            published_date: None,
-            template: None,
-            metadata: HashMap::new(),
-        });
+        // Python lines 196-206: if "infobox" in display_type:
+        //     if api_result.get('type') == 'standard':
+        //         results.append({ 'infobox': title, ... })
+        if self.display_type.contains(&"infobox".to_string()) {
+            if api_type == "standard" {
+                let extract = api_result.get("extract")
+                    .and_then(|e| e.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                
+                let thumbnail = api_result.get("thumbnail")
+                    .and_then(|t| t.get("source"))
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_string());
+                
+                // Build infobox result
+                let mut metadata = HashMap::new();
+                metadata.insert("infobox".to_string(), title.clone());
+                metadata.insert("id".to_string(), wikipedia_link.clone());
+                metadata.insert("content".to_string(), extract.clone());
+                if let Some(ref thumb) = thumbnail {
+                    metadata.insert("img_src".to_string(), thumb.clone());
+                }
+                metadata.insert("urls".to_string(), format!("[{{\"title\":\"Wikipedia\",\"url\":\"{}\"}}]", wikipedia_link));
+                
+                items.push(SearchResultItem {
+                    title: title.clone(),
+                    url: wikipedia_link.clone(),
+                    content: extract,
+                    display_url: Some(wikipedia_link),
+                    site_name: Some("Wikipedia".to_string()),
+                    score: 1.0,
+                    result_type: ResultType::Web,
+                    thumbnail,
+                    published_date: None,
+                    template: Some("infobox".to_string()),
+                    metadata,
+                });
+            }
+        }
 
         Ok(items)
     }
@@ -151,7 +219,7 @@ impl RequestResponseEngine for WikipediaEngine {
     type Response = String;
 
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Python: if query.islower(): query = query.title()
+        // Python line 154: if query.islower(): query = query.title()
         let query_title = if query.chars().all(|c| !c.is_uppercase()) {
             query.split_whitespace()
                 .map(|word| {
@@ -171,13 +239,16 @@ impl RequestResponseEngine for WikipediaEngine {
         let lang = params.language.as_deref().unwrap_or("en");
         let wiki_netloc = format!("{}.wikipedia.org", lang);
         
-        // Python: rest_v1_summary_url = 'https://{wiki_netloc}/api/rest_v1/page/summary/{title}'
+        // Python line 159: params['url'] = rest_v1_summary_url.format(wiki_netloc=wiki_netloc, title=title)
         let title = urlencoding::encode(&query_title);
         params.url = Some(format!("https://{}/api/rest_v1/page/summary/{}", wiki_netloc, title));
         params.method = "GET".to_string();
         
-        // Python: params['raise_for_httperror'] = False
-        // We'll handle errors in response() instead
+        // Python lines 161-162: 
+        // params['raise_for_httperror'] = False
+        // params['soft_max_redirects'] = 2
+        params.custom.insert("raise_for_httperror".to_string(), "false".to_string());
+        params.custom.insert("soft_max_redirects".to_string(), "2".to_string());
 
         Ok(())
     }
@@ -213,6 +284,6 @@ impl RequestResponseEngine for WikipediaEngine {
             return Ok(Vec::new());
         }
         
-        Self::parse_json_result(&resp)
+        self.parse_json_result(&resp)
     }
 }

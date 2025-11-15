@@ -78,6 +78,28 @@ impl DuckDuckGoEngine {
         }
     }
 
+    /// Quote DDG bangs - Python duckduckgo.py lines 226-237
+    /// quote ddg bangs to avoid being parsed as DDG special commands
+    fn quote_ddg_bangs(query: &str) -> String {
+        // Python: for val in re.split(r'(\s+)', query):
+        //     if not val.strip(): continue
+        //     if val.startswith('!') and external_bang.get_node(external_bang.EXTERNAL_BANGS, val[1:]):
+        //         val = f"'{val}'"
+        //     query_parts.append(val)
+        // return ' '.join(query_parts)
+        
+        // Simplified implementation: quote any word starting with !
+        let parts: Vec<&str> = query.split_whitespace().collect();
+        let quoted_parts: Vec<String> = parts.iter().map(|part| {
+            if part.starts_with('!') && part.len() > 1 {
+                format!("'{}'", part)
+            } else {
+                part.to_string()
+            }
+        }).collect();
+        quoted_parts.join(" ")
+    }
+
     #[allow(dead_code)]
     async fn get_vqd(&self, query: &str, region: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
         let cache_key = format!("{}_{}", query, region);
@@ -222,7 +244,13 @@ impl RequestResponseEngine for DuckDuckGoEngine {
     type Response = String;
 
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // Python: query = quote_ddg_bangs(query) - line 241
+        let query = Self::quote_ddg_bangs(query);
+        
         if query.len() >= 500 {
+            // Python: if len(query) >= 500:
+            //     params["url"] = None
+            //     return
             params.url = None;
             return Err("Query too long (max 499 chars)".into());
         }

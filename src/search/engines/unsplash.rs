@@ -66,29 +66,36 @@ impl UnsplashEngine {
     }
 
     /// Clean URL by removing ixid parameter
-    /// Python: def clean_url(url):
+    /// Python lines 24-30: def clean_url(url):
     ///     parsed = urlparse(url)
     ///     query = [(k, v) for (k, v) in parse_qsl(parsed.query) if k != 'ixid']
     ///     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(query), parsed.fragment))
-    fn clean_url(url: &str) -> String {
-        // Simple implementation: just remove ixid parameter if present
-        if let Some(question_mark_pos) = url.find('?') {
-            let base = &url[..question_mark_pos];
-            let query_string = &url[question_mark_pos + 1..];
-            
-            let cleaned_params: Vec<String> = query_string
-                .split('&')
-                .filter(|param| !param.starts_with("ixid="))
-                .map(|s| s.to_string())
+    fn clean_url(url_str: &str) -> String {
+        use url::Url;
+        
+        if let Ok(mut url) = Url::parse(url_str) {
+            // Filter out ixid parameter
+            let filtered_pairs: Vec<(String, String)> = url.query_pairs()
+                .filter(|(k, _)| k != "ixid")
+                .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect();
             
-            if cleaned_params.is_empty() {
-                base.to_string()
-            } else {
-                format!("{}?{}", base, cleaned_params.join("&"))
+            // Clear existing query parameters
+            url.set_query(None);
+            
+            // Add filtered parameters back
+            if !filtered_pairs.is_empty() {
+                let query_string = filtered_pairs.iter()
+                    .map(|(k, v)| format!("{}={}", k, v))
+                    .collect::<Vec<_>>()
+                    .join("&");
+                url.set_query(Some(&query_string));
             }
-        } else {
+            
             url.to_string()
+        } else {
+            // Fallback for invalid URLs
+            url_str.to_string()
         }
     }
 

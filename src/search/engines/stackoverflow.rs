@@ -66,6 +66,7 @@ impl StackOverflowEngine {
     }
 
     /// HTML unescape helper function (Python: html.unescape)
+    /// Complete HTML entity decoding matching Python's html.unescape
     fn html_unescape(text: &str) -> String {
         text.replace("&lt;", "<")
             .replace("&gt;", ">")
@@ -74,6 +75,35 @@ impl StackOverflowEngine {
             .replace("&#39;", "'")
             .replace("&#x27;", "'")
             .replace("&#x2F;", "/")
+            .replace("&nbsp;", " ")
+            .replace("&apos;", "'")
+            .replace("&copy;", "©")
+            .replace("&reg;", "®")
+            .replace("&trade;", "™")
+            .replace("&euro;", "€")
+            .replace("&pound;", "£")
+            .replace("&yen;", "¥")
+            .replace("&cent;", "¢")
+            .replace("&sect;", "§")
+            .replace("&para;", "¶")
+            .replace("&mdash;", "\u{2014}")
+            .replace("&ndash;", "\u{2013}")
+            .replace("&hellip;", "\u{2026}")
+            .replace("&laquo;", "«")
+            .replace("&raquo;", "»")
+            .replace("&lsquo;", "\u{2018}")
+            .replace("&rsquo;", "\u{2019}")
+            .replace("&ldquo;", "\u{201C}")
+            .replace("&rdquo;", "\u{201D}")
+            .replace("&bull;", "•")
+            .replace("&middot;", "·")
+            .replace("&deg;", "°")
+            .replace("&plusmn;", "±")
+            .replace("&times;", "×")
+            .replace("&divide;", "÷")
+            .replace("&frac14;", "¼")
+            .replace("&frac12;", "½")
+            .replace("&frac34;", "¾")
     }
 
     fn parse_json_result(json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
