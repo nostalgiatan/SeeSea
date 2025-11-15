@@ -135,7 +135,7 @@ impl BraveEngine {
         }
     }
 
-    /// 解析 HTML 响应为搜索结果项列表
+    /// 解析 HTML 响应为搜索结果项列表 (对齐 Python SearxNG)
     ///
     /// # 参数
     ///
@@ -159,61 +159,72 @@ impl BraveEngine {
         let document = Html::parse_document(html);
         let mut items = Vec::new();
         
-        // Brave 的搜索结果通常在特定的 div 元素中
-        let result_selectors = vec![
-            "div.snippet",
-            "div[data-pos]",
-            "div.result",
-        ];
+        // Python XPath: '//div[contains(@class, "snippet ")]'
+        // CSS equivalent: div.snippet, div[class*="snippet "]
+        let results_selector = match Selector::parse("div[class*=\"snippet \"]") {
+            Ok(sel) => sel,
+            Err(_) => return Ok(Vec::new()),
+        };
         
-        let mut results_found = false;
-        for selector_str in result_selectors {
-            let selector = match Selector::parse(selector_str) {
-                Ok(sel) => sel,
-                Err(_) => continue,
+        for result in document.select(&results_selector) {
+            // Python XPath: './/a[contains(@class, "h")]/@href'
+            // CSS: a.h or a[class*="h"]
+            let link_selector = Selector::parse("a[class*=\"h\"]").expect("valid selector");
+            let url = match result.select(&link_selector).next() {
+                Some(link) => {
+                    match link.value().attr("href") {
+                        Some(href) => {
+                            // 检查是否是完整URL (Python: if not urlparse(url).netloc: continue)
+                            if href.starts_with("http://") || href.starts_with("https://") {
+                                href.to_string()
+                            } else {
+                                continue; // 部分 URL 可能是广告
+                            }
+                        }
+                        None => continue,
+                    }
+                }
+                None => continue,
             };
             
-            for result in document.select(&selector) {
-                results_found = true;
-                
-                // 提取标题和 URL
-                let title_selector = Selector::parse("h2, h3, div.title, span.snippet-title").expect("Expected valid value");
-                let link_selector = Selector::parse("a").expect("Expected valid value");
-                let snippet_selector = Selector::parse("p.snippet-description, div.snippet-description, span.snippet-description").expect("Expected valid value");
-                
-                let title = result.select(&title_selector).next()
-                    .map(|t| t.text().collect::<String>().trim().to_string())
-                    .unwrap_or_default();
-                
-                let url = result.select(&link_selector).next()
-                    .and_then(|a| a.value().attr("href"))
-                    .unwrap_or_default();
-                
-                let content = result.select(&snippet_selector).next()
-                    .map(|s| s.text().collect::<String>().trim().to_string())
-                    .unwrap_or_default();
-                
-                // 过滤有效结果
-                if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
-                    items.push(SearchResultItem {
-                        title,
-                        url: url.to_string(),
-                        content,
-                        display_url: Some(url.to_string()),
-                        site_name: None,
-                        score: 1.0,
-                        result_type: ResultType::Web,
-                        thumbnail: None,
-                        published_date: None,
-                        template: None,
-                        metadata: HashMap::new(),
-                    });
-                }
-            }
+            // Python XPath: './/a[contains(@class, "h")]//div[contains(@class, "title")]'
+            // CSS: a[class*="h"] div[class*="title"]
+            let title_selector = Selector::parse("a[class*=\"h\"] div[class*=\"title\"]").expect("valid selector");
+            let title = match result.select(&title_selector).next() {
+                Some(title_elem) => title_elem.text().collect::<String>().trim().to_string(),
+                None => continue,
+            };
             
-            if results_found {
-                break;
-            }
+            // Python XPath: './/div[contains(@class, "snippet-description")]'
+            // CSS: div[class*="snippet-description"]
+            let content_selector = Selector::parse("div[class*=\"snippet-description\"]").expect("valid selector");
+            let content = result.select(&content_selector).next()
+                .map(|c| c.text().collect::<String>().trim().to_string())
+                .unwrap_or_default();
+            
+            // Python: pub_date extraction from content
+            // 暂时跳过发布日期解析，因为需要更复杂的逻辑
+            
+            // Python XPath: './/img[contains(@class, "thumb")]/@src'
+            // CSS: img[class*="thumb"]
+            let thumbnail_selector = Selector::parse("img[class*=\"thumb\"]").expect("valid selector");
+            let thumbnail = result.select(&thumbnail_selector).next()
+                .and_then(|img| img.value().attr("src"))
+                .map(|src| src.to_string());
+            
+            items.push(SearchResultItem {
+                title,
+                url: url.clone(),
+                content,
+                display_url: Some(url),
+                site_name: None,
+                score: 1.0,
+                result_type: ResultType::Web,
+                thumbnail,
+                published_date: None,
+                template: None,
+                metadata: HashMap::new(),
+            });
         }
         
         Ok(items)
