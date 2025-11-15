@@ -3,7 +3,7 @@ SeeSea Configuration - 配置管理
 """
 
 from typing import Optional
-from .seesea_core import PyConfig
+from seesea_core import PyConfig
 
 
 class Config:

@@ -5,7 +5,7 @@ SeeSea API Server - API 服务器
 """
 
 from typing import Optional
-from .seesea_core import PyApiServer
+from seesea_core import PyApiServer
 
 
 class ApiServer:

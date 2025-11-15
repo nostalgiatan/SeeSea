@@ -5,7 +5,7 @@ SeeSea Search Client - 搜索客户端
 """
 
 from typing import Dict, List, Optional, Any
-from .seesea_core import PySearchClient
+from seesea_core import PySearchClient
 
 
 class SearchClient:

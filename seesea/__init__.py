@@ -23,7 +23,7 @@ __author__ = "SeeSea Team"
 
 # 导入 Rust 核心模块
 try:
-    from .seesea_core import (
+    from seesea_core import (
         PySearchClient,
         PyApiServer,
         PyConfig,
