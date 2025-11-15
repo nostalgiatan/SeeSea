@@ -51,6 +51,8 @@ use crate::derive::{
     ResultType, SearchEngine, SearchQuery, SearchResult,
     SearchResultItem, TimeRange, AboutInfo, RequestResponseEngine, RequestParams,
 };
+use crate::net::client::HttpClient;
+use crate::net::types::NetworkConfig;
 
 /// Yahoo 搜索引擎
 ///
@@ -59,7 +61,7 @@ pub struct YahooEngine {
     /// 引擎信息
     info: EngineInfo,
     /// HTTP 客户端
-    client: reqwest::Client,
+    client: HttpClient,
 }
 
 impl YahooEngine {
@@ -114,11 +116,8 @@ impl YahooEngine {
                 tokens: Vec::new(),
                 max_page: 50,
             },
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build().unwrap_or(reqwest::Client::new())
-                ,
+            client: HttpClient::new(NetworkConfig::default())
+                .unwrap_or_else(|_| panic!("Failed to create HTTP client for Yahoo")),
         }
     }
 
@@ -357,7 +356,7 @@ impl SearchEngine for YahooEngine {
 
     /// 检查引擎是否可用
     async fn is_available(&self) -> bool {
-        match self.client.get("https://search.yahoo.com").send().await {
+        match self.client.get("https://search.yahoo.com", None).await {
             Ok(resp) => resp.status().is_success(),
             Err(_) => false,
         }
@@ -431,20 +430,23 @@ impl RequestResponseEngine for YahooEngine {
         let url = params.url.as_ref()
             .ok_or("请求 URL 未设置")?;
         
-        let mut request = self.client.get(url);
+        // 创建请求选项
+        let mut options = crate::net::types::RequestOptions::default();
+        options.timeout = std::time::Duration::from_secs(10);
         
         // 添加自定义头
         for (key, value) in &params.headers {
-            request = request.header(key, value);
+            options.headers.push((key.clone(), value.clone()));
         }
         
         // 添加 cookies
         for (key, value) in &params.cookies {
-            request = request.header("Cookie", format!("{}={}", key, value));
+            options.headers.push(("Cookie".to_string(), format!("{}={}", key, value)));
         }
         
         // 发送请求
-        let response = request.send().await?;
+        let response = self.client.get(url, Some(options)).await
+            .map_err(|e| format!("Request failed: {}", e))?;
         
         // 检查状态码
         if !response.status().is_success() {
@@ -452,7 +454,8 @@ impl RequestResponseEngine for YahooEngine {
         }
         
         // 获取响应文本
-        let text = response.text().await?;
+        let text = response.text().await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
         
         Ok(text)
     }
