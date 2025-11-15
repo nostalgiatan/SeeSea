@@ -48,6 +48,9 @@ use crate::derive::{
     ResultType, SearchEngine, SearchQuery, SearchResult,
     SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
 };
+use crate::net::client::HttpClient;
+use crate::net::types::NetworkConfig;
+use super::utils::build_query_string_owned;
 
 /// Qwant 搜索引擎
 ///
@@ -56,7 +59,7 @@ pub struct QwantEngine {
     /// 引擎信息
     info: EngineInfo,
     /// HTTP 客户端
-    client: reqwest::Client,
+    client: HttpClient,
 }
 
 impl QwantEngine {
@@ -107,12 +110,8 @@ impl QwantEngine {
                 tokens: Vec::new(),
                 max_page: 5, // Qwant 最多支持 5 页
             },
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .redirect(reqwest::redirect::Policy::limited(3)) // 允许重定向
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new()),
+            client: HttpClient::new(NetworkConfig::default())
+                .unwrap_or_else(|_| panic!("Failed to create HTTP client for Qwant")),
         }
     }
 
@@ -288,7 +287,7 @@ impl SearchEngine for QwantEngine {
 
     /// 检查引擎是否可用
     async fn is_available(&self) -> bool {
-        match self.client.get("https://www.qwant.com").send().await {
+        match self.client.get("https://www.qwant.com", None).await {
             Ok(resp) => resp.status().is_success(),
             Err(_) => false,
         }
@@ -310,6 +309,7 @@ impl RequestResponseEngine for QwantEngine {
         // - l: language part (e.g., en)
         // - s: safesearch (0, 1, 2)
         // - p: page number
+        // Build query parameters for Qwant Lite API
         let lang_part = locale.split('_').next().unwrap_or("en");
         
         let query_params = vec![
@@ -320,12 +320,8 @@ impl RequestResponseEngine for QwantEngine {
             ("p", params.pageno.to_string()),
         ];
 
-        // 构建查询字符串
-        let query_string = query_params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        // Use optimized query string builder
+        let query_string = build_query_string_owned(query_params.into_iter());
 
         // Use Qwant Lite like Python SearXNG
         params.url = Some(format!("https://lite.qwant.com/?{}", query_string));
@@ -343,15 +339,18 @@ impl RequestResponseEngine for QwantEngine {
         let url = params.url.as_ref()
             .ok_or("请求 URL 未设置")?;
         
-        let mut request = self.client.get(url);
+        // 创建请求选项
+        let mut options = crate::net::types::RequestOptions::default();
+        options.timeout = std::time::Duration::from_secs(10);
         
         // 添加自定义头
         for (key, value) in &params.headers {
-            request = request.header(key, value);
+            options.headers.push((key.clone(), value.clone()));
         }
         
         // 发送请求
-        let response = request.send().await?;
+        let response = self.client.get(url, Some(options)).await
+            .map_err(|e| format!("Request failed: {}", e))?;
         
         // 检查状态码
         let status = response.status();
@@ -366,7 +365,8 @@ impl RequestResponseEngine for QwantEngine {
         }
         
         // 获取响应文本
-        let text = response.text().await?;
+        let text = response.text().await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
         
         Ok(text)
     }

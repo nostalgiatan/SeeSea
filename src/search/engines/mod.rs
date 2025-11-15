@@ -3,6 +3,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+// Utility functions for optimizing engine performance
+pub mod utils;
+
 // 引入各个引擎实现
 pub mod duckduckgo;
 pub mod google;

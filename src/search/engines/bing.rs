@@ -54,6 +54,7 @@ use crate::derive::{
 };
 use crate::net::client::HttpClient;
 use crate::net::types::{NetworkConfig, RequestOptions};
+use super::utils::build_query_string_owned;
 
 /// Bing 搜索引擎
 ///
@@ -372,20 +373,19 @@ impl RequestResponseEngine for BingEngine {
     ///
     /// 成功返回 Ok(())，失败返回错误
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // 设置语言和地区
+        // Configure language and region
         let language = params.language.as_deref().unwrap_or("en").to_string();
         let region = params.language.as_deref().unwrap_or("us").to_string();
         
-        // 设置 cookies
         Self::set_bing_cookies(params, &language, &region);
         
-        // 构建查询参数
+        // Build query parameters
         let mut query_params = vec![
             ("q", query.to_string()),
-            ("pq", query.to_string()), // 避免分页问题
+            ("pq", query.to_string()), // Prevents pagination issues
         ];
         
-        // 添加分页参数
+        // Add pagination if not first page
         if params.pageno > 1 {
             query_params.push(("first", Self::page_offset(params.pageno).to_string()));
             
@@ -394,17 +394,13 @@ impl RequestResponseEngine for BingEngine {
             }
         }
         
-        // 构建基础 URL
+        // Build base URL with optimized query string
         let base_url = "https://www.bing.com/search";
-        let query_string = query_params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        let query_string = build_query_string_owned(query_params.into_iter());
         
         let mut url = format!("{}?{}", base_url, query_string);
         
-        // 添加时间范围过滤
+        // Append time range filter if specified (not URL-encoded as it's appended directly)
         if let Some(ref time_range) = params.time_range {
             let tr = match time_range.as_str() {
                 "day" => "1",

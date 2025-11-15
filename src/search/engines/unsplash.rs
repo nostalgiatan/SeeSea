@@ -11,6 +11,7 @@ use crate::derive::{
 };
 use crate::net::client::HttpClient;
 use crate::net::types::{NetworkConfig, RequestOptions};
+use super::utils::build_query_string_owned;
 
 pub struct UnsplashEngine {
     info: EngineInfo,
@@ -220,10 +221,7 @@ impl RequestResponseEngine for UnsplashEngine {
             ("per_page", "20".to_string()),
         ];
 
-        let query_string = query_params.iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        let query_string = build_query_string_owned(query_params.into_iter());
         
         params.url = Some(format!("https://unsplash.com/napi/search/photos?{}", query_string));
         params.method = "GET".to_string();

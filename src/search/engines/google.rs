@@ -55,7 +55,8 @@ use crate::derive::{
     SearchResultItem, TimeRange, AboutInfo, RequestResponseEngine, RequestParams,
 };
 use crate::net::client::HttpClient;
-use crate::net::types::{NetworkConfig, RequestOptions};
+use crate::net::types::NetworkConfig;
+use super::utils::build_query_string_owned;
 
 /// Google 搜索引擎
 ///
@@ -120,38 +121,25 @@ impl GoogleEngine {
                 tokens: Vec::new(),
                 max_page: 50, // Google 最多支持 50 页
             },
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:144.0) Gecko/20100101 Firefox/144.0")
-                .default_headers({
-                    let mut headers = reqwest::header::HeaderMap::new();
-                    // 安全地解析并插入 Accept 头
-                    if let Ok(accept_value) = "*/*".parse() {
-                        headers.insert("Accept", accept_value);
-                    }
-                    headers
-                })
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new()),
+            client: HttpClient::new(NetworkConfig::default())
+                .unwrap_or_else(|_| panic!("Failed to create HTTP client for Google")),
         }
     }
 
-    /// 生成 Google 的 async 参数
+    /// Generate Google's ARC async parameter for AJAX API requests
     ///
-    /// 基于 SearXNG 的实现，格式为: "arc_id:srp_[23_random_chars]_1[page],use_ac:true,_fmt:prog"
+    /// Google's ARC (Asynchronous Result Component) uses a specific format to track
+    /// pagination state and enable progressive loading. This implementation follows
+    /// SearXNG's ui_async pattern.
     ///
-    /// # 参数
+    /// Format: `arc_id:srp_{23_random_chars}_{page_marker},use_ac:true,_fmt:prog`
     ///
-    /// * `start` - 分页偏移量
-    ///
-    /// # 返回
-    ///
-    /// 格式化的 async 参数字符串
+    /// The random component helps prevent cache collisions, while the page marker
+    /// ensures results are fetched for the correct page.
     fn generate_async_param(start: u32) -> String {
-        // 生成 ARC async 参数 (基于 SearXNG 的 ui_async 实现)
         let page_num = start / 10;
 
-        // 生成23位随机字符串 (简化版本)
+        // Use nanosecond timestamp for pseudo-random ID (deterministic but unique enough)
         let random_part = format!("{:023}", std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
@@ -161,15 +149,9 @@ impl GoogleEngine {
         format!("arc_id:{},use_ac:true,_fmt:prog", arc_id)
     }
 
-    /// 将时间范围转换为 Google 的时间过滤参数
+    /// Map internal TimeRange enum to Google's time filter codes
     ///
-    /// # 参数
-    ///
-    /// * `time_range` - 时间范围枚举值
-    ///
-    /// # 返回
-    ///
-    /// Google API 的时间过滤字符串
+    /// Google uses single-letter codes: h(hour), d(day), w(week), m(month), y(year)
     #[allow(dead_code)]
     fn time_range_to_google(time_range: TimeRange) -> &'static str {
         match time_range {
@@ -507,7 +489,7 @@ impl GoogleEngine {
                     title,
                     url: url.clone(),
                     content,
-                    display_url: Some(url),
+                    display_url: Some(url.clone()),
                     site_name: None,
                     score: 1.0,
                     result_type: ResultType::Web,
@@ -566,7 +548,7 @@ impl SearchEngine for GoogleEngine {
     /// 检查引擎是否可用
     async fn is_available(&self) -> bool {
         // 尝试访问 Google 主页检查可用性
-        match self.client.get("https://www.google.com").send().await {
+        match self.client.get("https://www.google.com", None).await {
             Ok(resp) => resp.status().is_success() && !Self::detect_google_sorry(&resp.url().to_string()),
             Err(_) => false,
         }
@@ -598,27 +580,27 @@ impl RequestResponseEngine for GoogleEngine {
         let async_param = Self::generate_async_param(start as u32);
 
         // 构建 ARC AJAX API 查询参数 (基于 SearXNG 的实现)
-        let mut query_params = vec![
-            ("q", query.to_string()),
-            ("start", start.to_string()),
-            ("ie", "utf8".to_string()),
-            ("oe", "utf8".to_string()),
-            ("filter", "0".to_string()),
-            ("hl", "en-US".to_string()), // Interface language
-            ("lr", "lang_en".to_string()), // Language restriction
-            ("cr", "countryUS".to_string()), // Country restriction
-            ("asearch", "arc".to_string()),
-            ("async", async_param),
-        ];
+        // Construct query parameters with optimal capacity
+        let mut query_params = Vec::with_capacity(15);
+        query_params.push(("q", query.to_string()));
+        query_params.push(("start", start.to_string()));
+        query_params.push(("ie", "utf8".to_string()));
+        query_params.push(("oe", "utf8".to_string()));
+        query_params.push(("filter", "0".to_string()));
+        query_params.push(("hl", "en-US".to_string()));
+        query_params.push(("lr", "lang_en".to_string()));
+        query_params.push(("cr", "countryUS".to_string()));
+        query_params.push(("asearch", "arc".to_string()));
+        query_params.push(("async", async_param));
         
-        // 添加语言参数
+        // Add optional language parameter
         if let Some(ref lang) = params.language {
             if !lang.is_empty() && lang != "all" {
                 query_params.push(("lr", format!("lang_{}", lang)));
             }
         }
         
-        // 添加时间范围
+        // Add time range filter if specified
         if let Some(ref time_range) = params.time_range {
             let tr = match time_range.as_str() {
                 "hour" => "h",
@@ -633,17 +615,13 @@ impl RequestResponseEngine for GoogleEngine {
             }
         }
         
-        // 添加安全搜索
+        // Add safe search level
         if params.safesearch > 0 {
             query_params.push(("safe", Self::safesearch_to_google(params.safesearch).to_string()));
         }
         
-        // 构建完整 URL
-        let query_string = query_params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        // Build query string using optimized utility function
+        let query_string = build_query_string_owned(query_params.into_iter());
         
         let url = format!("https://{}/search?{}", subdomain, query_string);
         params.url = Some(url);
@@ -671,20 +649,23 @@ impl RequestResponseEngine for GoogleEngine {
         let url = params.url.as_ref()
             .ok_or("请求 URL 未设置")?;
         
-        let mut request = self.client.get(url);
+        // 创建请求选项
+        let mut options = crate::net::types::RequestOptions::default();
+        options.timeout = std::time::Duration::from_secs(10);
         
         // 添加自定义头
         for (key, value) in &params.headers {
-            request = request.header(key, value);
+            options.headers.push((key.clone(), value.clone()));
         }
         
         // 添加 cookies
         for (key, value) in &params.cookies {
-            request = request.header("Cookie", format!("{}={}", key, value));
+            options.headers.push(("Cookie".to_string(), format!("{}={}", key, value)));
         }
         
         // 发送请求
-        let response = request.send().await?;
+        let response = self.client.get(url, Some(options)).await
+            .map_err(|e| format!("Request failed: {}", e))?;
         
         // 获取最终 URL（可能有重定向）
         let final_url = response.url().to_string();
@@ -699,9 +680,9 @@ impl RequestResponseEngine for GoogleEngine {
                 // 尝试获取响应内容来诊断问题
                 let error_text = response.text().await.unwrap_or_else(|_| "无法读取错误响应".to_string());
                 let preview = if error_text.len() > 200 {
-                    format!("{}...", &error_text[..200])
+                    &error_text[..200]
                 } else {
-                    error_text.clone()
+                    &error_text
                 };
                 return Err(format!("HTTP 错误: {}, URL: {}, 响应预览: {}", status, final_url, preview).into());
             },
@@ -709,7 +690,8 @@ impl RequestResponseEngine for GoogleEngine {
         }
         
         // 获取响应文本
-        let text = response.text().await?;
+        let text = response.text().await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
 
         
         Ok((text, final_url))

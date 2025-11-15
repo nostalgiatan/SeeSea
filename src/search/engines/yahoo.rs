@@ -51,6 +51,9 @@ use crate::derive::{
     ResultType, SearchEngine, SearchQuery, SearchResult,
     SearchResultItem, TimeRange, AboutInfo, RequestResponseEngine, RequestParams,
 };
+use crate::net::client::HttpClient;
+use crate::net::types::NetworkConfig;
+use super::utils::build_query_string_owned;
 
 /// Yahoo 搜索引擎
 ///
@@ -59,7 +62,7 @@ pub struct YahooEngine {
     /// 引擎信息
     info: EngineInfo,
     /// HTTP 客户端
-    client: reqwest::Client,
+    client: HttpClient,
 }
 
 impl YahooEngine {
@@ -114,11 +117,8 @@ impl YahooEngine {
                 tokens: Vec::new(),
                 max_page: 50,
             },
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build().unwrap_or(reqwest::Client::new())
-                ,
+            client: HttpClient::new(NetworkConfig::default())
+                .unwrap_or_else(|_| panic!("Failed to create HTTP client for Yahoo")),
         }
     }
 
@@ -357,7 +357,7 @@ impl SearchEngine for YahooEngine {
 
     /// 检查引擎是否可用
     async fn is_available(&self) -> bool {
-        match self.client.get("https://search.yahoo.com").send().await {
+        match self.client.get("https://search.yahoo.com", None).await {
             Ok(resp) => resp.status().is_success(),
             Err(_) => false,
         }
@@ -373,11 +373,11 @@ impl RequestResponseEngine for YahooEngine {
         let language = params.language.as_deref().unwrap_or("en");
         let region = params.language.as_deref();
         
-        // 构建查询参数 - pre-allocate capacity
-        let mut query_params = Vec::with_capacity(6);
+        // Build query parameters with pre-allocated capacity
+        let mut query_params = Vec::with_capacity(7);
         query_params.push(("p", query.to_string()));
         
-        // 添加时间范围
+        // Add time range filter if specified
         if let Some(ref time_range) = params.time_range {
             let btf = match time_range.as_str() {
                 "day" => "d",
@@ -390,7 +390,7 @@ impl RequestResponseEngine for YahooEngine {
             }
         }
         
-        // 添加分页参数
+        // Configure pagination parameters
         if params.pageno == 1 {
             query_params.push(("iscqry", String::new()));
         } else if params.pageno >= 2 {
@@ -400,21 +400,9 @@ impl RequestResponseEngine for YahooEngine {
             query_params.push(("xargs", "0".to_string()));
         }
         
-        // 构建 URL - use estimated capacity
+        // Build URL with optimized query string builder
         let domain = Self::get_domain(region);
-        let estimated_size = query_params.iter()
-            .map(|(k, v)| k.len() + v.len() + 2)  // key + value + "=" + "&"
-            .sum::<usize>();
-        let mut query_string = String::with_capacity(estimated_size);
-        
-        for (i, (k, v)) in query_params.iter().enumerate() {
-            if i > 0 {
-                query_string.push('&');
-            }
-            query_string.push_str(k);
-            query_string.push('=');
-            query_string.push_str(&urlencoding::encode(v));
-        }
+        let query_string = build_query_string_owned(query_params.into_iter());
         
         params.url = Some(format!("https://{}/search?{}", domain, query_string));
         params.method = "GET".to_string();
@@ -431,20 +419,23 @@ impl RequestResponseEngine for YahooEngine {
         let url = params.url.as_ref()
             .ok_or("请求 URL 未设置")?;
         
-        let mut request = self.client.get(url);
+        // 创建请求选项
+        let mut options = crate::net::types::RequestOptions::default();
+        options.timeout = std::time::Duration::from_secs(10);
         
         // 添加自定义头
         for (key, value) in &params.headers {
-            request = request.header(key, value);
+            options.headers.push((key.clone(), value.clone()));
         }
         
         // 添加 cookies
         for (key, value) in &params.cookies {
-            request = request.header("Cookie", format!("{}={}", key, value));
+            options.headers.push(("Cookie".to_string(), format!("{}={}", key, value)));
         }
         
         // 发送请求
-        let response = request.send().await?;
+        let response = self.client.get(url, Some(options)).await
+            .map_err(|e| format!("Request failed: {}", e))?;
         
         // 检查状态码
         if !response.status().is_success() {
@@ -452,7 +443,8 @@ impl RequestResponseEngine for YahooEngine {
         }
         
         // 获取响应文本
-        let text = response.text().await?;
+        let text = response.text().await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
         
         Ok(text)
     }

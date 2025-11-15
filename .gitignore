@@ -43,3 +43,6 @@ htmlcov/
 .nost/
 *.init.mono.lock
 *.env.monodata/
+
+# Data directory
+data/

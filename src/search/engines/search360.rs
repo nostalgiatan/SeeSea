@@ -10,6 +10,7 @@ use crate::derive::{
 };
 use crate::net::client::HttpClient;
 use crate::net::types::{NetworkConfig, RequestOptions};
+use super::utils::build_query_string_owned;
 
 pub struct Search360Engine {
     info: EngineInfo,
@@ -173,9 +174,7 @@ impl RequestResponseEngine for Search360Engine {
             ("q", query.to_string()),
         ];
 
-        // Python: if time_range_dict.get(params['time_range']):
-        //     query_params["adv_t"] = time_range_dict.get(params['time_range'])
-        // time_range_dict = {'day': 'd', 'week': 'w', 'month': 'm', 'year': 'y'}
+        // Add time range filter if specified
         if let Some(ref tr) = params.time_range {
             let adv_t = match tr.as_str() {
                 "day" => "d",
@@ -189,11 +188,8 @@ impl RequestResponseEngine for Search360Engine {
             }
         }
 
-        // Python: params["url"] = f"{base_url}/s?{urlencode(query_params)}"
-        let query_string = query_params.iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-            .collect::<Vec<_>>()
-            .join("&");
+        // Build URL with optimized query string
+        let query_string = build_query_string_owned(query_params.into_iter());
         
         params.url = Some(format!("https://www.so.com/s?{}", query_string));
         params.method = "GET".to_string();
