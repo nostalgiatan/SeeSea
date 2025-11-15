@@ -69,7 +69,7 @@ impl FingerprintProtector {
         ];
         
         // 使用 rand crate 随机选择要添加的套件
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         
         // 随机添加 1-3 个额外套件
         let count = rng.random_range(1..=3);
@@ -113,7 +113,7 @@ impl Default for ObfuscatedTlsParams {
 ///
 /// 随机生成的 256 字节噪声数据向量
 pub fn generate_canvas_noise() -> Vec<u8> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut noise = vec![0u8; 256];
     rng.fill(&mut noise[..]);
     noise

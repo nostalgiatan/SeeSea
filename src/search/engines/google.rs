@@ -143,17 +143,6 @@ impl GoogleEngine {
     ///
     /// 格式化的 async 参数字符串
     fn generate_async_param(start: u32) -> String {
-        use std::sync::atomic::{AtomicU32, Ordering};
-        use std::sync::Mutex;
-
-        static LAST_ARC_ID: Mutex<(String, u64)> = Mutex::new((String::new(), 0));
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or_else(|_| 0);
-
         // 生成 ARC async 参数 (基于 SearXNG 的 ui_async 实现)
         let page_num = start / 10;
 

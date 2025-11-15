@@ -177,7 +177,7 @@ impl MojeekEngine {
 
         // 使用与 searxng 完全相同的选择器
         // 主要选择器：//ul[@class="results-standard"]/li/a[@class="ob"]
-        let result_selector = match Selector::parse("ul.results-standard li a.ob") {
+        let _result_selector = match Selector::parse("ul.results-standard li a.ob") {
             Ok(sel) => sel,
             Err(_) => {
                 // 回退到其他可能的选择器
@@ -201,7 +201,7 @@ impl MojeekEngine {
         };
 
         // 使用 searxng 的选择器结构
-        let url_selector = Selector::parse("a").expect("valid selector");
+        let _url_selector = Selector::parse("a").expect("valid selector");
         let title_selector = Selector::parse("h2 a, h3 a").expect("valid selector");
         let content_selector = Selector::parse("p.s, p.snippet, div.snippet").expect("valid selector");
 
