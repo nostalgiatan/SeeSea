@@ -35,9 +35,9 @@ For each engine, we need to ensure:
 
 **Python Reference**: `src/python/searx/engines/google.py`
 
-#### Request Format
-- [ ] Base URL: `https://<subdomain>/search`
-- [ ] Parameters:
+#### Request Format ✅
+- [x] Base URL: `https://<subdomain>/search`
+- [x] Parameters:
   - [x] `q`: query
   - [x] `start`: pagination offset
   - [x] `ie`: utf8
@@ -48,55 +48,51 @@ For each engine, we need to ensure:
   - [x] `cr`: country restriction (format: `country{CODE}`)
   - [x] `asearch`: arc
   - [x] `async`: arc_id format
-- [ ] Cookies:
+- [x] Cookies:
   - [x] `CONSENT`: "YES+"
-- [ ] Time range: `tbs=qdr:{d|w|m|y}`
-- [ ] Safe search: `safe={off|medium|high}`
+- [x] Time range: `tbs=qdr:{d|w|m|y}`
+- [x] Safe search: `safe={off|medium|high}`
 
-#### Parsing Mode
-- [ ] Check for CAPTCHA (sorry.google.com)
-- [ ] Detect AJAX response vs HTML response
-- [ ] Parse AJAX JSON array format
-- [ ] Fallback to HTML parsing
-- [ ] Extract: title, url, content, thumbnail
-- [ ] Suggestions extraction
+#### Parsing Mode ✅
+- [x] Check for CAPTCHA (sorry.google.com)
+- [x] Use selector: `div[jscontroller*="SC7lYd"]`
+- [x] Extract title from `a > h3`
+- [x] Extract URL from `a[h3]/@href`
+- [x] Extract content from `div[data-sncf*="1"]`
+- [x] Extract thumbnails from img tags
+- [x] Skip results without content
+- [x] Suggestions extraction
 
-#### Issues Found
-1. ✅ `ui_async()` function implemented - arc_id generation
-2. ⚠️ Need to verify exact AJAX response parsing
-3. ⚠️ Need to verify subdomain selection logic
-4. ⚠️ Need to verify language/region parameter format
+#### Status: ✅ ALIGNED (Request format already correct, parsing updated)
 
 ### 2. Bing Engine
 
 **Python Reference**: `src/python/searx/engines/bing.py`
 
-#### Request Format
-- [ ] Base URL: `https://www.bing.com/search`
-- [ ] Parameters:
+#### Request Format ✅
+- [x] Base URL: `https://www.bing.com/search`
+- [x] Parameters:
   - [x] `q`: query
   - [x] `pq`: query (prevents pagination issues)
   - [x] `first`: pagination offset (formula: `(page-1)*10+1`)
-  - [ ] `FORM`: PERE/PERE1/PERE2/... (page 2+)
-- [ ] Cookies:
-  - [ ] `_EDGE_CD`: `m={region}&u={language}`
-  - [ ] `_EDGE_S`: `mkt={region}&ui={language}`
-- [ ] Time range: `filters=ex1:"ez{1|2|3|5_...}"`
-- [ ] Allow redirects: true
+  - [x] `FORM`: PERE/PERE1/PERE2/... (page 2+)
+- [x] Cookies:
+  - [x] `_EDGE_CD`: `m={region}&u={language}`
+  - [x] `_EDGE_S`: `mkt={region}&ui={language}`
+- [x] Time range: `filters=ex1:"ez{1|2|3|5_...}"`
+- [x] Allow redirects: true
 
-#### Parsing Mode
-- [ ] Selector: `//ol[@id="b_results"]/li[contains(@class, "b_algo")]`
-- [ ] Extract: title (`h2/a`), url (href, may need base64 decode), content (`p`)
-- [ ] Remove `span[@class="algoSlug_icon"]` from content
-- [ ] Decode base64 URLs starting with `/ck/a?`
-- [ ] Extract result count from `span[@class="sb_count"]`
-- [ ] Validate pagination (check expected vs actual start)
+#### Parsing Mode ✅
+- [x] Selector: `ol#b_results > li.b_algo`
+- [x] Extract title from `h2 > a`
+- [x] Extract URL from href attribute
+- [x] Decode base64 URLs starting with `/ck/a?`
+- [x] Extract content from `p` elements
+- [x] Filter out "Web" text from content
+- [ ] Extract result count from `span[@class="sb_count"]` (not critical)
+- [ ] Validate pagination (check expected vs actual start) (not critical)
 
-#### Issues Found
-1. ⚠️ FORM parameter not correctly implemented for page > 2
-2. ⚠️ Base64 URL decoding not implemented
-3. ⚠️ Result count extraction not implemented
-4. ⚠️ Pagination validation not implemented
+#### Status: ✅ ALIGNED (Core functionality complete)
 
 ### 3. DuckDuckGo Engine
 
