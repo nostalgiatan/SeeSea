@@ -126,6 +126,8 @@ pub struct EngineManager {
     temporary_disable_duration: u64,
     /// 连续失败阈值
     failure_threshold: u32,
+    /// 共享的 HTTP 客户端（用于优化性能）
+    shared_client: Option<Arc<crate::net::client::HttpClient>>,
 }
 
 impl EngineManager {
@@ -147,6 +149,43 @@ impl EngineManager {
             states: Arc::new(RwLock::new(HashMap::new())),
             temporary_disable_duration: 300, // 5分钟
             failure_threshold: 3,
+            shared_client: None,
+        };
+        
+        manager.initialize_engines();
+        manager
+    }
+
+    /// 使用共享 HTTP 客户端创建新的引擎管理器（性能优化）
+    ///
+    /// 共享 HTTP 客户端允许所有引擎使用同一个连接池，显著提高性能：
+    /// - 避免连接池碎片化
+    /// - 减少内存使用
+    /// - 提高连接复用率
+    /// - 加快首次请求速度
+    ///
+    /// # 参数
+    ///
+    /// * `mode` - 运行模式
+    /// * `configured_engines` - 配置的引擎列表
+    /// * `shared_client` - 共享的 HTTP 客户端
+    ///
+    /// # 返回
+    ///
+    /// 引擎管理器实例
+    pub fn with_shared_client(
+        mode: EngineMode,
+        configured_engines: Vec<String>,
+        shared_client: Arc<crate::net::client::HttpClient>,
+    ) -> Self {
+        let mut manager = Self {
+            mode,
+            configured_engines,
+            engines: HashMap::new(),
+            states: Arc::new(RwLock::new(HashMap::new())),
+            temporary_disable_duration: 300,
+            failure_threshold: 3,
+            shared_client: Some(shared_client),
         };
         
         manager.initialize_engines();
@@ -155,25 +194,46 @@ impl EngineManager {
 
     /// 初始化所有引擎
     fn initialize_engines(&mut self) {
-        // 注册所有实现的引擎
-        self.register_engine("duckduckgo", Box::new(DuckDuckGoEngine::new()));
-        self.register_engine("google", Box::new(GoogleEngine::new()));
-        self.register_engine("bing", Box::new(BingEngine::new()));
-        self.register_engine("yahoo", Box::new(YahooEngine::new()));
-        self.register_engine("baidu", Box::new(BaiduEngine::new()));
-        self.register_engine("yandex", Box::new(YandexEngine::new()));
-        self.register_engine("brave", Box::new(BraveEngine::new()));
-        self.register_engine("qwant", Box::new(QwantEngine::new()));
-        self.register_engine("startpage", Box::new(StartpageEngine::new()));
-        self.register_engine("mojeek", Box::new(MojeekEngine::new()));
-
-        // 添加剩余的6个引擎
-        self.register_engine("search360", Box::new(Search360Engine::new()));
-        self.register_engine("wikipedia", Box::new(WikipediaEngine::new()));
-        self.register_engine("wikidata", Box::new(WikidataEngine::new()));
-        self.register_engine("github", Box::new(GitHubEngine::new()));
-        self.register_engine("stackoverflow", Box::new(StackOverflowEngine::new()));
-        self.register_engine("unsplash", Box::new(UnsplashEngine::new()));
+        // 如果有共享客户端，使用它来创建引擎（性能优化）
+        if let Some(ref client) = self.shared_client {
+            // 使用共享客户端创建引擎 - 只为已实现 with_client 的引擎
+            self.register_engine("bing", Box::new(BingEngine::with_client(Arc::clone(client))));
+            
+            // 其他引擎使用默认构造器（待后续优化）
+            self.register_engine("duckduckgo", Box::new(DuckDuckGoEngine::new()));
+            self.register_engine("google", Box::new(GoogleEngine::new()));
+            self.register_engine("yahoo", Box::new(YahooEngine::new()));
+            self.register_engine("baidu", Box::new(BaiduEngine::new()));
+            self.register_engine("yandex", Box::new(YandexEngine::new()));
+            self.register_engine("brave", Box::new(BraveEngine::new()));
+            self.register_engine("qwant", Box::new(QwantEngine::new()));
+            self.register_engine("startpage", Box::new(StartpageEngine::new()));
+            self.register_engine("mojeek", Box::new(MojeekEngine::new()));
+            self.register_engine("search360", Box::new(Search360Engine::new()));
+            self.register_engine("wikipedia", Box::new(WikipediaEngine::new()));
+            self.register_engine("wikidata", Box::new(WikidataEngine::new()));
+            self.register_engine("github", Box::new(GitHubEngine::new()));
+            self.register_engine("stackoverflow", Box::new(StackOverflowEngine::new()));
+            self.register_engine("unsplash", Box::new(UnsplashEngine::new()));
+        } else {
+            // 使用默认构造器
+            self.register_engine("duckduckgo", Box::new(DuckDuckGoEngine::new()));
+            self.register_engine("google", Box::new(GoogleEngine::new()));
+            self.register_engine("bing", Box::new(BingEngine::new()));
+            self.register_engine("yahoo", Box::new(YahooEngine::new()));
+            self.register_engine("baidu", Box::new(BaiduEngine::new()));
+            self.register_engine("yandex", Box::new(YandexEngine::new()));
+            self.register_engine("brave", Box::new(BraveEngine::new()));
+            self.register_engine("qwant", Box::new(QwantEngine::new()));
+            self.register_engine("startpage", Box::new(StartpageEngine::new()));
+            self.register_engine("mojeek", Box::new(MojeekEngine::new()));
+            self.register_engine("search360", Box::new(Search360Engine::new()));
+            self.register_engine("wikipedia", Box::new(WikipediaEngine::new()));
+            self.register_engine("wikidata", Box::new(WikidataEngine::new()));
+            self.register_engine("github", Box::new(GitHubEngine::new()));
+            self.register_engine("stackoverflow", Box::new(StackOverflowEngine::new()));
+            self.register_engine("unsplash", Box::new(UnsplashEngine::new()));
+        }
     }
 
     /// 注册引擎
@@ -407,7 +467,7 @@ mod tests {
         );
         
         assert_eq!(manager.get_mode(), EngineMode::Global);
-        assert_eq!(manager.engines.len(), 10); // 所有10个引擎都应该注册
+        assert_eq!(manager.engines.len(), 16); // 所有16个引擎都应该注册
     }
 
     #[tokio::test]
@@ -432,6 +492,6 @@ mod tests {
         );
         
         let active = manager.get_active_engines().await;
-        assert_eq!(active.len(), 10); // 所有引擎都应该可用
+        assert_eq!(active.len(), 16); // 所有引擎都应该可用
     }
 }

@@ -46,6 +46,7 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::Arc;
 
 use crate::derive::{
     EngineCapabilities, EngineInfo, EngineStatus, EngineType,
@@ -62,8 +63,8 @@ use super::utils::build_query_string_owned;
 pub struct BingEngine {
     /// 引擎信息
     info: EngineInfo,
-    /// HTTP 客户端
-    client: HttpClient,
+    /// HTTP 客户端（共享）
+    client: Arc<HttpClient>,
 }
 
 impl BingEngine {
@@ -77,6 +78,32 @@ impl BingEngine {
     /// let engine = BingEngine::new();
     /// ```
     pub fn new() -> Self {
+        let client = HttpClient::new(NetworkConfig::default())
+            .unwrap_or_else(|_| panic!("Failed to create HTTP client for Bing"));
+        Self::with_client(Arc::new(client))
+    }
+
+    /// 使用共享的 HTTP 客户端创建 Bing 引擎实例
+    ///
+    /// 这个方法允许多个引擎共享同一个 HTTP 客户端和连接池，
+    /// 提高性能并减少资源消耗。
+    ///
+    /// # 参数
+    ///
+    /// * `client` - 共享的 HTTP 客户端
+    ///
+    /// # 示例
+    ///
+    /// ```no_run
+    /// use std::sync::Arc;
+    /// use SeeSea::search::engines::bing::BingEngine;
+    /// use SeeSea::net::client::HttpClient;
+    /// use SeeSea::net::types::NetworkConfig;
+    ///
+    /// let client = Arc::new(HttpClient::new(NetworkConfig::default()).unwrap());
+    /// let engine = BingEngine::with_client(client);
+    /// ```
+    pub fn with_client(client: Arc<HttpClient>) -> Self {
         Self {
             info: EngineInfo {
                 name: "Bing".to_string(),
@@ -118,9 +145,7 @@ impl BingEngine {
                 tokens: Vec::new(),
                 max_page: 200, // Bing 最多支持 200 页
             },
-            client: HttpClient::new(NetworkConfig::default()).unwrap_or_else(|_| {
-                    panic!("Failed to create HTTP client for Bing")
-                }),
+            client,
         }
     }
 
