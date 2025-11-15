@@ -5,6 +5,24 @@ use std::path::PathBuf;
 use crate::config::common::EngineLoadingMode;
 use crate::config::types::Environment;
 
+/// 区域模式枚举
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RegionMode {
+    /// 全球模式 - 所有引擎
+    Global,
+    /// 中国模式 - 仅可在中国访问的引擎
+    China,
+    /// 自定义模式 - 用户自定义引擎列表
+    Custom,
+}
+
+impl Default for RegionMode {
+    fn default() -> Self {
+        RegionMode::Global
+    }
+}
+
 /// 通用配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfig {
@@ -35,6 +53,10 @@ pub struct GeneralConfig {
     /// 引擎加载模式
     #[serde(default)]
     pub engine_loading_mode: EngineLoadingMode,
+    
+    /// 区域模式 - 决定加载哪些搜索引擎
+    #[serde(default)]
+    pub region_mode: RegionMode,
     
     /// 是否启用指标收集
     #[serde(default)]
@@ -67,6 +89,7 @@ impl Default for GeneralConfig {
             temp_directory: default_temp_directory(),
             environment: Environment::default(),
             engine_loading_mode: EngineLoadingMode::default(),
+            region_mode: RegionMode::default(),
             enable_metrics: false,
         }
     }

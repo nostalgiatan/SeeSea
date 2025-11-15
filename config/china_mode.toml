@@ -1,0 +1,116 @@
+# =============================================================================
+# SeeSea 中国模式配置
+# China Mode Configuration for SeeSea
+# =============================================================================
+# 
+# 本配置文件定义了在中国大陆地区可访问的搜索引擎
+# This configuration file defines search engines accessible from mainland China
+#
+# 注意：中国模式启用全部11个核心搜索引擎（24个变体）
+# Note: China mode enables all 11 core search engines (24 variants)
+#
+# 核心引擎列表 (11个):
+# 1. Bing (4个变体)
+# 2. DuckDuckGo (5个变体)
+# 3. Brave (4个变体)
+# 4. Startpage (3个变体)
+# 5. 360搜索 (2个变体)
+# 6. Wikipedia (1个)
+# 7. Wikidata (1个)
+# 8. GitHub (2个变体)
+# 9. Stack Overflow (1个)
+# 10. Unsplash (1个)
+# =============================================================================
+
+[china_mode]
+# 是否启用中国模式
+enabled = true
+
+# 中国模式描述
+description = "中国模式 - 启用全部11个核心搜索引擎"
+
+# 核心搜索引擎列表（11个引擎，24个变体）
+# Core search engines (11 engines, 24 variants)
+core_engines = [
+    # Bing 系列 (4个)
+    "bing",
+    "bing images",
+    "bing news",
+    "bing videos",
+    
+    # DuckDuckGo 系列 (5个)
+    "duckduckgo",
+    "duckduckgo images",
+    "duckduckgo news",
+    "duckduckgo videos",
+    "duckduckgo weather",
+    
+    # Brave 系列 (4个)
+    "brave",
+    "brave.images",
+    "brave.news",
+    "brave.videos",
+    
+    # Startpage 系列 (3个)
+    "startpage",
+    "startpage images",
+    "startpage news",
+    
+    # 360搜索 (2个)
+    "360search",
+    "360search videos",
+    
+    # 百科/知识 (2个)
+    "wikipedia",
+    "wikidata",
+    
+    # 开发 (3个)
+    "github",
+    "github code",
+    "stackoverflow",
+    
+    # 图片 (1个)
+    "unsplash",
+]
+
+# 引擎优先级配置
+[china_mode.engine_priorities]
+# 中国本土引擎
+"360search" = 1.3
+
+# 国际引擎
+bing = 1.0
+duckduckgo = 1.0
+brave = 0.9
+startpage = 0.9
+
+# 专业引擎
+github = 1.2
+stackoverflow = 1.1
+wikipedia = 1.0
+
+# 区域配置
+[china_mode.region_config]
+location = "CN"
+preferred_languages = ["zh", "zh-CN", "en"]
+timezone = "Asia/Shanghai"
+
+# DNS 配置 - 使用国内 DNS
+preferred_dns = [
+    "https://dns.alidns.com/dns-query",      # 阿里云
+    "https://doh.pub/dns-query",              # 腾讯 DNSPod
+    "https://doh.360.cn/dns-query",           # 360 DoH
+]
+
+# 网络配置
+[china_mode.network]
+request_timeout = 45
+connect_timeout = 15
+max_retries = 4
+retry_strategy = "exponential_backoff"
+
+# 缓存配置
+[china_mode.cache]
+enabled = true
+ttl = 7200           # 2小时缓存
+max_size_mb = 2048

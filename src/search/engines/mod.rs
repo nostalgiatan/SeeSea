@@ -14,6 +14,12 @@ pub mod brave;
 pub mod qwant;
 pub mod startpage;
 pub mod mojeek;
+pub mod search360;
+pub mod wikipedia;
+pub mod wikidata;
+pub mod github;
+pub mod stackoverflow;
+pub mod unsplash;
 
 pub use duckduckgo::DuckDuckGoEngine;
 pub use google::GoogleEngine;
@@ -25,6 +31,12 @@ pub use brave::BraveEngine;
 pub use qwant::QwantEngine;
 pub use startpage::StartpageEngine;
 pub use mojeek::MojeekEngine;
+pub use search360::Search360Engine;
+pub use wikipedia::WikipediaEngine;
+pub use wikidata::WikidataEngine;
+pub use github::GitHubEngine;
+pub use stackoverflow::StackOverflowEngine;
+pub use unsplash::UnsplashEngine;
 
 /// 搜索引擎注册表
 /// 

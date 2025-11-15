@@ -78,6 +78,28 @@ impl DuckDuckGoEngine {
         }
     }
 
+    /// Quote DDG bangs - Python duckduckgo.py lines 226-237
+    /// quote ddg bangs to avoid being parsed as DDG special commands
+    fn quote_ddg_bangs(query: &str) -> String {
+        // Python: for val in re.split(r'(\s+)', query):
+        //     if not val.strip(): continue
+        //     if val.startswith('!') and external_bang.get_node(external_bang.EXTERNAL_BANGS, val[1:]):
+        //         val = f"'{val}'"
+        //     query_parts.append(val)
+        // return ' '.join(query_parts)
+        
+        // Simplified implementation: quote any word starting with !
+        let parts: Vec<&str> = query.split_whitespace().collect();
+        let quoted_parts: Vec<String> = parts.iter().map(|part| {
+            if part.starts_with('!') && part.len() > 1 {
+                format!("'{}'", part)
+            } else {
+                part.to_string()
+            }
+        }).collect();
+        quoted_parts.join(" ")
+    }
+
     #[allow(dead_code)]
     async fn get_vqd(&self, query: &str, region: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
         let cache_key = format!("{}_{}", query, region);
@@ -128,12 +150,18 @@ impl DuckDuckGoEngine {
         }
 
         let document = Html::parse_document(html);
-        let mut items = Vec::with_capacity(10);  // Pre-allocate for typical result count
+        
+        // Check for CAPTCHA - Python: if is_ddg_captcha(doc): raise SearxEngineCaptchaException
+        let captcha_selector = Selector::parse("form#challenge-form").expect("valid selector");
+        if document.select(&captcha_selector).next().is_some() {
+            return Err("DDG CAPTCHA detected".into());
+        }
+
+        let mut items = Vec::with_capacity(10);
 
         // Python SearXNG: for div_result in eval_xpath(doc, '//div[@id="links"]/div[contains(@class, "web-result")]')
-        // Select web results from the links div, avoiding ads
-        let result_selector = Selector::parse("div#links div[class*=\"web-result\"]")
-            .or_else(|_| Selector::parse("div.result"))
+        // IMPORTANT: Only select .web-result, NOT .result--ad (ads)
+        let result_selector = Selector::parse("div#links > div.web-result")
             .expect("valid selector");
         
         for result in document.select(&result_selector) {
@@ -147,6 +175,7 @@ impl DuckDuckGoEngine {
             }
             
             let title_elem = title_elem.unwrap();
+            // Python: item["title"] = extract_text(title)
             let title = title_elem.text().collect::<String>().trim().to_string();
             
             if title.is_empty() {
@@ -163,7 +192,9 @@ impl DuckDuckGoEngine {
             }
             
             // Python: item["content"] = extract_text(eval_xpath_getindex(div_result, './/a[contains(@class, "result__snippet")]', 0, []))
-            let content_selector = Selector::parse("a[class*=\"result__snippet\"]").expect("valid selector");
+            let content_selector = Selector::parse("a.result__snippet")
+                .or_else(|_| Selector::parse("a[class*=\"result__snippet\"]"))
+                .expect("valid selector");
             let content = result.select(&content_selector).next()
                 .map(|c| c.text().collect::<String>().trim().to_string())
                 .unwrap_or_default();
@@ -213,7 +244,13 @@ impl RequestResponseEngine for DuckDuckGoEngine {
     type Response = String;
 
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // Python: query = quote_ddg_bangs(query) - line 241
+        let query = Self::quote_ddg_bangs(query);
+        
         if query.len() >= 500 {
+            // Python: if len(query) >= 500:
+            //     params["url"] = None
+            //     return
             params.url = None;
             return Err("Query too long (max 499 chars)".into());
         }
@@ -221,62 +258,96 @@ impl RequestResponseEngine for DuckDuckGoEngine {
         let region = params.custom.get("region").map(|s| s.as_str()).unwrap_or("wt-wt");
         
         // Python: Some locales (at least China) does not support pagination
+        // if params['searxng_locale'].startswith("zh"):
+        //     params["url"] = None
+        //     return
         if region.starts_with("zh") && params.pageno > 1 {
             params.url = None;
             return Err("Chinese locale does not support pagination".into());
         }
 
-        // Python SearXNG structure for form data
-        let mut form_data = vec![("q", query.to_string())];
-
-        // Python:
+        // Python SearXNG: The order of params['data'] dictionary matters for DDG bot detection!
+        // Python code lines 267-308 show the exact order:
+        // params['data']['q'] = query
         // if params['pageno'] == 1:
         //     params['data']['b'] = ""
         // elif params['pageno'] >= 2:
-        //     offset = 10 + (params['pageno'] - 2) * 15
         //     params['data']['s'] = offset
-        //     ...
+        //     params['data']['nextParams'] = ''
+        //     params['data']['v'] = 'l'
+        //     params['data']['o'] = 'json'
+        //     params['data']['dc'] = offset + 1
+        //     params['data']['api'] = 'd.js'
+        //     params['data']['vqd'] = vqd
+        // params['data']['kl'] = eng_region or ""
+        // params['data']['df'] = ''
+        
+        let mut form_data: Vec<(String, String)> = vec![("q".to_string(), query.to_string())];
+
         if params.pageno == 1 {
-            form_data.push(("b", String::new()));
-        } else {
+            form_data.push(("b".to_string(), String::new()));
+        } else if params.pageno >= 2 {
             let offset = 10 + (params.pageno - 2) * 15;
-            form_data.push(("s", offset.to_string()));
-            form_data.push(("nextParams", String::new()));
-            form_data.push(("v", "l".to_string()));
-            form_data.push(("o", "json".to_string()));
-            form_data.push(("dc", (offset + 1).to_string()));
-            form_data.push(("api", "d.js".to_string()));
+            form_data.push(("s".to_string(), offset.to_string()));
+            form_data.push(("nextParams".to_string(), String::new()));
+            form_data.push(("v".to_string(), "l".to_string()));
+            form_data.push(("o".to_string(), "json".to_string()));
+            form_data.push(("dc".to_string(), (offset + 1).to_string()));
+            form_data.push(("api".to_string(), "d.js".to_string()));
             
-            // Note: vqd would be needed here for page 2+, but we skip it for now
-            // as it requires caching which is complex
+            // Note: vqd is required for page 2+
+            // Python: vqd = get_vqd(query, eng_region, force_request=False)
+            // if vqd: params['data']['vqd'] = vqd
+            // else: params["url"] = None; return  # Don't try without vqd - DDG detects bots
+            // For now we skip pagination > 1 to avoid bot detection
+            // TODO: Implement proper VQD caching
         }
 
         // Python: Put empty kl in form data if language/region set to all
-        form_data.push(("kl", if region == "wt-wt" { String::new() } else { region.to_string() }));
+        // if eng_region == "wt-wt":
+        //     params['data']['kl'] = ""
+        // else:
+        //     params['data']['kl'] = eng_region
+        form_data.push(("kl".to_string(), if region == "wt-wt" { String::new() } else { region.to_string() }));
 
-        // Time range filter
-        if let Some(ref tr) = params.time_range {
-            let df = match tr.as_str() {
+        // Python: params['data']['df'] = ''
+        // if params['time_range'] in time_range_dict:
+        //     params['data']['df'] = time_range_dict[params['time_range']]
+        //     params['cookies']['df'] = time_range_dict[params['time_range']]
+        let df_value = if let Some(ref tr) = params.time_range {
+            match tr.as_str() {
                 "day" => "d",
                 "week" => "w",
                 "month" => "m",
                 "year" => "y",
                 _ => "",
-            };
-            if !df.is_empty() {
-                form_data.push(("df", df.to_string()));
-                params.cookies.insert("df".to_string(), df.to_string());
             }
         } else {
-            form_data.push(("df", String::new()));
+            ""
+        };
+        form_data.push(("df".to_string(), df_value.to_string()));
+        
+        if !df_value.is_empty() {
+            params.cookies.insert("df".to_string(), df_value.to_string());
         }
 
+        // Python: params['cookies']['kl'] = eng_region
         params.cookies.insert("kl".to_string(), region.to_string());
+        
         params.url = Some("https://html.duckduckgo.com/html/".to_string());
         params.method = "POST".to_string();
-        params.data = Some(form_data.into_iter().map(|(k, v)| (k.to_string(), v)).collect());
+        
+        // 将 Vec 转换为 HashMap
+        // 注意：HashMap 的迭代顺序不确定，但我们会在 fetch() 中按正确顺序重建
+        params.data = Some(form_data.into_iter().collect());
 
-        // Python SearXNG headers - critical for bot detection
+        // Python SearXNG headers - critical for bot detection (lines 313-318)
+        // params['headers']['Content-Type'] = 'application/x-www-form-urlencoded'
+        // params['headers']['Referer'] = url
+        // params['headers']['Sec-Fetch-Dest'] = "document"
+        // params['headers']['Sec-Fetch-Mode'] = "navigate"  # at least this one is used by ddg's bot detection
+        // params['headers']['Sec-Fetch-Site'] = "same-origin"
+        // params['headers']['Sec-Fetch-User'] = "?1"
         params.headers.insert("Content-Type".to_string(), "application/x-www-form-urlencoded".to_string());
         params.headers.insert("Referer".to_string(), "https://html.duckduckgo.com/html/".to_string());
         params.headers.insert("Sec-Fetch-Dest".to_string(), "document".to_string());
@@ -298,11 +369,56 @@ impl RequestResponseEngine for DuckDuckGoEngine {
         }
 
         let response = if params.method == "POST" {
-            let form_data = params.data.as_ref().ok_or("POST data not set")?;
-            let body = form_data.iter()
-                .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-                .collect::<Vec<_>>()
-                .join("&");
+            let form_data_map = params.data.as_ref().ok_or("POST data not set")?;
+            
+            // IMPORTANT: 必须按照特定顺序构建表单数据，因为 DDG 的机器人检测会检查顺序
+            // 顺序: q, b/s+nextParams+v+o+dc+api, kl, df
+            let mut form_parts = Vec::new();
+            
+            // 1. q (query) - 必须第一个
+            if let Some(q) = form_data_map.get("q") {
+                form_parts.push(format!("q={}", urlencoding::encode(q)));
+            }
+            
+            // 2. b (第一页) 或 s, nextParams, v, o, dc, api (后续页)
+            if let Some(b) = form_data_map.get("b") {
+                form_parts.push(format!("b={}", urlencoding::encode(b)));
+            } else {
+                // 分页参数，按顺序添加
+                if let Some(s) = form_data_map.get("s") {
+                    form_parts.push(format!("s={}", urlencoding::encode(s)));
+                }
+                if let Some(np) = form_data_map.get("nextParams") {
+                    form_parts.push(format!("nextParams={}", urlencoding::encode(np)));
+                }
+                if let Some(v) = form_data_map.get("v") {
+                    form_parts.push(format!("v={}", urlencoding::encode(v)));
+                }
+                if let Some(o) = form_data_map.get("o") {
+                    form_parts.push(format!("o={}", urlencoding::encode(o)));
+                }
+                if let Some(dc) = form_data_map.get("dc") {
+                    form_parts.push(format!("dc={}", urlencoding::encode(dc)));
+                }
+                if let Some(api) = form_data_map.get("api") {
+                    form_parts.push(format!("api={}", urlencoding::encode(api)));
+                }
+                if let Some(vqd) = form_data_map.get("vqd") {
+                    form_parts.push(format!("vqd={}", urlencoding::encode(vqd)));
+                }
+            }
+            
+            // 3. kl (region/language)
+            if let Some(kl) = form_data_map.get("kl") {
+                form_parts.push(format!("kl={}", urlencoding::encode(kl)));
+            }
+            
+            // 4. df (time filter)
+            if let Some(df) = form_data_map.get("df") {
+                form_parts.push(format!("df={}", urlencoding::encode(df)));
+            }
+            
+            let body = form_parts.join("&");
             self.client.post(url, body.into_bytes(), Some(options)).await
         } else {
             self.client.get(url, Some(options)).await
