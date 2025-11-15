@@ -282,55 +282,6 @@ impl YahooEngine {
         
         Ok(items)
     }
-                let mut title = String::new();
-                for selector in title_selectors.iter().flatten() {
-                    if let Some(t) = result.select(selector).next() {
-                        title = t.text().collect::<String>().trim().to_string();
-                        if !title.is_empty() {
-                            break;
-                        }
-                    }
-                }
-                
-                let url = result.select(&link_selector).next()
-                    .and_then(|a| a.value().attr("href"))
-                    .unwrap_or_default();
-                
-                let mut content = String::new();
-                for selector in snippet_selectors.iter().flatten() {
-                    if let Some(snippet) = result.select(selector).next() {
-                        content = snippet.text().collect::<String>().trim().to_string();
-                        if !content.is_empty() {
-                            break;
-                        }
-                    }
-                }
-                
-                // 过滤有效结果
-                if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
-                    items.push(SearchResultItem {
-                        title,
-                        url: url.to_string(),
-                        content,
-                        display_url: Some(url.to_string()),
-                        site_name: None,
-                        score: 1.0,
-                        result_type: ResultType::Web,
-                        thumbnail: None,
-                        published_date: None,
-                        template: None,
-                        metadata: HashMap::new(),
-                    });
-                }
-            }
-            
-            if results_found {
-                break;
-            }
-        }
-        
-        Ok(items)
-    }
 }
 
 impl Default for YahooEngine {

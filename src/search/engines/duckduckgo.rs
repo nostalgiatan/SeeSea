@@ -1,24 +1,41 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::error::Error;
-
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 
 use crate::derive::{
     EngineCapabilities, EngineInfo, EngineStatus, EngineType, 
     ResultType, SearchEngine, SearchQuery, SearchResult, 
     SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
 };
+use crate::net::client::HttpClient;
+use crate::net::types::{NetworkConfig, RequestOptions};
 
-static VQD_CACHE: once_cell::sync::Lazy<std::sync::Mutex<HashMap<String, (String, std::time::SystemTime)>>> = 
-    once_cell::sync::Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
+// VQD token cache entry
+struct VqdCacheEntry {
+    token: String,
+    expires_at: SystemTime,
+}
+
+// Simple in-memory VQD cache
+lazy_static::lazy_static! {
+    static ref VQD_CACHE: Arc<Mutex<HashMap<String, VqdCacheEntry>>> = 
+        Arc::new(Mutex::new(HashMap::new()));
+}
 
 pub struct DuckDuckGoEngine {
     info: EngineInfo,
-    client: reqwest::Client,
+    client: HttpClient,
 }
 
 impl DuckDuckGoEngine {
     pub fn new() -> Self {
+        let net_config = NetworkConfig::default();
+        let client = HttpClient::new(net_config).unwrap_or_else(|_| {
+            panic!("Failed to create HTTP client for DuckDuckGo")
+        });
+        
         Self {
             info: EngineInfo {
                 name: "DuckDuckGo".to_string(),
@@ -56,35 +73,43 @@ impl DuckDuckGoEngine {
                 tokens: Vec::new(),
                 max_page: 10,
             },
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .build().unwrap_or(reqwest::Client::new()),
+            client,
         }
     }
 
     async fn get_vqd(&self, query: &str, region: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
-        let cache_key = format!("{}//{}", query, region);
+        let cache_key = format!("{}_{}", query, region);
         
+        // Check cache
         {
-            let cache = VQD_CACHE.lock().unwrap();
-            if let Some((vqd, time)) = cache.get(&cache_key) {
-                if time.elapsed().unwrap_or(std::time::Duration::from_secs(3601)) < std::time::Duration::from_secs(3600) {
-                    return Ok(vqd.clone());
+            let mut cache = VQD_CACHE.lock().unwrap();
+            if let Some(entry) = cache.get(&cache_key) {
+                if entry.expires_at > SystemTime::now() {
+                    return Ok(entry.token.clone());
+                } else {
+                    cache.remove(&cache_key);
                 }
             }
         }
 
+        // Fetch new VQD
         let url = format!("https://duckduckgo.com/?q={}", urlencoding::encode(query));
-        let resp = self.client.get(&url).send().await?;
-        let text = resp.text().await?;
+        let response = self.client.get(&url, None).await
+            .map_err(|e| format!("Failed to fetch VQD: {}", e))?;
+        let text = response.text().await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
         
         if let Some(start) = text.find("vqd=\"") {
             let text_from_vqd = &text[start + 5..];
             if let Some(end) = text_from_vqd.find('"') {
                 let vqd = text_from_vqd[..end].to_string();
                 
+                // Cache for 1 hour
                 let mut cache = VQD_CACHE.lock().unwrap();
-                cache.insert(cache_key, (vqd.clone(), std::time::SystemTime::now()));
+                cache.insert(cache_key, VqdCacheEntry {
+                    token: vqd.clone(),
+                    expires_at: SystemTime::now() + Duration::from_secs(3600),
+                });
                 
                 return Ok(vqd);
             }
@@ -173,7 +198,7 @@ impl SearchEngine for DuckDuckGoEngine {
     }
 
     async fn is_available(&self) -> bool {
-        matches!(self.client.get("https://duckduckgo.com").send().await, Ok(resp) if resp.status().is_success())
+        self.client.get("https://duckduckgo.com", None).await.is_ok()
     }
 }
 
@@ -242,27 +267,25 @@ impl RequestResponseEngine for DuckDuckGoEngine {
     async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         let url = params.url.as_ref().ok_or("URL not set")?;
         
-        let mut request = if params.method == "POST" {
+        let mut options = RequestOptions::default();
+        options.timeout = Duration::from_secs(10);
+        
+        for (key, value) in &params.headers {
+            options.headers.push((key.clone(), value.clone()));
+        }
+
+        let response = if params.method == "POST" {
             let form_data = params.data.as_ref().ok_or("POST data not set")?;
             let body = form_data.iter()
                 .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
                 .collect::<Vec<_>>()
                 .join("&");
-            self.client.post(url).body(body)
+            self.client.post(url, body.into_bytes(), Some(options)).await
         } else {
-            self.client.get(url)
-        };
+            self.client.get(url, Some(options)).await
+        }.map_err(|e| format!("Request failed: {}", e))?;
 
-        for (key, value) in &params.headers {
-            request = request.header(key, value);
-        }
-
-        for (key, value) in &params.cookies {
-            request = request.header("Cookie", format!("{}={}", key, value));
-        }
-
-        let response = request.send().await?;
-        Ok(response.text().await?)
+        response.text().await.map_err(|e| format!("Failed to read response: {}", e).into())
     }
 
     fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
