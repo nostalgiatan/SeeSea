@@ -203,12 +203,7 @@ impl GoogleEngine {
     ///
     /// 如果 HTML 解析失败返回错误
     fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
-        // 简化版本的 HTML 解析
-        // 在实际实现中应该使用 scraper 或 html5ever crate
-        let items = Vec::new();
-        
-        // TODO: 使用 HTML 解析器提取实际结果
-        // 这里提供一个简化的占位实现
+        use scraper::{Html, Selector};
         
         // 检查是否有 CAPTCHA
         if html.contains("sorry.google.com") || html.contains("/sorry") {
@@ -217,15 +212,115 @@ impl GoogleEngine {
         
         // 检查是否有结果
         if html.contains("did not match any documents") || html.is_empty() {
-            return Ok(items);
+            return Ok(Vec::new());
         }
         
-        // 模拟提取结果（实际应该使用 CSS 选择器）
-        // 在完整实现中应该：
-        // 1. 使用 scraper::Html 解析 HTML
-        // 2. 使用 CSS 选择器找到结果元素（例如：div[jscontroller="SC7lYd"]）
-        // 3. 提取标题（a/h3）、URL（a/@href）、摘要（div[@data-sncf="1"]）等信息
-        // 4. 处理缩略图、发布日期等额外信息
+        let document = Html::parse_document(html);
+        let mut items = Vec::new();
+        
+        // Google 的搜索结果通常在 div.g 或 div[data-hveid] 元素中
+        // 尝试多个选择器以适应不同的 Google 页面版本
+        let selectors = vec![
+            "div.g",
+            "div[data-hveid]",
+            "div.Gx5Zad",
+        ];
+        
+        let mut result_selector = None;
+        for sel_str in selectors {
+            if let Ok(sel) = Selector::parse(sel_str) {
+                if document.select(&sel).count() > 0 {
+                    result_selector = Some(sel);
+                    break;
+                }
+            }
+        }
+        
+        let result_sel = match result_selector {
+            Some(sel) => sel,
+            None => {
+                // 如果找不到标准的结果容器，尝试基本的链接提取
+                let link_selector = Selector::parse("a").unwrap();
+                let h3_selector = Selector::parse("h3").unwrap();
+                
+                for element in document.select(&link_selector) {
+                    if let Some(href) = element.value().attr("href") {
+                        // 过滤掉内部链接和无效链接
+                        if href.starts_with("http") && !href.contains("google.com") {
+                            let title = element.select(&h3_selector).next()
+                                .map(|h3| h3.text().collect::<String>())
+                                .unwrap_or_else(|| element.text().collect::<String>());
+                            
+                            if !title.is_empty() && title.len() > 3 {
+                                items.push(SearchResultItem {
+                                    title: title.trim().to_string(),
+                                    url: href.to_string(),
+                                    content: String::new(),
+                                    display_url: Some(href.to_string()),
+                                    site_name: None,
+                                    score: 1.0,
+                                    result_type: ResultType::Web,
+                                    thumbnail: None,
+                                    published_date: None,
+                                    template: None,
+                                    metadata: HashMap::new(),
+                                });
+                            }
+                        }
+                    }
+                }
+                return Ok(items);
+            }
+        };
+        
+        // 提取每个搜索结果
+        for result in document.select(&result_sel) {
+            // 提取标题和 URL
+            let title_selector = Selector::parse("h3").unwrap();
+            let link_selector = Selector::parse("a").unwrap();
+            let snippet_selectors = vec![
+                Selector::parse("div[data-sncf]").ok(),
+                Selector::parse("div.VwiC3b").ok(),
+                Selector::parse("span.aCOpRe").ok(),
+                Selector::parse("div.s").ok(),
+            ];
+            
+            let title = result.select(&title_selector).next()
+                .map(|t| t.text().collect::<String>().trim().to_string())
+                .unwrap_or_default();
+            
+            let url = result.select(&link_selector).next()
+                .and_then(|a| a.value().attr("href"))
+                .unwrap_or_default();
+            
+            // 提取摘要
+            let mut content = String::new();
+            for selector in snippet_selectors.iter().flatten() {
+                if let Some(snippet) = result.select(selector).next() {
+                    content = snippet.text().collect::<String>().trim().to_string();
+                    if !content.is_empty() {
+                        break;
+                    }
+                }
+            }
+            
+            // 过滤有效结果
+            if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                items.push(SearchResultItem {
+                    title,
+                    url: url.to_string(),
+                    content,
+                    display_url: Some(url.to_string()),
+                    site_name: None,
+                    score: 1.0,
+                    result_type: ResultType::Web,
+                    thumbnail: None,
+                    published_date: None,
+                    template: None,
+                    metadata: HashMap::new(),
+                });
+            }
+        }
         
         Ok(items)
     }

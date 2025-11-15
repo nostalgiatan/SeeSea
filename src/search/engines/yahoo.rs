@@ -236,15 +236,93 @@ impl YahooEngine {
     ///
     /// 如果 HTML 解析失败返回错误
     fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
-        // 简化版本的 HTML 解析
-        // 在实际实现中应该使用 scraper 或 html5ever crate
-        let items = Vec::new();
-        
-        // TODO: 使用 HTML 解析器提取实际结果
+        use scraper::{Html, Selector};
         
         // 检查是否有结果
         if html.contains("No results") || html.is_empty() {
-            return Ok(items);
+            return Ok(Vec::new());
+        }
+        
+        let document = Html::parse_document(html);
+        let mut items = Vec::new();
+        
+        // Yahoo 的搜索结果通常在特定的 div 或 li 元素中
+        let result_selectors = vec![
+            "div.dd.algo",
+            "div.Sr",
+            "li.algo",
+            "div[class*='algo']",
+        ];
+        
+        let mut results_found = false;
+        for selector_str in result_selectors {
+            let selector = match Selector::parse(selector_str) {
+                Ok(sel) => sel,
+                Err(_) => continue,
+            };
+            
+            for result in document.select(&selector) {
+                results_found = true;
+                
+                // 提取标题和 URL
+                let title_selectors = vec![
+                    Selector::parse("h3").ok(),
+                    Selector::parse("h4").ok(),
+                    Selector::parse("a.ac-algo").ok(),
+                ];
+                let link_selector = Selector::parse("a").unwrap();
+                let snippet_selectors = vec![
+                    Selector::parse("div.compText").ok(),
+                    Selector::parse("p.fz-ms").ok(),
+                    Selector::parse("div.abstract").ok(),
+                    Selector::parse("p").ok(),
+                ];
+                
+                let mut title = String::new();
+                for selector in title_selectors.iter().flatten() {
+                    if let Some(t) = result.select(selector).next() {
+                        title = t.text().collect::<String>().trim().to_string();
+                        if !title.is_empty() {
+                            break;
+                        }
+                    }
+                }
+                
+                let url = result.select(&link_selector).next()
+                    .and_then(|a| a.value().attr("href"))
+                    .unwrap_or_default();
+                
+                let mut content = String::new();
+                for selector in snippet_selectors.iter().flatten() {
+                    if let Some(snippet) = result.select(selector).next() {
+                        content = snippet.text().collect::<String>().trim().to_string();
+                        if !content.is_empty() {
+                            break;
+                        }
+                    }
+                }
+                
+                // 过滤有效结果
+                if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                    items.push(SearchResultItem {
+                        title,
+                        url: url.to_string(),
+                        content,
+                        display_url: Some(url.to_string()),
+                        site_name: None,
+                        score: 1.0,
+                        result_type: ResultType::Web,
+                        thumbnail: None,
+                        published_date: None,
+                        template: None,
+                        metadata: HashMap::new(),
+                    });
+                }
+            }
+            
+            if results_found {
+                break;
+            }
         }
         
         Ok(items)

@@ -153,14 +153,93 @@ impl BaiduEngine {
     ///
     /// 如果 JSON 解析失败返回错误
     fn parse_json_results(json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
-        // 简化版本的 JSON 解析
-        // 在实际实现中应该使用 serde_json 完整解析
-        let items = Vec::new();
+        use serde_json::Value;
         
-        // TODO: 使用 serde_json 解析实际结果
         // 检查是否有有效的 JSON 数据
-        if json_str.is_empty() || !json_str.contains("feed") {
-            return Ok(items);
+        if json_str.is_empty() {
+            return Ok(Vec::new());
+        }
+        
+        let json: Value = serde_json::from_str(json_str)?;
+        let mut items = Vec::new();
+        
+        // Baidu JSON API 通常返回的结构类似：
+        // { "feed": { "entry": [ ... ] } }
+        if let Some(feed) = json.get("feed") {
+            if let Some(entries) = feed.get("entry").and_then(|e| e.as_array()) {
+                for entry in entries {
+                    let title = entry.get("title")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    
+                    let url = entry.get("url")
+                        .or_else(|| entry.get("link"))
+                        .and_then(|u| u.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    
+                    let content = entry.get("content")
+                        .or_else(|| entry.get("abstract"))
+                        .or_else(|| entry.get("summary"))
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    
+                    if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                        items.push(SearchResultItem {
+                            title,
+                            url: url.clone(),
+                            content,
+                            display_url: Some(url),
+                            site_name: None,
+                            score: 1.0,
+                            result_type: ResultType::Web,
+                            thumbnail: None,
+                            published_date: None,
+                            template: None,
+                            metadata: HashMap::new(),
+                        });
+                    }
+                }
+            }
+        } else if let Some(results) = json.get("results").and_then(|r| r.as_array()) {
+            // 备选：有些 API 可能直接返回 results 数组
+            for result in results {
+                let title = result.get("title")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                
+                let url = result.get("url")
+                    .or_else(|| result.get("link"))
+                    .and_then(|u| u.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                
+                let content = result.get("content")
+                    .or_else(|| result.get("abstract"))
+                    .or_else(|| result.get("summary"))
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                
+                if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                    items.push(SearchResultItem {
+                        title,
+                        url: url.clone(),
+                        content,
+                        display_url: Some(url),
+                        site_name: None,
+                        score: 1.0,
+                        result_type: ResultType::Web,
+                        thumbnail: None,
+                        published_date: None,
+                        template: None,
+                        metadata: HashMap::new(),
+                    });
+                }
+            }
         }
         
         Ok(items)

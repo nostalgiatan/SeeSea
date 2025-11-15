@@ -178,23 +178,82 @@ impl DuckDuckGoEngine {
     ///
     /// 如果 HTML 解析失败返回错误
     fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
-        // 简化版本的 HTML 解析
-        // 在实际实现中应该使用 scraper 或 html5ever crate
-        let items = Vec::new();
-        
-        // TODO: 使用 HTML 解析器提取实际结果
-        // 这里提供一个简化的占位实现
+        use scraper::{Html, Selector};
         
         // 检查是否有结果
         if html.contains("No results") || html.is_empty() {
-            return Ok(items);
+            return Ok(Vec::new());
         }
         
-        // 模拟提取结果（实际应该使用 CSS 选择器）
-        // 在完整实现中应该：
-        // 1. 使用 scraper::Html 解析 HTML
-        // 2. 使用 CSS 选择器找到结果元素
-        // 3. 提取标题、URL、摘要等信息
+        let document = Html::parse_document(html);
+        let mut items = Vec::new();
+        
+        // DuckDuckGo 的搜索结果通常在 article, div.result, 或 div[data-testid] 元素中
+        let result_selectors = vec![
+            "article[data-testid='result']",
+            "div.result",
+            "div.links_main",
+        ];
+        
+        let mut results_found = false;
+        for selector_str in result_selectors {
+            let selector = match Selector::parse(selector_str) {
+                Ok(sel) => sel,
+                Err(_) => continue,
+            };
+            
+            for result in document.select(&selector) {
+                results_found = true;
+                
+                // 提取标题和 URL
+                let title_selector = Selector::parse("h2, h3, a[data-testid='result-title-a']").unwrap();
+                let link_selector = Selector::parse("a").unwrap();
+                let snippet_selectors = vec![
+                    Selector::parse("div[data-result='snippet']").ok(),
+                    Selector::parse("div.result__snippet").ok(),
+                    Selector::parse("span.result__snippet").ok(),
+                ];
+                
+                let title = result.select(&title_selector).next()
+                    .map(|t| t.text().collect::<String>().trim().to_string())
+                    .unwrap_or_default();
+                
+                let url = result.select(&link_selector).next()
+                    .and_then(|a| a.value().attr("href"))
+                    .unwrap_or_default();
+                
+                let mut content = String::new();
+                for selector in snippet_selectors.iter().flatten() {
+                    if let Some(snippet) = result.select(selector).next() {
+                        content = snippet.text().collect::<String>().trim().to_string();
+                        if !content.is_empty() {
+                            break;
+                        }
+                    }
+                }
+                
+                // 过滤有效结果
+                if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                    items.push(SearchResultItem {
+                        title,
+                        url: url.to_string(),
+                        content,
+                        display_url: Some(url.to_string()),
+                        site_name: None,
+                        score: 1.0,
+                        result_type: ResultType::Web,
+                        thumbnail: None,
+                        published_date: None,
+                        template: None,
+                        metadata: HashMap::new(),
+                    });
+                }
+            }
+            
+            if results_found {
+                break;
+            }
+        }
         
         Ok(items)
     }

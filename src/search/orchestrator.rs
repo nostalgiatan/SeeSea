@@ -191,56 +191,50 @@ impl SearchOrchestrator {
     ) -> Result<Vec<SearchResult>, Box<dyn std::error::Error + Send + Sync>> {
         use std::sync::atomic::Ordering;
 
-        let mut handles = Vec::new();
+        let mut futures_list = Vec::new();
 
         for engine in &self.engines {
-            let engine_info = engine.info().clone();
-            let _query_clone = query.clone();
             let timeout_duration = Duration::from_secs(self.config.default_timeout.as_secs());
             let stats = Arc::clone(&self.stats);
-
-            // 为每个引擎创建一个异步任务
-            let handle = tokio::spawn(async move {
-                // 执行搜索并应用超时
-                match timeout(timeout_duration, async {
-                    // 实际执行搜索的逻辑将在具体引擎中实现
-                    // 这里返回空结果作为占位符
-                    Ok::<SearchResult, Box<dyn std::error::Error + Send + Sync>>(SearchResult {
-                        engine_name: engine_info.name.clone(),
-                        total_results: Some(0),
-                        elapsed_ms: 0,
-                        items: Vec::new(),
-                        pagination: None,
-                        suggestions: Vec::new(),
-                        metadata: std::collections::HashMap::new(),
-                    })
-                })
-                .await
-                {
-                    Ok(Ok(result)) => Some(result),
+            
+            // 获取引擎信息用于日志记录
+            let engine_name = engine.info().name.clone();
+            
+            // 直接创建搜索 future
+            let start_time = std::time::Instant::now();
+            let search_future = engine.search(query);
+            
+            // 包装超时和错误处理
+            let wrapped_future = async move {
+                match timeout(timeout_duration, search_future).await {
+                    Ok(Ok(mut result)) => {
+                        // 更新搜索耗时
+                        result.elapsed_ms = start_time.elapsed().as_millis() as u64;
+                        Some(result)
+                    }
                     Ok(Err(e)) => {
-                        eprintln!("引擎 {} 搜索失败: {}", engine_info.name, e);
+                        eprintln!("引擎 {} 搜索失败: {}", engine_name, e);
                         stats.engine_failures.fetch_add(1, Ordering::Relaxed);
                         None
                     }
                     Err(_) => {
-                        eprintln!("引擎 {} 超时", engine_info.name);
+                        eprintln!("引擎 {} 超时", engine_name);
                         stats.timeouts.fetch_add(1, Ordering::Relaxed);
                         None
                     }
                 }
-            });
+            };
 
-            handles.push(handle);
+            futures_list.push(wrapped_future);
         }
 
-        // 等待所有任务完成
-        let results = futures::future::join_all(handles).await;
+        // 并发执行所有搜索任务
+        let results = futures::future::join_all(futures_list).await;
 
         // 收集成功的结果
         let successful_results: Vec<SearchResult> = results
             .into_iter()
-            .filter_map(|r| r.ok().flatten())
+            .filter_map(|r| r)
             .collect();
 
         if successful_results.is_empty() {

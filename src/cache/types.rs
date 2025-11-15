@@ -178,6 +178,7 @@ fn current_timestamp() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::CacheConfig;
 
     #[test]
     fn test_cache_config_default() {

@@ -42,4 +42,4 @@ htmlcov/
 # Nost specific
 .nost/
 *.init.mono.lock
-*.env.mono
+*.env.monodata/
