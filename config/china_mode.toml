@@ -6,8 +6,20 @@
 # 本配置文件定义了在中国大陆地区可访问的搜索引擎
 # This configuration file defines search engines accessible from mainland China
 #
-# 注意：根据实际测试，只有以下引擎在中国大陆稳定可用
-# Note: Based on actual testing, only the following engines are reliably accessible in mainland China
+# 注意：中国模式启用全部11个核心搜索引擎（24个变体）
+# Note: China mode enables all 11 core search engines (24 variants)
+#
+# 核心引擎列表 (11个):
+# 1. Bing (4个变体)
+# 2. DuckDuckGo (5个变体)
+# 3. Brave (4个变体)
+# 4. Startpage (3个变体)
+# 5. 360搜索 (2个变体)
+# 6. Wikipedia (1个)
+# 7. Wikidata (1个)
+# 8. GitHub (2个变体)
+# 9. Stack Overflow (1个)
+# 10. Unsplash (1个)
 # =============================================================================
 
 [china_mode]
@@ -15,48 +27,67 @@
 enabled = true
 
 # 中国模式描述
-description = "中国模式 - 仅启用在中国大陆可访问的搜索引擎"
+description = "中国模式 - 启用全部11个核心搜索引擎"
 
-# 中国可访问的引擎列表
-# Engines accessible from mainland China
-accessible_engines = [
-    # 搜索引擎 - Search Engines
-    "bing",              # Bing - 微软必应 (在中国可访问)
-    "bing images",       # Bing 图片
-    "bing news",         # Bing 新闻  
-    "bing videos",       # Bing 视频
+# 核心搜索引擎列表（11个引擎，24个变体）
+# Core search engines (11 engines, 24 variants)
+core_engines = [
+    # Bing 系列 (4个)
+    "bing",
+    "bing images",
+    "bing news",
+    "bing videos",
     
-    "360search",         # 360搜索 (中国本土)
-    "360search videos",  # 360搜索视频
+    # DuckDuckGo 系列 (5个)
+    "duckduckgo",
+    "duckduckgo images",
+    "duckduckgo news",
+    "duckduckgo videos",
+    "duckduckgo weather",
     
-    # 开发工具 - Development Tools
-    "github",            # GitHub (在中国可访问，但可能不稳定)
-    "github code",       # GitHub 代码搜索
-    "stackoverflow",     # Stack Overflow (在中国可访问)
-]
-
-# 在中国被墙的引擎 (已禁用)
-# Blocked engines in China (disabled)
-blocked_engines = [
-    "duckduckgo",        # DuckDuckGo - 被墙
-    "brave",             # Brave Search - 被墙
-    "startpage",         # Startpage - 被墙
-    "wikipedia",         # Wikipedia - 被墙
-    "wikidata",          # Wikidata - 被墙
-    "unsplash",          # Unsplash - 被墙
+    # Brave 系列 (4个)
+    "brave",
+    "brave.images",
+    "brave.news",
+    "brave.videos",
+    
+    # Startpage 系列 (3个)
+    "startpage",
+    "startpage images",
+    "startpage news",
+    
+    # 360搜索 (2个)
+    "360search",
+    "360search videos",
+    
+    # 百科/知识 (2个)
+    "wikipedia",
+    "wikidata",
+    
+    # 开发 (3个)
+    "github",
+    "github code",
+    "stackoverflow",
+    
+    # 图片 (1个)
+    "unsplash",
 ]
 
 # 引擎优先级配置
 [china_mode.engine_priorities]
-# 中国本土引擎优先级最高
-"360search" = 1.5
+# 中国本土引擎
+"360search" = 1.3
 
-# 国际可访问引擎
+# 国际引擎
 bing = 1.0
+duckduckgo = 1.0
+brave = 0.9
+startpage = 0.9
 
-# 开发工具
-github = 1.0
-stackoverflow = 1.0
+# 专业引擎
+github = 1.2
+stackoverflow = 1.1
+wikipedia = 1.0
 
 # 区域配置
 [china_mode.region_config]
@@ -73,7 +104,6 @@ preferred_dns = [
 
 # 网络配置
 [china_mode.network]
-# 延长超时时间以应对网络波动
 request_timeout = 45
 connect_timeout = 15
 max_retries = 4
@@ -84,23 +114,3 @@ retry_strategy = "exponential_backoff"
 enabled = true
 ttl = 7200           # 2小时缓存
 max_size_mb = 2048
-
-# 说明
-[china_mode.notes]
-description = """
-中国模式说明：
-
-可用引擎 (9个):
-1. Bing 系列 (4个) - 通用搜索、图片、新闻、视频
-2. 360搜索 (2个) - 通用搜索、视频
-3. GitHub (2个) - 代码仓库、代码搜索
-4. Stack Overflow (1个) - 开发问答
-
-不可用引擎 (在中国被墙):
-- DuckDuckGo 系列 - 被墙
-- Brave 系列 - 被墙  
-- Startpage 系列 - 被墙
-- Wikipedia - 被墙
-- Wikidata - 被墙
-- Unsplash - 被墙
-"""
