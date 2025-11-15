@@ -11,6 +11,11 @@ instance_name = "SeeSea"
 debug = false
 # 引擎加载模式: "global" 或 "settings"
 engine_loading_mode = "global"
+# 区域模式: "global" (全球模式), "china" (中国模式), "custom" (自定义模式)
+# - global: 加载所有可用的搜索引擎
+# - china: 仅加载在中国大陆可访问的搜索引擎 (约106个引擎，包括 Yandex, Bing, Baidu, Sogou 等)
+# - custom: 根据自定义配置加载引擎
+region_mode = "global"
 # 是否启用指标收集
 enable_metrics = true
 # 默认语言
