@@ -443,6 +443,50 @@ mod tests {
     fn test_parse_empty_json() {
         let result = QwantEngine::parse_json_results("");
         assert!(result.is_ok());
-        assert_eq!(result.expect("Expected valid value").len(), 0);
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_parse_html_with_results() {
+        // 测试包含搜索结果的 HTML（基于 Qwant Lite 结构）
+        let html = "<html><body><section><article><h2><a>Test Title</a></h2><span class=\"url\">https://example.com</span><p>This is test content for Qwant.</p></article></section></body></html>";
+        let result = QwantEngine::parse_html_results(html);
+        assert!(result.is_ok());
+        let items = result.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Test Title");
+        assert_eq!(items[0].url, "https://example.com");
+        assert!(items[0].content.contains("test content"));
+    }
+
+    #[test]
+    fn test_parse_html_skip_ads() {
+        // 测试跳过带有 tooltip 类的广告
+        let html = "<html><body><section><article><span class=\"tooltip\">Ad</span><h2><a>Ad Title</a></h2><span class=\"url\">https://ad.com</span><p>This is an ad.</p></article><article><h2><a>Real Result</a></h2><span class=\"url\">https://example.com</span><p>This is real content.</p></article></section></body></html>";
+        let result = QwantEngine::parse_html_results(html);
+        assert!(result.is_ok());
+        let items = result.unwrap();
+        // 应该只有一个结果，广告被跳过
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Real Result");
+    }
+
+    #[test]
+    fn test_parse_html_invalid_url() {
+        // 测试 URL 不以 http 开头的情况（应该被过滤掉）
+        let html = "<html><body><section><article><h2><a>Test Title</a></h2><span class=\"url\">invalid-url</span><p>Invalid URL</p></article></section></body></html>";
+        let result = QwantEngine::parse_html_results(html);
+        assert!(result.is_ok());
+        let items = result.unwrap();
+        // 无效的 URL 应该被过滤
+        assert_eq!(items.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_empty_html() {
+        // 测试空 HTML
+        let result = QwantEngine::parse_html_results("");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
     }
 }

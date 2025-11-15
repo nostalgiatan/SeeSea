@@ -868,4 +868,48 @@ mod tests {
         let result = GoogleEngine::parse_html_results(html);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_parse_html_with_results() {
+        // 测试包含搜索结果的 HTML
+        let html = "<html><body><div jscontroller=\"SC7lYd\"><a href=\"https://example.com\"><h3>Example Title</h3></a><div data-sncf=\"1\"><span>This is example content for testing.</span></div></div></body></html>";
+        let result = GoogleEngine::parse_html_results(html);
+        assert!(result.is_ok());
+        let items = result.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Example Title");
+        assert_eq!(items[0].url, "https://example.com");
+        assert!(items[0].content.contains("example content"));
+    }
+
+    #[test]
+    fn test_parse_html_with_missing_content() {
+        // 测试缺少内容字段的 HTML，应该使用标题作为内容
+        let html = "<html><body><div jscontroller=\"SC7lYd\"><a href=\"https://example.com\"><h3>Example Title</h3></a></div></body></html>";
+        let result = GoogleEngine::parse_html_results(html);
+        assert!(result.is_ok());
+        let items = result.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Example Title");
+        assert!(items[0].content.contains("Example Title"));
+    }
+
+    #[test]
+    fn test_parse_ajax_response_invalid() {
+        // 测试无效的 AJAX 响应应该回退到 HTML 解析
+        let invalid_ajax = ")]}'{invalid json";
+        let result = GoogleEngine::parse_ajax_response(invalid_ajax);
+        assert!(result.is_ok());
+        // 应该返回空结果，因为没有有效的 HTML 结构
+        let items = result.unwrap();
+        assert_eq!(items.len(), 0);
+    }
+
+    #[test]
+    fn test_detect_empty_response() {
+        // 测试空响应
+        let result = GoogleEngine::parse_html_results("");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
+    }
 }

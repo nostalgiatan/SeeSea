@@ -407,4 +407,49 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.expect("Expected valid value").len(), 0);
     }
+
+    #[test]
+    fn test_parse_captcha_detection() {
+        // 测试 CAPTCHA 检测
+        let html_with_captcha = "<html><body><div>Redirected to www.startpage.com/sp/captcha</div></body></html>";
+        let result = StartpageEngine::parse_html_results(html_with_captcha);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("CAPTCHA"));
+    }
+
+    #[test]
+    fn test_parse_html_with_results() {
+        // 测试包含搜索结果的 HTML
+        let html = "<html><body><div class=\"w-gl__result\"><h2>Example Title</h2><a href=\"https://example.com\">Link</a><p class=\"w-gl__description\">This is example content.</p></div></body></html>";
+        let result = StartpageEngine::parse_html_results(html);
+        assert!(result.is_ok());
+        let items = result.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Example Title");
+        assert_eq!(items[0].url, "https://example.com");
+        assert!(items[0].content.contains("example content"));
+    }
+
+    #[test]
+    fn test_parse_html_multiple_selectors() {
+        // 测试使用不同选择器的 HTML
+        let html = "<html><body><div class=\"result\"><h3>Test Title</h3><a href=\"https://test.com\">Link</a><p class=\"result-snippet\">Test content here.</p></div></body></html>";
+        let result = StartpageEngine::parse_html_results(html);
+        assert!(result.is_ok());
+        let items = result.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Test Title");
+        assert_eq!(items[0].url, "https://test.com");
+    }
+
+    #[test]
+    fn test_parse_html_invalid_url() {
+        // 测试无效 URL 被过滤
+        let html = "<html><body><div class=\"result\"><h2>Title</h2><a href=\"/relative/path\">Relative Link</a><p>Content</p></div></body></html>";
+        let result = StartpageEngine::parse_html_results(html);
+        assert!(result.is_ok());
+        let items = result.unwrap();
+        // 相对路径应该被过滤
+        assert_eq!(items.len(), 0);
+    }
 }
