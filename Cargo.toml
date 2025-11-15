@@ -3,15 +3,16 @@ name = "SeeSea"
 version = "0.1.0"
 edition = "2021"
 
-
 description = "SeeSea - A privacy-focused metasearch engine"
-
 
 keywords = ["search", "metasearch", "rust", "privacy", "tor", "proxy", "python"]
 
-
 license = "MIT"
 readme = "README.md"
+
+[lib]
+name = "seesea_core"
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 async-trait = "0.1.89"
@@ -50,11 +51,14 @@ select = { version = "0.6.1", optional = true }
 futures = "0.3.31"
 clap = { version = "4.5.51", features = ["derive"] }
 colored = "3.0.0"
+tower-http = { version = "0.6.6", features = ["cors"] }
 
+# Python bindings
+pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
+pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"], optional = true }
 
 [dev-dependencies]
 tempfile = "3.23.0"
-
 
 [[bin]]
 name = "SeeSea"
@@ -74,3 +78,4 @@ syn = ["dep:syn"]
 scraper = ["dep:scraper"]
 html5ever = ["dep:html5ever"]
 select = ["dep:select"]
+python = ["pyo3", "pyo3-asyncio"]

@@ -126,10 +126,12 @@ pub struct EngineManager {
     temporary_disable_duration: u64,
     /// 连续失败阈值
     failure_threshold: u32,
+    /// 共享的 HTTP 客户端（用于优化性能）
+    shared_client: Option<Arc<crate::net::client::HttpClient>>,
 }
 
 impl EngineManager {
-    /// 创建新的引擎管理器
+    /// 创建新的引擎管理器（自动使用共享HTTP客户端优化性能）
     ///
     /// # 参数
     ///
@@ -140,13 +142,51 @@ impl EngineManager {
     ///
     /// 引擎管理器实例
     pub fn new(mode: EngineMode, configured_engines: Vec<String>) -> Self {
+        // 创建优化的网络配置
+        let mut network_config = crate::net::types::NetworkConfig::default();
+        // 提高连接池大小以支持并发搜索
+        network_config.pool.max_idle_connections = 200;  // 增加到200
+        network_config.pool.max_connections_per_host = 20;  // 每个主机20个连接
+        
+        // 创建共享客户端
+        let shared_client = Arc::new(
+            crate::net::client::HttpClient::new(network_config)
+                .expect("Failed to create shared HTTP client")
+        );
+        
+        Self::with_shared_client(mode, configured_engines, shared_client)
+    }
+
+    /// 使用共享 HTTP 客户端创建新的引擎管理器（性能优化）
+    ///
+    /// 共享 HTTP 客户端允许所有引擎使用同一个连接池，显著提高性能：
+    /// - 避免连接池碎片化
+    /// - 减少内存使用
+    /// - 提高连接复用率
+    /// - 加快首次请求速度
+    ///
+    /// # 参数
+    ///
+    /// * `mode` - 运行模式
+    /// * `configured_engines` - 配置的引擎列表
+    /// * `shared_client` - 共享的 HTTP 客户端
+    ///
+    /// # 返回
+    ///
+    /// 引擎管理器实例
+    pub fn with_shared_client(
+        mode: EngineMode,
+        configured_engines: Vec<String>,
+        shared_client: Arc<crate::net::client::HttpClient>,
+    ) -> Self {
         let mut manager = Self {
             mode,
             configured_engines,
             engines: HashMap::new(),
             states: Arc::new(RwLock::new(HashMap::new())),
-            temporary_disable_duration: 300, // 5分钟
+            temporary_disable_duration: 300,
             failure_threshold: 3,
+            shared_client: Some(shared_client),
         };
         
         manager.initialize_engines();
@@ -155,25 +195,26 @@ impl EngineManager {
 
     /// 初始化所有引擎
     fn initialize_engines(&mut self) {
-        // 注册所有实现的引擎
-        self.register_engine("duckduckgo", Box::new(DuckDuckGoEngine::new()));
-        self.register_engine("google", Box::new(GoogleEngine::new()));
-        self.register_engine("bing", Box::new(BingEngine::new()));
-        self.register_engine("yahoo", Box::new(YahooEngine::new()));
-        self.register_engine("baidu", Box::new(BaiduEngine::new()));
-        self.register_engine("yandex", Box::new(YandexEngine::new()));
-        self.register_engine("brave", Box::new(BraveEngine::new()));
-        self.register_engine("qwant", Box::new(QwantEngine::new()));
-        self.register_engine("startpage", Box::new(StartpageEngine::new()));
-        self.register_engine("mojeek", Box::new(MojeekEngine::new()));
-
-        // 添加剩余的6个引擎
-        self.register_engine("search360", Box::new(Search360Engine::new()));
-        self.register_engine("wikipedia", Box::new(WikipediaEngine::new()));
-        self.register_engine("wikidata", Box::new(WikidataEngine::new()));
-        self.register_engine("github", Box::new(GitHubEngine::new()));
-        self.register_engine("stackoverflow", Box::new(StackOverflowEngine::new()));
-        self.register_engine("unsplash", Box::new(UnsplashEngine::new()));
+        // 总是使用共享客户端创建引擎（性能最优）
+        let client = Arc::clone(self.shared_client.as_ref()
+            .expect("Shared client must be initialized"));
+        
+        self.register_engine("google", Box::new(GoogleEngine::with_client(Arc::clone(&client))));
+        self.register_engine("bing", Box::new(BingEngine::with_client(Arc::clone(&client))));
+        self.register_engine("duckduckgo", Box::new(DuckDuckGoEngine::with_client(Arc::clone(&client))));
+        self.register_engine("yahoo", Box::new(YahooEngine::with_client(Arc::clone(&client))));
+        self.register_engine("baidu", Box::new(BaiduEngine::with_client(Arc::clone(&client))));
+        self.register_engine("yandex", Box::new(YandexEngine::with_client(Arc::clone(&client))));
+        self.register_engine("brave", Box::new(BraveEngine::with_client(Arc::clone(&client))));
+        self.register_engine("qwant", Box::new(QwantEngine::with_client(Arc::clone(&client))));
+        self.register_engine("startpage", Box::new(StartpageEngine::with_client(Arc::clone(&client))));
+        self.register_engine("mojeek", Box::new(MojeekEngine::with_client(Arc::clone(&client))));
+        self.register_engine("search360", Box::new(Search360Engine::with_client(Arc::clone(&client))));
+        self.register_engine("wikipedia", Box::new(WikipediaEngine::with_client(Arc::clone(&client))));
+        self.register_engine("wikidata", Box::new(WikidataEngine::with_client(Arc::clone(&client))));
+        self.register_engine("github", Box::new(GitHubEngine::with_client(Arc::clone(&client))));
+        self.register_engine("stackoverflow", Box::new(StackOverflowEngine::with_client(Arc::clone(&client))));
+        self.register_engine("unsplash", Box::new(UnsplashEngine::with_client(client)));
     }
 
     /// 注册引擎
@@ -407,7 +448,7 @@ mod tests {
         );
         
         assert_eq!(manager.get_mode(), EngineMode::Global);
-        assert_eq!(manager.engines.len(), 10); // 所有10个引擎都应该注册
+        assert_eq!(manager.engines.len(), 16); // 所有16个引擎都应该注册
     }
 
     #[tokio::test]
@@ -432,6 +473,6 @@ mod tests {
         );
         
         let active = manager.get_active_engines().await;
-        assert_eq!(active.len(), 10); // 所有引擎都应该可用
+        assert_eq!(active.len(), 16); // 所有引擎都应该可用
     }
 }

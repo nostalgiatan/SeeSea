@@ -3,7 +3,9 @@
 //! 负责合并、去重、排序多个搜索引擎的结果
 
 use std::collections::HashSet;
-use crate::derive::{SearchResult, SearchResultItem};
+use crate::derive::{SearchResult, SearchResultItem, SearchQuery};
+use super::scoring::{score_and_sort_results, ScoringWeights};
+use super::standardization::{standardize_results, deduplicate_by_url};
 
 /// 聚合策略
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,12 +37,74 @@ pub struct SearchAggregator {
     strategy: AggregationStrategy,
     /// 排序方式
     sort_by: SortBy,
+    /// 评分权重（可选）
+    scoring_weights: Option<ScoringWeights>,
 }
 
 impl SearchAggregator {
     /// 创建新的聚合器
     pub fn new(strategy: AggregationStrategy, sort_by: SortBy) -> Self {
-        Self { strategy, sort_by }
+        Self { 
+            strategy, 
+            sort_by,
+            scoring_weights: None,
+        }
+    }
+
+    /// 设置评分权重
+    pub fn with_scoring(mut self, weights: ScoringWeights) -> Self {
+        self.scoring_weights = Some(weights);
+        self
+    }
+
+    /// 聚合多个搜索结果（使用智能评分）
+    pub fn aggregate_with_scoring(
+        &self, 
+        mut results: Vec<SearchResult>,
+        query: &SearchQuery,
+    ) -> SearchResult {
+        use std::collections::HashMap;
+        
+        if results.is_empty() {
+            return SearchResult {
+                engine_name: "aggregated".to_string(),
+                total_results: Some(0),
+                elapsed_ms: 0,
+                items: Vec::new(),
+                pagination: None,
+                suggestions: Vec::new(),
+                metadata: HashMap::new(),
+            };
+        }
+
+        // 1. 标准化每个引擎的结果
+        for result in &mut results {
+            standardize_results(result);
+        }
+
+        // 2. 合并所有结果
+        let mut all_items: Vec<SearchResultItem> = results
+            .into_iter()
+            .flat_map(|r| r.items.into_iter())
+            .collect();
+
+        // 3. 去重
+        deduplicate_by_url(&mut all_items);
+
+        // 4. 重新评分（基于查询）
+        score_and_sort_results(&mut all_items, query, "aggregated", self.scoring_weights.clone());
+
+        let total_results = all_items.len();
+
+        SearchResult {
+            engine_name: "aggregated".to_string(),
+            total_results: Some(total_results),
+            elapsed_ms: 0,
+            items: all_items,
+            pagination: None,
+            suggestions: Vec::new(),
+            metadata: HashMap::new(),
+        }
     }
 
     /// 聚合多个搜索结果

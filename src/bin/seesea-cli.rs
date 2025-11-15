@@ -6,8 +6,8 @@ use clap::{Parser, Subcommand};
 use colored::*;
 use std::io::{self, Write};
 
-use SeeSea::derive::{SearchQuery, SearchResultItem};
-use SeeSea::search::{EngineManager, EngineMode};
+use seesea_core::derive::{SearchQuery, SearchResultItem};
+use seesea_core::search::{EngineManager, EngineMode};
 
 /// SeeSea 命令行应用
 #[derive(Parser)]

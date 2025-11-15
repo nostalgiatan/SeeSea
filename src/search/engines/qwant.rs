@@ -41,6 +41,7 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::error::Error;
 
 use crate::derive::{
@@ -59,7 +60,7 @@ pub struct QwantEngine {
     /// 引擎信息
     info: EngineInfo,
     /// HTTP 客户端
-    client: HttpClient,
+    client: Arc<HttpClient>,
 }
 
 impl QwantEngine {
@@ -73,6 +74,12 @@ impl QwantEngine {
     /// let engine = QwantEngine::new();
     /// ```
     pub fn new() -> Self {
+        let client = HttpClient::new(NetworkConfig::default())
+            .unwrap_or_else(|_| panic!("Failed to create HTTP client"));
+        Self::with_client(Arc::new(client))
+    }
+
+    pub fn with_client(client: Arc<HttpClient>) -> Self {
         Self {
             info: EngineInfo {
                 name: "Qwant".to_string(),
@@ -110,8 +117,7 @@ impl QwantEngine {
                 tokens: Vec::new(),
                 max_page: 5, // Qwant 最多支持 5 页
             },
-            client: HttpClient::new(NetworkConfig::default())
-                .unwrap_or_else(|_| panic!("Failed to create HTTP client for Qwant")),
+            client,
         }
     }
 
