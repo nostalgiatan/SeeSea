@@ -2,6 +2,30 @@
 
 A privacy-focused metasearch engine in Rust.
 
+## 🌊 项目特色
+
+SeeSea 是一个基于 Rust 实现的隐私保护型元搜索引擎，支持多搜索引擎并发查询、结果聚合排序、隐私网络保护等功能。
+
+### 🇨🇳 China Mode - 中国模式
+
+**NEW!** SeeSea 现已支持中国模式，专为中国大陆网络环境优化：
+
+- ✅ **65个可访问搜索引擎**: 所有引擎均在中国可访问
+- ✅ **核心搜索**: Yandex, Bing, Baidu, Sogou, 360search, ChinaSo
+- ✅ **专业搜索**: 学术(ArXiv, PubMed)、开发(GitHub, Stack Overflow)、视频(Bilibili, Acfun)
+- ✅ **网络优化**: 国内DNS、延长超时、智能重试
+- ❌ **已排除被墙服务**: Google, Wikipedia, YouTube, Facebook 等
+
+详见 [China Mode 文档](./docs/CHINA_MODE.md)
+
+#### 快速启用 China Mode
+
+编辑 `config/default.toml`:
+```toml
+[general]
+region_mode = "china"  # 可选: "global", "china", "custom"
+```
+
 ## 🌊 项目架构
 
 SeeSea 是一个基于 Rust 实现的隐私保护型元搜索引擎，支持多搜索引擎并发查询、结果聚合排序、隐私网络保护等功能。
