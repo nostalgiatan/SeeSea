@@ -16,28 +16,39 @@
 SeeSea Utilities - 工具函数
 """
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Union
+from seesea.types import SearchResultItem
 
 
-def format_results(results: List[Dict[str, Any]], max_description_length: int = 200) -> List[Dict[str, Any]]:
+def format_results(results: List[Union[SearchResultItem, Dict[str, Any]]], max_description_length: int = 200) -> List[Dict[str, Any]]:
     """
     格式化搜索结果
-    
+
     Args:
-        results: 原始结果列表
+        results: 原始结果列表 (SearchResultItem 对象或字典)
         max_description_length: 描述最大长度
-    
+
     Returns:
         格式化后的结果列表
     """
     formatted = []
     for item in results:
-        formatted_item = {
-            'title': item.get('title', ''),
-            'url': item.get('url', ''),
-            'description': item.get('content', '')[:max_description_length],
-            'score': item.get('score', 0.0),
-        }
+        if isinstance(item, SearchResultItem):
+            # 处理 SearchResultItem 对象
+            formatted_item = {
+                'title': item.title,
+                'url': item.url,
+                'description': item.content[:max_description_length],
+                'score': item.score,
+            }
+        else:
+            # 处理字典对象 (向后兼容)
+            formatted_item = {
+                'title': item.get('title', ''),
+                'url': item.get('url', ''),
+                'description': item.get('content', '')[:max_description_length],
+                'score': item.get('score', 0.0),
+            }
         formatted.append(formatted_item)
     return formatted
 
