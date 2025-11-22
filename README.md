@@ -7,8 +7,9 @@
 [![Rust](https://img.shields.io/badge/rust-1.91.1+-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-Apache2.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org)
 
-*基于 Rust 构建的隐私优先的多模态搜索平台，支持网页搜索、RSS 聚合、浏览器自动化等多模态搜索能力*
+*基于 Rust 构建的隐私优先的多模态搜索平台，支持网页搜索、RSS 聚合、浏览器自动化等多模态搜索能力，与python高度绑定*
 
 </div>
 
