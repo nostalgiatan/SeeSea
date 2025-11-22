@@ -79,15 +79,15 @@ def search(query, page, page_size, limit, json, verbose, china):
         summary_table = Table(show_header=False, box=box.ROUNDED)
         summary_table.add_column("属性", style="bold blue")
         summary_table.add_column("值")
-        summary_table.add_row("总结果", str(results['total_count']))
-        summary_table.add_row("耗时", f"{results['query_time_ms']}ms")
-        summary_table.add_row("引擎", ", ".join(results['engines_used']))
-        summary_table.add_row("缓存", "命中" if results['cached'] else "新查询")
+        summary_table.add_row("总结果", str(results.total_count))
+        summary_table.add_row("耗时", f"{results.query_time_ms}ms")
+        summary_table.add_row("引擎", ", ".join(results.engines_used))
+        summary_table.add_row("缓存", "命中" if results.cached else "新查询")
 
         console.print(Panel(summary_table, title="搜索概要", border_style="blue"))
 
         # 显示结果列表
-        formatted = format_results(results['results'], max_description_length=150)
+        formatted = format_results(results.results, max_description_length=150)
         console.print(f"\n结果列表 (显示前{min(limit, len(formatted))}个):\n")
 
         for i, item in enumerate(formatted[:limit], 1):
@@ -385,15 +385,15 @@ def search(query, page, page_size, limit, json, verbose, china):
         summary_table = Table(show_header=False, box=box.ROUNDED)
         summary_table.add_column("属性", style="bold blue")
         summary_table.add_column("值")
-        summary_table.add_row("总结果", str(results['total_count']))
-        summary_table.add_row("耗时", f"{results['query_time_ms']}ms")
-        summary_table.add_row("引擎", ", ".join(results['engines_used']))
-        summary_table.add_row("缓存", "命中" if results['cached'] else "新查询")
+        summary_table.add_row("总结果", str(results.total_count))
+        summary_table.add_row("耗时", f"{results.query_time_ms}ms")
+        summary_table.add_row("引擎", ", ".join(results.engines_used))
+        summary_table.add_row("缓存", "命中" if results.cached else "新查询")
 
         console.print(Panel(summary_table, title="搜索概要", border_style="blue"))
 
         # 显示结果列表
-        formatted = format_results(results['results'], max_description_length=150)
+        formatted = format_results(results.results, max_description_length=150)
         console.print(f"\n结果列表 (显示前{min(limit, len(formatted))}个):\n")
 
         for i, item in enumerate(formatted[:limit], 1):
@@ -566,10 +566,10 @@ def interactive(china):
 
             # 显示结果
             console.print(f"\n搜索结果:")
-            console.print(f"总结果: {results['total_count']}, 耗时: {results['query_time_ms']}ms")
-            console.print(f"引擎: {', '.join(results['engines_used'])}")
+            console.print(f"总结果: {results.total_count}, 耗时: {results.query_time_ms}ms")
+            console.print(f"引擎: {', '.join(results.engines_used)}")
 
-            formatted = format_results(results['results'], max_description_length=120)
+            formatted = format_results(results.results, max_description_length=120)
             console.print(f"\n结果列表:\n")
 
             for i, item in enumerate(formatted[:10], 1):
