@@ -1,5 +1,7 @@
 # SeeSea - 看海看得远，看得广
 
+<img src="static/image/logo.png" alt="SeeSea Logo" width="100%">
+
 <div align="center">
 
 **🛡️ 高性能隐私保护多模态搜索平台**
