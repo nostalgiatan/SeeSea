@@ -91,14 +91,12 @@ impl SogouWeChatEngine {
         let document = Html::parse_document(html);
         let mut items = Vec::with_capacity(10);
 
-        // Python: for item in dom.xpath('//li[contains(@id, "sogou_vr_")]'):
         let result_selector = Selector::parse("li[id*=\"sogou_vr_\"]")
             .or_else(|_| Selector::parse("li.results-item"))
             .or_else(|_| Selector::parse("div.results"))
             .expect("valid selector");
 
         for result in document.select(&result_selector) {
-            // Python: title = extract_text(item.xpath('.//h3/a'))
             let title_selector = Selector::parse("h3 a")
                 .expect("valid selector");
             let title_elem = result.select(&title_selector).next();
@@ -113,8 +111,7 @@ impl SogouWeChatEngine {
             if title.is_empty() {
                 continue;
             }
-
-            // Python: url = extract_text(item.xpath('.//h3/a/@href'))
+ 
             let url = title_elem.value().attr("href")
                 .unwrap_or("")
                 .to_string();
@@ -129,8 +126,6 @@ impl SogouWeChatEngine {
                 continue;
             }
 
-            // Python: content = extract_text(item.xpath('.//p[@class="txt-info"]'))
-            // if not content: content = extract_text(item.xpath('.//p[contains(@class, "txt-info")]'))
             let content_selector = Selector::parse("p.txt-info")
                 .or_else(|_| Selector::parse("p[class*=\"txt-info\"]"))
                 .expect("valid selector");
@@ -138,7 +133,6 @@ impl SogouWeChatEngine {
                 .map(|c| c.text().collect::<String>().trim().to_string())
                 .unwrap_or_default();
 
-            // Python: thumbnail = extract_text(item.xpath('.//div[@class="img-box"]/a/img/@src'))
             let thumbnail = result.select(&Selector::parse("div.img-box a img").expect("valid selector")).next()
                 .and_then(|img| img.value().attr("src"))
                 .map(|s| {
@@ -151,8 +145,6 @@ impl SogouWeChatEngine {
                     }
                 });
 
-            // Python: timestamp = extract_text(item.xpath('.//script[contains(text(), "timeConvert")]'))
-            // if timestamp: match = re.search(r"timeConvert\('(\d+)'\)", timestamp)
             let mut published_date = None;
             let script_selector = Selector::parse("script")
                 .expect("valid selector");
@@ -221,7 +213,7 @@ impl RequestResponseEngine for SogouWeChatEngine {
     type Response = String;
 
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Python: query_params = {"query": query, "page": params["pageno"], "type": 2}
+
         let query_params = vec![
             ("query", query.to_string()),
             ("page", params.pageno.to_string()),

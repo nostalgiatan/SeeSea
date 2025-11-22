@@ -91,13 +91,11 @@ impl BingImagesEngine {
         let document = Html::parse_document(html);
         let mut items = Vec::with_capacity(35);
 
-        // Python: for result in dom.xpath('//ul[contains(@class, "dgControl_list")]/li'):
         let result_selector = Selector::parse("ul.dgControl_list li")
             .or_else(|_| Selector::parse("ul[class*=\"dgControl_list\"] li"))
             .expect("valid selector");
 
         for result in document.select(&result_selector) {
-            // Python: metadata = result.xpath('.//a[@class="iusc"]/@m')
             let metadata_elem = result.select(&Selector::parse("a.iusc").expect("valid selector")).next();
 
             if metadata_elem.is_none() {
@@ -115,7 +113,6 @@ impl BingImagesEngine {
             let metadata: HashMap<String, serde_json::Value> = serde_json::from_str(metadata_str)
                 .unwrap_or_else(|_| HashMap::new());
 
-            // Python: title = ' '.join(result.xpath('.//div[@class="infnmpt"]//a/text()')).strip()
             let title = result.select(&Selector::parse("div.infnmpt a").expect("valid selector"))
                 .map(|a| a.text().collect::<String>().trim().to_string())
                 .collect::<Vec<_>>()
@@ -123,7 +120,6 @@ impl BingImagesEngine {
                 .trim()
                 .to_string();
 
-            // Python: img_format = ' '.join(result.xpath('.//div[@class="imgpt"]/div/span/text()')).strip().split(" · ")
             let img_format = result.select(&Selector::parse("div.imgpt div span").expect("valid selector"))
                 .map(|span| span.text().collect::<String>().trim().to_string())
                 .collect::<Vec<_>>()
@@ -131,7 +127,6 @@ impl BingImagesEngine {
                 .trim()
                 .to_string();
 
-            // Python: source = ' '.join(result.xpath('.//div[@class="imgpt"]//div[@class="lnkw"]//a/text()')).strip()
             let source = result.select(&Selector::parse("div.imgpt div.lnkw a").expect("valid selector"))
                 .map(|a| a.text().collect::<String>().trim().to_string())
                 .collect::<Vec<_>>()
@@ -225,10 +220,8 @@ impl RequestResponseEngine for BingImagesEngine {
     type Response = String;
 
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Python: base_url = 'https://www.bing.com/images/async'
         let base_url = "https://www.bing.com/images/async";
 
-        // Python: time_map = {'day': 60 * 24, 'week': 60 * 24 * 7, 'month': 60 * 24 * 31, 'year': 60 * 24 * 365}
         let time_map = HashMap::from([
             ("day", 60 * 24),
             ("week", 60 * 24 * 7),
@@ -236,7 +229,6 @@ impl RequestResponseEngine for BingImagesEngine {
             ("year", 60 * 24 * 365),
         ]);
 
-        // Python: query_params = {'q': query, 'async': '1', 'first': (int(params.get('pageno', 1)) - 1) * 35 + 1, 'count': 35}
         let mut query_params = vec![
             ("q", query.to_string()),
             ("async", "1".to_string()),
@@ -245,7 +237,6 @@ impl RequestResponseEngine for BingImagesEngine {
         ];
 
         // Add time range filter if specified
-        // Python: if params['time_range']: query_params['qft'] = 'filterui:age-lt%s' % time_map[params['time_range']]
         if let Some(ref tr) = params.time_range {
             if let Some(minutes) = time_map.get(tr.as_str()) {
                 query_params.push(("qft", format!("filterui:age-lt{}", minutes)));

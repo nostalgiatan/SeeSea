@@ -200,8 +200,6 @@ impl BaiduEngine {
         };
         let mut items = Vec::new();
         
-        // Baidu JSON API 通常返回的结构类似：
-        // { "feed": { "entry": [ ... ] } }
         if let Some(feed) = json.get("feed") {
             if let Some(entries) = feed.get("entry").and_then(|e| e.as_array()) {
                 for entry in entries {
@@ -241,7 +239,6 @@ impl BaiduEngine {
                 }
             }
         } else if let Some(results) = json.get("results").and_then(|r| r.as_array()) {
-            // 备选：有些 API 可能直接返回 results 数组
             for result in results {
                 let title = result.get("title")
                     .and_then(|t| t.as_str())

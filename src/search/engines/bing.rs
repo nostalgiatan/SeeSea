@@ -301,8 +301,6 @@ impl BingEngine {
         let document = Html::parse_document(html);
         let mut items = Vec::new();
         
-        // 使用 Python SearxNG 中完全相同的选择器
-        // //ol[@id="b_results"]/li[contains(@class, "b_algo")]
         let results_selector = match Selector::parse("ol#b_results > li.b_algo") {
             Ok(sel) => sel,
             Err(_) => return Ok(Vec::new()),
@@ -327,7 +325,6 @@ impl BingEngine {
             let mut content = String::new();
             
             for p_elem in result.select(&content_selector) {
-                // 移除 algoSlug_icon span (Python 版本中的逻辑)
                 let text = p_elem.text()
                     .filter(|t| !t.trim().is_empty())
                     .collect::<Vec<_>>()

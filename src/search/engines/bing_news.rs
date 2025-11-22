@@ -235,7 +235,6 @@ impl RequestResponseEngine for BingNewsEngine {
         ];
 
         // Add time range filter if specified
-        // Python: if params['time_range']: query_params['qft'] = time_map[params['time_range']]
         if let Some(ref tr) = params.time_range {
             if let Some(interval) = time_map.get(tr.as_str()) {
                 query_params.push(("qft", interval.to_string()));

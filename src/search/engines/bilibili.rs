@@ -87,12 +87,12 @@ impl BilibiliEngine {
         let json: Value = serde_json::from_str(json_str)?;
         let mut items = Vec::with_capacity(20);
 
-        // Python: for item in search_res.get("data", {}).get("result", []):
+ 
         if let Some(data) = json.get("data") {
             if let Some(results) = data.get("result") {
                 if let Some(result_array) = results.as_array() {
                     for item in result_array {
-                        // Python: title = utils.html_to_text(item["title"])
+     
                         let raw_title = item.get("title")
                             .and_then(|v| v.as_str())
                             .unwrap_or_default();
@@ -104,7 +104,6 @@ impl BilibiliEngine {
                             continue;
                         }
 
-                        // Python: url = item["arcurl"]
                         let url = item.get("arcurl")
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
@@ -114,7 +113,6 @@ impl BilibiliEngine {
                             continue;
                         }
 
-                        // Python: thumbnail = item["pic"]
                         let thumbnail = item.get("pic")
                             .and_then(|v| v.as_str())
                             .map(|s| {
@@ -127,33 +125,27 @@ impl BilibiliEngine {
                                 }
                             });
 
-                        // Python: description = item["description"]
                         let content = item.get("description")
                             .and_then(|v| v.as_str())
                             .map(|s| strip_html_entities(s))
                             .unwrap_or_default();
 
-                        // Python: author = item["author"]
                         let author = item.get("author")
                             .and_then(|v| v.as_str())
                             .unwrap_or("");
 
-                        // Python: video_id = item["aid"]
                         let video_id = item.get("aid")
                             .and_then(|v| v.as_i64())
                             .unwrap_or(0);
 
-                        // Python: unix_date = item["pubdate"]
                         let published_date = item.get("pubdate")
                             .and_then(|v| v.as_i64())
                             .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0));
 
-                        // Python: duration = utils.parse_duration_string(item["duration"])
                         let duration_str = item.get("duration")
                             .and_then(|v| v.as_str())
                             .unwrap_or("");
 
-                        // Python: iframe_url = f"https://player.bilibili.com/player.html?aid={video_id}&high_quality=1&autoplay=false&danmaku=0"
                         let iframe_url = format!("https://player.bilibili.com/player.html?aid={}&high_quality=1&autoplay=false&danmaku=0", video_id);
 
                         let mut metadata = HashMap::new();
@@ -190,7 +182,6 @@ impl BilibiliEngine {
     fn generate_bilibili_cookies() -> HashMap<String, String> {
         let mut rng = rand::rng();
 
-        // Python: buvid3 = "".join(random.choice(string.hexdigits) for _ in range(16)) + "infoc"
         let buvid3: String = (0..16)
             .map(|_| {
                 let chars = b"0123456789abcdef";
@@ -236,17 +227,9 @@ impl RequestResponseEngine for BilibiliEngine {
     type Response = String;
 
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Python: base_url = "https://api.bilibili.com/x/web-interface/search/type"
+      
         let base_url = "https://api.bilibili.com/x/web-interface/search/type";
 
-        // Python: query_params = {
-        //     "__refresh__": "true",
-        //     "page": params["pageno"],
-        //     "page_size": results_per_page,
-        //     "single_column": "0",
-        //     "keyword": query,
-        //     "search_type": "video",
-        // }
         let query_params = vec![
             ("__refresh__", "true".to_string()),
             ("page", params.pageno.to_string()),

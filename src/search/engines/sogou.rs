@@ -89,15 +89,13 @@ impl SogouEngine {
 
         let document = Html::parse_document(html);
         let mut items = Vec::with_capacity(10);
-
-        // Python: for item in dom.xpath('//div[contains(@class, "vrwrap")]'):
+:
         let result_selector = Selector::parse("div.vrwrap")
             .or_else(|_| Selector::parse("div[class*=\"vrwrap\"]"))
             .expect("valid selector");
 
         for result in document.select(&result_selector) {
-            // Python: title = extract_text(item.xpath('.//h3[contains(@class, "vr-title")]/a'))
-            let title_selector = Selector::parse("h3.vr-title a")
+             let title_selector = Selector::parse("h3.vr-title a")
                 .or_else(|_| Selector::parse("h3[class*=\"vr-title\"] a"))
                 .expect("valid selector");
             let title_elem = result.select(&title_selector).next();
@@ -113,8 +111,7 @@ impl SogouEngine {
                 continue;
             }
 
-            // Python: url = extract_text(item.xpath('.//h3[contains(@class, "vr-title")]/a/@href'))
-            let url_elem = title_elem;
+             let url_elem = title_elem;
             let url = url_elem.value().attr("href")
                 .unwrap_or("")
                 .to_string();
@@ -130,8 +127,7 @@ impl SogouEngine {
                 continue;
             }
 
-            // Python: content = extract_text(item.xpath('.//div[contains(@class, "text-layout")]//p[contains(@class, "star-wiki")]'))
-            // if not content: content = extract_text(item.xpath('.//div[contains(@class, "fz-mid space-txt")]'))
+             // if not content: content = extract_text(item.xpath('.//div[contains(@class, "fz-mid space-txt")]'))
             let content = result.select(&Selector::parse("div.text-layout p.star-wiki").expect("valid selector")).next()
                 .map(|c| c.text().collect::<String>().trim().to_string())
                 .or_else(|| {
@@ -185,16 +181,14 @@ impl RequestResponseEngine for SogouEngine {
     type Response = String;
 
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Python: base_url = "https://www.sogou.com"
-        // query_params = {"query": query, "page": params["pageno"]}
+         // query_params = {"query": query, "page": params["pageno"]}
         let mut query_params = vec![
             ("query", query.to_string()),
             ("page", params.pageno.to_string()),
         ];
 
         // Add time range filter if specified
-        // Python: time_range_dict = {'day': 'inttime_day', 'week': 'inttime_week', 'month': 'inttime_month', 'year': 'inttime_year'}
-        if let Some(ref tr) = params.time_range {
+         if let Some(ref tr) = params.time_range {
             let s_from = match tr.as_str() {
                 "day" => "inttime_day",
                 "week" => "inttime_week",

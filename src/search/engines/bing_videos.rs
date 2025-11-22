@@ -228,10 +228,8 @@ impl RequestResponseEngine for BingVideosEngine {
     type Response = String;
 
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Python: base_url = 'https://www.bing.com/videos/asyncv2'
         let base_url = "https://www.bing.com/videos/asyncv2";
 
-        // Python: time_map = {'day': 60 * 24, 'week': 60 * 24 * 7, 'month': 60 * 24 * 31, 'year': 60 * 24 * 365}
         let time_map = HashMap::from([
             ("day", 60 * 24),
             ("week", 60 * 24 * 7),
@@ -239,7 +237,6 @@ impl RequestResponseEngine for BingVideosEngine {
             ("year", 60 * 24 * 365),
         ]);
 
-        // Python: query_params = {'q': query, 'async': 'content', 'first': (int(params.get('pageno', 1)) - 1) * 35 + 1, 'count': 35}
         let mut query_params = vec![
             ("q", query.to_string()),
             ("async", "content".to_string()),
@@ -247,8 +244,6 @@ impl RequestResponseEngine for BingVideosEngine {
             ("count", "35".to_string()),
         ];
 
-        // Add time range filter if specified
-        // Python: if params['time_range']: query_params['qft'] = 'filterui:age-lt%s' % time_map[params['time_range']]
         if let Some(ref tr) = params.time_range {
             if let Some(minutes) = time_map.get(tr.as_str()) {
                 query_params.push(("qft", format!("filterui:age-lt{}", minutes)));
