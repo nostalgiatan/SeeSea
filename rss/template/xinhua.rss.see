@@ -1,0 +1,106 @@
+# Xinhua News RSS Template
+# 新华网RSS订阅源模板
+#
+# Format: .rss.see (SeeSea RSS Template Format)
+# This template provides various news categories from Xinhua News Agency
+
+[meta]
+name = "Xinhua News"
+description = "新华网官方RSS订阅源 - Official Xinhua News Agency RSS feeds"
+language = "zh-CN"
+provider = "xinhuanet.com"
+version = "1.0"
+persistent = true
+auto_update = true
+update_interval = 3600  # 1 hour in seconds
+
+[feeds]
+# Politics - 政治
+politics = "http://www.xinhuanet.com/politics/news_politics.xml"
+
+# World News - 国际
+world = "http://www.xinhuanet.com/world/news_world.xml"
+
+# Finance - 财经
+fortune = "http://www.xinhuanet.com/fortune/news_fortune.xml"
+
+# Local News - 地方
+local = "http://www.xinhuanet.com/local/news_local.xml"
+
+# Legal - 法治
+legal = "http://www.xinhuanet.com/legal/news_legal.xml"
+
+# Sports - 体育
+sports = "http://www.xinhuanet.com/sports/news_sports.xml"
+
+# Culture - 文化
+culture = "http://www.xinhuanet.com/culture/news_culture.xml"
+
+# Education - 教育
+education = "http://www.xinhuanet.com/education/news_education.xml"
+
+# Technology - 科技
+tech = "http://www.xinhuanet.com/tech/news_tech.xml"
+
+# Food - 食品
+food = "http://www.xinhuanet.com/food/news_food.xml"
+
+# Health - 健康
+health = "http://www.xinhuanet.com/health/news_health.xml"
+
+# Travel - 旅游
+travel = "http://www.xinhuanet.com/travel/news_travel.xml"
+
+# Video - 视频
+video = "http://www.xinhuanet.com/video/news_video.xml"
+
+# Photo - 图片
+photo = "http://www.xinhuanet.com/photo/news_photo.xml"
+
+# Entertainment - 娱乐
+entertainment = "http://www.xinhuanet.com/entertainment/news_entertainment.xml"
+
+# Bidding - 招投标
+bidding = "http://www.xinhuanet.com/bidding/news_bidding.xml"
+
+# Public Welfare - 公益
+gongyi = "http://www.xinhuanet.com/gongyi/news_gongyi.xml"
+
+# Finance (Detailed) - 金融
+finance = "http://www.xinhuanet.com/finance/news_finance.xml"
+
+# Energy - 能源
+energy = "http://www.xinhuanet.com/energy/news_energy.xml"
+
+# Auto - 汽车
+auto = "http://www.xinhuanet.com/auto/news_auto.xml"
+
+# Real Estate - 房产
+house = "http://www.xinhuanet.com/house/news_house.xml"
+
+# Opinion - 评论
+talking = "http://www.xinhuanet.com/talking/news_talking.xml"
+
+# City - 城市
+city = "http://www.xinhuanet.com/city/news_city.xml"
+
+# Party Building - 党建
+dangjian = "http://www.xinhuanet.com/dangjian/news_dangjian.xml"
+
+# College Entrance Exam - 高考
+gaokao = "http://www.xinhuanet.com/gaokao/news_gaokao.xml"
+
+# Sports Games - 体育赛事
+sports_game = "http://www.xinhuanet.com/sports_game/news_sports_game.xml"
+
+# CBA Basketball - CBA篮球
+sports_cba = "http://www.xinhuanet.com/sports_cba/news_sports_cba.xml"
+
+# NBA Basketball - NBA篮球
+sports_nba = "http://www.xinhuanet.com/sports_nba/news_sports_nba.xml"
+
+# Formula 1 - F1赛车
+sports_f1 = "http://www.xinhuanet.com/sports_f1/news_sports_f1.xml"
+
+# Golf - 高尔夫
+sports_golf = "http://www.xinhuanet.com/sports_golf/news_sports_golf.xml"

@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*"]
+
+
+[project]
+name = "seesea"
+version = "0.2.1"
+description = "SeeSea Python SDK - Privacy-focused metasearch engine"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+keywords = ["search", "metasearch", "privacy", "sdk"]
+authors = [
+    {name = "SeeSea Team"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    # seesea-core>=0.1.0,  # 依赖独立的 Rust 核心模块（本地已安装）
+]
+
+[project.scripts]
+seesea = "seesea.cli:cli"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "black>=23.0",
+    "mypy>=1.0",
+    "ruff>=0.1",
+]
+browser = [
+    "playwright>=1.40.0",
+    "playwright-stealth>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/nostalgiatan/SeeSea"
+Repository = "https://github.com/nostalegan/SeeSea"
+Documentation = "https://github.com/nostalegan/SeeSea/blob/main/docs"

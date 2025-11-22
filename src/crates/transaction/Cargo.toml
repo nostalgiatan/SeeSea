@@ -1,0 +1,21 @@
+[package]
+name = "transaction"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# 错误处理
+error = { path = "../error" }
+# 异步运行时
+tokio = { version = "1.42", features = ["full"] }
+# UUID 生成
+uuid = { version = "1.10", features = ["v4"] }
+# 过程宏依赖
+transaction-derive = { path = "../transaction-derive" }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[lib]
+name = "transaction"
+path = "src/lib.rs"

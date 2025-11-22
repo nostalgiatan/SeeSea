@@ -1,0 +1,187 @@
+# People's Daily Online RSS Template
+# 人民网RSS订阅源模板
+#
+# Format: .rss.see (SeeSea RSS Template Format)
+# This template provides various news categories from People's Daily Online
+
+[meta]
+name = "People's Daily Online"
+description = "人民网官方RSS订阅源 - Official People's Daily Online RSS feeds"
+language = "zh-CN"
+provider = "people.com.cn"
+version = "1.0"
+persistent = true
+auto_update = true
+update_interval = 3600  # 1 hour in seconds
+
+[feeds]
+# Politics - 时政频道
+politics = "http://www.people.com.cn/rss/politics.xml"
+
+# World News - 国际频道
+world = "http://www.people.com.cn/rss/world.xml"
+
+# Finance - 财经频道
+finance = "http://www.people.com.cn/rss/finance.xml"
+
+# Financial - 金融频道
+money = "http://www.people.com.cn/rss/money.xml"
+
+# Energy - 能源频道
+energy = "http://www.people.com.cn/rss/energy.xml"
+
+# Central Enterprises - 央企频道
+ccnews = "http://www.people.com.cn/rss/ccnews.xml"
+
+# Sports - 体育频道
+sports = "http://www.people.com.cn/rss/sports.xml"
+
+# Legal - 法制频道
+legal = "http://www.people.com.cn/rss/legal.xml"
+
+# Education - 教育频道
+education = "http://www.people.com.cn/rss/legal.xml"
+
+# Culture - 文化频道
+culture = "http://www.people.com.cn/rss/culture.xml"
+
+# Society - 社会频道
+society = "http://www.people.com.cn/rss/society.xml"
+
+# Media - 传媒频道
+media = "http://www.people.com.cn/rss/media.xml"
+
+# Theory - 理论频道
+theory = "http://www.people.com.cn/rss/theory.xml"
+
+# Entertainment - 娱乐频道
+entertainment = "http://www.people.com.cn/rss/ent.xml"
+
+# Opinion - 观点频道
+opinion = "http://www.people.com.cn/rss/opinion.xml"
+
+# Auto - 汽车频道
+auto = "http://www.people.com.cn/rss/auto.xml"
+
+# Cross-Strait Relations - 海峡两岸
+haixia = "http://www.people.com.cn/rss/haixia.xml"
+
+# Technology - IT频道
+it = "http://www.people.com.cn/rss/it.xml"
+
+# Environment - 环保频道
+env = "http://www.people.com.cn/rss/env.xml"
+
+# Public Welfare - 公益频道
+gongyi = "http://www.people.com.cn/rss/gongyi.xml"
+
+# Lottery - 彩票频道
+caipiao = "http://www.people.com.cn/rss/caipiao.xml"
+
+# Science & Technology - 科技频道
+scitech = "http://www.people.com.cn/rss/scitech.xml"
+
+# History & Culture - 文史频道
+history = "http://www.people.com.cn/rss/history.xml"
+
+# Art Collection - 收藏频道
+art = "http://www.people.com.cn/rss/art.xml"
+
+# Books - 读书频道
+book = "http://www.people.com.cn/rss/book.xml"
+
+# Food - 食品频道
+shipin = "http://www.people.com.cn/rss/shipin.xml"
+
+# Gaming - 游戏频道
+game = "http://www.people.com.cn/rss/game.xml"
+
+# Home Appliances - 家电频道
+homea = "http://www.people.com.cn/rss/homea.xml"
+
+# Real Estate - 房产频道
+house = "http://www.people.com.cn/rss/house.xml"
+
+# Health - 健康频道
+health = "http://www.people.com.cn/rss/health.xml"
+
+# Intellectual Property - 知识产权
+ip = "http://www.people.com.cn/rss/ip.xml"
+
+# CPC News - 共产党新闻网
+cpc = "http://www.people.com.cn/rss/cpc.xml"
+
+# Party Building - 党建
+dangjian = "http://www.people.com.cn/rss/dangjian.xml"
+
+# Party History - 党史
+dangshi = "http://www.people.com.cn/rss/dangshi.xml"
+
+# NPC News - 中国人大新闻
+npc = "http://www.people.com.cn/rss/npc.xml"
+
+# CPPCC News - 中国政协新闻
+cppcc = "http://www.people.com.cn/rss/cppcc.xml"
+
+# Military - 人民网-军事频道
+military = "http://www.people.com.cn/rss/military.xml"
+
+# TV - 人民电视
+tv = "http://www.people.com.cn/rss/tv.xml"
+
+# Local News - 地方频道
+unn = "http://www.people.com.cn/rss/unn.xml"
+
+# Travel - 人民网-旅游频道
+travel = "http://www.people.com.cn/rss/travel.xml"
+
+# Personnel - 人事频道
+renshi = "http://www.people.com.cn/rss/renshi.xml"
+
+# Leadership - 领导频道
+leaders = "http://www.people.com.cn/rss/leaders.xml"
+
+# Pictures - 图片频道
+pic = "http://www.people.com.cn/rss/pic.xml"
+
+# Public Opinion - 舆情频道
+yuqing = "http://www.people.com.cn/rss/yuqing.xml"
+
+# Hong Kong & Macao - 港澳频道
+hm = "http://www.people.com.cn/rss/hm.xml"
+
+# Telecommunications - 通信频道
+tc = "http://www.people.com.cn/rss/tc.xml"
+
+# Fashion - 时尚频道
+lady = "http://www.people.com.cn/rss/lady.xml"
+
+# Rosewood - 红木频道
+hongmu = "http://www.people.com.cn/rss/hongmu.xml"
+
+# Russia Channel - 俄罗斯频道
+ru = "http://www.people.com.cn/rss/ru.xml"
+
+# Japan Channel - 日本频道
+japan = "http://www.people.com.cn/rss/japan.xml"
+
+# UK Channel - 英国频道
+uk = "http://www.people.com.cn/rss/uk.xml"
+
+# USA Channel - 美国频道
+usa = "http://www.people.com.cn/rss/usa.xml"
+
+# Korea Channel - 韩国频道
+korea = "http://www.people.com.cn/rss/korea.xml"
+
+# Shanghai Channel - 上海频道
+sh = "http://www.people.com.cn/rss/sh.xml"
+
+# Hot News - 热点新闻
+phb = "http://www.people.com.cn/rss/phb.xml"
+
+# Leadership Message Board - 地方领导留言板
+liuyan = "http://www.people.com.cn/rss/liuyan.xml"
+
+# China in Pictures - 图说中国
+chinapic = "http://www.people.com.cn/rss/chinapic.xml"

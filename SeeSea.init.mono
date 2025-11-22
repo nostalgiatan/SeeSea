@@ -1,0 +1,54 @@
+project: python and rust
+
+python_version: 3.12
+rust_version: 1.75
+
+bash: (
+  build-rust: "cargo build --release",
+  build-python: "python setup.py build",
+  test-rust: "cargo test",
+  test-python: "pytest tests/",
+  start-python: "python -m complete",
+  install: "pip install -e .",
+)
+
+version: y
+
+lib: (
+  src.search,
+  src.llm,
+  seesea,
+  seesea.config,
+  seesea.search,
+  seesea.derive,
+  seesea.net,
+  seesea.cache,
+  seesea.api,
+  seesea.error,
+  seesea.utils,
+  seesea.metrics,
+  tests,
+  benchmarks,
+)
+
+env: (
+  RUST_BACKTRACE: 1,
+  DEBUG: false,
+  SEEA_CACHE_DIR: "./cache",
+  SEEA_CONFIG_FILE: "./config/default.toml",
+)
+
+description: "SeeSea - A privacy-focused metasearch engine"
+
+workspace: (
+  examples,
+  docs,
+)
+
+authors: (
+  "SeeSea Contributors",
+)
+
+keywords: (
+  search, metasearch, rust, privacy, tor, proxy, python
+)
