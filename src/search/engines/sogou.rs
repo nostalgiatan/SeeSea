@@ -89,7 +89,7 @@ impl SogouEngine {
 
         let document = Html::parse_document(html);
         let mut items = Vec::with_capacity(10);
-:
+
         let result_selector = Selector::parse("div.vrwrap")
             .or_else(|_| Selector::parse("div[class*=\"vrwrap\"]"))
             .expect("valid selector");
