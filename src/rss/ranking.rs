@@ -223,6 +223,7 @@ fn current_timestamp() -> u64 {
 mod tests {
     use super::*;
     use crate::derive::rss::RssFeedMeta;
+    use std::collections::HashMap;
 
     fn create_test_item(title: &str, description: &str) -> RssFeedItem {
         RssFeedItem {

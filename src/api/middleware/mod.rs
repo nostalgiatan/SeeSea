@@ -20,8 +20,14 @@ pub mod cors;
 pub mod ratelimit;
 pub mod logging;
 pub mod auth;
+pub mod circuitbreaker;
+pub mod ipfilter;
+pub mod magiclink;
 
 pub use cors::*;
 pub use ratelimit::*;
 pub use logging::*;
 pub use auth::*;
+pub use circuitbreaker::*;
+pub use ipfilter::*;
+pub use magiclink::*;
