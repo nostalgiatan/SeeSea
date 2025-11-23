@@ -22,3 +22,12 @@ pub mod config;
 pub mod metrics;
 pub mod rss;
 pub mod cache;
+
+// Re-export handlers for convenient use
+pub use search::{handle_search, handle_search_post};
+pub use health::handle_health;
+pub use config::handle_magic_link_generate;
+pub use metrics::{
+    handle_stats, handle_engines_list, handle_version,
+    handle_metrics, handle_realtime_metrics
+};

@@ -21,17 +21,19 @@ use tokio::sync::RwLock;
 use axum::{
     Router,
     routing::{get, post},
-    extract::{State, Query, Json},
-    response::{IntoResponse, Response},
-    http::StatusCode,
 };
-use serde_json::json;
 
 use crate::cache::CacheInterface;
 use crate::net::NetworkInterface;
-use crate::search::{SearchInterface, SearchRequest};
-use super::types::*;
-use super::handlers::{rss, cache};
+use crate::search::SearchInterface;
+use super::handlers::{
+    rss, cache,
+    handle_search, handle_search_post,
+    handle_health,
+    handle_stats, handle_engines_list, handle_version,
+    handle_metrics, handle_realtime_metrics,
+    handle_magic_link_generate,
+};
 use super::middleware::{
     cors, 
     RateLimiterState, RateLimitConfig, rate_limit_middleware,
@@ -173,6 +175,15 @@ impl ApiInterface {
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let search = Arc::new(SearchInterface::new(search_config)?);
         Ok(Self::new(search, env!("CARGO_PKG_VERSION").to_string()))
+    }
+
+    /// 构建默认路由器（内网模式）
+    ///
+    /// # Returns
+    ///
+    /// 返回配置好的 Axum Router
+    pub fn build_router(&self) -> Router {
+        self.build_internal_router()
     }
 
     /// 构建内网路由器（无安全限制）
@@ -428,200 +439,6 @@ impl ApiInterface {
     pub fn ip_filter(&self) -> &Arc<IpFilterState> {
         &self.ip_filter
     }
-}
-
-/// 处理 GET 搜索请求
-async fn handle_search(
-    State(state): State<ApiState>,
-    Query(params): Query<ApiSearchRequest>,
-) -> Response {
-    match execute_search(&state, params).await {
-        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
-        Err(e) => {
-            let error = ApiErrorResponse {
-                code: "SEARCH_ERROR".to_string(),
-                message: "搜索失败".to_string(),
-                details: Some(e.to_string()),
-            };
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
-        }
-    }
-}
-
-/// 处理 POST 搜索请求
-async fn handle_search_post(
-    State(state): State<ApiState>,
-    Json(params): Json<ApiSearchRequest>,
-) -> Response {
-    match execute_search(&state, params).await {
-        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
-        Err(e) => {
-            let error = ApiErrorResponse {
-                code: "SEARCH_ERROR".to_string(),
-                message: "搜索失败".to_string(),
-                details: Some(e.to_string()),
-            };
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
-        }
-    }
-}
-
-/// 执行搜索
-async fn execute_search(
-    state: &ApiState,
-    params: ApiSearchRequest,
-) -> Result<ApiSearchResponse, Box<dyn std::error::Error + Send + Sync>> {
-    let start_time = std::time::Instant::now();
-
-    // 转换为内部搜索查询
-    let search_query = params.to_search_query()
-        .map_err(|e| format!("参数错误: {}", e))?;
-
-    // 获取引擎列表
-    let engines = params.get_engines();
-
-    // 创建搜索请求
-    let request = SearchRequest {
-        query: search_query,
-        engines,
-        timeout: None,
-        max_results: None,
-        force: false,
-        cache_timeline: Some(3600),
-    };
-
-    // 执行搜索
-    let response = state.search.search(&request).await?;
-    
-    // 转换结果
-    let mut results = Vec::new();
-    for search_result in &response.results {
-        for item in &search_result.items {
-            results.push(ApiSearchResultItem {
-                title: item.title.clone(),
-                url: item.url.clone(),
-                description: Some(item.content.clone()),
-                engine: search_result.engine_name.clone(),
-                score: Some(item.score),
-            });
-        }
-    }
-    
-    let elapsed = start_time.elapsed().as_millis() as u64;
-
-    // 获取实际的查询字符串
-    let query_text = params.get_query().unwrap_or_default();
-
-    Ok(ApiSearchResponse {
-        query: query_text,
-        results,
-        total_count: response.total_count,
-        page: params.page,
-        page_size: params.page_size,
-        engines_used: response.engines_used,
-        query_time_ms: elapsed,
-        cached: response.cached,
-    })
-}
-
-/// 处理引擎列表请求
-async fn handle_engines_list(
-    State(state): State<ApiState>,
-) -> Response {
-    let engines = state.search.list_engines();
-    
-    let engine_infos: Vec<ApiEngineInfo> = engines
-        .into_iter()
-        .map(|name| ApiEngineInfo {
-            name: name.clone(),
-            description: format!("{} 搜索引擎", name),
-            engine_type: "general".to_string(),
-            enabled: true,
-            capabilities: vec!["web".to_string()],
-        })
-        .collect();
-    
-    (StatusCode::OK, Json(engine_infos)).into_response()
-}
-
-/// 处理统计信息请求
-async fn handle_stats(
-    State(state): State<ApiState>,
-) -> Response {
-    let stats = state.search.get_stats().await;
-    let api_stats = ApiStatsResponse::from_search_stats(&stats);
-
-    (StatusCode::OK, Json(api_stats)).into_response()
-}
-
-/// 处理健康检查请求
-async fn handle_health(
-    State(state): State<ApiState>,
-) -> Response {
-    let engines = state.search.list_engines();
-    
-    let health = ApiHealthResponse {
-        status: "healthy".to_string(),
-        version: state.version.clone(),
-        available_engines: engines.len(),
-        total_engines: engines.len(),
-    };
-    
-    (StatusCode::OK, Json(health)).into_response()
-}
-
-/// 处理版本信息请求
-async fn handle_version(
-    State(state): State<ApiState>,
-) -> Response {
-    let version_info = json!({
-        "version": state.version,
-        "name": "SeeSea",
-        "description": "隐私保护型元搜索引擎"
-    });
-    
-    (StatusCode::OK, Json(version_info)).into_response()
-}
-
-/// 处理指标请求（Prometheus格式）
-async fn handle_metrics(
-    State(state): State<ApiState>,
-) -> Response {
-    if let Some(metrics) = state.metrics.get_prometheus_metrics() {
-        (StatusCode::OK, metrics).into_response()
-    } else {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Metrics not enabled".to_string()
-        ).into_response()
-    }
-}
-
-/// 处理实时指标请求（JSON格式）
-async fn handle_realtime_metrics(
-    State(state): State<ApiState>,
-) -> Response {
-    let metrics = state.metrics.get_realtime_metrics().await;
-    (StatusCode::OK, Json(metrics)).into_response()
-}
-
-/// 处理魔法链接生成请求
-async fn handle_magic_link_generate(
-    State(state): State<ApiState>,
-    Json(params): Json<serde_json::Value>,
-) -> Response {
-    let purpose = params.get("purpose")
-        .and_then(|v| v.as_str())
-        .unwrap_or("general")
-        .to_string();
-    
-    let token = state.magic_link.generate_token(purpose);
-    
-    (StatusCode::OK, Json(json!({
-        "token": token,
-        "expires_in": 300,
-        "url": format!("/api/search?magic_token={}", token)
-    }))).into_response()
 }
 
 #[cfg(test)]
