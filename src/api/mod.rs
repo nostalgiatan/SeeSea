@@ -21,6 +21,10 @@ pub mod types;
 pub mod on;
 pub mod handlers;
 pub mod middleware;
+pub mod metrics;
+pub mod network;
 
 pub use types::*;
 pub use on::*;
+pub use metrics::*;
+pub use network::*;

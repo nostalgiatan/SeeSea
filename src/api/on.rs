@@ -32,7 +32,16 @@ use crate::net::NetworkInterface;
 use crate::search::{SearchInterface, SearchRequest};
 use super::types::*;
 use super::handlers::{rss, cache};
-use super::middleware::cors;
+use super::middleware::{
+    cors, 
+    RateLimiterState, RateLimitConfig, rate_limit_middleware,
+    CircuitBreakerState, CircuitBreakerConfig, circuit_breaker_middleware,
+    IpFilterState, IpFilterConfig, ip_filter_middleware,
+    AuthState, AuthConfig, jwt_auth_middleware,
+    MagicLinkState, MagicLinkConfig, magic_link_middleware,
+};
+use super::network::{NetworkConfig, NetworkMode};
+use super::metrics::{MetricsCollector, MetricsConfig};
 
 /// 服务器配置
 #[derive(Debug, Clone)]
@@ -65,12 +74,23 @@ pub struct ApiState {
     pub search: Arc<SearchInterface>,
     /// 版本信息
     pub version: String,
+    /// 指标收集器
+    pub metrics: Arc<MetricsCollector>,
+    /// 魔法链接状态
+    pub magic_link: Arc<MagicLinkState>,
 }
 
 /// API 接口
 pub struct ApiInterface {
     /// 内部状态
     state: ApiState,
+    /// 网络配置
+    network_config: NetworkConfig,
+    /// 中间件状态
+    rate_limiter: Arc<RateLimiterState>,
+    circuit_breaker: Arc<CircuitBreakerState>,
+    ip_filter: Arc<IpFilterState>,
+    auth_state: Arc<AuthState>,
 }
 
 impl ApiInterface {
@@ -85,11 +105,53 @@ impl ApiInterface {
     ///
     /// 返回 API 接口实例
     pub fn new(search: Arc<SearchInterface>, version: String) -> Self {
+        Self::with_network_config(search, version, NetworkConfig::default())
+    }
+
+    /// 使用网络配置创建 API 接口
+    pub fn with_network_config(
+        search: Arc<SearchInterface>,
+        version: String,
+        network_config: NetworkConfig,
+    ) -> Self {
+        let metrics = Arc::new(MetricsCollector::new(MetricsConfig::default()));
+        let magic_link = Arc::new(MagicLinkState::new(MagicLinkConfig::default()));
+        
+        let state = ApiState {
+            search,
+            version,
+            metrics,
+            magic_link,
+        };
+
+        // 根据网络配置初始化中间件
+        let rate_limiter = Arc::new(RateLimiterState::new(RateLimitConfig {
+            enabled: network_config.external.enable_rate_limit,
+            ..Default::default()
+        }));
+        
+        let circuit_breaker = Arc::new(CircuitBreakerState::new(CircuitBreakerConfig {
+            enabled: network_config.external.enable_circuit_breaker,
+            ..Default::default()
+        }));
+        
+        let ip_filter = Arc::new(IpFilterState::new(IpFilterConfig {
+            enabled: network_config.external.enable_ip_filter,
+            ..Default::default()
+        }));
+        
+        let auth_state = Arc::new(AuthState::new(AuthConfig {
+            enabled: network_config.external.enable_jwt_auth,
+            ..Default::default()
+        }));
+
         Self {
-            state: ApiState {
-                search,
-                version,
-            },
+            state,
+            network_config,
+            rate_limiter,
+            circuit_breaker,
+            ip_filter,
+            auth_state,
         }
     }
 
@@ -113,12 +175,12 @@ impl ApiInterface {
         Ok(Self::new(search, env!("CARGO_PKG_VERSION").to_string()))
     }
 
-    /// 构建 Axum 路由器
+    /// 构建内网路由器（无安全限制）
     ///
     /// # Returns
     ///
     /// 返回配置好的 Axum Router
-    pub fn build_router(&self) -> Router {
+    pub fn build_internal_router(&self) -> Router {
         Router::new()
             // 搜索相关路由
             .route("/api/search", get(handle_search))
@@ -148,10 +210,79 @@ impl ApiInterface {
             // 版本信息路由
             .route("/api/version", get(handle_version))
             
-            // 应用 CORS 中间件
-            .layer(cors::create_cors_layer())
+            // 指标路由
+            .route("/api/metrics", get(handle_metrics))
+            .route("/api/metrics/realtime", get(handle_realtime_metrics))
+            
+            // 魔法链接管理路由（仅内网）
+            .route("/api/magic-link/generate", post(handle_magic_link_generate))
             
             .with_state(self.state.clone())
+    }
+
+    /// 构建外网路由器（带安全限制）
+    ///
+    /// # Returns
+    ///
+    /// 返回配置好的 Axum Router
+    pub fn build_external_router(&self) -> Router {
+        use axum::middleware;
+        
+        Router::new()
+            // 搜索相关路由
+            .route("/api/search", get(handle_search))
+            .route("/api/search", post(handle_search_post))
+            
+            // 引擎信息路由
+            .route("/api/engines", get(handle_engines_list))
+            
+            // RSS 相关路由（可能需要认证）
+            .route("/api/rss/feeds", get(rss::handle_rss_feeds_list))
+            .route("/api/rss/fetch", post(rss::handle_rss_fetch))
+            
+            // 统计信息路由
+            .route("/api/stats", get(handle_stats))
+            
+            // 健康检查路由
+            .route("/api/health", get(handle_health))
+            .route("/health", get(handle_health))
+            
+            // 版本信息路由
+            .route("/api/version", get(handle_version))
+            
+            // 指标路由（只读）
+            .route("/api/metrics", get(handle_metrics))
+            
+            .with_state(self.state.clone())
+            
+            // 应用中间件（顺序很重要）
+            // 1. 魔法链接（最先检查，可以绕过认证）
+            .layer(middleware::from_fn_with_state(
+                self.state.magic_link.clone(),
+                magic_link_middleware,
+            ))
+            // 2. JWT认证（如果启用）
+            .layer(middleware::from_fn_with_state(
+                self.auth_state.clone(),
+                jwt_auth_middleware,
+            ))
+            // 3. IP过滤
+            .layer(middleware::from_fn_with_state(
+                self.ip_filter.clone(),
+                ip_filter_middleware,
+            ))
+            // 4. 熔断器
+            .layer(middleware::from_fn_with_state(
+                self.circuit_breaker.clone(),
+                circuit_breaker_middleware,
+            ))
+            // 5. 限流
+            .layer(middleware::from_fn_with_state(
+                self.rate_limiter.clone(),
+                rate_limit_middleware,
+            ))
+            // 6. CORS
+            .layer(cors::create_cors_layer())
     }
 
     /// 启动服务器
@@ -163,13 +294,139 @@ impl ApiInterface {
     /// # Returns
     ///
     /// 返回结果
-    pub async fn serve(&self, config: ServerConfig) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let app = self.build_router();
-        let addr = format!("{}:{}", config.host, config.port);
+    pub async fn serve(&self, _config: ServerConfig) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // 根据网络模式启动服务器
+        match self.network_config.mode {
+            NetworkMode::Internal => {
+                self.serve_internal().await
+            }
+            NetworkMode::External => {
+                self.serve_external().await
+            }
+            NetworkMode::Dual => {
+                self.serve_dual().await
+            }
+        }
+    }
+
+    /// 启动内网服务器
+    async fn serve_internal(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let app = self.build_internal_router();
+        let addr = format!("{}:{}", 
+            self.network_config.internal.host, 
+            self.network_config.internal.port
+        );
+        
+        println!("🔒 内网服务器启动在: {}", addr);
+        println!("   - 仅允许本地访问");
+        println!("   - 无安全限制");
+        
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         axum::serve(listener, app).await?;
         
         Ok(())
+    }
+
+    /// 启动外网服务器
+    async fn serve_external(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let app = self.build_external_router();
+        let addr = format!("{}:{}", 
+            self.network_config.external.host, 
+            self.network_config.external.port
+        );
+        
+        println!("🌐 外网服务器启动在: {}", addr);
+        println!("   - 启用限流: {}", self.network_config.external.enable_rate_limit);
+        println!("   - 启用熔断: {}", self.network_config.external.enable_circuit_breaker);
+        println!("   - 启用IP过滤: {}", self.network_config.external.enable_ip_filter);
+        println!("   - 启用JWT认证: {}", self.network_config.external.enable_jwt_auth);
+        println!("   - 启用魔法链接: {}", self.network_config.external.enable_magic_link);
+        
+        self.print_metrics_dashboard().await;
+        
+        let listener = tokio::net::TcpListener::bind(&addr).await?;
+        axum::serve(listener, app).await?;
+        
+        Ok(())
+    }
+
+    /// 启动双模式服务器（内网+外网）
+    async fn serve_dual(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        println!("🚀 双模式服务器启动");
+        
+        // 启动内网服务器
+        if self.network_config.internal.enabled {
+            let internal_app = self.build_internal_router();
+            let internal_addr = format!("{}:{}", 
+                self.network_config.internal.host, 
+                self.network_config.internal.port
+            );
+            
+            println!("\n🔒 内网服务器: {}", internal_addr);
+            println!("   - 仅允许本地访问");
+            println!("   - 无安全限制");
+            
+            let internal_listener = tokio::net::TcpListener::bind(&internal_addr).await?;
+            tokio::spawn(async move {
+                axum::serve(internal_listener, internal_app).await
+            });
+        }
+        
+        // 启动外网服务器
+        if self.network_config.external.enabled {
+            let external_app = self.build_external_router();
+            let external_addr = format!("{}:{}", 
+                self.network_config.external.host, 
+                self.network_config.external.port
+            );
+            
+            println!("\n🌐 外网服务器: {}", external_addr);
+            println!("   - 启用限流: {}", self.network_config.external.enable_rate_limit);
+            println!("   - 启用熔断: {}", self.network_config.external.enable_circuit_breaker);
+            println!("   - 启用IP过滤: {}", self.network_config.external.enable_ip_filter);
+            println!("   - 启用JWT认证: {}", self.network_config.external.enable_jwt_auth);
+            println!("   - 启用魔法链接: {}", self.network_config.external.enable_magic_link);
+            
+            self.print_metrics_dashboard().await;
+            
+            let external_listener = tokio::net::TcpListener::bind(&external_addr).await?;
+            axum::serve(external_listener, external_app).await?;
+        }
+        
+        Ok(())
+    }
+
+    /// 打印指标面板
+    async fn print_metrics_dashboard(&self) {
+        let metrics = self.state.metrics.get_realtime_metrics().await;
+        
+        println!("\n📊 实时指标面板");
+        println!("┌─────────────────────────────────────┐");
+        println!("│ 请求总数: {:>24} │", metrics.total_requests);
+        println!("│ 成功请求: {:>24} │", metrics.successful_requests);
+        println!("│ 失败请求: {:>24} │", metrics.failed_requests);
+        println!("│ 平均响应时间: {:>17.2} ms │", metrics.avg_response_time_ms);
+        println!("│ 活跃连接: {:>24} │", metrics.active_connections);
+        println!("│ 限流拒绝: {:>24} │", metrics.rate_limited);
+        println!("│ 熔断拒绝: {:>24} │", metrics.circuit_breaker_trips);
+        println!("│ IP封禁拒绝: {:>22} │", metrics.ip_blocked);
+        println!("└─────────────────────────────────────┘");
+        println!();
+    }
+
+    /// 获取指标收集器
+    pub fn metrics(&self) -> &Arc<MetricsCollector> {
+        &self.state.metrics
+    }
+
+    /// 获取魔法链接状态
+    pub fn magic_link(&self) -> &Arc<MagicLinkState> {
+        &self.state.magic_link
+    }
+
+    /// 获取IP过滤器
+    pub fn ip_filter(&self) -> &Arc<IpFilterState> {
+        &self.ip_filter
     }
 }
 
@@ -326,6 +583,47 @@ async fn handle_version(
     (StatusCode::OK, Json(version_info)).into_response()
 }
 
+/// 处理指标请求（Prometheus格式）
+async fn handle_metrics(
+    State(state): State<ApiState>,
+) -> Response {
+    if let Some(metrics) = state.metrics.get_prometheus_metrics() {
+        (StatusCode::OK, metrics).into_response()
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Metrics not enabled".to_string()
+        ).into_response()
+    }
+}
+
+/// 处理实时指标请求（JSON格式）
+async fn handle_realtime_metrics(
+    State(state): State<ApiState>,
+) -> Response {
+    let metrics = state.metrics.get_realtime_metrics().await;
+    (StatusCode::OK, Json(metrics)).into_response()
+}
+
+/// 处理魔法链接生成请求
+async fn handle_magic_link_generate(
+    State(state): State<ApiState>,
+    Json(params): Json<serde_json::Value>,
+) -> Response {
+    let purpose = params.get("purpose")
+        .and_then(|v| v.as_str())
+        .unwrap_or("general")
+        .to_string();
+    
+    let token = state.magic_link.generate_token(purpose);
+    
+    (StatusCode::OK, Json(json!({
+        "token": token,
+        "expires_in": 300,
+        "url": format!("/api/search?magic_token={}", token)
+    }))).into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -352,7 +650,8 @@ mod tests {
         );
         
         let api = ApiInterface::new(search, "0.1.0".to_string());
-        let _router = api.build_router();
-        // Router is built successfully
+        let _internal_router = api.build_internal_router();
+        let _external_router = api.build_external_router();
+        // Routers are built successfully
     }
 }
