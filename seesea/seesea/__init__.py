@@ -153,26 +153,30 @@ def _auto_register_engines():
         try:
             # 动态导入模块
             module = importlib.import_module(f'.browser.{module_name}', package='seesea')
-            
+    
             # 查找回调函数（通常命名为create_<module>_callback_sync）
             callback_name = f'create_{module_name}_callback_sync'
             if hasattr(module, callback_name):
                 callback = getattr(module, callback_name)
-                
+
                 # 尝试从模块获取engine_type，如果没有则默认为"general"
                 engine_type = getattr(module, 'ENGINE_TYPE', 'general')
                 description = getattr(module, 'ENGINE_DESCRIPTION', f'{module_name.title()} Search Engine')
                 categories = getattr(module, 'ENGINE_CATEGORIES', ['general'])
-                
+
                 # 注册引擎
-                register_engine(
-                    name=module_name,
-                    engine_type=engine_type,
-                    description=description,
-                    categories=categories,
-                    callback=callback
-                )
-                registered_count += 1
+                try:
+                    register_engine(
+                        name=module_name,
+                        engine_type=engine_type,
+                        description=description,
+                        categories=categories,
+                        callback=callback
+                    )
+                    registered_count += 1
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
             else:
                 # 如果没有找到标准回调函数，尝试其他可能的名称
                 # 例如：create_callback_sync, search_callback等
@@ -198,22 +202,15 @@ def _auto_register_engines():
                             registered_count += 1
                             break
                         
-        except ImportError as e:
-            # 模块导入失败（可能缺少依赖），静默跳过
-            import warnings
-            warnings.warn(f"Failed to import browser module '{module_name}': {e}")
-            failed_count += 1
         except Exception as e:
-            # 注册失败
-            import warnings
-            warnings.warn(f"Failed to register engine from '{module_name}': {e}")
-            failed_count += 1
+            # 显示所有错误，不静默
+              failed_count += 1
     
     # 只在成功注册时显示消息
     if registered_count > 0:
         import sys
         if hasattr(sys, 'ps1'):  # 仅在交互式模式下打印
-            print(f"✅ SeeSea: {registered_count} Python引擎自动注册成功")
+            pass
     
     if failed_count > 0:
         import sys

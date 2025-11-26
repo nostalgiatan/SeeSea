@@ -154,14 +154,6 @@ class ApiServer:
     def print_endpoints(self):
         """打印所有可用的 API 端点"""
         endpoints = self.get_endpoints()
-        print(f"\n📋 Available API Endpoints ({self.network_mode} mode)")
-        print(f"   Base URL: {self.url}")
-        print()
-        for category, routes in endpoints.items():
-            print(f"   {category.upper()}:")
-            for route in routes:
-                print(f"      - {route}")
-        print()
     
     def __repr__(self) -> str:
         return f"<ApiServer(address='{self.address}', mode='{self.network_mode}')>"

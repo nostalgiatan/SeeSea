@@ -77,6 +77,7 @@ impl Default for EngineListConfig {
             "sogou_videos".to_string(),
             "sogou_wechat".to_string(),
             "xinhua".to_string(),
+            "quark".to_string(),
         ];
 
         #[cfg(not(feature = "python"))]
@@ -112,6 +113,7 @@ impl Default for EngineListConfig {
             "sogou_videos".to_string(),
             "sogou_wechat".to_string(),
             "xinhua".to_string(),
+            "quark".to_string(),
         ];
 
         Self {

@@ -20,7 +20,7 @@ SeeSea 命令行接口
 """
 
 import click
-import json
+import json as json_module
 import sys
 from typing import Optional, List
 from rich.console import Console
@@ -34,12 +34,22 @@ from .search import SearchClient
 from .rss import RssClient
 from .api import ApiServer
 from .utils import format_results
+from .browser import QuarkEngine
 
 # 初始化 Rich Console
 console = Console()
 
 
-@click.command()
+@click.group(invoke_without_command=True, help='SeeSea - 隐私保护型元搜索引擎')
+@click.pass_context
+def cli(ctx):
+    """SeeSea - 隐私保护型元搜索引擎"""
+    if ctx.invoked_subcommand is None:
+        # 默认启动交互式模式
+        interactive()
+
+
+@cli.command()
 @click.argument('query')
 @click.option('-p', '--page', default=1, help='页码 (默认: 1)')
 @click.option('-n', '--page-size', default=10, help='每页结果数 (默认: 10)')
@@ -47,7 +57,8 @@ console = Console()
 @click.option('-j', '--json', is_flag=True, help='JSON 格式输出')
 @click.option('-v', '--verbose', is_flag=True, help='详细输出')
 @click.option('-c', '--china', is_flag=True, help='使用中国模式')
-def search(query, page, page_size, limit, json, verbose, china):
+@click.option('-e', '--engines', help='指定搜索引擎列表，用逗号分隔')
+def search(query, page, page_size, limit, json, verbose, china, engines):
     """执行搜索"""
     with Progress(
         SpinnerColumn(),
@@ -59,11 +70,17 @@ def search(query, page, page_size, limit, json, verbose, china):
 
         try:
             client = SearchClient()
+            # Parse engines parameter
+            engines_list = None
+            if engines:
+                engines_list = [e.strip() for e in engines.split(',') if e.strip()]
+
             results = client.search(
                 query=query,
                 page=page,
                 page_size=page_size,
-                language='zh' if china else None
+                language='zh' if china else None,
+                engines=engines_list
             )
             progress.update(task, description="搜索完成")
 
@@ -73,7 +90,23 @@ def search(query, page, page_size, limit, json, verbose, china):
             sys.exit(1)
 
     if json:
-        console.print(json.dumps(results, ensure_ascii=False, indent=2))
+        # Convert SearchResponse to dict for JSON serialization
+        results_dict = {
+            'query': results.query,
+            'results': [
+                {
+                    'title': item.title,
+                    'url': item.url,
+                    'snippet': item.content,
+                    'score': getattr(item, 'score', 0)
+                } for item in results.results
+            ],
+            'total_count': results.total_count,
+            'cached': results.cached,
+            'query_time_ms': results.query_time_ms,
+            'engines_used': results.engines_used
+        }
+        console.print(json_module.dumps(results_dict, ensure_ascii=False, indent=2))
     else:
         # 显示搜索概要
         summary_table = Table(show_header=False, box=box.ROUNDED)
@@ -106,6 +139,65 @@ def search(query, page, page_size, limit, json, verbose, china):
             console.print()
 
 
+@cli.command()
+@click.option('-j', '--json', is_flag=True, help='JSON 格式输出')
+def engines(json):
+    """列出所有可用的搜索引擎"""
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("获取引擎列表...", total=None)
+
+        try:
+            client = SearchClient()
+            engine_list = client.list_engines()
+            progress.update(task, description="获取完成")
+
+        except Exception as e:
+            progress.stop()
+            console.print(f"[red]获取引擎列表失败: {e}[/red]")
+            sys.exit(1)
+
+    if json:
+        console.print(json_module.dumps({"engines": engine_list}, ensure_ascii=False, indent=2))
+    else:
+        if engine_list:
+            table = Table(title="可用搜索引擎", box=box.ROUNDED)
+            table.add_column("引擎名称", style="cyan")
+            table.add_column("类型", style="green")
+            table.add_column("描述", style="yellow")
+
+            # 添加引擎信息
+            engine_info = {
+                'google': ['Google', 'Web', '全球最大的搜索引擎'],
+                'bing': ['Bing', 'Web', '微软搜索引擎'],
+                'duckduckgo': ['DuckDuckGo', 'Web', '隐私保护搜索引擎'],
+                'quark': ['Quark', 'Web', '夸克搜索引擎'],
+                'xinhua': ['新华网', 'News', '中国官方新闻媒体'],
+                'baidu': ['百度', 'Web', '中文搜索引擎'],
+            }
+
+            for engine in sorted(engine_list):
+                info = engine_info.get(engine, [engine.title(), 'Unknown', '搜索引擎'])
+                table.add_row(info[0], info[1], info[2])
+
+            console.print(table)
+
+            # 使用提示
+            usage_panel = Panel(
+                "[green]使用方法:[/green]\n"
+                "seesea search \"关键词\" -e google,bing  # 指定多个引擎\n"
+                "seesea search \"关键词\" -e quark         # 只用夸克搜索\n"
+                "seesea search \"关键词\" -e xinhua         # 只用新华网搜索",
+                title="引擎选择提示",
+                border_style="blue"
+            )
+            console.print(usage_panel)
+        else:
+            console.print("[yellow]没有找到可用引擎[/yellow]")
 
 
 @click.group()
@@ -336,82 +428,6 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
         console.print("[yellow]没有找到匹配的项目[/yellow]")
 
 
-@click.group(invoke_without_command=True)
-@click.pass_context
-def cli(ctx):
-    """SeeSea - 隐私保护型元搜索引擎"""
-    if ctx.invoked_subcommand is None:
-        # 默认启动交互式模式
-        interactive()
-
-
-@cli.command()
-@click.argument('query')
-@click.option('-p', '--page', default=1, help='页码 (默认: 1)')
-@click.option('-n', '--page-size', default=10, help='每页结果数 (默认: 10)')
-@click.option('-l', '--limit', default=10, help='显示结果数 (默认: 10)')
-@click.option('-j', '--json', is_flag=True, help='JSON 格式输出')
-@click.option('-v', '--verbose', is_flag=True, help='详细输出')
-@click.option('-c', '--china', is_flag=True, help='使用中国模式')
-def search(query, page, page_size, limit, json, verbose, china):
-    """执行搜索"""
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task(f"搜索: {query}", total=None)
-
-        try:
-            client = SearchClient()
-            results = client.search(
-                query=query,
-                page=page,
-                page_size=page_size,
-                language='zh' if china else None
-            )
-            progress.update(task, description="搜索完成")
-
-        except Exception as e:
-            progress.stop()
-            console.print(f"[red]搜索失败: {e}[/red]")
-            sys.exit(1)
-
-    if json:
-        console.print(json.dumps(results, ensure_ascii=False, indent=2))
-    else:
-        # 显示搜索概要
-        summary_table = Table(show_header=False, box=box.ROUNDED)
-        summary_table.add_column("属性", style="bold blue")
-        summary_table.add_column("值")
-        summary_table.add_row("总结果", str(results.total_count))
-        summary_table.add_row("耗时", f"{results.query_time_ms}ms")
-        summary_table.add_row("引擎", ", ".join(results.engines_used))
-        summary_table.add_row("缓存", "命中" if results.cached else "新查询")
-
-        console.print(Panel(summary_table, title="搜索概要", border_style="blue"))
-
-        # 显示结果列表
-        formatted = format_results(results.results, max_description_length=150)
-        console.print(f"\n结果列表 (显示前{min(limit, len(formatted))}个):\n")
-
-        for i, item in enumerate(formatted[:limit], 1):
-            content = Text()
-            content.append(f"{i}. ", style="cyan")
-            content.append(item['title'], style="bold")
-
-            if item['description']:
-                content.append(f"\n   {item['description']}", style="dim")
-
-            if verbose:
-                content.append(f"\n   🔗 {item['url']}", style="blue")
-                content.append(f"\n   ⭐ 评分: {item['score']:.3f}", style="yellow")
-
-            console.print(Panel(content, box=box.SIMPLE, border_style="green"))
-            console.print()
-
-
 @cli.command()
 @click.option('--host', default='127.0.0.1', help='监听地址 (默认: 127.0.0.1)')
 @click.option('--port', default=8080, help='监听端口 (默认: 8080)')
@@ -462,7 +478,7 @@ def stats(json):
             sys.exit(1)
 
     if json:
-        console.print(json.dumps(stats_data, ensure_ascii=False, indent=2))
+        console.print(json_module.dumps(stats_data, ensure_ascii=False, indent=2))
     else:
         stats_table = Table(title="SeeSea 统计信息", box=box.ROUNDED)
         stats_table.add_column("统计项", style="bold blue")
@@ -518,16 +534,7 @@ def interactive(china):
                 break
 
             if query.lower() == 'engines':
-                with console.status("获取引擎列表..."):
-                    try:
-                        engines = client.list_engines()
-                        if engines:
-                            for engine in sorted(engines):
-                                console.print(f"• {engine}")
-                        else:
-                            console.print("未找到可用引擎")
-                    except Exception as e:
-                        console.print(f"获取引擎列表失败: {e}")
+                engines({})
                 continue
 
             if query.lower() == 'stats':
