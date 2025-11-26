@@ -32,6 +32,7 @@ pub mod sogou_images;
 pub mod sogou_videos;
 pub mod sogou_wechat;
 pub mod bilibili;
+pub mod so;
 
 // 统一导出引擎类型
 pub use bing::BingEngine;
@@ -46,4 +47,5 @@ pub use sogou_images::SogouImagesEngine;
 pub use sogou_videos::SogouVideosEngine;
 pub use sogou_wechat::SogouWeChatEngine;
 pub use bilibili::BilibiliEngine;
+pub use so::SoEngine;
 

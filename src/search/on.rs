@@ -552,6 +552,7 @@ impl SearchInterface {
             "bing" => Arc::new(BingEngine::with_client(Arc::clone(&self.http_client))),
             "baidu" => Arc::new(BaiduEngine::with_client(Arc::clone(&self.http_client))),
             "yandex" => Arc::new(YandexEngine::with_client(Arc::clone(&self.http_client))),
+            "so" => Arc::new(SoEngine::with_client(Arc::clone(&self.http_client))),
             "unsplash" => Arc::new(UnsplashEngine::with_client(Arc::clone(&self.http_client))),
             "bing_images" => Arc::new(BingImagesEngine::with_client(Arc::clone(&self.http_client))),
             "bing_news" => Arc::new(BingNewsEngine::with_client(Arc::clone(&self.http_client))),
