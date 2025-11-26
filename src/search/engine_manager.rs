@@ -241,10 +241,11 @@ impl EngineManager {
         let client = Arc::clone(self.shared_client.as_ref()
             .expect("Shared client must be initialized"));
 
-        // 基础搜索引擎 (保留 Yandex, Bing, Baidu)
+        // 基础搜索引擎 (保留 Yandex, Bing, Baidu, 360 Search)
         self.register_engine("bing", Box::new(BingEngine::with_client(Arc::clone(&client))));
         self.register_engine("baidu", Box::new(BaiduEngine::with_client(Arc::clone(&client))));
         self.register_engine("yandex", Box::new(YandexEngine::with_client(Arc::clone(&client))));
+        self.register_engine("so", Box::new(SoEngine::with_client(Arc::clone(&client))));
 
         // Bing变体
         self.register_engine("bing images", Box::new(BingImagesEngine::with_client(Arc::clone(&client))));
@@ -525,7 +526,7 @@ mod tests {
         );
 
         assert_eq!(manager.get_mode(), EngineMode::Global);
-        assert_eq!(manager.engines.len(), 12); // 所有12个引擎都应该注册 (Yandex, Bing*4, Baidu, Sogou*4, Bilibili, Unsplash)
+        assert_eq!(manager.engines.len(), 13); // 所有13个引擎都应该注册 (Yandex, Bing*4, Baidu, Sogou*4, Bilibili, Unsplash, 360 Search)
     }
 
     #[tokio::test]
