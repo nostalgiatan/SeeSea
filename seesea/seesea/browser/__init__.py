@@ -90,6 +90,18 @@ from .xinhua import (
     DEFAULT_USER_AGENT,
 )
 
+from .quark import (
+    QuarkEngine,
+    create_quark_callback,
+    create_quark_callback_sync,
+    QUARK_SEARCH_SELECTORS,
+    QUARK_RESULT_SELECTORS,
+    QUARK_TITLE_SELECTORS,
+    QUARK_URL_SELECTORS,
+    DEFAULT_QUARK_USER_AGENT,
+    DEFAULT_QUARK_WAIT_TIMES,
+)
+
 
 # Convenience aliases for backward compatibility
 BrowserEngine = BaseBrowserEngine
@@ -103,19 +115,34 @@ __all__ = [
     'BrowserEngineClient',
     'SearchResultItem',
     'BrowserActionDict',
-    
+
     # Convenience aliases
     'BrowserEngine',
-    
+
     # Xinhua engine
     'XinhuaEngine',
     'create_xinhua_callback',
     'xinhua_search_callback',
-    
+
+    # Quark engine
+    'QuarkEngine',
+    'create_quark_callback',
+    'create_quark_callback_sync',
+
     # Constants
     'PLAYWRIGHT_AVAILABLE',
+
+    # Xinhua constants
     'XINHUA_SELECTORS',
     'DEFAULT_USER_AGENT',
+
+    # Quark constants
+    'QUARK_SEARCH_SELECTORS',
+    'QUARK_RESULT_SELECTORS',
+    'QUARK_TITLE_SELECTORS',
+    'QUARK_URL_SELECTORS',
+    'DEFAULT_QUARK_USER_AGENT',
+    'DEFAULT_QUARK_WAIT_TIMES',
 ]
 
 

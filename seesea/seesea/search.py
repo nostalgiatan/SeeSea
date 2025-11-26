@@ -113,11 +113,12 @@ class SearchClient:
     def list_engines(self) -> List[str]:
         """
         列出所有可用的搜索引擎
-        
+
         Returns:
             引擎名称列表
         """
-        return self._client.list_engines()
+        engines = self._client.list_engines()
+        return engines
     
     def health_check(self) -> Dict[str, bool]:
         """
