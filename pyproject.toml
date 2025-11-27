@@ -46,6 +46,7 @@ features = ["python"]
 module-name = "seesea_core"
 include = [
     "rss/template/*.see",  # RSS模板文件
+    "static/html/*.html"
 ]
 
 [tool.black]

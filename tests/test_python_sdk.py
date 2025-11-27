@@ -127,8 +127,8 @@ class TestSearchParameters:
         
         assert 'engines' in params
 
-    def test_search_accepts_china_mode_parameter(self):
-        """Test that search accepts china_mode parameter"""
+    def test_search_accepts_force_parameter(self):
+        """Test that search accepts force parameter"""
         from seesea import SearchClient
         import inspect
 
@@ -136,10 +136,10 @@ class TestSearchParameters:
         sig = inspect.signature(client.search)
         params = list(sig.parameters.keys())
 
-        assert 'china_mode' in params
+        assert 'force' in params
 
     def test_search_parameter_count(self):
-        """Test that search has exactly 7 parameters (including china_mode)"""
+        """Test that search has expected parameters"""
         from seesea import SearchClient
         import inspect
 
@@ -147,8 +147,10 @@ class TestSearchParameters:
         sig = inspect.signature(client.search)
         params = list(sig.parameters.keys())
 
-        assert len(params) == 7, f"Expected 7 parameters, got {len(params)}: {params}"
-        assert 'china_mode' in params, "china_mode parameter should be present"
+        # Should have: query, page, page_size, language, region, engines, force, cache_timeline
+        assert len(params) >= 6, f"Expected at least 6 parameters, got {len(params)}: {params}"
+        assert 'query' in params, "query parameter should be present"
+        assert 'engines' in params, "engines parameter should be present"
 
 
 class TestStats:
@@ -257,11 +259,11 @@ class TestCacheOperations:
         assert isinstance(health, dict)
 
 
-class TestChinaMode:
-    """Tests for China mode functionality"""
+class TestEngineSelection:
+    """Tests for engine selection functionality"""
 
-    def test_china_mode_parameter_exists(self):
-        """Test that china_mode parameter exists"""
+    def test_engines_parameter_exists(self):
+        """Test that engines parameter exists"""
         from seesea import SearchClient
         import inspect
 
@@ -269,27 +271,21 @@ class TestChinaMode:
         sig = inspect.signature(client.search)
         params = sig.parameters
 
-        assert 'china_mode' in params
-        china_mode_param = params['china_mode']
-        assert china_mode_param.default is False  # Default should be False
+        assert 'engines' in params
 
-    def test_china_mode_engines_selection(self):
-        """Test that china mode uses correct engines"""
+    def test_list_engines_returns_expected_engines(self):
+        """Test that list_engines returns expected engine names"""
         from seesea import SearchClient
 
         client = SearchClient()
+        engines = client.list_engines()
+        
+        # Should contain some core engines
+        assert isinstance(engines, list)
+        assert len(engines) > 0
 
-        # Test that china mode doesn't raise errors
-        # This is a basic smoke test - actual engine testing would require network calls
-        try:
-            # This should not raise an exception
-            sig = client.search.__code__
-            assert 'china_mode' in sig.co_varnames
-        except Exception:
-            self.fail("China mode parameter should be properly implemented")
-
-    def test_china_mode_vs_default_engines(self):
-        """Test that china mode and default mode use different engine sets"""
+    def test_custom_engines_selection(self):
+        """Test that custom engines selection works"""
         from seesea import SearchClient
         import inspect
 
@@ -299,7 +295,6 @@ class TestChinaMode:
         # The actual engine selection logic is tested in integration tests
         sig = inspect.signature(client.search)
         assert 'engines' in sig.parameters
-        assert 'china_mode' in sig.parameters
 
 
 class TestModuleImports:

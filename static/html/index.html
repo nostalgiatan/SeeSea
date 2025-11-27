@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SeeSea</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 25%, #16213e 50%, #0f3460 75%, #1a1a2e 100%);
+            background-attachment: fixed;
+            color: #e0e0e0;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            padding: 60px 20px 40px;
+        }
+
+        .logo {
+            font-size: 3.5rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 50%, #4facfe 100%);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: shine 3s ease-in-out infinite;
+            margin-bottom: 10px;
+        }
+
+        @keyframes shine {
+            0%, 100% { background-position: 0% center; }
+            50% { background-position: 200% center; }
+        }
+
+        .tagline {
+            color: #8892b0;
+            font-size: 1.1rem;
+            margin-bottom: 40px;
+        }
+
+        /* Search Box */
+        .search-container {
+            position: relative;
+            max-width: 700px;
+            margin: 0 auto 40px;
+        }
+
+        .search-box {
+            display: flex;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(79, 172, 254, 0.3);
+            border-radius: 50px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .search-box:focus-within {
+            border-color: #4facfe;
+            box-shadow: 0 0 30px rgba(79, 172, 254, 0.3);
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 18px 25px;
+            font-size: 1.1rem;
+            background: transparent;
+            border: none;
+            color: #fff;
+            outline: none;
+        }
+
+        .search-input::placeholder {
+            color: #6c757d;
+        }
+
+        .search-button {
+            padding: 18px 30px;
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            border: none;
+            color: #fff;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .search-button:hover {
+            background: linear-gradient(90deg, #00f2fe, #4facfe);
+            transform: scale(1.02);
+        }
+
+        .search-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* Options */
+        .options {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #8892b0;
+            font-size: 0.9rem;
+        }
+
+        .option select {
+            padding: 8px 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(79, 172, 254, 0.3);
+            border-radius: 20px;
+            color: #e0e0e0;
+            font-size: 0.9rem;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        .option select:hover {
+            border-color: #4facfe;
+        }
+
+        /* Loading */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(79, 172, 254, 0.2);
+            border-top-color: #4facfe;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Results */
+        .results-container {
+            display: none;
+        }
+
+        .results-container.active {
+            display: block;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(79, 172, 254, 0.2);
+        }
+
+        .results-count {
+            color: #8892b0;
+        }
+
+        .results-time {
+            color: #4facfe;
+            font-size: 0.9rem;
+        }
+
+        .result-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(79, 172, 254, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .result-item:hover {
+            background: rgba(79, 172, 254, 0.05);
+            border-color: rgba(79, 172, 254, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .result-title {
+            font-size: 1.2rem;
+            margin-bottom: 8px;
+        }
+
+        .result-title a {
+            color: #4facfe;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .result-title a:hover {
+            color: #00f2fe;
+        }
+
+        .result-url {
+            color: #00c853;
+            font-size: 0.85rem;
+            margin-bottom: 10px;
+            word-break: break-all;
+        }
+
+        .result-description {
+            color: #b0b0b0;
+            line-height: 1.6;
+            font-size: 0.95rem;
+        }
+
+        .result-meta {
+            display: flex;
+            gap: 15px;
+            margin-top: 12px;
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+
+        .result-engine {
+            background: rgba(79, 172, 254, 0.1);
+            padding: 3px 10px;
+            border-radius: 12px;
+            color: #4facfe;
+        }
+
+        .result-score {
+            color: #ffd700;
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        .pagination button {
+            padding: 10px 20px;
+            background: rgba(79, 172, 254, 0.1);
+            border: 1px solid rgba(79, 172, 254, 0.3);
+            border-radius: 8px;
+            color: #4facfe;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: rgba(79, 172, 254, 0.2);
+        }
+
+        .pagination button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .page-info {
+            display: flex;
+            align-items: center;
+            color: #8892b0;
+        }
+
+        /* Error */
+        .error {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            color: #ff6b6b;
+        }
+
+        .error.active {
+            display: block;
+        }
+
+        .error-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            color: #4facfe;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Features */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 40px 0;
+        }
+
+        .feature {
+            text-align: center;
+            padding: 25px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 12px;
+            border: 1px solid rgba(79, 172, 254, 0.1);
+        }
+
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 12px;
+        }
+
+        .feature-title {
+            color: #4facfe;
+            font-size: 1rem;
+            margin-bottom: 8px;
+        }
+
+        .feature-desc {
+            color: #8892b0;
+            font-size: 0.85rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .logo {
+                font-size: 2.5rem;
+            }
+
+            .search-input {
+                padding: 15px 20px;
+                font-size: 1rem;
+            }
+
+            .search-button {
+                padding: 15px 20px;
+            }
+
+            .options {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .result-item {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1 class="logo">🌊 SeeSea</h1>
+            <p class="tagline">隐私保护型元搜索引擎 - 多引擎聚合，智能排序</p>
+        </header>
+
+        <main>
+            <div class="search-container">
+                <form class="search-box" id="searchForm">
+                    <input type="text" class="search-input" id="searchInput" placeholder="搜索任何内容..." autocomplete="off">
+                    <button type="submit" class="search-button" id="searchButton">🔍 搜索</button>
+                </form>
+            </div>
+
+            <div class="options">
+                <div class="option">
+                    <label>每页结果:</label>
+                    <select id="pageSize">
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <div class="option">
+                    <label>引擎数量:</label>
+                    <select id="engineCount">
+                        <option value="">全部引擎</option>
+                        <option value="3">3个引擎</option>
+                        <option value="5">5个引擎</option>
+                        <option value="7">7个引擎</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>正在搜索多个引擎...</p>
+            </div>
+
+            <div class="error" id="error">
+                <div class="error-icon">⚠️</div>
+                <p id="errorMessage">搜索时出现错误</p>
+            </div>
+
+            <div class="results-container" id="resultsContainer">
+                <div class="results-header">
+                    <span class="results-count" id="resultsCount">找到 0 个结果</span>
+                    <span class="results-time" id="resultsTime">耗时: 0ms</span>
+                </div>
+                <div id="resultsList"></div>
+                <div class="pagination" id="pagination">
+                    <button id="prevPage" disabled>← 上一页</button>
+                    <span class="page-info" id="pageInfo">第 1 页</span>
+                    <button id="nextPage" disabled>下一页 →</button>
+                </div>
+            </div>
+
+            <div class="features" id="features">
+                <div class="feature">
+                    <div class="feature-icon">🔒</div>
+                    <h3 class="feature-title">隐私保护</h3>
+                    <p class="feature-desc">不记录搜索历史，保护您的隐私</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🚀</div>
+                    <h3 class="feature-title">多引擎聚合</h3>
+                    <p class="feature-desc">整合多个搜索引擎的结果</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">⚡</div>
+                    <h3 class="feature-title">智能排序</h3>
+                    <p class="feature-desc">基于相关性智能排序结果</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🌐</div>
+                    <h3 class="feature-title">开源免费</h3>
+                    <p class="feature-desc">完全开源，免费使用</p>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>SeeSea v0.3.0 - 基于 Rust 构建 | <a href="/api/health">API 健康检查</a> | <a href="/api/engines">引擎列表</a></p>
+        </footer>
+    </div>
+
+    <script>
+        // State
+        let currentPage = 1;
+        let currentQuery = '';
+        let totalResults = 0;
+        let pageSize = 50;
+
+        // Elements
+        const searchForm = document.getElementById('searchForm');
+        const searchInput = document.getElementById('searchInput');
+        const searchButton = document.getElementById('searchButton');
+        const pageSizeSelect = document.getElementById('pageSize');
+        const engineCountSelect = document.getElementById('engineCount');
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        const errorMessage = document.getElementById('errorMessage');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const resultsList = document.getElementById('resultsList');
+        const resultsCount = document.getElementById('resultsCount');
+        const resultsTime = document.getElementById('resultsTime');
+        const features = document.getElementById('features');
+        const prevPageBtn = document.getElementById('prevPage');
+        const nextPageBtn = document.getElementById('nextPage');
+        const pageInfo = document.getElementById('pageInfo');
+
+        // Search function
+        async function performSearch(query, page = 1) {
+            if (!query.trim()) return;
+
+            currentQuery = query;
+            currentPage = page;
+            pageSize = parseInt(pageSizeSelect.value);
+            const engineCount = engineCountSelect.value;
+
+            // Show loading, hide others
+            loading.classList.add('active');
+            error.classList.remove('active');
+            resultsContainer.classList.remove('active');
+            features.style.display = 'none';
+            searchButton.disabled = true;
+
+            try {
+                // Build URL using URLSearchParams for safety
+                const params = new URLSearchParams();
+                params.append('q', query);
+                params.append('page', page.toString());
+                params.append('page_size', pageSize.toString());
+                if (engineCount) {
+                    params.append('engine_count', engineCount);
+                }
+                const url = `/api/search?${params.toString()}`;
+
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                displayResults(data);
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                loading.classList.remove('active');
+                searchButton.disabled = false;
+            }
+        }
+
+        // Display results
+        function displayResults(data) {
+            totalResults = data.total_count;
+            
+            resultsCount.textContent = `找到 ${totalResults} 个结果 (使用引擎: ${data.engines_used.join(', ')})`;
+            resultsTime.textContent = `耗时: ${data.query_time_ms}ms`;
+
+            // Clear previous results
+            resultsList.innerHTML = '';
+
+            if (data.results && data.results.length > 0) {
+                data.results.forEach((item, index) => {
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = 'result-item';
+                    
+                    const title = escapeHtml(item.title || 'Untitled');
+                    const url = item.url || '#';
+                    const description = escapeHtml(item.description || item.content || '');
+                    const engine = item.engine || 'unknown';
+                    const score = item.score ? item.score.toFixed(3) : '0.000';
+
+                    resultDiv.innerHTML = `
+                        <h3 class="result-title">
+                            <a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>
+                        </h3>
+                        <div class="result-url">${url}</div>
+                        <p class="result-description">${description}</p>
+                        <div class="result-meta">
+                            <span class="result-engine">${engine}</span>
+                            <span class="result-score">⭐ 评分: ${score}</span>
+                        </div>
+                    `;
+                    resultsList.appendChild(resultDiv);
+                });
+            } else {
+                resultsList.innerHTML = '<p style="text-align: center; color: #8892b0; padding: 40px;">没有找到相关结果</p>';
+            }
+
+            // Update pagination
+            updatePagination();
+            resultsContainer.classList.add('active');
+        }
+
+        // Update pagination
+        function updatePagination() {
+            const totalPages = Math.ceil(totalResults / pageSize);
+            
+            prevPageBtn.disabled = currentPage <= 1;
+            nextPageBtn.disabled = currentPage >= totalPages || totalResults <= pageSize;
+            pageInfo.textContent = `第 ${currentPage} 页 / 共 ${totalPages} 页`;
+        }
+
+        // Show error
+        function showError(message) {
+            errorMessage.textContent = message;
+            error.classList.add('active');
+            resultsContainer.classList.remove('active');
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Event listeners
+        searchForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            performSearch(searchInput.value, 1);
+        });
+
+        prevPageBtn.addEventListener('click', () => {
+            if (currentPage > 1) {
+                performSearch(currentQuery, currentPage - 1);
+            }
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            performSearch(currentQuery, currentPage + 1);
+        });
+
+        // Focus search input on load
+        searchInput.focus();
+
+        // Handle Enter key
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                performSearch(searchInput.value, 1);
+            }
+        });
+    </script>
+</body>
+</html>

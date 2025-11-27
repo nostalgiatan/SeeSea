@@ -18,6 +18,7 @@
 
 use serde::{Deserialize, Serialize};
 use crate::derive::SearchQuery;
+use crate::search::engine_config::EngineListConfig;
 
 /// API 搜索请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,9 +31,10 @@ pub struct ApiSearchRequest {
     #[serde(alias = "q", skip_serializing_if = "Option::is_none")]
     pub _q: Option<String>,
 
-    /// 中国模式开关
-    #[serde(alias = "c", default = "default_china_mode")]
-    pub china_mode: bool,
+    /// 引擎数量（可选）- 根据引擎延迟选择低延迟的引擎
+    /// 如果不提供，默认使用全部引擎
+    #[serde(alias = "n", skip_serializing_if = "Option::is_none")]
+    pub engine_count: Option<u32>,
 
     /// 页码（从1开始）
     #[serde(default = "default_page")]
@@ -71,10 +73,6 @@ fn default_page_size() -> u32 {
     10
 }
 
-fn default_china_mode() -> bool {
-    false
-}
-
 impl ApiSearchRequest {
     /// 获取查询字符串（支持 q 和 query 参数）
     pub fn get_query(&self) -> Result<String, String> {
@@ -108,26 +106,13 @@ impl ApiSearchRequest {
     }
 
     /// 获取搜索引擎列表
+    /// 
+    /// 根据以下优先级返回引擎列表:
+    /// 1. 如果指定了 engines 参数，使用自定义引擎列表
+    /// 2. 如果指定了 engine_count 参数，根据引擎延迟选择低延迟引擎
+    /// 3. 默认使用全部引擎（从统一的引擎配置模块获取）
     pub fn get_engines(&self) -> Vec<String> {
-        if self.china_mode {
-            // 中国模式：使用在中国可快速访问的引擎
-            vec![
-                "baidu".to_string(),
-                "sogou".to_string(),
-                "sogou_images".to_string(),
-                "sogou_videos".to_string(),
-                "sogou_wechat".to_string(),
-                "search360".to_string(),
-                "bilibili".to_string(),
-                "bing".to_string(),
-                "bing_images".to_string(),
-                "bing_news".to_string(),
-                "bing_videos".to_string(),
-                "yandex".to_string(),
-                "stackoverflow".to_string(),
-                "unsplash".to_string(),
-            ]
-        } else if let Some(ref engines_str) = self.engines {
+        if let Some(ref engines_str) = self.engines {
             // 自定义引擎列表
             engines_str
                 .split(',')
@@ -135,17 +120,25 @@ impl ApiSearchRequest {
                 .filter(|s| !s.is_empty())
                 .collect()
         } else {
-            // 默认引擎列表
-            vec![
-                "google".to_string(),
-                "bing".to_string(),
-                "duckduckgo".to_string(),
-                "brave".to_string(),
-                "yandex".to_string(),
-                "yahoo".to_string(),
-                "qwant".to_string(),
-                "startpage".to_string(),
-            ]
+            // 使用统一的引擎配置模块获取所有引擎
+            let config = EngineListConfig::default();
+            let all_engines = config.global_engines;
+            
+            if let Some(count) = self.engine_count {
+                // 根据引擎数量限制引擎列表
+                // 引擎按默认顺序排列（配置中已按延迟优化排序）
+                let count = count as usize;
+                // 只有当 count > 0 且 count 小于总引擎数时才限制
+                // 否则返回全部引擎
+                if count > 0 && count < all_engines.len() {
+                    all_engines.into_iter().take(count).collect()
+                } else {
+                    all_engines
+                }
+            } else {
+                // 默认使用全部引擎
+                all_engines
+            }
         }
     }
 }
@@ -302,7 +295,7 @@ mod tests {
         assert_eq!(request.query, Some("test".to_string()));
         assert_eq!(request.page, 1);
         assert_eq!(request.page_size, 10);
-        assert_eq!(request.china_mode, false);
+        assert_eq!(request.engine_count, None);
     }
 
     #[test]
@@ -315,15 +308,36 @@ mod tests {
     }
 
     #[test]
-    fn test_api_search_request_china_mode() {
-        let json = r#"{"q": "test", "c": true}"#;
+    fn test_api_search_request_engine_count() {
+        let json = r#"{"q": "test", "engine_count": 3}"#;
         let request: ApiSearchRequest = serde_json::from_str(json).unwrap();
         assert_eq!(request.get_query().unwrap(), "test");
-        assert_eq!(request.china_mode, true);
+        assert_eq!(request.engine_count, Some(3));
 
         let engines = request.get_engines();
-        assert!(engines.contains(&"baidu".to_string()));
-        assert!(engines.contains(&"sogou".to_string()));
+        assert_eq!(engines.len(), 3);
+    }
+
+    #[test]
+    fn test_api_search_request_engine_count_short() {
+        let json = r#"{"q": "test", "n": 5}"#;
+        let request: ApiSearchRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.get_query().unwrap(), "test");
+        assert_eq!(request.engine_count, Some(5));
+
+        let engines = request.get_engines();
+        assert_eq!(engines.len(), 5);
+    }
+
+    #[test]
+    fn test_api_search_request_default_all_engines() {
+        let json = r#"{"q": "test"}"#;
+        let request: ApiSearchRequest = serde_json::from_str(json).unwrap();
+        
+        let engines = request.get_engines();
+        // Should return all engines from EngineListConfig
+        let config = EngineListConfig::default();
+        assert_eq!(engines.len(), config.global_engines.len());
     }
 
     #[test]
@@ -331,7 +345,7 @@ mod tests {
         let request = ApiSearchRequest {
             query: Some("rust programming".to_string()),
             _q: None,
-            china_mode: false,
+            engine_count: None,
             page: 2,
             page_size: 20,
             language: Some("en".to_string()),

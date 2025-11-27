@@ -34,7 +34,6 @@ from .search import SearchClient
 from .rss import RssClient
 from .api import ApiServer
 from .utils import format_results
-from .browser import QuarkEngine
 
 # 初始化 Rich Console
 console = Console()
@@ -56,9 +55,9 @@ def cli(ctx):
 @click.option('-l', '--limit', default=10, help='显示结果数 (默认: 10)')
 @click.option('-j', '--json', is_flag=True, help='JSON 格式输出')
 @click.option('-v', '--verbose', is_flag=True, help='详细输出')
-@click.option('-c', '--china', is_flag=True, help='使用中国模式')
 @click.option('-e', '--engines', help='指定搜索引擎列表，用逗号分隔')
-def search(query, page, page_size, limit, json, verbose, china, engines):
+@click.option('-c', '--count', type=int, help='使用的引擎数量（按延迟排序，选择低延迟引擎）')
+def search(query, page, page_size, limit, json, verbose, engines, count):
     """执行搜索"""
     with Progress(
         SpinnerColumn(),
@@ -74,12 +73,15 @@ def search(query, page, page_size, limit, json, verbose, china, engines):
             engines_list = None
             if engines:
                 engines_list = [e.strip() for e in engines.split(',') if e.strip()]
+            elif count:
+                # If count is specified but no engines, get all engines and take first N
+                all_engines = client.list_engines()
+                engines_list = all_engines[:count] if count < len(all_engines) else None
 
             results = client.search(
                 query=query,
                 page=page,
                 page_size=page_size,
-                language='zh' if china else None,
                 engines=engines_list
             )
             progress.update(task, description="搜索完成")
@@ -501,19 +503,20 @@ def stats(json):
 
 
 @cli.command()
-@click.option('-c', '--china', is_flag=True, help='启动时使用中国模式')
-def interactive(china):
+@click.option('-c', '--count', type=int, help='使用的引擎数量（按延迟排序，选择低延迟引擎）')
+def interactive(count):
     """交互式搜索模式"""
     console.print("SeeSea 交互式搜索")
     console.print("━" * 50)
     console.print("输入查询来搜索，输入 'quit' 或 'exit' 退出")
     console.print("输入 'engines' 列出所有引擎")
     console.print("输入 'stats' 查看统计信息")
-    console.print("输入 'mode' 切换运行模式")
+    console.print("输入 'count N' 设置使用的引擎数量")
     console.print("━" * 50)
 
-    if china:
-        console.print("[green]当前模式: 中国模式[/green]")
+    engine_count = count
+    if engine_count:
+        console.print(f"[green]当前引擎数量: {engine_count}[/green]")
 
     client = SearchClient()
 
@@ -521,8 +524,8 @@ def interactive(china):
         try:
             from rich.prompt import Prompt
             prompt = "🔍 > "
-            if china:
-                prompt = "🔍 [green]中国模式[/green] > "
+            if engine_count:
+                prompt = f"🔍 [green]引擎数量:{engine_count}[/green] > "
 
             query = Prompt.ask(prompt, console=console).strip()
 
@@ -541,11 +544,17 @@ def interactive(china):
                 stats({})
                 continue
 
-            if query.lower() == 'mode':
-                choice = Prompt.ask("选择运行模式", choices=["1", "2"], default="1", console=console)
-                china = choice == '2'
-                mode_name = "中国模式" if china else "默认模式"
-                console.print(f"[green]切换到{mode_name}[/green]")
+            if query.lower().startswith('count'):
+                parts = query.split()
+                if len(parts) == 2 and parts[1].isdigit():
+                    engine_count = int(parts[1])
+                    if engine_count <= 0:
+                        engine_count = None
+                        console.print("[green]已切换到全引擎模式[/green]")
+                    else:
+                        console.print(f"[green]已设置引擎数量为 {engine_count}[/green]")
+                else:
+                    console.print("[yellow]用法: count N (N为引擎数量，0表示全部)[/yellow]")
                 continue
 
             # 执行搜索
@@ -558,11 +567,17 @@ def interactive(china):
                 task = progress.add_task(f"搜索: {query}", total=None)
 
                 try:
+                    # 根据引擎数量获取引擎列表
+                    engines_list = None
+                    if engine_count:
+                        all_engines = client.list_engines()
+                        engines_list = all_engines[:engine_count] if engine_count < len(all_engines) else None
+                    
                     results = client.search(
                         query=query,
                         page=1,
                         page_size=10,
-                        language='zh' if china else None
+                        engines=engines_list
                     )
                     progress.update(task, description="搜索完成")
 

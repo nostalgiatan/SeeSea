@@ -76,12 +76,12 @@ async fn execute_search(
     // 获取引擎列表
     let engines = params.get_engines();
 
-    // 创建搜索请求
+    // 创建搜索请求 - 设置合理的最大结果数以防止资源耗尽
     let request = SearchRequest {
         query: search_query,
         engines,
         timeout: None,
-        max_results: None,
+        max_results: Some(1000), // 限制最大结果数为1000
         force: false,
         cache_timeline: Some(3600),
     };
@@ -89,7 +89,7 @@ async fn execute_search(
     // 执行搜索
     let response = state.search.search(&request).await?;
     
-    // 转换结果
+    // 转换结果 - 收集所有结果
     let mut results = Vec::new();
     for search_result in &response.results {
         for item in &search_result.items {
@@ -103,15 +103,25 @@ async fn execute_search(
         }
     }
     
+    // 按分数降序排序，确保最相关的结果在前面
+    results.sort_by(|a, b| {
+        let score_a = a.score.unwrap_or(0.0);
+        let score_b = b.score.unwrap_or(0.0);
+        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    
     let elapsed = start_time.elapsed().as_millis() as u64;
 
     // 获取实际的查询字符串
     let query_text = params.get_query().unwrap_or_default();
+    
+    // 返回所有结果，让前端进行分页
+    let total_count = results.len();
 
     Ok(ApiSearchResponse {
         query: query_text,
         results,
-        total_count: response.total_count,
+        total_count,
         page: params.page,
         page_size: params.page_size,
         engines_used: response.engines_used,

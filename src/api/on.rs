@@ -33,6 +33,7 @@ use super::handlers::{
     handle_stats, handle_engines_list, handle_version,
     handle_metrics, handle_realtime_metrics,
     handle_magic_link_generate,
+    handle_index, handle_favicon,
 };
 use super::middleware::{
     cors, 
@@ -193,6 +194,10 @@ impl ApiInterface {
     /// 返回配置好的 Axum Router
     pub fn build_internal_router(&self) -> Router {
         Router::new()
+            // 首页路由
+            .route("/", get(handle_index))
+            .route("/favicon.ico", get(handle_favicon))
+            
             // 搜索相关路由
             .route("/api/search", get(handle_search))
             .route("/api/search", post(handle_search_post))
@@ -240,6 +245,10 @@ impl ApiInterface {
         use axum::middleware;
         
         Router::new()
+            // 首页路由
+            .route("/", get(handle_index))
+            .route("/favicon.ico", get(handle_favicon))
+            
             // 搜索相关路由
             .route("/api/search", get(handle_search))
             .route("/api/search", post(handle_search_post))

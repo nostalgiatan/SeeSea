@@ -22,6 +22,7 @@ pub mod config;
 pub mod metrics;
 pub mod rss;
 pub mod cache;
+pub mod static_files;
 
 // Re-export handlers for convenient use
 pub use search::{handle_search, handle_search_post};
@@ -31,3 +32,4 @@ pub use metrics::{
     handle_stats, handle_engines_list, handle_version,
     handle_metrics, handle_realtime_metrics
 };
+pub use static_files::{handle_index, handle_favicon};
