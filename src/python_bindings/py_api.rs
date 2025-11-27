@@ -16,6 +16,7 @@
 
 use pyo3::prelude::*;
 use std::sync::Arc;
+use tokio::signal;
 
 use crate::api::ApiInterface;
 use crate::search::SearchConfig;
@@ -103,6 +104,8 @@ impl PyApiServer {
     /// Start the API server (blocking)
     ///
     /// Starts the web server and blocks until shutdown.
+    /// Press Ctrl+C to gracefully stop the server.
+    ///
     /// Routes available depend on network mode:
     ///
     /// Internal mode (full access):
@@ -133,12 +136,16 @@ impl PyApiServer {
         println!("   Address: {}", addr);
         println!("   Mode: {}", self.network_mode);
         println!("   Version: {}", env!("CARGO_PKG_VERSION"));
+        println!("   Press Ctrl+C to stop");
         println!();
         
         self.runtime.block_on(async {
             let listener = tokio::net::TcpListener::bind(&addr).await
                 .map_err(|e| format!("Failed to bind: {}", e))?;
-            axum::serve(listener, app).await
+            
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await
                 .map_err(|e| format!("Server error: {}", e))
         }).map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
     }
@@ -146,6 +153,7 @@ impl PyApiServer {
     /// Start the API server in internal mode (blocking)
     ///
     /// Same as start() but explicitly uses internal router (no security).
+    /// Press Ctrl+C to gracefully stop the server.
     pub fn start_internal(&self) -> PyResult<()> {
         let app = self.api.build_internal_router();
         let addr = self.address.clone();
@@ -153,12 +161,15 @@ impl PyApiServer {
         println!("🔒 Starting SeeSea API Server (Internal Mode)");
         println!("   Address: {}", addr);
         println!("   Security: Disabled (local access only)");
+        println!("   Press Ctrl+C to stop");
         println!();
         
         self.runtime.block_on(async {
             let listener = tokio::net::TcpListener::bind(&addr).await
                 .map_err(|e| format!("Failed to bind: {}", e))?;
-            axum::serve(listener, app).await
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await
                 .map_err(|e| format!("Server error: {}", e))
         }).map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
     }
@@ -166,6 +177,7 @@ impl PyApiServer {
     /// Start the API server in external mode (blocking)
     ///
     /// Same as start() but explicitly uses external router with security enabled.
+    /// Press Ctrl+C to gracefully stop the server.
     pub fn start_external(&self) -> PyResult<()> {
         let app = self.api.build_external_router();
         let addr = self.address.clone();
@@ -173,12 +185,15 @@ impl PyApiServer {
         println!("🌐 Starting SeeSea API Server (External Mode)");
         println!("   Address: {}", addr);
         println!("   Security: Enabled");
+        println!("   Press Ctrl+C to stop");
         println!();
         
         self.runtime.block_on(async {
             let listener = tokio::net::TcpListener::bind(&addr).await
                 .map_err(|e| format!("Failed to bind: {}", e))?;
-            axum::serve(listener, app).await
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await
                 .map_err(|e| format!("Server error: {}", e))
         }).map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
     }
@@ -251,5 +266,34 @@ impl PyApiServer {
         }
         
         Ok(endpoints)
+    }
+}
+
+/// Shutdown signal handler for graceful termination
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler - the server may not respond to keyboard interrupts");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM signal handler - the server may not respond to terminate signals")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            println!("\n🛑 Received Ctrl+C, shutting down gracefully...");
+        },
+        _ = terminate => {
+            println!("\n🛑 Received terminate signal, shutting down gracefully...");
+        },
     }
 }
