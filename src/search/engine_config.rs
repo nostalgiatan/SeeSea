@@ -54,11 +54,7 @@ impl Default for EngineListConfig {
             "bilibili".to_string(),
             "unsplash".to_string(),
             "bing_images".to_string(),
-            "bing_news".to_string(),
-            "bing_videos".to_string(),
-            "sogou_images".to_string(),
             "sogou_videos".to_string(),
-            "sogou_wechat".to_string(),
         ];
 
         #[cfg(feature = "python")]
@@ -71,13 +67,9 @@ impl Default for EngineListConfig {
             "bilibili".to_string(),
             "unsplash".to_string(),
             "bing_images".to_string(),
-            "bing_news".to_string(),
-            "bing_videos".to_string(),
-            "sogou_images".to_string(),
             "sogou_videos".to_string(),
-            "sogou_wechat".to_string(),
             "xinhua".to_string(),
-            "quark".to_string(),
+            // "quark".to_string(),  // Commented out: quark engine disabled
         ];
 
         #[cfg(not(feature = "python"))]
@@ -90,11 +82,7 @@ impl Default for EngineListConfig {
             "bilibili".to_string(),
             "unsplash".to_string(),
             "bing_images".to_string(),
-            "bing_news".to_string(),
-            "bing_videos".to_string(),
-            "sogou_images".to_string(),
             "sogou_videos".to_string(),
-            "sogou_wechat".to_string(),
         ];
 
         #[cfg(feature = "python")]
@@ -107,13 +95,9 @@ impl Default for EngineListConfig {
             "bilibili".to_string(),
             "unsplash".to_string(),
             "bing_images".to_string(),
-            "bing_news".to_string(),
-            "bing_videos".to_string(),
-            "sogou_images".to_string(),
             "sogou_videos".to_string(),
-            "sogou_wechat".to_string(),
             "xinhua".to_string(),
-            "quark".to_string(),
+            // "quark".to_string(),  // Commented out: quark engine disabled
         ];
 
         Self {

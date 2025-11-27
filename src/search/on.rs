@@ -555,13 +555,9 @@ impl SearchInterface {
             "so" => Arc::new(SoEngine::with_client(Arc::clone(&self.http_client))),
             "unsplash" => Arc::new(UnsplashEngine::with_client(Arc::clone(&self.http_client))),
             "bing_images" => Arc::new(BingImagesEngine::with_client(Arc::clone(&self.http_client))),
-            "bing_news" => Arc::new(BingNewsEngine::with_client(Arc::clone(&self.http_client))),
-            "bing_videos" => Arc::new(BingVideosEngine::with_client(Arc::clone(&self.http_client))),
             "bilibili" => Arc::new(BilibiliEngine::with_client(Arc::clone(&self.http_client))),
             "sogou" => Arc::new(SogouEngine::with_client(Arc::clone(&self.http_client))),
-            "sogou_images" => Arc::new(SogouImagesEngine::with_client(Arc::clone(&self.http_client))),
             "sogou_videos" => Arc::new(SogouVideosEngine::with_client(Arc::clone(&self.http_client))),
-            "sogou_wechat" => Arc::new(SogouWeChatEngine::with_client(Arc::clone(&self.http_client))),
             _ => {
                 // 尝试从Python注册表获取引擎
                 #[cfg(feature = "python")]

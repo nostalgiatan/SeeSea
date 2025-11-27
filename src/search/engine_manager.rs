@@ -249,14 +249,10 @@ impl EngineManager {
 
         // Bing变体
         self.register_engine("bing images", Box::new(BingImagesEngine::with_client(Arc::clone(&client))));
-        self.register_engine("bing news", Box::new(BingNewsEngine::with_client(Arc::clone(&client))));
-        self.register_engine("bing videos", Box::new(BingVideosEngine::with_client(Arc::clone(&client))));
 
         // 搜狗变体
         self.register_engine("sogou", Box::new(SogouEngine::with_client(Arc::clone(&client))));
-        self.register_engine("sogou images", Box::new(SogouImagesEngine::with_client(Arc::clone(&client))));
         self.register_engine("sogou videos", Box::new(SogouVideosEngine::with_client(Arc::clone(&client))));
-        self.register_engine("sogou wechat", Box::new(SogouWeChatEngine::with_client(Arc::clone(&client))));
 
         // Bilibili 引擎
         self.register_engine("bilibili", Box::new(BilibiliEngine::with_client(Arc::clone(&client))));
@@ -526,7 +522,7 @@ mod tests {
         );
 
         assert_eq!(manager.get_mode(), EngineMode::Global);
-        assert_eq!(manager.engines.len(), 13); // 所有13个引擎都应该注册 (Yandex, Bing*4, Baidu, Sogou*4, Bilibili, Unsplash, 360 Search)
+        assert_eq!(manager.engines.len(), 9); // 所有9个引擎都应该注册 (Yandex, Bing*2, Baidu, Sogou*2, Bilibili, Unsplash, 360 Search)
     }
 
     #[tokio::test]
@@ -551,6 +547,6 @@ mod tests {
         );
         
         let active = manager.get_active_engines().await;
-        assert_eq!(active.len(), 12); // 所有12个引擎都应该可用
+        assert_eq!(active.len(), 9); // 所有9个引擎都应该可用
     }
 }
