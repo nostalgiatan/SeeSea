@@ -102,13 +102,13 @@ pub struct RequestParams {
     /// Cookies
     pub cookies: HashMap<String, String>,
     /// 页码
-    pub pageno: usize,
+    pub page: usize,
     /// 语言
     pub language: Option<String>,
     /// 时间范围
     pub time_range: Option<String>,
     /// 安全搜索级别（0, 1, 2）
-    pub safesearch: i32,
+    pub safe_search: i32,
     /// 自定义参数
     pub custom: HashMap<String, String>,
 }
@@ -121,10 +121,10 @@ impl Default for RequestParams {
             headers: HashMap::new(),
             data: None,
             cookies: HashMap::new(),
-            pageno: 1,
+            page: 1,
             language: None,
             time_range: None,
-            safesearch: 0,
+            safe_search: 0,
             custom: HashMap::new(),
         }
     }
@@ -134,12 +134,12 @@ impl RequestParams {
     /// 从 SearchQuery 创建 RequestParams
     pub fn from_query(query: &SearchQuery) -> Self {
         let mut params = Self::default();
-        params.pageno = query.page;
+        params.page = query.page;
         params.language = query.language.clone();
-        params.time_range = query.time_range.map(|tr| format!("{:?}", tr).to_lowercase());
+        params.time_range = query.time_range.map(|tr| format!("{tr:?}").to_lowercase());
         
         // 将 SafeSearchLevel 转换为数字
-        params.safesearch = match query.safe_search {
+        params.safe_search = match query.safe_search {
             crate::config::common::SafeSearchLevel::None => 0,
             crate::config::common::SafeSearchLevel::Moderate => 1,
             crate::config::common::SafeSearchLevel::Strict => 2,
@@ -385,39 +385,5 @@ pub struct EngineInfo {
     pub max_page: usize,
 }
 
-/// 验证错误
-#[derive(Debug, Clone)]
-pub enum ValidationError {
-    /// 查询不能为空
-    EmptyQuery,
-
-    /// 查询过长，最多1000字符
-    QueryTooLong,
-
-    /// 页面大小超出限制
-    PageSizeTooLarge { max_size: usize },
-
-    /// 不支持时间范围过滤
-    UnsupportedTimeRange,
-
-    /// 不支持的参数
-    UnsupportedParameter(String),
-
-    /// 参数值无效
-    InvalidParameter(String),
-}
-
-impl std::fmt::Display for ValidationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ValidationError::EmptyQuery => write!(f, "查询不能为空"),
-            ValidationError::QueryTooLong => write!(f, "查询过长，最多1000字符"),
-            ValidationError::PageSizeTooLarge { max_size } => write!(f, "页面大小超出限制，最大{}个结果", max_size),
-            ValidationError::UnsupportedTimeRange => write!(f, "不支持时间范围过滤"),
-            ValidationError::UnsupportedParameter(param) => write!(f, "不支持的参数: {}", param),
-            ValidationError::InvalidParameter(param) => write!(f, "参数值无效: {}", param),
-        }
-    }
-}
-
-impl std::error::Error for ValidationError {}
+/// 验证错误类型别名，使用项目统一的错误处理系统
+pub type ValidationError = crate::errors::ErrorInfo;

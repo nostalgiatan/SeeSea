@@ -12,7 +12,10 @@ downloads/
 eggs/
 .eggs/
 lib/
+.trae/
+.plan/
 lib64/
+vendor/
 parts/
 sdist/
 var/

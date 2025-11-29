@@ -155,8 +155,8 @@ impl RssParser {
 
     /// 提取完整的标签内容（支持跨行）
     fn extract_full_tag_content(&self, content: &str, tag: &str) -> Option<String> {
-        let start_tag = format!("<{}>", tag);
-        let end_tag = format!("</{}>", tag);
+        let start_tag = format!("<{tag}>");
+        let end_tag = format!("</{tag}>");
 
         if let Some(start_pos) = content.find(&start_tag) {
             let content_start = start_pos + start_tag.len();
@@ -241,19 +241,16 @@ impl RssParser {
                         current_item.link = href;
                     }
                 }
-            } else {
-                if let Some(title) = Self::extract_tag_content(trimmed, "title") {
-                    if meta.title.is_empty() {
-                        meta.title = title;
-                    }
-                } else if trimmed.contains("<link") && trimmed.contains("href=") {
-                    if meta.link.is_empty() {
-                        if let Some(href) = Self::extract_attribute(trimmed, "href") {
-                            meta.link = href;
-                        }
+            } else if let Some(title) = Self::extract_tag_content(trimmed, "title") {
+                if meta.title.is_empty() {
+                    meta.title = title;
+                }
+            } else if trimmed.contains("<link") && trimmed.contains("href=")
+                && meta.link.is_empty() {
+                    if let Some(href) = Self::extract_attribute(trimmed, "href") {
+                        meta.link = href;
                     }
                 }
-            }
         }
 
         Ok(RssFeed { meta, items })
@@ -273,8 +270,8 @@ impl RssParser {
 
     /// 提取 XML 标签内容（支持CDATA和跨行）
     fn extract_tag_content(line: &str, tag: &str) -> Option<String> {
-        let start_tag = format!("<{}>", tag);
-        let end_tag = format!("</{}>", tag);
+        let start_tag = format!("<{tag}>");
+        let end_tag = format!("</{tag}>");
 
         if let Some(start_pos) = line.find(&start_tag) {
             if let Some(end_pos) = line.find(&end_tag) {
@@ -294,7 +291,7 @@ impl RssParser {
 
     /// 提取 XML 属性值
     fn extract_attribute(line: &str, attr: &str) -> Option<String> {
-        let pattern = format!("{}=\"", attr);
+        let pattern = format!("{attr}=\"");
         if let Some(start_pos) = line.find(&pattern) {
             let value_start = start_pos + pattern.len();
             if let Some(end_pos) = line[value_start..].find('"') {
@@ -317,7 +314,7 @@ mod tests {
 
     #[test]
     fn test_rss_parser_creation() {
-        let parser = RssParser::new();
+        let _parser = RssParser::new();
         assert!(true);
     }
 

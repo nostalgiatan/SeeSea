@@ -20,8 +20,8 @@
 //! - 连接池支持
 //! - 健壮的错误处理和重试机制
 
-use crate::error::Result;
-use crate::net::types::ProxyConfig;
+use crate::errors::Result;
+use crate::net::config::ProxyConfig;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
@@ -179,13 +179,13 @@ impl TorManager {
             TcpStream::connect(&control_addr)
         )
             .await
-            .map_err(|_| crate::error::network_error("Connection to Tor control port timed out"))?
-            .map_err(|e| crate::error::network_error(format!("Failed to connect to Tor control port: {}", e)))?;
+            .map_err(|_| crate::errors::network_error("Connection to Tor control port timed out"))?
+            .map_err(|e| crate::errors::network_error(format!("Failed to connect to Tor control port: {e}")))?;
         
         // 发送 AUTHENTICATE 命令（空密码）
         stream.write_all(b"AUTHENTICATE \"\"\r\n")
             .await
-            .map_err(|e| crate::error::network_error(format!("Failed to authenticate: {}", e)))?;
+            .map_err(|e| crate::errors::network_error(format!("Failed to authenticate: {e}")))?;
         
         // 读取认证响应（带超时）
         let mut auth_response = vec![0u8; 1024];
@@ -194,18 +194,18 @@ impl TorManager {
             stream.read(&mut auth_response)
         )
             .await
-            .map_err(|_| crate::error::network_error("Reading auth response timed out"))?
-            .map_err(|e| crate::error::network_error(format!("Failed to read auth response: {}", e)))?;
+            .map_err(|_| crate::errors::network_error("Reading auth response timed out"))?
+            .map_err(|e| crate::errors::network_error(format!("Failed to read auth response: {e}")))?;
         
         let response = String::from_utf8_lossy(&auth_response[..n]);
         if !response.starts_with("250") {
-            return Err(crate::error::network_error(format!("Authentication failed: {}", response)));
+            return Err(crate::errors::network_error(format!("Authentication failed: {response}")));
         }
         
         // 发送 SIGNAL NEWNYM 命令请求新电路
         stream.write_all(b"SIGNAL NEWNYM\r\n")
             .await
-            .map_err(|e| crate::error::network_error(format!("Failed to send NEWNYM signal: {}", e)))?;
+            .map_err(|e| crate::errors::network_error(format!("Failed to send NEWNYM signal: {e}")))?;
         
         // 读取响应（带超时）
         let mut signal_response = vec![0u8; 1024];
@@ -214,12 +214,12 @@ impl TorManager {
             stream.read(&mut signal_response)
         )
             .await
-            .map_err(|_| crate::error::network_error("Reading signal response timed out"))?
-            .map_err(|e| crate::error::network_error(format!("Failed to read signal response: {}", e)))?;
+            .map_err(|_| crate::errors::network_error("Reading signal response timed out"))?
+            .map_err(|e| crate::errors::network_error(format!("Failed to read signal response: {e}")))?;
         
         let response = String::from_utf8_lossy(&signal_response[..n]);
         if !response.starts_with("250") {
-            return Err(crate::error::network_error(format!("NEWNYM signal failed: {}", response)));
+            return Err(crate::errors::network_error(format!("NEWNYM signal failed: {response}")));
         }
 
         // 重置电路信息
@@ -251,7 +251,7 @@ impl TorManager {
             tokio::spawn(async move {
                 if let Err(e) = manager.new_circuit().await {
                     // Log error - in production this should use proper logging
-                    eprintln!("Warning: Failed to rotate Tor circuit: {}", e);
+                    eprintln!("Warning: Failed to rotate Tor circuit: {e}");
                 }
             });
         }
@@ -273,13 +273,13 @@ impl TorManager {
         // 创建使用 Tor 代理的 HTTP 客户端
         let proxy_url = format!("socks5://{}", self.config.address);
         let proxy = reqwest::Proxy::all(&proxy_url)
-            .map_err(|e| crate::error::network_error(format!("Failed to create proxy: {}", e)))?;
+            .map_err(|e| crate::errors::network_error(format!("Failed to create proxy: {e}")))?;
         
         let client = Client::builder()
             .proxy(proxy)
             .timeout(Duration::from_secs(30))
             .build()
-            .map_err(|e| crate::error::network_error(format!("Failed to build client: {}", e)))?;
+            .map_err(|e| crate::errors::network_error(format!("Failed to build client: {e}")))?;
         
         // 通过 IP 查询服务获取当前 IP（带重试机制）
         let mut last_error = None;
@@ -292,11 +292,11 @@ impl TorManager {
                     let ip = response
                         .text()
                         .await
-                        .map_err(|e| crate::error::network_error(format!("Failed to read response: {}", e)))?;
+                        .map_err(|e| crate::errors::network_error(format!("Failed to read response: {e}")))?;
                     return Ok(ip.trim().to_string());
                 }
                 Ok(Err(e)) => {
-                    last_error = Some(format!("Request failed: {}", e));
+                    last_error = Some(format!("Request failed: {e}"));
                     tokio::time::sleep(Duration::from_secs(2)).await;
                 }
                 Err(_) => {
@@ -309,7 +309,7 @@ impl TorManager {
             }
         }
 
-        Err(crate::error::network_error(format!(
+        Err(crate::errors::network_error(format!(
             "Failed to get IP after 3 retries: {}",
             last_error.unwrap_or_else(|| "unknown error".to_string())
         )))
@@ -342,7 +342,7 @@ impl Clone for TorManager {
 impl Default for TorManager {
     fn default() -> Self {
         let mut config = ProxyConfig::default();
-        config.proxy_type = crate::net::types::ProxyType::Tor;
+        config.proxy_type = crate::net::config::ProxyType::Tor;
         config.address = "127.0.0.1:9050".to_string();
         Self::new(config)
     }
@@ -363,7 +363,7 @@ mod tests {
     fn test_tor_manager_default() {
         let manager = TorManager::default();
         assert_eq!(manager.config.address, "127.0.0.1:9050");
-        assert_eq!(manager.config.proxy_type, crate::net::types::ProxyType::Tor);
+        assert_eq!(manager.config.proxy_type, crate::net::config::ProxyType::Tor);
     }
 
     #[tokio::test]

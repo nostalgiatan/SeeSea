@@ -20,20 +20,53 @@ use std::collections::HashMap;
 use std::error::Error;
 
 /// 搜索引擎核心 trait
+/// 
+/// 所有搜索引擎都必须实现这个 trait，它定义了搜索引擎的核心功能和接口。
+/// 
+/// # 示例
+/// 
+/// ```ignore
+/// #[async_trait]
+/// impl SearchEngine for MyEngine {
+///     fn info(&self) -> &EngineInfo {
+///         &self.info
+///     }
+///     
+///     async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
+///         // 实现搜索逻辑
+///         let url = self.build_url(query)?;
+///         let response = self.http_client.get(&url).await?;
+///         let result = self.parse_response(response, query).await?;
+///         Ok(result)
+///     }
+/// }
+/// ```
 #[async_trait]
 pub trait SearchEngine: Send + Sync {
     /// 获取引擎信息
+    /// 
+    /// 返回引擎的元数据和能力信息，包括名称、类型、支持的功能等。
     fn info(&self) -> &EngineInfo;
 
     /// 执行搜索
+    /// 
+    /// # 参数
+    /// - `query`: 搜索查询对象，包含查询关键词、分页信息、过滤条件等
+    /// 
+    /// # 返回
+    /// 包含搜索结果的 `SearchResult` 对象，或搜索过程中发生的错误
     async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
 
     /// 检查引擎是否可用
+    /// 
+    /// 默认实现总是返回 `true`，具体实现可以重写此方法来检查引擎的实际可用性。
     async fn is_available(&self) -> bool {
         true
     }
 
     /// 获取引擎健康状态
+    /// 
+    /// 返回引擎的健康状态，包括响应时间、错误信息等。
     async fn health_check(&self) -> Result<EngineHealth, Box<dyn Error + Send + Sync>> {
         Ok(EngineHealth {
             status: EngineStatus::Active,
@@ -43,32 +76,45 @@ pub trait SearchEngine: Send + Sync {
     }
 
     /// 验证查询参数
+    /// 
+    /// 检查查询参数是否有效，包括：
+    /// - 查询字符串是否为空
+    /// - 查询字符串长度是否超过限制
+    /// - 页面大小是否超过引擎支持的最大值
+    /// - 是否使用了引擎不支持的时间范围
+    /// - 是否包含了引擎不支持的自定义参数
+    /// 
+    /// # 参数
+    /// - `query`: 要验证的搜索查询对象
+    /// 
+    /// # 返回
+    /// 如果验证通过，返回 `Ok(())`，否则返回包含错误信息的 `ValidationError`
     fn validate_query(&self, query: &SearchQuery) -> Result<(), ValidationError> {
         // 基础验证
         if query.query.trim().is_empty() {
-            return Err(ValidationError::EmptyQuery);
+            return Err(crate::errors::empty_field("query"));
         }
 
         if query.query.len() > 1000 {
-            return Err(ValidationError::QueryTooLong);
+            return Err(crate::errors::field_too_long("query", 1000, query.query.len()));
         }
 
         // 页面大小验证
         if query.page_size > self.info().capabilities.max_page_size {
-            return Err(ValidationError::PageSizeTooLarge {
-                max_size: self.info().capabilities.max_page_size
-            });
+            return Err(crate::errors::validation_error(
+                format!("页面大小超出限制，最大{}个结果", self.info().capabilities.max_page_size)
+            ));
         }
 
         // 时间范围验证
         if query.time_range.is_some() && !self.info().capabilities.supports_time_range {
-            return Err(ValidationError::UnsupportedTimeRange);
+            return Err(crate::errors::validation_error("不支持时间范围过滤"));
         }
 
         // 自定义参数验证
         for param in query.params.keys() {
             if !self.info().capabilities.supported_params.contains(param) {
-                return Err(ValidationError::UnsupportedParameter(param.clone()));
+                return Err(crate::errors::unsupported_parameter(param));
             }
         }
 
@@ -268,6 +314,7 @@ pub trait RetryableEngine: SearchEngine {
     }
 
     /// 判断是否应该重试
+    #[allow(clippy::borrowed_box)]
     fn should_retry(&self, error: &Box<dyn Error + Send + Sync>, attempt: usize) -> bool {
         attempt < self.max_retries() && self.is_retryable_error(error.as_ref())
     }

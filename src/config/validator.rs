@@ -186,11 +186,10 @@ impl ConfigValidator {
         }
 
         // 隐私配置验证
-        if config.privacy.enable_tor {
-            if config.privacy.tor_config.socks_port == 0 {
+        if config.privacy.enable_tor
+            && config.privacy.tor_config.socks_port == 0 {
                 result.add_error("启用 Tor 时必须指定有效的 SOCKS 端口".to_string());
             }
-        }
 
         if !config.privacy.proxy_chain.is_empty() {
             for (i, proxy) in config.privacy.proxy_chain.iter().enumerate() {
@@ -290,7 +289,7 @@ impl ConfigValidator {
         let mut port_set = std::collections::HashSet::new();
         for port in &used_ports {
             if port_set.contains(port) {
-                result.add_error(format!("端口 {} 被重复使用", port));
+                result.add_error(format!("端口 {port} 被重复使用"));
             }
             port_set.insert(*port);
         }
@@ -505,8 +504,7 @@ impl ConfigValidator {
         if config.cache.compression.enabled { score += 10; }
 
         // 其他优化 (20 分)
-        if !config.search.aggregation.enable_deduplication ||
-           (config.cache.enable_result_cache && config.search.aggregation.enable_deduplication) {
+        if !config.search.aggregation.enable_deduplication || config.cache.enable_result_cache {
             score += 10;
         }
         if config.engines.global_settings.enable_monitoring { score += 10; }
@@ -620,10 +618,12 @@ mod tests {
 
         let mut config = SeeSeaConfig::production();
         config.general.debug = true; // 这会导致验证失败
+        config.api.security.force_https = false; // 这也会导致验证失败
 
         let result = validator.validate(&config);
         assert!(!result.is_valid);
         assert!(result.errors.iter().any(|e| e.contains("生产环境不能启用调试模式")));
+        assert!(result.errors.iter().any(|e| e.contains("生产环境必须启用 HTTPS")));
     }
 
     #[test]

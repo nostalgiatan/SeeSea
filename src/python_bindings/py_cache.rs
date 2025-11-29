@@ -74,6 +74,9 @@ impl PyCacheInterface {
             enabled: true,
             compression: false,
             mode: CacheMode::HighThroughput,
+            enable_bloom_filter: true,
+            bloom_filter_expected_elements: 1_000_000,
+            bloom_filter_false_positive_rate: 0.01,
         };
 
         let cache = CacheInterface::new(config)

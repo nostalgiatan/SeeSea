@@ -16,7 +16,7 @@
 //!
 //! 提供请求头的伪造和混淆功能
 
-use crate::net::types::PrivacyConfig;
+use crate::net::config::PrivacyConfig;
 use reqwest::ClientBuilder;
 
 /// 配置隐私保护
@@ -33,7 +33,7 @@ pub fn configure_privacy(builder: ClientBuilder, config: &PrivacyConfig) -> Clie
     let mut builder = builder;
 
     // 配置 User-Agent
-    if config.user_agent_strategy != crate::net::types::UserAgentStrategy::Fixed {
+    if config.user_agent_strategy != crate::net::config::UserAgentStrategy::Fixed {
         let user_agent = super::user_agent::get_user_agent(config);
         builder = builder.user_agent(user_agent);
     } else if let Some(ref custom_ua) = config.custom_user_agent {
@@ -55,15 +55,14 @@ pub fn configure_privacy(builder: ClientBuilder, config: &PrivacyConfig) -> Clie
 ///
 /// 请求头键值对列表
 pub fn generate_fake_headers(url: &str, config: &PrivacyConfig) -> Vec<(String, String)> {
-    let mut headers = Vec::new();
-
-    // 添加常见的浏览器请求头
-    headers.push(("Accept".to_string(), "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7".to_string()));
-    headers.push(("Accept-Language".to_string(), "zh-CN,zh;q=0.9,en-US,en;q=0.8".to_string()));
-    headers.push(("Accept-Encoding".to_string(), "gzip, deflate, br".to_string()));
-    headers.push(("DNT".to_string(), "1".to_string()));
-    headers.push(("Connection".to_string(), "keep-alive".to_string()));
-    headers.push(("Upgrade-Insecure-Requests".to_string(), "1".to_string()));
+    let mut headers = vec![
+        ("Accept".to_string(), "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7".to_string()),
+        ("Accept-Language".to_string(), "zh-CN,zh;q=0.9,en-US,en;q=0.8".to_string()),
+        ("Accept-Encoding".to_string(), "gzip, deflate, br".to_string()),
+        ("DNT".to_string(), "1".to_string()),
+        ("Connection".to_string(), "keep-alive".to_string()),
+        ("Upgrade-Insecure-Requests".to_string(), "1".to_string()),
+    ];
 
     // 伪造 Referer
     if config.fake_referer {
@@ -96,7 +95,7 @@ fn generate_fake_referer(url: &str) -> Option<String> {
     // 从 URL 中提取域名作为 Referer
     if let Ok(parsed_url) = url::Url::parse(url) {
         if let Some(host) = parsed_url.host_str() {
-            return Some(format!("https://{}/", host));
+            return Some(format!("https://{host}/"));
         }
     }
     None
@@ -119,7 +118,7 @@ pub fn get_fingerprint_headers() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::net::types::{PrivacyConfig, UserAgentStrategy};
+    use crate::net::config::{PrivacyConfig, UserAgentStrategy};
 
     #[test]
     fn test_generate_fake_headers() {

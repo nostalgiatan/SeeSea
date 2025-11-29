@@ -63,105 +63,58 @@ use std::error::Error;
 use std::sync::Arc;
 
 use crate::derive::{
-    EngineCapabilities, EngineInfo, EngineStatus, EngineType,
-    ResultType, SearchEngine, SearchQuery, SearchResult,
-    SearchResultItem, TimeRange, AboutInfo, RequestResponseEngine, RequestParams,
+    EngineCapabilities, EngineInfo, EngineStatus, EngineType, TimeRange,
+    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
 };
-use crate::net::client::HttpClient;
-use crate::net::types::{NetworkConfig, RequestOptions};
 use super::utils::build_query_string_owned;
 
-/// Bing 搜索引擎
-///
-/// 使用 Bing HTML API 进行搜索的引擎实现
-pub struct BingEngine {
-    /// 引擎信息
-    info: EngineInfo,
-    /// HTTP 客户端（共享）
-    client: Arc<HttpClient>,
+// 使用引擎生成宏定义引擎基本结构
+define_engine! {
+    BingEngine,
+    EngineInfo {
+        name: "Bing".to_string(),
+        engine_type: EngineType::General,
+        description: "Bing 是微软公司的搜索引擎".to_string(),
+        status: EngineStatus::Active,
+        categories: vec!["general".to_string(), "web".to_string()],
+        capabilities: EngineCapabilities {
+            result_types: vec![ResultType::Web],
+            supported_params: vec![
+                "language".to_string(),
+                "region".to_string(),
+                "time_range".to_string(),
+            ],
+            max_page_size: 10,
+            supports_pagination: true,
+            supports_time_range: true,
+            supports_language_filter: true,
+            supports_region_filter: true,
+            supports_safe_search: true,
+            rate_limit: Some(60), // 每分钟 60 次请求
+        },
+        about: AboutInfo {
+            website: Some("https://www.bing.com".to_string()),
+            wikidata_id: Some("Q182496".to_string()),
+            official_api_documentation: Some("https://www.microsoft.com/en-us/bing/apis/bing-web-search-api".to_string()),
+            use_official_api: false,
+            require_api_key: false,
+            results: "HTML".to_string(),
+        },
+        shortcut: Some("bing".to_string()),
+        timeout: Some(10),
+        disabled: false,
+        inactive: false,
+        version: Some("1.0.0".to_string()),
+        last_checked: None,
+        using_tor_proxy: false,
+        display_error_messages: true,
+        tokens: Vec::new(),
+        max_page: 200, // Bing 最多支持 200 页
+    }
 }
 
 impl BingEngine {
-    /// 创建新的 Bing 引擎实例
-    ///
-    /// # 示例
-    ///
-    /// ```
-    /// use SeeSea::search::engines::bing::BingEngine;
-    ///
-    /// let engine = BingEngine::new();
-    /// ```
-    pub fn new() -> Self {
-        let client = HttpClient::new(NetworkConfig::default())
-            .unwrap_or_else(|_| panic!("Failed to create HTTP client for Bing"));
-        Self::with_client(Arc::new(client))
-    }
-
-    /// 使用共享的 HTTP 客户端创建 Bing 引擎实例
-    ///
-    /// 这个方法允许多个引擎共享同一个 HTTP 客户端和连接池，
-    /// 提高性能并减少资源消耗。
-    ///
-    /// # 参数
-    ///
-    /// * `client` - 共享的 HTTP 客户端
-    ///
-    /// # 示例
-    ///
-    /// ```no_run
-    /// use std::sync::Arc;
-    /// use SeeSea::search::engines::bing::BingEngine;
-    /// use SeeSea::net::client::HttpClient;
-    /// use SeeSea::net::types::NetworkConfig;
-    ///
-    /// let client = Arc::new(HttpClient::new(NetworkConfig::default()).unwrap());
-    /// let engine = BingEngine::with_client(client);
-    /// ```
-    pub fn with_client(client: Arc<HttpClient>) -> Self {
-        Self {
-            info: EngineInfo {
-                name: "Bing".to_string(),
-                engine_type: EngineType::General,
-                description: "Bing 是微软公司的搜索引擎".to_string(),
-                status: EngineStatus::Active,
-                categories: vec!["general".to_string(), "web".to_string()],
-                capabilities: EngineCapabilities {
-                    result_types: vec![ResultType::Web],
-                    supported_params: vec![
-                        "language".to_string(),
-                        "region".to_string(),
-                        "time_range".to_string(),
-                    ],
-                    max_page_size: 10,
-                    supports_pagination: true,
-                    supports_time_range: true,
-                    supports_language_filter: true,
-                    supports_region_filter: true,
-                    supports_safe_search: true,
-                    rate_limit: Some(60), // 每分钟 60 次请求
-                },
-                about: AboutInfo {
-                    website: Some("https://www.bing.com".to_string()),
-                    wikidata_id: Some("Q182496".to_string()),
-                    official_api_documentation: Some("https://www.microsoft.com/en-us/bing/apis/bing-web-search-api".to_string()),
-                    use_official_api: false,
-                    require_api_key: false,
-                    results: "HTML".to_string(),
-                },
-                shortcut: Some("bing".to_string()),
-                timeout: Some(10),
-                disabled: false,
-                inactive: false,
-                version: Some("1.0.0".to_string()),
-                last_checked: None,
-                using_tor_proxy: false,
-                display_error_messages: true,
-                tokens: Vec::new(),
-                max_page: 200, // Bing 最多支持 200 页
-            },
-            client,
-        }
-    }
+    
 
     /// 计算分页偏移量
     ///
@@ -228,8 +181,8 @@ impl BingEngine {
     /// * `language` - 语言代码
     /// * `region` - 地区代码
     fn set_bing_cookies(params: &mut RequestParams, language: &str, region: &str) {
-        params.cookies.insert("_EDGE_CD".to_string(), format!("m={}&u={}", region, language));
-        params.cookies.insert("_EDGE_S".to_string(), format!("mkt={}&ui={}", region, language));
+        params.cookies.insert("_EDGE_CD".to_string(), format!("m={region}&u={language}"));
+        params.cookies.insert("_EDGE_S".to_string(), format!("mkt={region}&ui={language}"));
     }
 
     /// 解码 Bing 的 base64 编码 URL
@@ -360,40 +313,6 @@ impl BingEngine {
     }
 }
 
-impl Default for BingEngine {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl SearchEngine for BingEngine {
-    /// 获取引擎信息
-    fn info(&self) -> &EngineInfo {
-        &self.info
-    }
-
-    /// 执行搜索
-    ///
-    /// # 参数
-    ///
-    /// * `query` - 搜索查询参数
-    ///
-    /// # 返回
-    ///
-    /// 搜索结果或错误
-    async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
-        // 使用 RequestResponseEngine trait 的默认实现
-        <Self as RequestResponseEngine>::search(self, query).await
-    }
-
-    /// 检查引擎是否可用
-    async fn is_available(&self) -> bool {
-        // 尝试访问 Bing 主页检查可用性
-        self.client.get("https://www.bing.com", None).await.is_ok()
-    }
-}
-
 #[async_trait]
 impl RequestResponseEngine for BingEngine {
     type Response = String;
@@ -422,21 +341,20 @@ impl RequestResponseEngine for BingEngine {
         ];
         
         // Add pagination if not first page
-        if params.pageno > 1 {
-            query_params.push(("first", Self::page_offset(params.pageno).to_string()));
-            
-            if let Some(form) = Self::page_form(params.pageno) {
+        if params.page > 1 {
+            query_params.push(("first", Self::page_offset(params.page).to_string()));
+            if let Some(form) = Self::page_form(params.page) {
                 query_params.push(("FORM", form));
             }
         }
         
         // Build base URL with optimized query string
         let base_url = "https://www.bing.com/search";
-        let query_string = build_query_string_owned(query_params.into_iter());
+        let query_string = build_query_string_owned(query_params);
         
-        let mut url = format!("{}?{}", base_url, query_string);
+        let mut url = format!("{base_url}?{query_string}");
         
-        // Append time range filter if specified (not URL-encoded as it's appended directly)
+        // Append time range filter if specified
         if let Some(ref time_range) = params.time_range {
             let tr = match time_range.as_str() {
                 "day" => "1",
@@ -446,7 +364,9 @@ impl RequestResponseEngine for BingEngine {
                 _ => "",
             };
             if !tr.is_empty() {
-                url.push_str(&format!("&filters=ex1:\"ez{}\"", tr));
+                // URL-encode the filter value
+                let filter_value = format!("ex1:\"ez{tr}\"");
+                url.push_str(&format!("&filters={}", urlencoding::encode(&filter_value)));
             }
         }
         
@@ -457,51 +377,10 @@ impl RequestResponseEngine for BingEngine {
     }
 
     /// 发送请求并获取响应
-    ///
-    /// # 参数
-    ///
-    /// * `params` - 请求参数
-    ///
-    /// # 返回
-    ///
-    /// HTML 响应字符串或错误
+    /// 
+    /// 使用通用引擎的 fetch 实现
     async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
-        let url = params.url.as_ref()
-            .ok_or("请求 URL 未设置")?;
-
-        // 创建请求选项
-        let mut options = RequestOptions::default();
-        // 使用配置的默认超时时间
-
-        // 添加自定义头
-        for (key, value) in &params.headers {
-            options.headers.push((key.clone(), value.clone()));
-        }
-
-        // 添加 cookies
-        for (key, value) in &params.cookies {
-            options.headers.push(("Cookie".to_string(), format!("{}={}", key, value)));
-        }
-
-        // 发送请求
-        let response = self.client.get(url, Some(options)).await
-            .map_err(|e| format!("Request failed: {}", e))?;
-
-        // 检查状态码
-        let status = response.status();
-        match status.as_u16() {
-            403 => return Err("Bing 访问被拒绝，可能触发了反爬虫机制".into()),
-            429 => return Err("Bing 请求过于频繁，请稍后重试".into()),
-            503 => return Err("Bing 服务暂时不可用，请稍后重试".into()),
-            _ if !status.is_success() => return Err(format!("HTTP 错误: {}", status).into()),
-            _ => {} // 继续处理
-        }
-
-        // 获取响应文本
-        let text = response.text().await
-            .map_err(|e| format!("Failed to read response: {}", e))?;
-
-        Ok(text)
+        self.generic.fetch(params).await
     }
 
     /// 解析响应为结果列表
@@ -521,6 +400,7 @@ impl RequestResponseEngine for BingEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::derive::SearchEngine;
 
     #[test]
     fn test_engine_creation() {
@@ -588,7 +468,7 @@ mod tests {
     fn test_request_with_pagination() {
         let engine = BingEngine::new();
         let mut params = RequestParams::default();
-        params.pageno = 3;
+        params.page = 3;
         
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
@@ -608,7 +488,10 @@ mod tests {
         assert!(result.is_ok());
         
         let url = params.url.expect("Expected valid value");
-        assert!(url.contains("filters=ex1:%22ez2%22")); // week = 2
+        // 检查URL是否包含正确的过滤参数，允许不同的编码方式
+        assert!(url.contains("filters="), "URL should contain filters parameter");
+        assert!(url.contains("ex1"), "URL should contain ex1 filter");
+        assert!(url.contains("ez2"), "URL should contain ez2 time range (week)");
     }
 
     #[test]

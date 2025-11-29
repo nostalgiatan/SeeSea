@@ -63,6 +63,10 @@ pub struct ApiSearchRequest {
     /// 指定搜索引擎（可选，逗号分隔）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub engines: Option<String>,
+    
+    /// 是否包含深网搜索（默认false）
+    #[serde(default = "default_include_deepweb")]
+    pub include_deepweb: bool,
 }
 
 fn default_page() -> u32 {
@@ -71,6 +75,10 @@ fn default_page() -> u32 {
 
 fn default_page_size() -> u32 {
     10
+}
+
+fn default_include_deepweb() -> bool {
+    false
 }
 
 impl ApiSearchRequest {
@@ -110,7 +118,9 @@ impl ApiSearchRequest {
     /// 根据以下优先级返回引擎列表:
     /// 1. 如果指定了 engines 参数，使用自定义引擎列表
     /// 2. 如果指定了 engine_count 参数，根据引擎延迟选择低延迟引擎
-    /// 3. 默认使用全部引擎（从统一的引擎配置模块获取）
+    /// 3. 根据 include_deepweb 参数选择引擎列表
+    ///    - include_deepweb=false: 仅使用快速引擎
+    ///    - include_deepweb=true: 使用所有引擎
     pub fn get_engines(&self) -> Vec<String> {
         if let Some(ref engines_str) = self.engines {
             // 自定义引擎列表
@@ -120,24 +130,28 @@ impl ApiSearchRequest {
                 .filter(|s| !s.is_empty())
                 .collect()
         } else {
-            // 使用统一的引擎配置模块获取所有引擎
+            // 使用统一的引擎配置模块获取引擎
             let config = EngineListConfig::default();
-            let all_engines = config.global_engines;
+            let base_engines = if self.include_deepweb {
+                config.global_engines
+            } else {
+                config.fast_engines
+            };
             
             if let Some(count) = self.engine_count {
                 // 根据引擎数量限制引擎列表
                 // 引擎按默认顺序排列（配置中已按延迟优化排序）
                 let count = count as usize;
-                // 只有当 count > 0 且 count 小于总引擎数时才限制
-                // 否则返回全部引擎
-                if count > 0 && count < all_engines.len() {
-                    all_engines.into_iter().take(count).collect()
+                // 只有当 count > 0 且 count 小于基础引擎数时才限制
+                // 否则返回全部基础引擎
+                if count > 0 && count < base_engines.len() {
+                    base_engines.into_iter().take(count).collect()
                 } else {
-                    all_engines
+                    base_engines
                 }
             } else {
-                // 默认使用全部引擎
-                all_engines
+                // 默认使用基础引擎列表
+                base_engines
             }
         }
     }
@@ -335,9 +349,10 @@ mod tests {
         let request: ApiSearchRequest = serde_json::from_str(json).unwrap();
         
         let engines = request.get_engines();
-        // Should return all engines from EngineListConfig
+        // 默认情况下应返回快速引擎
         let config = EngineListConfig::default();
-        assert_eq!(engines.len(), config.global_engines.len());
+        assert_eq!(engines.len(), config.fast_engines.len());
+        assert_eq!(engines, config.fast_engines);
     }
 
     #[test]
@@ -353,6 +368,7 @@ mod tests {
             safe_search: None,
             time_range: None,
             engines: None,
+            include_deepweb: false,
         };
 
         let query = request.to_search_query().unwrap();
@@ -376,5 +392,25 @@ mod tests {
         
         let api_stats = ApiStatsResponse::from_search_stats(&stats);
         assert_eq!(api_stats.cache_hit_rate, 0.6);
+    }
+    
+    #[test]
+    fn test_api_search_request_include_deepweb() {
+        // 测试默认情况（不包含深网搜索）
+        let json = r#"{"q": "test"}"#;
+        let request: ApiSearchRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.include_deepweb, false);
+        
+        let config = EngineListConfig::default();
+        let engines = request.get_engines();
+        assert_eq!(engines, config.fast_engines);
+        
+        // 测试包含深网搜索
+        let json = r#"{"q": "test", "include_deepweb": true}"#;
+        let request: ApiSearchRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.include_deepweb, true);
+        
+        let engines = request.get_engines();
+        assert_eq!(engines, config.global_engines);
     }
 }

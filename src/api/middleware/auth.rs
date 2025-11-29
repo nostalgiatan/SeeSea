@@ -129,7 +129,7 @@ impl AuthState {
         // Bearer token
         if let Some(token) = auth_header.strip_prefix("Bearer ") {
             return self.verify_token(token)
-                .map_err(|e| format!("Invalid JWT token: {}", e));
+                .map_err(|e| format!("Invalid JWT token: {e}"));
         }
 
         // API Key

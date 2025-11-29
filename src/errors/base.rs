@@ -12,26 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! 错误处理模块
-//!
-//! 提供便利的错误类型和辅助函数
+//! 基础错误类型定义
+//! 
+//! 从 error crate 重新导出核心错误类型，提供统一的错误基础。
 
-pub use error::{ErrorInfo, ErrorKind, ErrorCategory, ErrorSeverity};
+// 从 error crate 重新导出核心错误类型
+pub use error::{ErrorInfo, ErrorKind, ErrorSeverity, ErrorCategory};
 
 /// Result 类型别名
 pub type Result<T> = std::result::Result<T, ErrorInfo>;
-
-/// Error 类型别名
-pub type Error = ErrorInfo;
-
-/// 创建网络错误
-pub fn network_error(message: impl Into<String>) -> ErrorInfo {
-    ErrorInfo::new(1000, message.into())
-        .with_category(ErrorCategory::Network)
-}
-
-/// 创建搜索错误
-pub fn search_error(message: impl Into<String>) -> ErrorInfo {
-    ErrorInfo::new(2000, message.into())
-        .with_category(ErrorCategory::Search)
-}

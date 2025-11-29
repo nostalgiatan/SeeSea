@@ -162,10 +162,7 @@ fn test_tokenize_empty_string() {
             &query,
             "google",
             0,
-            10.0,
-            50.0,
-            &ScoringWeights::default(),
-            &BM25Params::default(),
+            &ScoringContext::default(),
         );
         
         assert!(score >= 0.0 && score <= 1.0, "Score should be in [0, 1] range, got {}", score);
@@ -191,12 +188,10 @@ fn test_tokenize_empty_string() {
         };
         
         let score1 = calculate_score(
-            &item1, &query, "google", 0, 10.0, 50.0,
-            &ScoringWeights::default(), &BM25Params::default(),
+            &item1, &query, "google", 0, &ScoringContext::default(),
         );
         let score2 = calculate_score(
-            &item2, &query, "google", 0, 10.0, 50.0,
-            &ScoringWeights::default(), &BM25Params::default(),
+            &item2, &query, "google", 0, &ScoringContext::default(),
         );
         
         assert!(score1 > score2, "Relevant title should score higher");

@@ -387,25 +387,29 @@
             </div>
 
             <div class="options">
-                <div class="option">
-                    <label>每页结果:</label>
-                    <select id="pageSize">
-                        <option value="10">10</option>
-                        <option value="20">20</option>
-                        <option value="50" selected>50</option>
-                        <option value="100">100</option>
-                    </select>
-                </div>
-                <div class="option">
-                    <label>引擎数量:</label>
-                    <select id="engineCount">
-                        <option value="">全部引擎</option>
-                        <option value="3">3个引擎</option>
-                        <option value="5">5个引擎</option>
-                        <option value="7">7个引擎</option>
-                    </select>
-                </div>
+            <div class="option">
+                <label>每页结果:</label>
+                <select id="pageSize">
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                </select>
             </div>
+            <div class="option">
+                <label>引擎数量:</label>
+                <select id="engineCount">
+                    <option value="">全部引擎</option>
+                    <option value="3">3个引擎</option>
+                    <option value="5">5个引擎</option>
+                    <option value="7">7个引擎</option>
+                </select>
+            </div>
+            <div class="option">
+                <label for="includeDeepweb">包含深网搜索:</label>
+                <input type="checkbox" id="includeDeepweb" name="includeDeepweb">
+            </div>
+        </div>
 
             <div class="loading" id="loading">
                 <p class="loading-dots">正在搜索</p>
@@ -448,6 +452,7 @@
         const searchButton = document.getElementById('searchButton');
         const pageSizeSelect = document.getElementById('pageSize');
         const engineCountSelect = document.getElementById('engineCount');
+        const includeDeepwebCheckbox = document.getElementById('includeDeepweb');
         const loading = document.getElementById('loading');
         const error = document.getElementById('error');
         const errorMessage = document.getElementById('errorMessage');
@@ -483,6 +488,7 @@
                 if (engineCount) {
                     params.append('engine_count', engineCount);
                 }
+                params.append('include_deepweb', includeDeepwebCheckbox.checked.toString());
                 const url = `/api/search?${params.toString()}`;
 
                 const response = await fetch(url);

@@ -20,18 +20,19 @@ use serde::{Deserialize, Serialize};
 
 /// 引擎模式
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum EngineMode {
     /// 全局模式
+    #[default]
     Global,
     /// 自定义模式（用户指定引擎）
     Custom(Vec<String>),
+    /// 快速模式：仅使用快速引擎
+    Fast,
+    /// 深网模式：仅使用深网引擎
+    DeepWeb,
 }
 
-impl Default for EngineMode {
-    fn default() -> Self {
-        EngineMode::Global
-    }
-}
 
 /// 搜索引擎配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +41,10 @@ pub struct EngineListConfig {
     pub global_engines: Vec<String>,
     /// 所有可用引擎列表
     pub all_available_engines: Vec<String>,
+    /// 快速引擎列表
+    pub fast_engines: Vec<String>,
+    /// 深网引擎列表
+    pub deepweb_engines: Vec<String>,
 }
 
 impl Default for EngineListConfig {
@@ -100,9 +105,23 @@ impl Default for EngineListConfig {
             // "quark".to_string(),  // Commented out: quark engine disabled
         ];
 
+        // 快速引擎列表（不包含新华网）
+        let fast_engines = all_engines
+            .iter()
+            .filter(|&engine| engine != "xinhua")
+            .cloned()
+            .collect();
+
+        // 深网引擎列表（仅包含新华网）
+        let deepweb_engines = vec![
+            "xinhua".to_string(),
+        ];
+
         Self {
             global_engines,
             all_available_engines: all_engines,
+            fast_engines,
+            deepweb_engines,
         }
     }
 }
@@ -122,6 +141,14 @@ impl EngineListConfig {
                     .cloned()
                     .collect()
             }
+            EngineMode::Fast => {
+                // 仅使用快速引擎
+                self.fast_engines.clone()
+            }
+            EngineMode::DeepWeb => {
+                // 仅使用深网引擎
+                self.deepweb_engines.clone()
+            }
         }
     }
 
@@ -133,7 +160,7 @@ impl EngineListConfig {
     /// 添加全局引擎
     pub fn add_global_engine(&mut self, engine: String) -> Result<(), String> {
         if !self.is_engine_available(&engine) {
-            return Err(format!("Engine '{}' is not available", engine));
+            return Err(format!("Engine '{engine}' is not available"));
         }
         if !self.global_engines.contains(&engine) {
             self.global_engines.push(engine);

@@ -145,11 +145,10 @@ impl NetworkConfig {
                     return Err("Dual mode requires at least one network to be enabled".to_string());
                 }
                 // 验证内网地址必须是localhost
-                if self.internal.enabled {
-                    if self.internal.host != "127.0.0.1" && self.internal.host != "localhost" {
+                if self.internal.enabled
+                    && self.internal.host != "127.0.0.1" && self.internal.host != "localhost" {
                         return Err("Internal network must bind to localhost only".to_string());
                     }
-                }
             }
         }
         

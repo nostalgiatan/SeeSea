@@ -22,8 +22,10 @@ use crate::config::types::Environment;
 /// 区域模式枚举
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum RegionMode {
     /// 全球模式 - 所有引擎
+    #[default]
     Global,
     /// 中国模式 - 仅可在中国访问的引擎
     China,
@@ -31,11 +33,6 @@ pub enum RegionMode {
     Custom,
 }
 
-impl Default for RegionMode {
-    fn default() -> Self {
-        RegionMode::Global
-    }
-}
 
 /// 通用配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,8 +106,4 @@ impl Default for GeneralConfig {
     }
 }
 
-impl Default for EngineLoadingMode {
-    fn default() -> Self {
-        EngineLoadingMode::Settings
-    }
-}
+

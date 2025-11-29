@@ -43,8 +43,10 @@ pub struct SearchConfig {
     /// 默认时间范围
     pub default_time_range: Option<TimeRange>,
     /// 结果聚合配置
+    #[serde(default)]
     pub aggregation: AggregationConfig,
     /// 查询处理配置
+    #[serde(default)]
     pub query_processing: QueryProcessingConfig,
 }
 
@@ -68,25 +70,33 @@ pub enum TimeRange {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AggregationConfig {
     /// 启用结果去重
+    #[serde(default)]
     pub enable_deduplication: bool,
     /// 去重算法
+    #[serde(default)]
     pub deduplication_method: DeduplicationMethod,
     /// 启用结果排序
+    #[serde(default)]
     pub enable_ranking: bool,
     /// 排序算法
+    #[serde(default)]
     pub ranking_algorithm: RankingAlgorithm,
     /// 最大聚合结果数
+    #[serde(default)]
     pub max_results: usize,
     /// 最小引擎权重
+    #[serde(default)]
     pub min_engine_weight: f32,
     /// 结果分组
+    #[serde(default)]
     pub enable_grouping: bool,
     /// 分组策略
+    #[serde(default)]
     pub grouping_strategy: GroupingStrategy,
 }
 
 /// 去重算法
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum DeduplicationMethod {
     /// 基于 URL 去重
@@ -94,6 +104,7 @@ pub enum DeduplicationMethod {
     /// 基于标题去重
     Title,
     /// 基于 URL 和标题去重
+    #[default]
     UrlAndTitle,
     /// 基于内容哈希去重
     ContentHash,
@@ -102,7 +113,7 @@ pub enum DeduplicationMethod {
 }
 
 /// 排序算法
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum RankingAlgorithm {
     /// 简单加权
@@ -114,11 +125,12 @@ pub enum RankingAlgorithm {
     /// 机器学习排序
     MlRanking,
     /// 混合排序
+    #[default]
     Hybrid,
 }
 
 /// 分组策略
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum GroupingStrategy {
     /// 不分组
@@ -130,6 +142,7 @@ pub enum GroupingStrategy {
     /// 按类型分组
     ByType,
     /// 智能分组
+    #[default]
     Smart,
 }
 
@@ -137,28 +150,37 @@ pub enum GroupingStrategy {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryProcessingConfig {
     /// 启用查询扩展
+    #[serde(default)]
     pub enable_expansion: bool,
     /// 查询扩展方法
+    #[serde(default)]
     pub expansion_methods: Vec<ExpansionMethod>,
     /// 启用查询纠正
+    #[serde(default)]
     pub enable_correction: bool,
     /// 纠正阈值
+    #[serde(default)]
     pub correction_threshold: f32,
     /// 启用同义词扩展
+    #[serde(default)]
     pub enable_synonyms: bool,
     /// 启用停用词过滤
+    #[serde(default)]
     pub enable_stop_words: bool,
     /// 最大查询长度
+    #[serde(default)]
     pub max_query_length: usize,
     /// 最小查询长度
+    #[serde(default)]
     pub min_query_length: usize,
 }
 
 /// 查询扩展方法
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ExpansionMethod {
     /// 同义词扩展
+    #[default]
     Synonyms,
     /// 相关词扩展
     RelatedTerms,

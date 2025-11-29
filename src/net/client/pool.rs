@@ -16,7 +16,7 @@
 //!
 //! 提供 HTTP 连接池的管理和优化
 
-use crate::net::types::PoolConfig;
+use crate::net::config::PoolConfig;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 

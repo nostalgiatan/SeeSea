@@ -40,18 +40,22 @@ pub struct CacheConfig {
     /// 缓存策略
     pub eviction_policy: EvictionPolicy,
     /// 压缩配置
+    #[serde(default)]
     pub compression: CompressionConfig,
     /// 分片配置
+    #[serde(default)]
     pub sharding: ShardingConfig,
     /// 监控配置
+    #[serde(default)]
     pub monitoring: CacheMonitoringConfig,
 }
 
 /// 缓存后端类型
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CacheBackend {
     /// Sled 嵌入式数据库
+    #[default]
     Sled,
     /// Redis 缓存
     Redis,
@@ -64,7 +68,7 @@ pub enum CacheBackend {
 }
 
 /// 淘汰策略
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum EvictionPolicy {
     /// 最近最少使用
@@ -76,6 +80,7 @@ pub enum EvictionPolicy {
     /// 随机淘汰
     Random,
     /// 基于 TTL
+    #[default]
     Ttl,
     /// 混合策略
     Hybrid,
@@ -172,6 +177,7 @@ pub struct CacheMonitoringConfig {
     /// 慢查询阈值（毫秒）
     pub slow_query_threshold: u64,
     /// 是否启用性能分析
+    #[serde(default = "default_false")]
     pub enable_profiling: bool,
 }
 
@@ -504,4 +510,8 @@ impl Default for MemoryConfig {
             concurrency_level: 4,
         }
     }
+}
+
+fn default_false() -> bool {
+    false
 }

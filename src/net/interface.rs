@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! 网络层外部接口模块
-//!
-//! 提供统一的网络层访问接口
+//! 网络层统一接口模块
+//! 
+//! 提供对 HTTP 客户端、DNS 解析器等网络功能的统一访问
 
-use crate::error::Result;
+use crate::errors::Result;
 use crate::net::client::HttpClient;
 use crate::net::resolver::DnsResolver;
-use crate::net::types::NetworkConfig;
+use crate::net::config::NetworkConfig;
 use std::sync::Arc;
 
 /// 网络层统一接口
@@ -47,13 +47,41 @@ impl NetworkInterface {
     /// 成功返回 NetworkInterface，失败返回错误
     pub fn new(config: NetworkConfig) -> Result<Self> {
         let http_client = HttpClient::new(config.clone())?;
-        let dns_resolver = DnsResolver::new(config.doh.clone());
+        let dns_resolver = DnsResolver::new(config.dns.clone());
 
         Ok(Self {
             http_client: Arc::new(http_client),
             dns_resolver: Arc::new(dns_resolver),
             config: Arc::new(config),
         })
+    }
+
+    /// 从项目级配置创建新的网络层接口
+    ///
+    /// # 参数
+    ///
+    /// * `project_config` - 项目级配置
+    ///
+    /// # 返回
+    ///
+    /// 成功返回 NetworkInterface，失败返回错误
+    pub fn from_project_config(project_config: &crate::config::SeeSeaConfig) -> Result<Self> {
+        let network_config = NetworkConfig::from_project_config(project_config);
+        Self::new(network_config)
+    }
+
+    /// 从全局配置创建新的网络层接口
+    ///
+    /// # 返回
+    ///
+    /// 成功返回 NetworkInterface，失败返回错误
+    pub async fn from_global_config() -> Result<Self> {
+        if let Some(project_config) = crate::config::on::get_config().await {
+            Self::from_project_config(&project_config)
+        } else {
+            // 如果全局配置未初始化，使用默认配置
+            Self::new(NetworkConfig::default())
+        }
     }
 
     /// 获取 HTTP 客户端
@@ -91,26 +119,26 @@ impl NetworkInterface {
     ///
     /// 如果所有组件正常返回 Ok(())，否则返回错误
     pub async fn health_check(&self) -> Result<HealthStatus> {
-        let mut status = HealthStatus::default();
+        let status = HealthStatus {
+            http_client: true,
+            dns_resolver: if let Ok(ips) = self.dns_resolver.resolve("localhost").await {
+                !ips.is_empty()
+            } else {
+                false
+            },
+            proxy: if self.config.proxy.enabled {
+                crate::net::client::proxy::check_proxy(&self.config.proxy)
+                    .await
+                    .unwrap_or(false)
+            } else {
+                true
+            },
+            overall: false, // 会在下面更新
+        };
 
-        // 检查 HTTP 客户端
-        status.http_client = true;
-
-        // 检查 DNS 解析器
-        if let Ok(ips) = self.dns_resolver.resolve("localhost").await {
-            status.dns_resolver = !ips.is_empty();
-        }
-
-        // 检查代理（如果启用）
-        if self.config.proxy.enabled {
-            status.proxy = crate::net::client::proxy::check_proxy(&self.config.proxy)
-                .await
-                .unwrap_or(false);
-        } else {
-            status.proxy = true; // 未启用代理视为正常
-        }
-
-        status.overall = status.http_client && status.dns_resolver && status.proxy;
+        let overall = status.http_client && status.dns_resolver && status.proxy;
+        let mut status = status;
+        status.overall = overall;
 
         Ok(status)
     }
@@ -125,6 +153,7 @@ impl Default for NetworkInterface {
 
 /// 健康状态
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct HealthStatus {
     /// HTTP 客户端状态
     pub http_client: bool,
@@ -136,16 +165,6 @@ pub struct HealthStatus {
     pub overall: bool,
 }
 
-impl Default for HealthStatus {
-    fn default() -> Self {
-        Self {
-            http_client: false,
-            dns_resolver: false,
-            proxy: false,
-            overall: false,
-        }
-    }
-}
 
 impl HealthStatus {
     /// 是否健康

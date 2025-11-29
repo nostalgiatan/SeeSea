@@ -337,7 +337,7 @@ impl ApiInterface {
             self.network_config.internal.port
         );
         
-        println!("🔒 内网服务器启动在: {}", addr);
+        println!("🔒 内网服务器启动在: {addr}");
         println!("   - 仅允许本地访问");
         println!("   - 无安全限制");
         
@@ -355,7 +355,7 @@ impl ApiInterface {
             self.network_config.external.port
         );
         
-        println!("🌐 外网服务器启动在: {}", addr);
+        println!("🌐 外网服务器启动在: {addr}");
         println!("   - 启用限流: {}", self.network_config.external.enable_rate_limit);
         println!("   - 启用熔断: {}", self.network_config.external.enable_circuit_breaker);
         println!("   - 启用IP过滤: {}", self.network_config.external.enable_ip_filter);
@@ -382,7 +382,7 @@ impl ApiInterface {
                 self.network_config.internal.port
             );
             
-            println!("\n🔒 内网服务器: {}", internal_addr);
+            println!("\n🔒 内网服务器: {internal_addr}");
             println!("   - 仅允许本地访问");
             println!("   - 无安全限制");
             
@@ -400,7 +400,7 @@ impl ApiInterface {
                 self.network_config.external.port
             );
             
-            println!("\n🌐 外网服务器: {}", external_addr);
+            println!("\n🌐 外网服务器: {external_addr}");
             println!("   - 启用限流: {}", self.network_config.external.enable_rate_limit);
             println!("   - 启用熔断: {}", self.network_config.external.enable_circuit_breaker);
             println!("   - 启用IP过滤: {}", self.network_config.external.enable_ip_filter);
@@ -454,7 +454,7 @@ impl ApiInterface {
 mod tests {
     use super::*;
     use crate::search::SearchConfig;
-    use crate::net::types::NetworkConfig;
+    use crate::net::config::NetworkConfig;
     use crate::cache::types::CacheImplConfig;
 
     #[tokio::test]

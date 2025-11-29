@@ -35,6 +35,8 @@ pub struct SearchRequest {
     pub force: bool,
     /// 缓存刷新时间线（秒），超过此时间强制刷新
     pub cache_timeline: Option<u64>,
+    /// 是否包含深网搜索（默认false）
+    pub include_deepweb: bool,
 }
 
 impl Default for SearchRequest {
@@ -46,6 +48,7 @@ impl Default for SearchRequest {
             max_results: Some(100),
             force: false,
             cache_timeline: Some(3600), // 默认1小时刷新
+            include_deepweb: false,      // 默认不包含深网搜索
         }
     }
 }

@@ -60,6 +60,7 @@ impl PySearchClient {
         engines: Option<Vec<String>>,
         force: Option<bool>,
         cache_timeline: Option<u64>,
+        include_deepweb: Option<bool>,
     ) -> PyResult<Py<PyAny>> {
         let search_query = SearchQuery {
             query,
@@ -74,9 +75,12 @@ impl PySearchClient {
         let (engines_to_use, mode) = if let Some(engines) = engines {
             // 用户指定了具体引擎，使用自定义模式
             (engines.clone(), EngineMode::Custom(engines))
+        } else if include_deepweb.unwrap_or(false) {
+            // 深网搜索模式
+            (vec![], EngineMode::DeepWeb)
         } else {
-            // 默认全局模式
-            (vec![], EngineMode::Global)
+            // 快速搜索模式
+            (vec![], EngineMode::Fast)
         };
 
         let request = SearchRequest {
@@ -86,6 +90,7 @@ impl PySearchClient {
             max_results: None,
             force: force.unwrap_or(false),
             cache_timeline,
+            include_deepweb: include_deepweb.unwrap_or(false),
         };
 
         let response = if let EngineMode::Custom(_) = mode {
@@ -187,6 +192,7 @@ impl PySearchClient {
     /// * `page` - 页码（可选）
     /// * `page_size` - 每页大小（可选）
     /// * `engines` - 指定引擎列表（可选）
+    /// * `include_deepweb` - 是否包含深网搜索（可选，默认false）
     /// 
     /// # Returns
     /// 
@@ -199,6 +205,7 @@ impl PySearchClient {
         page: Option<usize>,
         page_size: Option<usize>,
         engines: Option<Vec<String>>,
+        include_deepweb: Option<bool>,
     ) -> PyResult<Py<PyAny>> {
         let search_query = SearchQuery {
             query,
@@ -207,10 +214,14 @@ impl PySearchClient {
             ..Default::default()
         };
 
-        let (engines_to_use, mode) = if let Some(engines) = engines {
+        let (engines_to_use, _mode) = if let Some(engines) = engines {
             (engines.clone(), EngineMode::Custom(engines))
+        } else if include_deepweb.unwrap_or(false) {
+            // 深网搜索模式
+            (vec![], EngineMode::DeepWeb)
         } else {
-            (vec![], EngineMode::Global)
+            // 快速搜索模式
+            (vec![], EngineMode::Fast)
         };
 
         let request = SearchRequest {
@@ -220,6 +231,7 @@ impl PySearchClient {
             max_results: None,
             force: false,
             cache_timeline: None,
+            include_deepweb: include_deepweb.unwrap_or(false),
         };
 
         // 创建回调包装器
@@ -228,7 +240,7 @@ impl PySearchClient {
         let response = self.runtime.block_on(async move {
             self.interface.search_streaming(&request, move |result, engine_name| {
                 // 在回调中调用Python函数
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     let result_dict = PyDict::new(py);
                     let _ = result_dict.set_item("engine", engine_name);
                     let _ = result_dict.set_item("total_results", result.total_results);
@@ -326,6 +338,7 @@ impl PySearchClient {
     /// * `page` - 页码（可选）
     /// * `page_size` - 每页大小（可选）
     /// * `engines` - 指定引擎列表（可选）
+    /// * `include_deepweb` - 是否包含深网搜索（可选，默认false）
     /// 
     /// # Returns
     /// 
@@ -336,6 +349,7 @@ impl PySearchClient {
         page: Option<usize>,
         page_size: Option<usize>,
         engines: Option<Vec<String>>,
+        include_deepweb: Option<bool>,
     ) -> PyResult<Py<PyAny>> {
         let search_query = SearchQuery {
             query,
@@ -346,8 +360,12 @@ impl PySearchClient {
 
         let (engines_to_use, _mode) = if let Some(engines) = engines {
             (engines.clone(), EngineMode::Custom(engines))
+        } else if include_deepweb.unwrap_or(false) {
+            // 深网搜索模式
+            (vec![], EngineMode::DeepWeb)
         } else {
-            (vec![], EngineMode::Global)
+            // 快速搜索模式
+            (vec![], EngineMode::Fast)
         };
 
         let request = SearchRequest {
@@ -357,6 +375,7 @@ impl PySearchClient {
             max_results: None,
             force: false,
             cache_timeline: None,
+            include_deepweb: include_deepweb.unwrap_or(false),
         };
 
         let response = self.runtime.block_on(async {

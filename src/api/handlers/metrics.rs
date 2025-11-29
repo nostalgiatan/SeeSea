@@ -47,7 +47,7 @@ pub async fn handle_engines_list(
         .into_iter()
         .map(|name| ApiEngineInfo {
             name: name.clone(),
-            description: format!("{} 搜索引擎", name),
+            description: format!("{name} 搜索引擎"),
             engine_type: "general".to_string(),
             enabled: true,
             capabilities: vec!["web".to_string()],

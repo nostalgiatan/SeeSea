@@ -19,14 +19,14 @@
 pub mod doh;
 pub mod pool;
 
-use crate::error::Result;
-use crate::net::types::DohConfig;
+use crate::errors::Result;
+use crate::net::config::DnsConfig;
 use std::net::IpAddr;
 
 /// DNS 解析器
 pub struct DnsResolver {
-    /// DoH 配置
-    config: DohConfig,
+    /// DNS 配置
+    config: DnsConfig,
 }
 
 impl DnsResolver {
@@ -34,8 +34,8 @@ impl DnsResolver {
     ///
     /// # 参数
     ///
-    /// * `config` - DoH 配置
-    pub fn new(config: DohConfig) -> Self {
+    /// * `config` - DNS 配置
+    pub fn new(config: DnsConfig) -> Self {
         Self { config }
     }
 
@@ -49,7 +49,7 @@ impl DnsResolver {
     ///
     /// 成功返回 IP 地址列表，失败返回错误
     pub async fn resolve(&self, hostname: &str) -> Result<Vec<IpAddr>> {
-        if self.config.enabled {
+        if self.config.doh_enabled {
             // 使用 DoH
             match doh::resolve_via_doh(hostname, &self.config).await {
                 Ok(ips) => Ok(ips),
@@ -69,14 +69,16 @@ impl DnsResolver {
     async fn resolve_system(&self, hostname: &str) -> Result<Vec<IpAddr>> {
         use tokio::net::lookup_host;
 
-        let addrs: Vec<IpAddr> = lookup_host(format!("{}:0", hostname))
+        let addrs = lookup_host(format!("{hostname}:0"))
             .await
-            .map_err(|e| crate::error::network_error(format!("System DNS resolution failed: {}", e)))?
+            .map_err(|e| crate::errors::network_error(format!("System DNS resolution failed: {e}")))?;
+
+        let addrs: Vec<IpAddr> = addrs
             .map(|addr| addr.ip())
             .collect();
 
         if addrs.is_empty() {
-            return Err(crate::error::network_error(format!("No IP addresses found for {}", hostname)));
+            return Err(crate::errors::network_error(format!("No IP addresses found for {hostname}")));
         }
 
         Ok(addrs)
@@ -91,7 +93,7 @@ impl DnsResolver {
 
 impl Default for DnsResolver {
     fn default() -> Self {
-        Self::new(DohConfig::default())
+        Self::new(DnsConfig::default())
     }
 }
 
@@ -110,9 +112,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_dns_resolver_creation() {
-        let config = DohConfig::default();
+        let config = DnsConfig::default();
         let resolver = DnsResolver::new(config);
-        assert!(!resolver.config.enabled);
+        assert!(!resolver.config.doh_enabled);
     }
 
     #[test]

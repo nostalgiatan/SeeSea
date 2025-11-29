@@ -16,8 +16,8 @@
 //!
 //! 提供 HTTP、SOCKS5、Tor 等代理配置
 
-use crate::error::Result;
-use crate::net::types::{ProxyConfig, ProxyType};
+use crate::errors::Result;
+use crate::net::config::{ProxyConfig, ProxyType};
 use reqwest::ClientBuilder;
 
 /// 配置代理
@@ -46,7 +46,7 @@ pub fn configure_proxy(builder: ClientBuilder, config: &ProxyConfig) -> Result<C
     };
 
     let mut proxy = reqwest::Proxy::all(&proxy_url)
-        .map_err(|e| crate::error::network_error(format!("Failed to create proxy: {}", e)))?;
+        .map_err(|e| crate::errors::proxy_error(&format!("Failed to create proxy: {e}")))?;
 
     // 如果有认证信息，添加认证
     if let (Some(username), Some(password)) = (&config.username, &config.password) {
@@ -77,7 +77,7 @@ pub async fn check_proxy(config: &ProxyConfig) -> Result<bool> {
     let client = builder
         .timeout(std::time::Duration::from_secs(10))
         .build()
-        .map_err(|e| crate::error::network_error(format!("Failed to build test client: {}", e)))?;
+        .map_err(|e| crate::errors::http_error(0, &format!("Failed to build test client: {e}")))?;
 
     // 尝试访问一个简单的 URL 来测试代理
     match client.get("https://www.google.com").send().await {

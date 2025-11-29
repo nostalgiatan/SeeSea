@@ -19,66 +19,52 @@ use std::error::Error;
 
 use crate::derive::{
     EngineCapabilities, EngineInfo, EngineStatus, EngineType,
-    ResultType, SearchEngine, SearchQuery, SearchResult,
-    SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
+    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
 };
-use crate::net::client::HttpClient;
-use crate::net::types::{NetworkConfig, RequestOptions};
 use super::utils::build_query_string_owned;
 
-pub struct SogouEngine {
-    info: EngineInfo,
-    client: Arc<HttpClient>,
+// 使用宏定义引擎结构体和基本方法
+define_engine! {
+    SogouEngine,
+    EngineInfo {
+        name: "Sogou".to_string(),
+        engine_type: EngineType::General,
+        description: "Sogou - Chinese search engine".to_string(),
+        status: EngineStatus::Active,
+        categories: vec!["general".to_string()],
+        capabilities: EngineCapabilities {
+            result_types: vec![ResultType::Web],
+            supported_params: vec!["time_range".to_string()],
+            max_page_size: 10,
+            supports_pagination: true,
+            supports_time_range: true,
+            supports_language_filter: false,
+            supports_region_filter: false,
+            supports_safe_search: false,
+            rate_limit: Some(60),
+        },
+        about: AboutInfo {
+            website: Some("https://www.sogou.com/".to_string()),
+            wikidata_id: Some("Q7554565".to_string()),
+            official_api_documentation: None,
+            use_official_api: false,
+            require_api_key: false,
+            results: "HTML".to_string(),
+        },
+        shortcut: Some("sogou".to_string()),
+        timeout: Some(10),
+        disabled: false,
+        inactive: false,
+        version: Some("1.0.0".to_string()),
+        last_checked: None,
+        using_tor_proxy: false,
+        display_error_messages: true,
+        tokens: Vec::new(),
+        max_page: 10,
+    }
 }
 
 impl SogouEngine {
-    pub fn new() -> Self {
-        let client = HttpClient::new(NetworkConfig::default())
-            .unwrap_or_else(|_| panic!("Failed to create HTTP client"));
-        Self::with_client(Arc::new(client))
-    }
-
-    pub fn with_client(client: Arc<HttpClient>) -> Self {
-        Self {
-            info: EngineInfo {
-                name: "Sogou".to_string(),
-                engine_type: EngineType::General,
-                description: "Sogou - Chinese search engine".to_string(),
-                status: EngineStatus::Active,
-                categories: vec!["general".to_string()],
-                capabilities: EngineCapabilities {
-                    result_types: vec![ResultType::Web],
-                    supported_params: vec!["time_range".to_string()],
-                    max_page_size: 10,
-                    supports_pagination: true,
-                    supports_time_range: true,
-                    supports_language_filter: false,
-                    supports_region_filter: false,
-                    supports_safe_search: false,
-                    rate_limit: Some(60),
-                },
-                about: AboutInfo {
-                    website: Some("https://www.sogou.com/".to_string()),
-                    wikidata_id: Some("Q7554565".to_string()),
-                    official_api_documentation: None,
-                    use_official_api: false,
-                    require_api_key: false,
-                    results: "HTML".to_string(),
-                },
-                shortcut: Some("sogou".to_string()),
-                timeout: Some(10),
-                disabled: false,
-                inactive: false,
-                version: Some("1.0.0".to_string()),
-                last_checked: None,
-                using_tor_proxy: false,
-                display_error_messages: true,
-                tokens: Vec::new(),
-                max_page: 10,
-            },
-            client,
-        }
-    }
 
     fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use scraper::{Html, Selector};
@@ -155,27 +141,6 @@ impl SogouEngine {
     }
 }
 
-impl Default for SogouEngine {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl SearchEngine for SogouEngine {
-    fn info(&self) -> &EngineInfo {
-        &self.info
-    }
-
-    async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
-        <Self as RequestResponseEngine>::search(self, query).await
-    }
-
-    async fn is_available(&self) -> bool {
-        self.client.get("https://www.sogou.com", None).await.is_ok()
-    }
-}
-
 #[async_trait]
 impl RequestResponseEngine for SogouEngine {
     type Response = String;
@@ -184,7 +149,7 @@ impl RequestResponseEngine for SogouEngine {
          // query_params = {"query": query, "page": params["pageno"]}
         let mut query_params = vec![
             ("query", query.to_string()),
-            ("page", params.pageno.to_string()),
+            ("page", params.page.to_string()),
         ];
 
         // Add time range filter if specified
@@ -203,28 +168,17 @@ impl RequestResponseEngine for SogouEngine {
         }
 
         // Build URL with optimized query string
-        let query_string = build_query_string_owned(query_params.into_iter());
+        let query_string = build_query_string_owned(query_params);
 
-        params.url = Some(format!("https://www.sogou.com/web?{}", query_string));
+        params.url = Some(format!("https://www.sogou.com/web?{query_string}"));
         params.method = "GET".to_string();
 
         Ok(())
     }
 
     async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
-        let url = params.url.as_ref().ok_or("URL not set")?;
-
-        let mut options = RequestOptions::default();
-        // 使用配置的默认超时时间
-
-        for (key, value) in &params.headers {
-            options.headers.push((key.clone(), value.clone()));
-        }
-
-        let response = self.client.get(url, Some(options)).await
-            .map_err(|e| format!("Request failed: {}", e))?;
-
-        response.text().await.map_err(|e| format!("Failed to read response: {}", e).into())
+        // 使用通用引擎的fetch方法
+        self.generic.fetch(params).await
     }
 
     fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {

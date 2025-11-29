@@ -32,6 +32,9 @@ fn temp_cache_config() -> CacheImplConfig {
         enabled: true,
         compression: false,
         mode: CacheMode::HighThroughput,
+        enable_bloom_filter: false,
+        bloom_filter_expected_elements: 1000,
+        bloom_filter_false_positive_rate: 0.01,
     }
 }
 

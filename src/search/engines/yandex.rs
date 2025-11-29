@@ -60,80 +60,53 @@ use std::error::Error;
 
 use crate::derive::{
     EngineCapabilities, EngineInfo, EngineStatus, EngineType,
-    ResultType, SearchEngine, SearchQuery, SearchResult,
-    SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
+    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
 };
-use crate::net::client::HttpClient;
-use crate::net::types::{NetworkConfig, RequestOptions};
+use crate::net::config::RequestOptions;
 use super::utils::build_query_string_owned;
 
-/// Yandex 搜索引擎
-///
-/// 使用 Yandex API 进行搜索的引擎实现
-pub struct YandexEngine {
-    /// 引擎信息
-    info: EngineInfo,
-    /// HTTP 客户端
-    client: Arc<HttpClient>,
+// 使用宏定义引擎结构体和基本方法
+define_engine! {
+    YandexEngine,
+    EngineInfo {
+        name: "Yandex".to_string(),
+        engine_type: EngineType::General,
+        description: "Yandex 是俄罗斯最大的搜索引擎".to_string(),
+        status: EngineStatus::Active,
+        categories: vec!["general".to_string(), "web".to_string()],
+        capabilities: EngineCapabilities {
+            result_types: vec![ResultType::Web],
+            supported_params: vec![],
+            max_page_size: 10,
+            supports_pagination: true,
+            supports_time_range: false,
+            supports_language_filter: false,
+            supports_region_filter: false,
+            supports_safe_search: false,
+            rate_limit: Some(60),
+        },
+        about: AboutInfo {
+            website: Some("https://yandex.com".to_string()),
+            wikidata_id: Some("Q5281".to_string()),
+            official_api_documentation: None,
+            use_official_api: false,
+            require_api_key: false,
+            results: "HTML".to_string(),
+        },
+        shortcut: Some("yandex".to_string()),
+        timeout: Some(10),
+        disabled: false,
+        inactive: false,
+        version: Some("1.0.0".to_string()),
+        last_checked: None,
+        using_tor_proxy: false,
+        display_error_messages: true,
+        tokens: Vec::new(),
+        max_page: 50,
+    }
 }
 
 impl YandexEngine {
-    /// 创建新的 Yandex 引擎实例
-    ///
-    /// # 示例
-    ///
-    /// ```
-    /// use SeeSea::search::engines::yandex::YandexEngine;
-    ///
-    /// let engine = YandexEngine::new();
-    /// ```
-    pub fn new() -> Self {
-        let client = HttpClient::new(NetworkConfig::default())
-            .unwrap_or_else(|_| panic!("Failed to create HTTP client"));
-        Self::with_client(Arc::new(client))
-    }
-
-    pub fn with_client(client: Arc<HttpClient>) -> Self {
-        Self {
-            info: EngineInfo {
-                name: "Yandex".to_string(),
-                engine_type: EngineType::General,
-                description: "Yandex 是俄罗斯最大的搜索引擎".to_string(),
-                status: EngineStatus::Active,
-                categories: vec!["general".to_string(), "web".to_string()],
-                capabilities: EngineCapabilities {
-                    result_types: vec![ResultType::Web],
-                    supported_params: vec![],
-                    max_page_size: 10,
-                    supports_pagination: true,
-                    supports_time_range: false,
-                    supports_language_filter: false,
-                    supports_region_filter: false,
-                    supports_safe_search: false,
-                    rate_limit: Some(60),
-                },
-                about: AboutInfo {
-                    website: Some("https://yandex.com".to_string()),
-                    wikidata_id: Some("Q5281".to_string()),
-                    official_api_documentation: None,
-                    use_official_api: false,
-                    require_api_key: false,
-                    results: "HTML".to_string(),
-                },
-                shortcut: Some("yandex".to_string()),
-                timeout: Some(10),
-                disabled: false,
-                inactive: false,
-                version: Some("1.0.0".to_string()),
-                last_checked: None,
-                using_tor_proxy: false,
-                display_error_messages: true,
-                tokens: Vec::new(),
-                max_page: 50,
-            },
-            client,
-        }
-    }
 
     /// 检测是否遇到 Yandex CAPTCHA
     ///
@@ -190,18 +163,14 @@ impl YandexEngine {
                 results_found = true;
                 
                 // 提取标题和 URL
-                let title_selectors = vec![
-                    Selector::parse("h2").ok(),
+                let title_selectors = [Selector::parse("h2").ok(),
                     Selector::parse("h3").ok(),
-                    Selector::parse("a.link").ok(),
-                ];
+                    Selector::parse("a.link").ok()];
                 let link_selector = Selector::parse("a").expect("Expected valid value");
-                let snippet_selectors = vec![
-                    Selector::parse("div.text-container").ok(),
+                let snippet_selectors = [Selector::parse("div.text-container").ok(),
                     Selector::parse("div.OrganicTextContentSpan").ok(),
                     Selector::parse("div.text").ok(),
-                    Selector::parse("div[class*='snippet']").ok(),
-                ];
+                    Selector::parse("div[class*='snippet']").ok()];
                 
                 let mut title = String::new();
                 for selector in title_selectors.iter().flatten() {
@@ -254,29 +223,7 @@ impl YandexEngine {
     }
 }
 
-impl Default for YandexEngine {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
-#[async_trait]
-impl SearchEngine for YandexEngine {
-    /// 获取引擎信息
-    fn info(&self) -> &EngineInfo {
-        &self.info
-    }
-
-    /// 执行搜索
-    async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
-        <Self as RequestResponseEngine>::search(self, query).await
-    }
-
-    /// 检查引擎是否可用
-    async fn is_available(&self) -> bool {
-        self.client.get("https://yandex.com", None).await.is_ok()
-    }
-}
 
 #[async_trait]
 impl RequestResponseEngine for YandexEngine {
@@ -294,14 +241,14 @@ impl RequestResponseEngine for YandexEngine {
         ];
         
         // 添加分页参数
-        if params.pageno > 1 {
-            query_params.push(("p", (params.pageno - 1).to_string()));
+        if params.page > 1 {
+            query_params.push(("p", (params.page - 1).to_string()));
         }
         
         // Build URL with optimized query string
-        let query_string = build_query_string_owned(query_params.into_iter());
+        let query_string = build_query_string_owned(query_params);
         
-        params.url = Some(format!("https://yandex.com/search/site/?{}", query_string));
+        params.url = Some(format!("https://yandex.com/search/site/?{query_string}"));
         params.method = "GET".to_string();
         
         // Set cookies
@@ -315,6 +262,7 @@ impl RequestResponseEngine for YandexEngine {
 
     /// 发送请求并获取响应
     async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
+        // Yandex 的 fetch 方法返回特殊类型，需要保留自定义实现
         let url = params.url.as_ref()
             .ok_or("请求 URL 未设置")?;
 
@@ -328,8 +276,8 @@ impl RequestResponseEngine for YandexEngine {
         }
 
         // 发送请求
-        let response = self.client.get(url, Some(options)).await
-            .map_err(|e| format!("Request failed: {}", e))?;
+        let response = self.generic.client.get(url, Some(options)).await
+            .map_err(|e| format!("Request failed: {e}"))?;
 
         // 检查状态码
         let status = response.status();
@@ -337,13 +285,13 @@ impl RequestResponseEngine for YandexEngine {
             403 => return Err("Yandex 检测到自动化访问，请稍后重试".into()),
             429 => return Err("Yandex 请求过于频繁，请稍后重试".into()),
             503 => return Err("Yandex 服务暂时不可用，请稍后重试".into()),
-            _ if !status.is_success() => return Err(format!("HTTP 错误: {}", status).into()),
+            _ if !status.is_success() => return Err(format!("HTTP 错误: {status}").into()),
             _ => {} // 继续处理
         }
 
         // 获取响应文本
         let text = response.text().await
-            .map_err(|e| format!("Failed to read response: {}", e))?;
+            .map_err(|e| format!("Failed to read response: {e}"))?;
 
         Ok((text, None))
     }
@@ -364,6 +312,7 @@ impl RequestResponseEngine for YandexEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::derive::SearchEngine;
 
     #[test]
     fn test_engine_creation() {
@@ -408,7 +357,7 @@ mod tests {
     fn test_request_with_pagination() {
         let engine = YandexEngine::new();
         let mut params = RequestParams::default();
-        params.pageno = 3;
+        params.page = 3;
         
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());

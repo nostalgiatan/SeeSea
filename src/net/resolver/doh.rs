@@ -16,8 +16,8 @@
 //!
 //! 提供基于 HTTPS 的 DNS 查询功能
 
-use crate::error::Result;
-use crate::net::types::DohConfig;
+use crate::errors::Result;
+use crate::net::config::DnsConfig;
 use std::net::IpAddr;
 
 /// 通过 DoH 解析域名
@@ -25,25 +25,25 @@ use std::net::IpAddr;
 /// # 参数
 ///
 /// * `hostname` - 要解析的域名
-/// * `config` - DoH 配置
+/// * `config` - DNS 配置
 ///
 /// # 返回
 ///
 /// 成功返回 IP 地址列表，失败返回错误
-pub async fn resolve_via_doh(hostname: &str, config: &DohConfig) -> Result<Vec<IpAddr>> {
-    if config.servers.is_empty() {
-        return Err(crate::error::network_error("No DoH servers configured".to_string()));
+pub async fn resolve_via_doh(hostname: &str, config: &DnsConfig) -> Result<Vec<IpAddr>> {
+    if config.doh_servers.is_empty() {
+        return Err(crate::errors::network_error("No DoH servers configured".to_string()));
     }
 
     // 尝试每个 DoH 服务器
-    for server in &config.servers {
+    for server in &config.doh_servers {
         match query_doh_server(hostname, server).await {
             Ok(ips) if !ips.is_empty() => return Ok(ips),
             _ => continue,
         }
     }
 
-    Err(crate::error::network_error(format!("All DoH servers failed to resolve {}", hostname)))
+    Err(crate::errors::network_error(format!("All DoH servers failed to resolve {hostname}")))
 }
 
 /// 查询单个 DoH 服务器
@@ -58,7 +58,7 @@ pub async fn resolve_via_doh(hostname: &str, config: &DohConfig) -> Result<Vec<I
 /// 成功返回 IP 地址列表，失败返回错误
 async fn query_doh_server(hostname: &str, server_url: &str) -> Result<Vec<IpAddr>> {
     // 构造 DoH 查询 URL
-    let query_url = format!("{}?name={}&type=A", server_url, hostname);
+    let query_url = format!("{server_url}?name={hostname}&type=A");
 
     // 发送 HTTPS 请求
     let client = reqwest::Client::new();
@@ -67,17 +67,17 @@ async fn query_doh_server(hostname: &str, server_url: &str) -> Result<Vec<IpAddr
         .header("Accept", "application/dns-json")
         .send()
         .await
-        .map_err(|e| crate::error::network_error(format!("DoH query failed: {}", e)))?;
+        .map_err(|e| crate::errors::network_error(format!("DoH query failed: {e}")))?;
 
     if !response.status().is_success() {
-        return Err(crate::error::network_error(format!("DoH server returned error: {}", response.status())));
+        return Err(crate::errors::network_error(format!("DoH server returned error: {}", response.status())));
     }
 
     // 解析 JSON 响应
     let json: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| crate::error::network_error(format!("Failed to parse DoH response: {}", e)))?;
+        .map_err(|e| crate::errors::network_error(format!("Failed to parse DoH response: {e}")))?;
 
     // 提取 IP 地址
     let mut ips = Vec::new();
@@ -92,7 +92,7 @@ async fn query_doh_server(hostname: &str, server_url: &str) -> Result<Vec<IpAddr
     }
 
     if ips.is_empty() {
-        Err(crate::error::network_error(format!("No IP addresses in DoH response for {}", hostname)))
+        Err(crate::errors::network_error(format!("No IP addresses in DoH response for {hostname}")))
     } else {
         Ok(ips)
     }
@@ -133,9 +133,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_via_doh_no_servers() {
-        let config = DohConfig {
-            enabled: true,
-            servers: vec![],
+        let config = DnsConfig {
+            doh_enabled: true,
+            doh_servers: vec![],
             fallback_to_system: false,
         };
         let result = resolve_via_doh("example.com", &config).await;
@@ -146,9 +146,9 @@ mod tests {
     #[tokio::test]
     #[ignore] // 标记为 ignore，需要网络连接才能运行
     async fn test_resolve_via_doh_cloudflare() {
-        let config = DohConfig {
-            enabled: true,
-            servers: vec!["https://cloudflare-dns.com/dns-query".to_string()],
+        let config = DnsConfig {
+            doh_enabled: true,
+            doh_servers: vec!["https://cloudflare-dns.com/dns-query".to_string()],
             fallback_to_system: false,
         };
         let result = resolve_via_doh("example.com", &config).await;

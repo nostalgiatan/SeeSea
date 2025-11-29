@@ -22,26 +22,37 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoggingConfig {
     /// 全局日志级别
+    #[serde(default)]
     pub level: LogLevel,
     /// 日志格式
+    #[serde(default)]
     pub format: LogFormat,
     /// 日志输出
+    #[serde(default)]
     pub output: LogOutput,
     /// 文件路径（如果输出到文件）
+    #[serde(default)]
     pub file_path: Option<PathBuf>,
     /// 是否启用结构化日志
+    #[serde(default)]
     pub structured: bool,
     /// 是否启用彩色输出
+    #[serde(default)]
     pub colored: bool,
     /// 模块级别日志配置
+    #[serde(default)]
     pub module_levels: ModuleLogConfig,
     /// 日志轮转配置
+    #[serde(default)]
     pub rotation: LogRotationConfig,
     /// 过滤器配置
+    #[serde(default)]
     pub filters: LogFilterConfig,
     /// 性能配置
+    #[serde(default)]
     pub performance: LogPerformanceConfig,
     /// 遥测配置
+    #[serde(default)]
     pub telemetry: LogTelemetryConfig,
 }
 
@@ -49,12 +60,16 @@ pub struct LoggingConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModuleLogConfig {
     /// 是否启用模块级别配置
+    #[serde(default)]
     pub enabled: bool,
     /// 模块级别设置
+    #[serde(default)]
     pub levels: std::collections::HashMap<String, LogLevel>,
     /// 默认模块级别
+    #[serde(default)]
     pub default_level: LogLevel,
     /// 忽略的模块列表
+    #[serde(default)]
     pub ignore_modules: Vec<String>,
 }
 
@@ -91,6 +106,7 @@ pub enum RotationStrategy {
 
 /// 日志过滤器配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct LogFilterConfig {
     /// 是否启用过滤器
     pub enabled: bool,
@@ -179,22 +195,28 @@ pub struct LogPerformanceConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogTelemetryConfig {
     /// 是否启用遥测
+    #[serde(default)]
     pub enabled: bool,
     /// 遥测后端
+    #[serde(default)]
     pub backend: TelemetryBackend,
     /// 导出间隔（秒）
+    #[serde(default)]
     pub export_interval: u64,
     /// 采样率
+    #[serde(default)]
     pub sampling_rate: f32,
     /// 自定义属性
+    #[serde(default)]
     pub custom_attributes: std::collections::HashMap<String, String>,
 }
 
 /// 遥测后端
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TelemetryBackend {
     /// OpenTelemetry
+    #[default]
     OpenTelemetry,
     /// Prometheus
     Prometheus,
@@ -377,11 +399,10 @@ impl LoggingConfig {
         let mut result = ConfigValidationResult::success();
 
         // 检查文件路径
-        if matches!(self.output, LogOutput::File | LogOutput::Both) {
-            if self.file_path.is_none() {
+        if matches!(self.output, LogOutput::File | LogOutput::Both)
+            && self.file_path.is_none() {
                 result.add_error("文件输出时必须指定文件路径".to_string());
             }
-        }
 
         // 检查轮转配置
         if let Some(rotation) = Some(&self.rotation) {
@@ -440,7 +461,7 @@ impl LoggingConfig {
                 .copied()
                 .unwrap_or(self.module_levels.default_level)
         } else {
-            self.level.clone()
+            self.level
         }
     }
 
@@ -484,16 +505,6 @@ impl Default for LogRotationConfig {
     }
 }
 
-impl Default for LogFilterConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            include_filters: vec![],
-            exclude_filters: vec![],
-            context_filters: vec![],
-        }
-    }
-}
 
 impl Default for LogPerformanceConfig {
     fn default() -> Self {

@@ -20,6 +20,7 @@ use crate::cache::manager::{CacheManager, Result};
 use crate::cache::metadata::MetadataCache;
 use crate::cache::result::ResultCache;
 use crate::cache::rss::RssCache;
+use crate::cache::scope::ScopeCache;
 use crate::cache::semantic_cache::{SemanticCache, SemanticCacheConfig};
 use crate::cache::types::CacheImplConfig;
 use std::sync::Arc;
@@ -89,6 +90,11 @@ impl CacheInterface {
         SemanticCache::new(Arc::clone(&self.manager), self.semantic_config.clone())
     }
 
+    /// 获取指定作用域的通用缓存访问器
+    pub fn scope(&self, scope: &str) -> ScopeCache {
+        ScopeCache::new(Arc::clone(&self.manager), scope.to_string())
+    }
+
     /// 获取缓存管理器引用
     pub fn manager(&self) -> &CacheManager {
         &self.manager
@@ -106,7 +112,16 @@ impl CacheInterface {
 
     /// 清理过期条目
     pub fn cleanup(&self) -> Result<usize> {
-        self.manager.cleanup_expired()
+        self.manager.cleanup_expired(None)
+    }
+
+    /// 清理过期条目（带限制）
+    ///
+    /// # 参数
+    ///
+    /// * `max_items` - 最大清理条目数量，None 表示清理所有过期条目
+    pub fn cleanup_with_limit(&self, max_items: Option<usize>) -> Result<usize> {
+        self.manager.cleanup_expired(max_items)
     }
 }
 
@@ -127,6 +142,9 @@ mod tests {
             enabled: true,
             compression: false,
             mode: CacheMode::HighThroughput,
+            enable_bloom_filter: false,
+            bloom_filter_expected_elements: 1000,
+            bloom_filter_false_positive_rate: 0.01,
         };
 
         let interface = CacheInterface::new(config);
@@ -145,6 +163,9 @@ mod tests {
             enabled: true,
             compression: false,
             mode: CacheMode::HighThroughput,
+            enable_bloom_filter: false,
+            bloom_filter_expected_elements: 1000,
+            bloom_filter_false_positive_rate: 0.01,
         };
 
         let interface = CacheInterface::new(config).expect("创建缓存接口失败");

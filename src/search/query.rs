@@ -112,10 +112,10 @@ impl QueryParser {
     /// 检测语言
     fn detect_language(&self, query: &str) -> Option<String> {
         // 简单的语言检测
-        if query.chars().any(|c| '\u{4e00}' <= c && c <= '\u{9fff}') {
+        if query.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)) {
             return Some("zh".to_string());
         }
-        if query.chars().all(|c| c.is_ascii()) {
+        if query.is_ascii() {
             return Some("en".to_string());
         }
         None

@@ -118,7 +118,21 @@ pub trait QueryPreprocessor {
 /// 查询优化 trait
 pub trait QueryOptimizer {
     /// 优化查询
-    fn optimize(&self, query: &mut SearchQuery) -> Result<(), Box<dyn Error>>;
+    fn optimize(&self, query: &mut SearchQuery) -> Result<(), Box<dyn Error>> {
+        // 调整页面大小
+        self.optimize_page_size(query, 100);
+        
+        // 设置默认语言（可选）
+        self.set_default_language(query, "en");
+        
+        // 设置默认地区（可选）
+        self.set_default_region(query, "us");
+        
+        // 移除无效参数
+        self.remove_invalid_params(query);
+        
+        Ok(())
+    }
 
     /// 调整页面大小
     fn optimize_page_size(&self, query: &mut SearchQuery, max_size: usize) {
@@ -142,6 +156,20 @@ pub trait QueryOptimizer {
             query.region = Some(default.to_string());
         }
     }
+    
+    /// 移除无效参数
+    fn remove_invalid_params(&self, query: &mut SearchQuery) {
+        query.params.retain(|_, value| !value.is_empty());
+    }
+    
+    /// 限制最大页码
+    fn limit_max_page(&self, query: &mut SearchQuery, max_page: usize) {
+        if query.page > max_page {
+            query.page = max_page;
+        } else if query.page == 0 {
+            query.page = 1;
+        }
+    }
 }
 
 /// 查询验证 trait
@@ -152,16 +180,16 @@ pub trait QueryValidator {
     /// 验证查询字符串
     fn validate_query_string(&self, query: &str) -> Result<(), ValidationError> {
         if query.trim().is_empty() {
-            return Err(ValidationError::EmptyQuery);
+            return Err(crate::errors::empty_field("query"));
         }
 
         if query.len() > 1000 {
-            return Err(ValidationError::QueryTooLong);
+            return Err(crate::errors::field_too_long("query", 1000, query.len()));
         }
 
         // 检查是否包含潜在的恶意内容
         if self.contains_malicious_content(query) {
-            return Err(ValidationError::InvalidParameter("包含潜在的恶意内容".to_string()));
+            return Err(crate::errors::validation_error("包含潜在的恶意内容"));
         }
 
         Ok(())
@@ -170,11 +198,11 @@ pub trait QueryValidator {
     /// 验证分页参数
     fn validate_pagination(&self, page: usize, page_size: usize) -> Result<(), ValidationError> {
         if page < 1 {
-            return Err(ValidationError::InvalidParameter("页码无效，必须大于0".to_string()));
+            return Err(crate::errors::validation_error("页码无效，必须大于0"));
         }
 
-        if page_size < 1 || page_size > 100 {
-            return Err(ValidationError::InvalidParameter("页面大小无效，必须在1-100之间".to_string()));
+        if !(1..=100).contains(&page_size) {
+            return Err(crate::errors::validation_error("页面大小无效，必须在1-100之间"));
         }
 
         Ok(())
@@ -215,7 +243,7 @@ pub trait QueryTransformer {
         params.push(format!("start={}", (query.page - 1) * query.page_size));
 
         if let Some(time_range) = query.time_range {
-            params.push(format!("time_range={:?}", time_range));
+            params.push(format!("time_range={time_range:?}"));
         }
 
         for (key, value) in &query.params {
@@ -230,8 +258,8 @@ pub trait QueryTransformer {
         serde_json::to_string(query).map_err(Into::into)
     }
 
-    /// 从JSON创建查询
-    fn from_json(&self, json: &str) -> Result<SearchQuery, Box<dyn Error>> {
+    /// 从JSON解析查询
+    fn parse_json(&self, json: &str) -> Result<SearchQuery, Box<dyn Error>> {
         serde_json::from_str(json).map_err(Into::into)
     }
 }

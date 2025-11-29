@@ -86,12 +86,12 @@ impl SemanticCache {
 
     /// 生成查询向量键
     fn generate_vector_key(&self, query_hash: &str) -> String {
-        format!("{}{}", QUERY_VECTOR_PREFIX, query_hash)
+        format!("{QUERY_VECTOR_PREFIX}{query_hash}")
     }
 
     /// 生成缓存键
     fn generate_cache_key(&self, query_hash: &str, engine: &str) -> String {
-        format!("{}{}:{}", SEMANTIC_CACHE_PREFIX, query_hash, engine)
+        format!("{SEMANTIC_CACHE_PREFIX}{query_hash}:{engine}")
     }
 
     /// 计算查询hash
@@ -111,9 +111,9 @@ impl SemanticCache {
         
         let qvec = QueryVector::new(query.to_string(), vector.to_vec());
         let data = bincode::serde::encode_to_vec(&qvec, bincode::config::standard())
-            .map_err(|e| CacheError::SerializationError(format!("Failed to serialize query vector: {}", e)))?;
+            .map_err(|e| CacheError::SerializationError(format!("Failed to serialize query vector: {e}")))?;
         
-        self.manager.set(key, data, None)?;
+        self.manager.set("semantic", key, data, None)?;
         Ok(query_hash)
     }
 
@@ -152,10 +152,10 @@ impl SemanticCache {
         let query_hash = self.hash_query(query_text);
         let exact_key = self.generate_cache_key(&query_hash, engine);
         
-        if let Some(data) = self.manager.get(&exact_key)? {
+        if let Some(data) = self.manager.get("semantic", &exact_key)? {
             let cached: CachedQueryResult = bincode::serde::decode_from_slice(&data, bincode::config::standard())
                 .map(|(res, _)| res)
-                .map_err(|e| CacheError::SerializationError(format!("Failed to deserialize: {}", e)))?;
+                .map_err(|e| CacheError::SerializationError(format!("Failed to deserialize: {e}")))?;
             return Ok(Some(cached.result.items));
         }
 
@@ -171,9 +171,9 @@ impl SemanticCache {
 
         for (sim_hash, _similarity) in similar.iter().take(5) {
             let sim_key = self.generate_cache_key(sim_hash, engine);
-            if let Some(data) = self.manager.get(&sim_key)? {
+            if let Some(data) = self.manager.get("semantic", &sim_key)? {
                 let (cached, _): (CachedQueryResult, _) = bincode::serde::decode_from_slice(&data, bincode::config::standard())
-                    .map_err(|e| CacheError::SerializationError(format!("Failed to decode: {}", e)))?;
+                    .map_err(|e| CacheError::SerializationError(format!("Failed to decode: {e}")))?;
                 
                 for item in cached.result.items {
                     // 去重
@@ -292,9 +292,9 @@ impl SemanticCache {
         };
 
         let data = bincode::serde::encode_to_vec(&cached, bincode::config::standard())
-            .map_err(|e| CacheError::SerializationError(format!("Failed to serialize result: {}", e)))?;
+            .map_err(|e| CacheError::SerializationError(format!("Failed to serialize result: {e}")))?;
 
-        self.manager.set(cache_key, data, ttl)?;
+        self.manager.set("semantic", cache_key, data, ttl)?;
         Ok(())
     }
 
@@ -302,7 +302,7 @@ impl SemanticCache {
     pub fn clear_query(&self, query: &str, engine: &str) -> Result<()> {
         let query_hash = self.hash_query(query);
         let cache_key = self.generate_cache_key(&query_hash, engine);
-        self.manager.delete(&cache_key)?;
+        self.manager.delete("semantic", &cache_key)?;
         Ok(())
     }
 }

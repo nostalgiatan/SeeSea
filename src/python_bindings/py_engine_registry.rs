@@ -221,7 +221,7 @@ impl SearchEngine for PythonEngineWrapper {
 
     fn validate_query(&self, query: &SearchQuery) -> Result<(), crate::derive::types::ValidationError> {
         if query.query.is_empty() {
-            return Err(crate::derive::types::ValidationError::EmptyQuery);
+            return Err(crate::errors::validation::empty_field("query"));
         }
         Ok(())
     }
@@ -425,7 +425,7 @@ mod tests {
     fn test_python_engine_creation() {
         let wrapper = PythonEngineWrapper::new(
             "test_engine".to_string(),
-            EngineType::Web,
+            EngineType::General,
             "Test engine".to_string(),
             vec!["test".to_string()],
         );
@@ -439,7 +439,7 @@ mod tests {
         let registry = PyEngineRegistry::new();
         
         // 测试初始状态
-        let engines = registry.list_engines().unwrap();
+        let engines = registry.list_engines_internal().await;
         assert_eq!(engines.len(), 0);
         
         // 注意：实际的注册测试需要Python环境

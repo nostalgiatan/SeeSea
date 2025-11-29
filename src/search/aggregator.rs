@@ -120,6 +120,48 @@ impl SearchAggregator {
             metadata: HashMap::new(),
         }
     }
+    
+    /// 流式聚合搜索结果（使用智能评分）
+    ///
+    /// 支持边接收结果边聚合，提高响应速度
+    pub async fn aggregate_stream_with_scoring(
+        &self, 
+        mut results_stream: tokio::sync::mpsc::Receiver<SearchResult>,
+        query: &SearchQuery,
+    ) -> SearchResult {
+        use std::collections::{HashMap, HashSet};
+        
+        let mut all_items: Vec<SearchResultItem> = Vec::new();
+        let mut processed_urls: HashSet<String> = HashSet::new();
+        
+        // 接收并处理流中的结果
+        while let Some(mut result) = results_stream.recv().await {
+            // 1. 标准化结果
+            standardize_results(&mut result);
+            
+            // 2. 合并结果并去重
+            for item in result.items {
+                if processed_urls.insert(item.url.clone()) {
+                    all_items.push(item);
+                }
+            }
+        }
+        
+        // 3. 重新评分（基于查询）
+        score_and_sort_results(&mut all_items, query, "aggregated", self.scoring_weights.clone());
+
+        let total_results = all_items.len();
+
+        SearchResult {
+            engine_name: "aggregated".to_string(),
+            total_results: Some(total_results),
+            elapsed_ms: 0,
+            items: all_items,
+            pagination: None,
+            suggestions: Vec::new(),
+            metadata: HashMap::new(),
+        }
+    }
 
     /// 聚合多个搜索结果
     pub fn aggregate(&self, results: Vec<SearchResult>) -> SearchResult {
