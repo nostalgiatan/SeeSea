@@ -21,19 +21,32 @@ use std::collections::HashSet;
 
 /// 清理文本
 pub fn clean_text(text: &str, max_length: usize) -> String {
-    // 1. 移除多余空白
-    let cleaned: String = text
+    // 1. 移除HTML标签
+    let mut cleaned = String::with_capacity(text.len());
+    let mut in_tag = false;
+    
+    for c in text.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => cleaned.push(c),
+            _ => {},
+        }
+    }
+    
+    // 2. 移除多余空白
+    cleaned = cleaned
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
     
-    // 2. HTML 实体解码
-    let cleaned = html_escape::decode_html_entities(&cleaned).to_string();
+    // 3. HTML 实体解码
+    cleaned = html_escape::decode_html_entities(&cleaned).to_string();
     
-    // 3. 截断
+    // 4. 截断
     if cleaned.len() > max_length {
         let truncated: String = cleaned.chars().take(max_length - 3).collect();
-        format!("{}...", truncated)
+        format!("{truncated}...")
     } else {
         cleaned
     }

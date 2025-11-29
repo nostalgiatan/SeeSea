@@ -64,6 +64,30 @@ impl Default for ScoringWeights {
     }
 }
 
+/// 评分上下文，用于减少calculate_score函数的参数数量
+#[derive(Debug, Clone)]
+pub struct ScoringContext {
+    /// 平均标题长度
+    pub avg_title_length: f64,
+    /// 平均内容长度
+    pub avg_content_length: f64,
+    /// 评分权重
+    pub weights: ScoringWeights,
+    /// BM25 参数
+    pub bm25_params: BM25Params,
+}
+
+impl Default for ScoringContext {
+    fn default() -> Self {
+        Self {
+            avg_title_length: 50.0,
+            avg_content_length: 200.0,
+            weights: ScoringWeights::default(),
+            bm25_params: BM25Params::default(),
+        }
+    }
+}
+
 /// 引擎权威度评分
 pub fn get_engine_authority(engine_name: &str) -> f64 {
     match engine_name.to_lowercase().as_str() {
@@ -128,25 +152,107 @@ fn term_frequency(tokens: &[String]) -> HashMap<String, usize> {
 /// - |D|: 文档长度
 /// - avgdl: 平均文档长度
 /// - k1, b: 调节参数
+#[allow(dead_code)]
 pub(crate) fn bm25_score(
     document: &str,
     query: &str,
     avg_doc_length: f64,
     params: &BM25Params,
 ) -> f64 {
+    // 调用优化后的版本
     let doc_tokens = tokenize(document);
     let query_tokens = tokenize(query);
+    bm25_score_optimized(&doc_tokens, &query_tokens, avg_doc_length, params)
+}
+
+/// 精确匹配加分
+#[allow(dead_code)]
+pub(crate) fn exact_match_bonus(text: &str, query: &str) -> f64 {
+    // 调用优化后的版本
+    exact_match_bonus_optimized(text, query)
+}
+
+/// URL 相关性评分
+#[allow(dead_code)]
+pub(crate) fn url_relevance(url: &str, query: &str) -> f64 {
+    // 调用优化后的版本
+    let query_tokens = tokenize(query);
+    url_relevance_optimized(url, &query_tokens)
+}
+
+/// 位置评分（原始搜索引擎排名）
+pub(crate) fn position_score(position: usize) -> f64 {
+    // 对数衰减：前几个结果分数明显更高
+    // position 从 0 开始, 加1避免ln(0)
+    1.0 / (1.0 + ((position + 1) as f64).ln())
+}
+
+/// 计算综合评分
+pub(crate) fn calculate_score(
+    item: &SearchResultItem,
+    query: &SearchQuery,
+    engine_name: &str,
+    position: usize,
+    scoring_context: &ScoringContext,
+) -> f64 {
+    // 预计算查询tokens，避免重复计算
+    let query_tokens = tokenize(&query.query);
+    if query_tokens.is_empty() {
+        return 0.0;
+    }
     
+    // 1. 标题评分（优化：减少tokenize调用）
+    let title_tokens = tokenize(&item.title);
+    let title_bm25 = bm25_score_optimized(&title_tokens, &query_tokens, scoring_context.avg_title_length, &scoring_context.bm25_params);
+    let title_exact = exact_match_bonus_optimized(&item.title, &query.query);
+    let title_score = (title_bm25 * 0.7 + title_exact * 0.3).min(1.0);
+    
+    // 2. 内容评分（优化：减少tokenize调用）
+    let content_tokens = tokenize(&item.content);
+    let content_bm25 = bm25_score_optimized(&content_tokens, &query_tokens, scoring_context.avg_content_length, &scoring_context.bm25_params);
+    let content_exact = exact_match_bonus_optimized(&item.content, &query.query);
+    let content_score = (content_bm25 * 0.8 + content_exact * 0.2).min(1.0);
+    
+    // 3. URL 相关性（优化：使用预计算的query_tokens）
+    let url_score = url_relevance_optimized(&item.url, &query_tokens);
+    
+    // 4. 引擎权威度（优化：缓存引擎权威度）
+    let authority_score = get_engine_authority(engine_name);
+    
+    // 5. 位置评分
+    let pos_score = position_score(position);
+    
+    // 加权求和
+    let final_score = 
+        title_score * scoring_context.weights.title_bm25 +
+        content_score * scoring_context.weights.content_bm25 +
+        url_score * scoring_context.weights.url_match +
+        authority_score * scoring_context.weights.engine_authority +
+        pos_score * scoring_context.weights.position_weight;
+    
+    // 确保在 [0, 1] 范围内
+    final_score.clamp(0.0, 1.0)
+}
+
+/// 优化的 BM25 评分函数
+///
+/// 避免重复的 tokenize 调用，提高性能
+pub(crate) fn bm25_score_optimized(
+    doc_tokens: &[String],
+    query_tokens: &[String],
+    avg_doc_length: f64,
+    params: &BM25Params,
+) -> f64 {
     if doc_tokens.is_empty() || query_tokens.is_empty() {
         return 0.0;
     }
     
     let doc_length = doc_tokens.len() as f64;
-    let tf = term_frequency(&doc_tokens);
+    let tf = term_frequency(doc_tokens);
     
     let mut score = 0.0;
     
-    for query_token in &query_tokens {
+    for query_token in query_tokens {
         if let Some(&freq) = tf.get(query_token) {
             let freq = freq as f64;
             
@@ -170,8 +276,16 @@ pub(crate) fn bm25_score(
     }
 }
 
-/// 精确匹配加分
-pub(crate) fn exact_match_bonus(text: &str, query: &str) -> f64 {
+/// 优化的精确匹配加分函数
+///
+/// 减少不必要的字符串复制
+pub(crate) fn exact_match_bonus_optimized(text: &str, query: &str) -> f64 {
+    // 快速检查：如果查询长度大于文本长度，直接返回0.0
+    if query.len() > text.len() {
+        return 0.0;
+    }
+    
+    // 只在需要时才进行完整的小写转换
     let text_lower = text.to_lowercase();
     let query_lower = query.to_lowercase();
     
@@ -189,72 +303,25 @@ pub(crate) fn exact_match_bonus(text: &str, query: &str) -> f64 {
     0.0
 }
 
-/// URL 相关性评分
-pub(crate) fn url_relevance(url: &str, query: &str) -> f64 {
+/// 优化的 URL 相关性评分函数
+///
+/// 使用预计算的 query_tokens，减少重复计算
+pub(crate) fn url_relevance_optimized(url: &str, query_tokens: &[String]) -> f64 {
+    if query_tokens.is_empty() {
+        return 0.0;
+    }
+    
+    // 只转换一次URL为小写
     let url_lower = url.to_lowercase();
-    let query_tokens = tokenize(query);
     
     let mut matches = 0;
-    for token in &query_tokens {
+    for token in query_tokens {
         if url_lower.contains(token) {
             matches += 1;
         }
     }
     
-    if query_tokens.is_empty() {
-        0.0
-    } else {
-        matches as f64 / query_tokens.len() as f64
-    }
-}
-
-/// 位置评分（原始搜索引擎排名）
-pub(crate) fn position_score(position: usize) -> f64 {
-    // 对数衰减：前几个结果分数明显更高
-    // position 从 0 开始, 加1避免ln(0)
-    1.0 / (1.0 + ((position + 1) as f64).ln())
-}
-
-/// 计算综合评分
-pub(crate) fn calculate_score(
-    item: &SearchResultItem,
-    query: &SearchQuery,
-    engine_name: &str,
-    position: usize,
-    avg_title_length: f64,
-    avg_content_length: f64,
-    weights: &ScoringWeights,
-    bm25_params: &BM25Params,
-) -> f64 {
-    // 1. 标题 BM25 评分
-    let title_bm25 = bm25_score(&item.title, &query.query, avg_title_length, bm25_params);
-    let title_exact = exact_match_bonus(&item.title, &query.query);
-    let title_score = (title_bm25 * 0.7 + title_exact * 0.3).min(1.0);
-    
-    // 2. 内容 BM25 评分
-    let content_bm25 = bm25_score(&item.content, &query.query, avg_content_length, bm25_params);
-    let content_exact = exact_match_bonus(&item.content, &query.query);
-    let content_score = (content_bm25 * 0.8 + content_exact * 0.2).min(1.0);
-    
-    // 3. URL 相关性
-    let url_score = url_relevance(&item.url, &query.query);
-    
-    // 4. 引擎权威度
-    let authority_score = get_engine_authority(engine_name);
-    
-    // 5. 位置评分
-    let pos_score = position_score(position);
-    
-    // 加权求和
-    let final_score = 
-        title_score * weights.title_bm25 +
-        content_score * weights.content_bm25 +
-        url_score * weights.url_match +
-        authority_score * weights.engine_authority +
-        pos_score * weights.position_weight;
-    
-    // 确保在 [0, 1] 范围内
-    final_score.max(0.0).min(1.0)
+    matches as f64 / query_tokens.len() as f64
 }
 
 /// 批量评分
@@ -281,6 +348,14 @@ pub fn score_results(
         .map(|i| tokenize(&i.content).len())
         .sum::<usize>() as f64 / items.len() as f64;
     
+    // 创建评分上下文
+    let scoring_context = ScoringContext {
+        avg_title_length,
+        avg_content_length,
+        weights,
+        bm25_params,
+    };
+    
     // 计算每个结果的评分
     for (position, item) in items.iter_mut().enumerate() {
         item.score = calculate_score(
@@ -288,10 +363,7 @@ pub fn score_results(
             query,
             engine_name,
             position,
-            avg_title_length,
-            avg_content_length,
-            &weights,
-            &bm25_params,
+            &scoring_context,
         );
     }
 }

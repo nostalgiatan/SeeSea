@@ -85,7 +85,7 @@ impl SimpleVectorizer {
     }
 
     /// 向量归一化
-    fn normalize(&self, vector: &mut Vec<f64>) {
+    fn normalize(&self, vector: &mut [f64]) {
         let norm: f64 = vector.iter().map(|x| x * x).sum::<f64>().sqrt();
         if norm > 0.0 {
             for val in vector.iter_mut() {

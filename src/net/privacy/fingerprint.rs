@@ -16,7 +16,7 @@
 //!
 //! 提供浏览器指纹识别的对抗功能
 
-use crate::net::types::TlsFingerprintLevel;
+use crate::net::config::TlsFingerprintLevel;
 use rand::Rng;
 
 /// 指纹保护器
@@ -76,20 +76,18 @@ impl FingerprintProtector {
         let mut base_params = self.apply_advanced_obfuscation();
         
         // 添加额外的加密套件
-        let additional_suites = vec![
-            "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384".to_string(),
+        let additional_suites = ["TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384".to_string(),
             "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384".to_string(),
-            "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256".to_string(),
-        ];
+            "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256".to_string()];
         
         // 使用 rand crate 随机选择要添加的套件
         let mut rng = rand::rng();
         
         // 随机添加 1-3 个额外套件
         let count = rng.random_range(1..=3);
-        for i in 0..count.min(additional_suites.len()) {
-            if !base_params.cipher_suites.contains(&additional_suites[i]) {
-                base_params.cipher_suites.push(additional_suites[i].clone());
+        for suite in additional_suites.iter().take(count.min(additional_suites.len())) {
+            if !base_params.cipher_suites.contains(suite) {
+                base_params.cipher_suites.push(suite.clone());
             }
         }
         
@@ -143,16 +141,14 @@ pub fn generate_canvas_noise() -> Vec<u8> {
 /// 随机选择的 WebGL 渲染器字符串
 pub fn generate_webgl_noise() -> String {
     // 常见的 WebGL 渲染器字符串
-    let renderers = vec![
-        "ANGLE (Intel, Intel(R) UHD Graphics 620, OpenGL 4.5)",
+    let renderers = ["ANGLE (Intel, Intel(R) UHD Graphics 620, OpenGL 4.5)",
         "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)",
         "ANGLE (AMD, AMD Radeon RX 580 Series Direct3D11 vs_5_0 ps_5_0, D3D11)",
         "WebKit WebGL",
         "Mozilla - Intel Open Source Technology Center Mesa DRI Intel(R) HD Graphics",
         "ANGLE (Intel, Intel(R) UHD Graphics 630, OpenGL 4.6)",
         "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
-        "ANGLE (AMD, Radeon RX Vega 8 Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
-    ];
+        "ANGLE (AMD, Radeon RX Vega 8 Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)"];
     
     // 使用 rand crate 随机选择
     let mut rng = rand::rng();

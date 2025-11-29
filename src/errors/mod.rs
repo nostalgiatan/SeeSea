@@ -1,0 +1,158 @@
+// Copyright 2025 nostalgiatan
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! # 错误处理模块
+//! 
+//! 错误处理模块是 SeeSea 的核心组件之一，提供统一的错误处理机制，支持多种错误类型和详细的错误信息。
+//! 
+//! ## 模块架构
+//! 
+//! 错误处理模块采用分层设计，主要包含以下核心组件：
+//! 
+//! - **base**：基础错误类型定义，包括错误信息、类型、严重程度和类别
+//! - **network**：网络相关错误，如连接失败、超时等
+//! - **search**：搜索相关错误，如引擎不可用、搜索失败等
+//! - **parse**：解析相关错误，如 JSON 解析失败、XML 解析失败等
+//! - **validation**：验证相关错误，如参数验证失败、配置验证失败等
+//! - **io**：IO 相关错误，如文件读写失败、目录不存在等
+//! - **permission**：权限相关错误，如访问被拒绝、权限不足等
+//! - **configuration**：配置相关错误，如配置文件不存在、配置项无效等
+//! - **database**：数据库相关错误，如连接失败、查询失败等
+//! - **business**：业务逻辑相关错误，如业务规则违反、状态错误等
+//! - **system**：系统相关错误，如内存不足、系统调用失败等
+//! 
+//! ## 错误分类
+//! 
+//! SeeSea 的错误分为以下几个主要类别：
+//! 
+//! - **ErrorCategory**：错误类别，如网络、搜索、解析等
+//! - **ErrorKind**：具体错误类型，如连接失败、超时、解析错误等
+//! - **ErrorSeverity**：错误严重程度，如调试、信息、警告、错误、致命等
+//! 
+//! ## 核心功能
+//! 
+//! - **结构化错误信息**：提供详细的错误信息，包括错误代码、描述、位置等
+//! - **错误链**：支持错误嵌套，便于追踪错误根源
+//! - **错误转换**：支持不同错误类型之间的转换
+//! - **错误格式化**：支持多种错误格式化方式
+//! - **错误日志**：便于日志记录和监控
+//! 
+//! ## 错误处理流程
+//! 
+//! 1. 当发生错误时，使用对应的错误创建函数创建错误实例
+//! 2. 错误实例包含详细的错误信息和上下文
+//! 3. 错误通过 Result 类型向上传播
+//! 4. 最终在适当的位置处理或记录错误
+//! 
+//! ## 使用示例
+//! 
+//! ```rust
+//! use seesea::{Error, Result, errors::new_network_error};
+//! 
+//! fn example_function() -> Result<()> {
+//!     // 模拟网络错误
+//!     return Err(new_network_error(
+//!         "连接失败",
+//!         "无法连接到搜索引擎服务器",
+//!         Some("https://example.com"),
+//!     ));
+//! }
+//! 
+//! // 处理错误
+//! match example_function() {
+//!     Ok(result) => println!("成功: {:?}", result),
+//!     Err(error) => {
+//!         println!("错误: {}", error);
+//!         println!("错误类型: {:?}", error.kind);
+//!         println!("错误严重程度: {:?}", error.severity);
+//!         println!("错误类别: {:?}", error.category);
+//!     }
+//! }
+//! ```
+
+/// 基础错误类型模块，定义核心错误结构和枚举
+pub mod base;
+
+/// 网络相关错误模块
+pub mod network;
+
+/// 搜索相关错误模块
+pub mod search;
+
+/// 解析相关错误模块
+pub mod parse;
+
+/// 验证相关错误模块
+pub mod validation;
+
+/// IO 相关错误模块
+pub mod io;
+
+/// 权限相关错误模块
+pub mod permission;
+
+/// 配置相关错误模块
+pub mod configuration;
+
+/// 数据库相关错误模块
+pub mod database;
+
+/// 业务逻辑相关错误模块
+pub mod business;
+
+/// 系统相关错误模块
+pub mod system;
+
+// 重新导出核心错误类型，方便外部使用
+
+/// 核心错误类型和结果类型
+pub use base::{
+    ErrorInfo,      // 详细的错误信息结构
+    ErrorKind,      // 具体错误类型枚举
+    ErrorSeverity,  // 错误严重程度枚举
+    ErrorCategory,  // 错误类别枚举
+    Result,         // 结果类型别名，简化错误处理
+};
+
+// 导出所有错误创建函数，方便外部使用
+
+/// 网络错误创建函数
+pub use network::{connection_timeout, connection_refused, dns_resolve_failed, invalid_response, ssl_error, http_error, network_unreachable, proxy_error, too_many_redirects, request_cancelled, bad_request, unauthorized as network_unauthorized, forbidden, not_found, method_not_allowed, too_many_requests, internal_server_error, bad_gateway, service_unavailable as network_service_unavailable, gateway_timeout, network_error, http_error_by_status};
+
+/// 搜索错误创建函数
+pub use search::{engine_unavailable, search_timeout, zero_results, invalid_query, unsupported_search_type, engine_error, result_parse_failed, search_rate_limited, search_depth_too_large, invalid_search_scope, search_error};
+
+/// 解析错误创建函数
+pub use parse::{json_parse_error, xml_parse_error, html_parse_error, yaml_parse_error, csv_parse_error, invalid_format, missing_field, invalid_field_type, invalid_field_value, parse_timeout, parse_error};
+
+/// 验证错误创建函数
+pub use validation::{empty_field, field_too_short, field_too_long, invalid_email, invalid_url, invalid_date, invalid_number, invalid_enum_value, duplicate_value, unsupported_parameter, validation_error};
+
+/// IO 错误创建函数
+pub use io::{file_not_found, file_open_failed, file_read_failed, file_write_failed, file_permission_denied, directory_not_found, directory_create_failed, invalid_path, file_too_large, disk_full, io_error};
+
+/// 权限错误创建函数
+pub use permission::{permission_denied, unauthorized, invalid_credentials, token_expired, invalid_token, missing_token, account_locked, account_disabled, insufficient_role, access_denied, permission_error};
+
+/// 配置错误创建函数
+pub use configuration::{config_file_not_found, config_parse_failed, missing_config_item, invalid_config_value, config_type_error, config_value_out_of_range, config_conflict, config_version_mismatch, config_permission_error, config_validation_failed, configuration_error};
+
+/// 数据库错误创建函数
+pub use database::{connection_failed, query_failed, transaction_failed, duplicate_key, foreign_key_violation, table_not_found, column_not_found, database_locked, database_full, invalid_sql, database_error};
+
+/// 业务逻辑错误创建函数
+pub use business::{resource_not_found, business_rule_violation, invalid_state, operation_not_allowed, quota_exceeded, rate_limit_exceeded, dependency_failed, validation_failed, internal_business_error, concurrency_error, business_error};
+
+/// 系统错误创建函数
+pub use system::{resource_exhausted, service_unavailable, configuration_error as system_configuration_error, system_timeout, internal_system_error, system_call_failed, version_incompatible, permission_error as system_permission_error, resource_leak, system_overload, system_error};

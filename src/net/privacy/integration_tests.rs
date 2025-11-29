@@ -17,7 +17,7 @@
 #[cfg(test)]
 mod tests {
     use crate::net::privacy::{PrivacyManager, PrivacyLevel};
-    use crate::net::types::{PrivacyConfig, TlsConfig, DohConfig, UserAgentStrategy, TlsFingerprintLevel};
+    use crate::net::config::{PrivacyConfig, TlsConfig, DnsConfig, UserAgentStrategy, TlsFingerprintLevel};
 
     #[tokio::test]
     async fn test_privacy_manager_integration() {
@@ -30,10 +30,10 @@ mod tests {
         let mut tls_config = TlsConfig::default();
         tls_config.fingerprint_level = TlsFingerprintLevel::Advanced;
 
-        let mut doh_config = DohConfig::default();
-        doh_config.enabled = true;
+        let mut dns_config = DnsConfig::default();
+        dns_config.doh_enabled = true;
 
-        let manager = PrivacyManager::new(privacy_config, tls_config, doh_config);
+        let manager = PrivacyManager::new(privacy_config, tls_config, dns_config);
 
         // Test User-Agent generation
         let ua = manager.get_user_agent().await;
@@ -66,10 +66,10 @@ mod tests {
         let mut tls_config = TlsConfig::default();
         tls_config.fingerprint_level = TlsFingerprintLevel::None;
 
-        let mut doh_config = DohConfig::default();
-        doh_config.enabled = false;
+        let mut dns_config = DnsConfig::default();
+        dns_config.doh_enabled = false;
 
-        let manager = PrivacyManager::new(privacy_config, tls_config, doh_config);
+        let manager = PrivacyManager::new(privacy_config, tls_config, dns_config);
 
         let level = manager.get_privacy_level().await;
         assert_eq!(level, PrivacyLevel::Low);
@@ -80,7 +80,7 @@ mod tests {
         let manager = PrivacyManager::new(
             PrivacyConfig::default(),
             TlsConfig::default(),
-            DohConfig::default(),
+            DnsConfig::default(),
         );
 
         let stats = manager.get_stats().await;
@@ -93,7 +93,7 @@ mod tests {
         let manager = PrivacyManager::new(
             PrivacyConfig::default(),
             TlsConfig::default(),
-            DohConfig::default(),
+            DnsConfig::default(),
         );
 
         // Update privacy config
@@ -113,7 +113,7 @@ mod tests {
         let manager = PrivacyManager::new(
             PrivacyConfig::default(),
             tls_config,
-            DohConfig::default(),
+            DnsConfig::default(),
         );
 
         let params = manager.get_tls_params().await;

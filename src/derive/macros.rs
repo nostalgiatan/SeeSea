@@ -188,7 +188,6 @@ macro_rules! engine_info {
             name: $name.to_string(),
             engine_type: $crate::derive::EngineType::$engine_type,
             description: concat!("Search engine: ", $name).to_string(),
-            website: Some($website.to_string()),
             status: $crate::derive::EngineStatus::Active,
             categories: vec![$($category.to_string()),*],
             capabilities: $crate::derive::EngineCapabilities {
@@ -206,9 +205,23 @@ macro_rules! engine_info {
                 supports_safe_search: $supports_safe_search,
                 rate_limit: Some(60),
             },
+            about: $crate::derive::AboutInfo {
+                website: Some($website.to_string()),
+                wikidata_id: None,
+                official_api_documentation: None,
+                use_official_api: false,
+                require_api_key: false,
+                results: "HTML".to_string(),
+            },
             timeout: Some(30),
             version: Some("1.0.0".to_string()),
             last_checked: Some(chrono::Utc::now()),
+            disabled: false,
+            inactive: false,
+            using_tor_proxy: false,
+            display_error_messages: true,
+            tokens: Vec::new(),
+            max_page: 0,
         }
     };
 }

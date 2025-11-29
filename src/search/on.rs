@@ -17,8 +17,8 @@
 //! 提供统一的搜索接口供外部使用
 
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::RwLock;
+use std::time::{Duration, SystemTime};
+use tokio::sync::{RwLock, Semaphore, mpsc};
 use tokio::time::timeout;
 use futures::stream::{FuturesUnordered, StreamExt};
 
@@ -27,6 +27,22 @@ use super::query::QueryParser;
 use super::types::{SearchConfig, SearchRequest, SearchResponse};
 use super::engine_config::{EngineListConfig, EngineMode};
 use crate::derive::SearchResult;
+use crate::cache::{CacheInterface, types::CacheImplConfig};
+
+/// 引擎实例元数据
+///
+/// 存储引擎实例的元数据，用于自动回收
+pub struct EngineInstanceMetadata {
+    /// 引擎实例
+    engine: Arc<dyn crate::derive::SearchEngine + Send + Sync>,
+    /// 创建时间
+    #[allow(dead_code)]
+    created_at: SystemTime,
+    /// 最后使用时间
+    last_used_at: SystemTime,
+    /// 使用次数
+    usage_count: u32,
+}
 
 /// 搜索接口
 ///
@@ -41,11 +57,15 @@ pub struct SearchInterface {
     /// HTTP客户端（复用）
     http_client: Arc<crate::net::client::HttpClient>,
     /// 引擎实例缓存
-    engine_cache: Arc<RwLock<std::collections::HashMap<String, Arc<dyn crate::derive::SearchEngine + Send + Sync>>>>,
+    engine_cache: Arc<RwLock<std::collections::HashMap<String, EngineInstanceMetadata>>>,
     /// 引擎状态（用于零结果指数禁用）
     engine_states: Arc<RwLock<std::collections::HashMap<String, super::engine_manager::EngineState>>>,
     /// 统计信息
     stats: Arc<SearchStats>,
+    /// 并发控制信号量，限制同时运行的搜索任务数量
+    semaphore: Arc<Semaphore>,
+    /// 搜索结果缓存
+    cache: Arc<CacheInterface>,
 }
 
 impl SearchInterface {
@@ -65,11 +85,18 @@ impl SearchInterface {
         let parser = QueryParser::default();
 
         // 创建共享HTTP客户端以提高性能
-        let network_config = crate::net::types::NetworkConfig::default();
+        let network_config = crate::net::config::NetworkConfig::default();
         let http_client = Arc::new(
             crate::net::client::HttpClient::new(network_config)
-                .map_err(|e| format!("Failed to create HTTP client: {}", e))?
+                .map_err(|e| format!("Failed to create HTTP client: {e}"))?
         );
+
+        // 初始化并发控制信号量，默认限制为8个并发任务
+        let semaphore = Arc::new(Semaphore::new(8));
+
+        // 初始化搜索结果缓存
+        let cache_config = CacheImplConfig::default();
+        let cache = Arc::new(CacheInterface::new(cache_config).map_err(|e| format!("Failed to create cache: {e:?}"))?);
 
         Ok(Self {
             config,
@@ -79,6 +106,8 @@ impl SearchInterface {
             engine_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
             engine_states: Arc::new(RwLock::new(std::collections::HashMap::new())),
             stats: Arc::new(SearchStats::default()),
+            semaphore,
+            cache,
         })
     }
 
@@ -99,14 +128,20 @@ impl SearchInterface {
         let _parsed = self.parser.parse(&request.query.query);
 
         // 确定要使用的引擎列表
-        let engines_to_use = if request.engines.is_empty() {
-            // 如果没有指定引擎，使用默认全局引擎
-            let all_engines = EngineListConfig::get_default_engines();
-            all_engines
-        } else {
+        let engines_to_use = if !request.engines.is_empty() {
             // 使用请求中指定的引擎列表（验证可用性）
             let config = EngineListConfig::default();
             config.filter_available_engines(&request.engines)
+        } else {
+            // 如果没有指定引擎，根据include_deepweb参数决定使用的引擎
+            let config = EngineListConfig::default();
+            if request.include_deepweb {
+                // 包含深网搜索，使用所有引擎
+                config.global_engines.clone()
+            } else {
+                // 不包含深网搜索，仅使用快速引擎
+                config.fast_engines.clone()
+            }
         };
 
         if engines_to_use.is_empty() {
@@ -133,7 +168,7 @@ impl SearchInterface {
     /// # Arguments
     ///
     /// * `request` - 搜索请求
-    /// * `mode` - 引擎模式（全局/中国/自定义）
+    /// * `mode` - 引擎模式（全局/自定义/快速/深网）
     ///
     /// # Returns
     ///
@@ -217,12 +252,20 @@ impl SearchInterface {
         let _parsed = self.parser.parse(&request.query.query);
 
         // 确定要使用的引擎列表
-        let engines_to_use = if request.engines.is_empty() {
-            let all_engines = EngineListConfig::get_default_engines();
-            all_engines
-        } else {
+        let engines_to_use = if !request.engines.is_empty() {
+            // 使用请求中指定的引擎列表（验证可用性）
             let config = EngineListConfig::default();
             config.filter_available_engines(&request.engines)
+        } else {
+            // 如果没有指定引擎，根据include_deepweb参数决定使用的引擎
+            let config = EngineListConfig::default();
+            if request.include_deepweb {
+                // 包含深网搜索，使用所有引擎
+                config.global_engines.clone()
+            } else {
+                // 不包含深网搜索，仅使用快速引擎
+                config.fast_engines.clone()
+            }
         };
 
         if engines_to_use.is_empty() {
@@ -278,11 +321,11 @@ impl SearchInterface {
                     }
                     Ok(Err(e)) => {
                         stats.engine_failures.fetch_add(1, Ordering::Relaxed);
-                        Some((Err(format!("Engine {} error: {}", engine_name, e)), engine_name))
+                        Some((Err(format!("Engine {engine_name} error: {e}")), engine_name))
                     }
                     Err(_) => {
                         stats.timeouts.fetch_add(1, Ordering::Relaxed);
-                        Some((Err(format!("Engine {} timeout", engine_name)), engine_name))
+                        Some((Err(format!("Engine {engine_name} timeout")), engine_name))
                     }
                 }
             };
@@ -379,7 +422,7 @@ impl SearchInterface {
         // 创建缓存接口
         let cache_config = CacheImplConfig::default();
         let cache_interface = CacheInterface::new(cache_config)
-            .map_err(|e| format!("Failed to create cache interface: {}", e))?;
+            .map_err(|e| format!("Failed to create cache interface: {e}"))?;
         
         // 从查询中提取关键词
         let query_keywords: Vec<String> = request.query.query
@@ -521,21 +564,48 @@ impl SearchInterface {
         &self,
         engine_name: &str,
     ) -> Result<Arc<dyn crate::derive::SearchEngine + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
+        let now = SystemTime::now();
+        
         // 先检查缓存
         {
-            let cache = self.engine_cache.read().await;
-            if let Some(cached_engine) = cache.get(engine_name) {
-                return Ok(Arc::clone(cached_engine));
+            let mut cache = self.engine_cache.write().await;
+            if let Some(metadata) = cache.get_mut(engine_name) {
+                // 更新最后使用时间和使用次数
+                metadata.last_used_at = now;
+                metadata.usage_count += 1;
+                return Ok(Arc::clone(&metadata.engine));
             }
         }
 
         // 缓存未命中，创建新实例
         let engine = self.create_engine_instance(engine_name)?;
+        
+        // 创建引擎实例元数据
+        let metadata = EngineInstanceMetadata {
+            engine: Arc::clone(&engine),
+            created_at: now,
+            last_used_at: now,
+            usage_count: 1,
+        };
 
         // 添加到缓存
         {
             let mut cache = self.engine_cache.write().await;
-            cache.insert(engine_name.to_string(), Arc::clone(&engine));
+            
+            // 检查缓存大小，实现自动回收
+            const MAX_ENGINE_CACHE_SIZE: usize = 20;
+            if cache.len() >= MAX_ENGINE_CACHE_SIZE {
+                // 找到最不常用的引擎实例（使用LRU策略）
+                let least_used_key = cache.iter()
+                    .min_by_key(|(_, meta)| (meta.last_used_at, meta.usage_count))
+                    .map(|(key, _)| key.clone());
+                
+                if let Some(key) = least_used_key {
+                    cache.remove(&key);
+                }
+            }
+            
+            cache.insert(engine_name.to_string(), metadata);
         }
 
         Ok(engine)
@@ -566,11 +636,12 @@ impl SearchInterface {
                     if let Some(py_engine) = try_get_python_engine_sync(engine_name) {
                         return Ok(py_engine as Arc<dyn crate::derive::SearchEngine + Send + Sync>);
                     }
+                    // Python引擎未注册，跳过该引擎
                     return Err(format!("Engine '{}' not found in Rust or Python registries", engine_name).into());
                 }
                 #[cfg(not(feature = "python"))]
                 {
-                    return Err(format!("Unknown engine: {}", engine_name).into());
+                    return Err(format!("Unknown engine: {engine_name}").into());
                 }
             },
         };
@@ -591,8 +662,9 @@ impl SearchInterface {
         self.stats.total_searches.fetch_add(1, Ordering::Relaxed);
         
         let start_time = std::time::Instant::now();
-        let mut futures_list = Vec::new();
         let mut engines_to_execute = Vec::new();
+        let mut cached_results = Vec::new();
+        let mut cached_engines_used = Vec::new();
 
         // 预先确保所有引擎都有状态记录
         {
@@ -603,7 +675,7 @@ impl SearchInterface {
             }
         }
 
-        // 获取所有要执行的引擎实例，并过滤掉被禁用的引擎
+        // 检查缓存，获取所有要执行的引擎实例，并过滤掉被禁用的引擎
         for engine_name in engine_names {
             // 检查引擎是否被临时禁用
             {
@@ -614,82 +686,141 @@ impl SearchInterface {
                     }
                 }
             }
+
+            // 检查缓存
+            let result_cache = self.cache.results();
+            if let Some(cached_result) = result_cache.get(&request.query, engine_name).map_err(|e| format!("Cache error: {e:?}"))? {
+                // 缓存命中，直接使用缓存结果
+                self.stats.cache_hits.fetch_add(1, Ordering::Relaxed);
+                cached_results.push(cached_result);
+                cached_engines_used.push(engine_name.clone());
+                continue;
+            } else {
+                // 缓存未命中，需要执行搜索
+                self.stats.cache_misses.fetch_add(1, Ordering::Relaxed);
+            }
+
             match self.get_or_create_engine(engine_name).await {
                 Ok(engine) => {
                     engines_to_execute.push((engine_name.clone(), engine));
                 }
                 Err(_e) => {
+                    // 引擎创建失败，跳过该引擎
                     self.stats.engine_failures.fetch_add(1, Ordering::Relaxed);
+                    continue;
                 }
             }
         }
 
-        // 创建并发任务
+        // 如果所有引擎都有缓存结果，直接返回
+        if engines_to_execute.is_empty() {
+            let query_time_ms = start_time.elapsed().as_millis() as u64;
+            let total_count: usize = cached_results.iter().map(|r| r.items.len()).sum();
+            return Ok(SearchResponse {
+                query: request.query.clone(),
+                results: cached_results,
+                total_count,
+                engines_used: cached_engines_used,
+                query_time_ms,
+                cached: true,
+            });
+        }
+
+        // 创建通道用于结果收集
+        let (tx, mut rx) = mpsc::channel::<(Result<SearchResult, String>, String)>(engines_to_execute.len());
+
+        // 创建并发任务，使用Semaphore限制并发度
+        let semaphore = Arc::clone(&self.semaphore);
+        let timeout_duration = Duration::from_secs(self.config.default_timeout.as_secs());
+        let cache = Arc::clone(&self.cache);
+        let query = request.query.clone();
+
         for (engine_name, engine) in engines_to_execute {
-            let query = request.query.clone();
-            let timeout_duration = Duration::from_secs(self.config.default_timeout.as_secs());
+            let tx = tx.clone();
+            let semaphore = Arc::clone(&semaphore);
+            let query = query.clone();
+            let cache = Arc::clone(&cache);
             let stats = Arc::clone(&self.stats);
-            
-            let future = async move {
+
+            // 生成搜索任务，使用Semaphore限制并发
+            tokio::spawn(async move {
+                // 尝试获取信号量许可
+                let permit = match semaphore.acquire().await {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        // 信号量被关闭，发送错误
+                        let _ = tx.send((Err(format!("Semaphore closed for engine {engine_name}")), engine_name)).await;
+                        return;
+                    }
+                };
+
                 let search_start = std::time::Instant::now();
-                match timeout(timeout_duration, engine.search(&query)).await {
+                let result = timeout(timeout_duration, engine.search(&query)).await;
+                
+                // 释放信号量许可
+                drop(permit);
+
+                match result {
                     Ok(Ok(mut result)) => {
                         result.elapsed_ms = search_start.elapsed().as_millis() as u64;
-                        Some((Ok(result), engine_name))
+                        
+                        // 缓存搜索结果
+                        let result_cache = cache.results();
+                        let _ = result_cache.set(&query, &engine_name, &result, None);
+                        
+                        let _ = tx.send((Ok(result), engine_name)).await;
                     }
                     Ok(Err(e)) => {
                         stats.engine_failures.fetch_add(1, Ordering::Relaxed);
-                        Some((Err(format!("Engine {} error: {}", engine_name, e)), engine_name))
+                        let _ = tx.send((Err(format!("Engine {engine_name} error: {e}")), engine_name)).await;
                     }
                     Err(_) => {
                         stats.timeouts.fetch_add(1, Ordering::Relaxed);
-                        Some((Err(format!("Engine {} timeout", engine_name)), engine_name))
+                        let _ = tx.send((Err(format!("Engine {engine_name} timeout")), engine_name)).await;
                     }
                 }
-            };
-            
-            futures_list.push(future);
+            });
         }
+
+        // 关闭发送端，防止死锁
+        drop(tx);
+
+        // 保存缓存结果状态，用于判断是否使用了缓存
+        let is_cached = !cached_results.is_empty() || !cached_engines_used.is_empty();
         
-        // 并发执行所有搜索
-        let results = futures::future::join_all(futures_list).await;
+        // 收集结果
+        let mut successful_results = cached_results;
+        let mut engines_used = cached_engines_used;
 
-        // 收集成功的结果，并检测零结果情况
-        let mut successful_results = Vec::new();
-        let mut engines_used = Vec::new();
+        while let Some((search_result, engine_name)) = rx.recv().await {
+            match search_result {
+                Ok(result) => {
+                    // 检查是否为零结果
+                    let is_zero_results = result.items.is_empty();
 
-        for result in results.iter() {
-            if let Some((search_result, engine_name)) = result {
-                match search_result {
-                    Ok(result) => {
-                        // 检查是否为零结果
-                        let is_zero_results = result.items.is_empty();
-
-                        if is_zero_results {
-                            // 零结果，更新引擎状态并应用指数退避
-                            let mut states = self.engine_states.write().await;
-                            if let Some(state) = states.get_mut(engine_name) {
-                                state.record_zero_results();
-                            }
-                        } else {
-                            // 有结果，记录成功
-                            let mut states = self.engine_states.write().await;
-                            if let Some(state) = states.get_mut(engine_name) {
-                                state.record_success(result.elapsed_ms);
-                            }
-                        }
-
-                        
-                        successful_results.push(result.clone());
-                        engines_used.push(engine_name.clone());
-                    }
-                    Err(_) => {
-                        // 失败，记录失败
+                    if is_zero_results {
+                        // 零结果，更新引擎状态并应用指数退避
                         let mut states = self.engine_states.write().await;
-                        let state = states.entry(engine_name.clone())
-                            .or_insert_with(|| super::engine_manager::EngineState::new(engine_name.clone()));
-                        state.record_failure();
+                        if let Some(state) = states.get_mut(&engine_name) {
+                            state.record_zero_results();
+                        }
+                    } else {
+                        // 有结果，记录成功
+                        let mut states = self.engine_states.write().await;
+                        if let Some(state) = states.get_mut(&engine_name) {
+                            state.record_success(result.elapsed_ms);
+                        }
                     }
+
+                    successful_results.push(result.clone());
+                    engines_used.push(engine_name.clone());
+                }
+                Err(_) => {
+                    // 失败，记录失败
+                    let mut states = self.engine_states.write().await;
+                    let state = states.entry(engine_name.clone())
+                        .or_insert_with(|| super::engine_manager::EngineState::new(engine_name.clone()));
+                    state.record_failure();
                 }
             }
         }
@@ -702,7 +833,7 @@ impl SearchInterface {
             total_count,
             engines_used,
             query_time_ms,
-            cached: false,
+            cached: is_cached,
         })
     }
 
@@ -750,10 +881,80 @@ impl SearchInterface {
 
     /// 健康检查
     pub async fn health_check(&self) -> Result<Vec<(String, bool)>, Box<dyn std::error::Error + Send + Sync>> {
-        // 可以实现健康检查逻辑
-        // 暂时返回所有引擎为健康状态
         let engines = self.list_engines();
-        Ok(engines.into_iter().map(|e| (e, true)).collect())
+        let mut results = Vec::new();
+        
+        // 对每个引擎执行健康检查
+        for engine_name in engines {
+            let is_healthy = self.check_engine_health(&engine_name).await?;
+            results.push((engine_name, is_healthy));
+        }
+        
+        Ok(results)
+    }
+    
+    /// 检查单个引擎的健康状况
+    async fn check_engine_health(&self, engine_name: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        use std::sync::atomic::Ordering;
+        
+        // 尝试获取或创建引擎实例
+        match self.get_or_create_engine(engine_name).await {
+            Ok(engine) => {
+                // 执行引擎的is_available方法进行健康检查
+                let is_available = engine.is_available().await;
+                
+                // 更新引擎状态
+                let mut states = self.engine_states.write().await;
+                if let Some(state) = states.get_mut(engine_name) {
+                    if is_available {
+                        // 健康检查通过，重置失败次数
+                        state.consecutive_failures = 0;
+                        state.temporarily_disabled = false;
+                        state.disabled_until = None;
+                    } else {
+                        // 健康检查失败，增加失败次数
+                        state.consecutive_failures += 1;
+                        state.failed_requests += 1;
+                        state.total_requests += 1;
+                        
+                        // 根据失败次数决定是否临时禁用引擎
+                        if state.consecutive_failures >= 3 {
+                            use std::time::Duration;
+                            // 计算指数退避时间（2^n秒，最多1小时）
+                            let backoff_seconds = (2u64).pow(state.consecutive_failures.min(10));
+                            let backoff_duration = Duration::from_secs(backoff_seconds.min(3600));
+                            state.temporarily_disabled = true;
+                            state.disabled_until = Some(std::time::Instant::now() + backoff_duration);
+                        }
+                    }
+                }
+                
+                Ok(is_available)
+            }
+            Err(_e) => {
+                // 引擎创建失败，更新状态
+                self.stats.engine_failures.fetch_add(1, Ordering::Relaxed);
+                
+                let mut states = self.engine_states.write().await;
+                let state = states.entry(engine_name.to_string())
+                    .or_insert_with(|| super::engine_manager::EngineState::new(engine_name.to_string()));
+                
+                state.consecutive_failures += 1;
+                state.failed_requests += 1;
+                state.total_requests += 1;
+                
+                // 根据失败次数决定是否临时禁用引擎
+                if state.consecutive_failures >= 3 {
+                    use std::time::Duration;
+                    let backoff_seconds = (2u64).pow(state.consecutive_failures.min(10) as u32);
+                    let backoff_duration = Duration::from_secs(backoff_seconds.min(3600));
+                    state.temporarily_disabled = true;
+                    state.disabled_until = Some(std::time::Instant::now() + backoff_duration);
+                }
+                
+                Ok(false)
+            }
+        }
     }
 
     /// 获取引擎状态

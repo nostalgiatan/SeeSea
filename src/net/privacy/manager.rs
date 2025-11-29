@@ -16,7 +16,7 @@
 //!
 //! 统一管理所有隐私保护功能的协调器
 
-use crate::net::types::{PrivacyConfig, TlsConfig, DohConfig};
+use crate::net::config::{PrivacyConfig, TlsConfig, DnsConfig};
 use super::fingerprint::FingerprintProtector;
 use super::user_agent::UserAgentGenerator;
 use super::headers::generate_fake_headers;
@@ -36,8 +36,8 @@ pub struct PrivacyManager {
     config: Arc<RwLock<PrivacyConfig>>,
     /// TLS 配置
     tls_config: Arc<RwLock<TlsConfig>>,
-    /// DoH 配置
-    doh_config: Arc<RwLock<DohConfig>>,
+    /// DNS 配置
+    doh_config: Arc<RwLock<DnsConfig>>,
     /// 指纹保护器
     fingerprint_protector: Arc<FingerprintProtector>,
     /// User-Agent 生成器（预留用于未来功能）
@@ -50,7 +50,7 @@ impl PrivacyManager {
     pub fn new(
         privacy_config: PrivacyConfig,
         tls_config: TlsConfig,
-        doh_config: DohConfig,
+        doh_config: DnsConfig,
     ) -> Self {
         let fingerprint_protector = Arc::new(
             FingerprintProtector::new(tls_config.fingerprint_level)
@@ -98,13 +98,13 @@ impl PrivacyManager {
     /// 检查是否启用 DoH
     pub async fn is_doh_enabled(&self) -> bool {
         let config = self.doh_config.read().await;
-        config.enabled
+        config.doh_enabled
     }
 
     /// 获取 DoH 服务器列表
     pub async fn get_doh_servers(&self) -> Vec<String> {
         let config = self.doh_config.read().await;
-        config.servers.clone()
+        config.doh_servers.clone()
     }
 
     /// 获取隐私保护级别评估
@@ -122,22 +122,22 @@ impl PrivacyManager {
 
         // User-Agent 策略 (20分)
         score += match privacy_config.user_agent_strategy {
-            crate::net::types::UserAgentStrategy::Fixed => 0,
-            crate::net::types::UserAgentStrategy::Realistic => 10,
-            crate::net::types::UserAgentStrategy::Random => 15,
-            crate::net::types::UserAgentStrategy::Custom => 20,
+            crate::net::config::UserAgentStrategy::Fixed => 0,
+            crate::net::config::UserAgentStrategy::Realistic => 10,
+            crate::net::config::UserAgentStrategy::Random => 15,
+            crate::net::config::UserAgentStrategy::Custom => 20,
         };
 
         // TLS 指纹混淆 (30分)
         score += match tls_config.fingerprint_level {
-            crate::net::types::TlsFingerprintLevel::None => 0,
-            crate::net::types::TlsFingerprintLevel::Basic => 10,
-            crate::net::types::TlsFingerprintLevel::Advanced => 20,
-            crate::net::types::TlsFingerprintLevel::Full => 30,
+            crate::net::config::TlsFingerprintLevel::None => 0,
+            crate::net::config::TlsFingerprintLevel::Basic => 10,
+            crate::net::config::TlsFingerprintLevel::Advanced => 20,
+            crate::net::config::TlsFingerprintLevel::Full => 30,
         };
 
         // DoH (15分)
-        if doh_config.enabled {
+        if doh_config.doh_enabled {
             score += 15;
         }
 
@@ -200,23 +200,23 @@ pub struct PrivacyStats {
     /// 是否启用伪造请求头
     pub fake_headers_enabled: bool,
     /// 指纹保护级别
-    pub fingerprint_protection: crate::net::types::TlsFingerprintLevel,
+    pub fingerprint_protection: crate::net::config::TlsFingerprintLevel,
     /// 是否启用 DoH
     pub doh_enabled: bool,
     /// User-Agent 策略
-    pub user_agent_strategy: crate::net::types::UserAgentStrategy,
+    pub user_agent_strategy: crate::net::config::UserAgentStrategy,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::net::types::{UserAgentStrategy, TlsFingerprintLevel};
+    use crate::net::config::{UserAgentStrategy, TlsFingerprintLevel};
 
     #[tokio::test]
     async fn test_privacy_manager_creation() {
         let privacy_config = PrivacyConfig::default();
         let tls_config = TlsConfig::default();
-        let doh_config = DohConfig::default();
+        let doh_config = DnsConfig::default();
 
         let manager = PrivacyManager::new(privacy_config, tls_config, doh_config);
         
@@ -235,8 +235,8 @@ mod tests {
         let mut tls_config = TlsConfig::default();
         tls_config.fingerprint_level = TlsFingerprintLevel::Full;
 
-        let mut doh_config = DohConfig::default();
-        doh_config.enabled = true;
+        let mut doh_config = DnsConfig::default();
+        doh_config.doh_enabled = true;
 
         let manager = PrivacyManager::new(privacy_config, tls_config, doh_config);
         
@@ -249,7 +249,7 @@ mod tests {
         let manager = PrivacyManager::new(
             PrivacyConfig::default(),
             TlsConfig::default(),
-            DohConfig::default(),
+            DnsConfig::default(),
         );
 
         let stats = manager.get_stats().await;

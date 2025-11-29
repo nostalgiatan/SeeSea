@@ -21,7 +21,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::rss::{RssInterface, RssFeedQuery};
-use crate::net::{client::HttpClient, types::NetworkConfig};
+use crate::net::{client::HttpClient, config::NetworkConfig};
 use crate::cache::{CacheInterface, types::CacheImplConfig};
 
 #[pyclass]

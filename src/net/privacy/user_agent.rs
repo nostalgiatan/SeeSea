@@ -16,7 +16,7 @@
 //!
 //! 提供真实的浏览器 User-Agent 生成和轮换功能
 
-use crate::net::types::{PrivacyConfig, UserAgentStrategy};
+use crate::net::config::{PrivacyConfig, UserAgentStrategy};
 use rand::prelude::*;
 
 /// User-Agent 生成器
@@ -37,7 +37,7 @@ impl UserAgentGenerator {
     }
 
     /// 获取下一个 User-Agent（轮换）
-    pub fn next(&mut self) -> &str {
+    pub fn next_ua(&mut self) -> &str {
         let ua = &self.user_agents[self.current_index];
         self.current_index = (self.current_index + 1) % self.user_agents.len();
         ua
@@ -56,6 +56,14 @@ impl UserAgentGenerator {
             .choose(&mut rng)
             .map(|s| s.as_str())
             .unwrap_or("Mozilla/5.0")
+    }
+}
+
+impl Iterator for UserAgentGenerator {
+    type Item = String;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(self.next_ua().to_string())
     }
 }
 
@@ -88,7 +96,7 @@ pub fn get_user_agent(config: &PrivacyConfig) -> String {
         }
         UserAgentStrategy::Custom => {
             config.custom_user_agent.clone()
-                .unwrap_or_else(|| get_random_user_agent())
+                .unwrap_or_else(get_random_user_agent)
         }
     }
 }
@@ -162,8 +170,8 @@ mod tests {
     #[test]
     fn test_user_agent_generator_next() {
         let mut generator = UserAgentGenerator::new();
-        let first = generator.next().to_string();
-        let second = generator.next().to_string();
+        let first = generator.next().unwrap();
+        let second = generator.next().unwrap();
         // 应该轮换
         assert_ne!(first, second);
     }

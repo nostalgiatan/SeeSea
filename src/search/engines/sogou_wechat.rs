@@ -24,7 +24,7 @@ use crate::derive::{
     SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
 };
 use crate::net::client::HttpClient;
-use crate::net::types::{NetworkConfig, RequestOptions};
+use crate::net::config::{NetworkConfig, RequestOptions};
 use super::utils::build_query_string_owned;
 
 pub struct SogouWeChatEngine {

@@ -32,6 +32,11 @@ use std::net::IpAddr;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+/// 限流器类型别名
+pub type SimpleRateLimiter = RateLimiter<NotKeyed, InMemoryState, DefaultClock>;
+/// IP限流器映射类型别名
+pub type IpLimiterMap = Arc<DashMap<IpAddr, Arc<SimpleRateLimiter>>>;
+
 /// 限流配置
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
@@ -58,9 +63,9 @@ impl Default for RateLimitConfig {
 /// 限流器状态
 pub struct RateLimiterState {
     /// 全局限流器
-    global_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
+    global_limiter: Arc<SimpleRateLimiter>,
     /// IP级别限流器映射
-    ip_limiters: Arc<DashMap<IpAddr, Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>>,
+    ip_limiters: IpLimiterMap,
     /// 配置
     config: RateLimitConfig,
 }

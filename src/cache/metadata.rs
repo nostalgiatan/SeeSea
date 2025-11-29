@@ -21,6 +21,9 @@ use crate::derive::types::EngineInfo;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// 元数据缓存作用域
+const METADATA_SCOPE: &str = "metadata";
+
 /// 元数据缓存键前缀
 const METADATA_KEY_PREFIX: &str = "metadata:";
 
@@ -57,16 +60,41 @@ impl MetadataCache {
         info: &EngineInfo,
         ttl: Option<Duration>,
     ) -> Result<()> {
-        let key = format!("{}{}", ENGINE_INFO_PREFIX, engine_name);
+        let key = format!("{ENGINE_INFO_PREFIX}{engine_name}");
         
         // 序列化引擎信息
         let data = bincode::serde::encode_to_vec(info, bincode::config::standard()).map_err(|e| {
-            CacheError::SerializationError(format!("序列化引擎信息失败: {}", e))
+            CacheError::SerializationError(format!("序列化引擎信息失败: {e}"))
         })?;
 
         // 引擎信息通常不过期，使用较长的TTL或永不过期
         let ttl = ttl.or(Some(Duration::from_secs(86400 * 365))); // 默认1年
-        self.manager.set(key, data, ttl)
+        self.manager.set(METADATA_SCOPE, key, data, ttl)
+    }
+
+    /// 异步缓存引擎信息
+    ///
+    /// # 参数
+    ///
+    /// * `engine_name` - 引擎名称
+    /// * `info` - 引擎信息
+    /// * `ttl` - 生存时间，None 表示永不过期（引擎信息通常不变）
+    pub async fn set_engine_info_async(
+        &self,
+        engine_name: &str,
+        info: &EngineInfo,
+        ttl: Option<Duration>,
+    ) -> Result<()> {
+        let key = format!("{ENGINE_INFO_PREFIX}{engine_name}");
+        
+        // 序列化引擎信息
+        let data = bincode::serde::encode_to_vec(info, bincode::config::standard()).map_err(|e| {
+            CacheError::SerializationError(format!("序列化引擎信息失败: {e}"))
+        })?;
+
+        // 引擎信息通常不过期，使用较长的TTL或永不过期
+        let ttl = ttl.or(Some(Duration::from_secs(86400 * 365))); // 默认1年
+        self.manager.set_async(METADATA_SCOPE, key, data, ttl).await
     }
 
     /// 获取引擎信息
@@ -79,14 +107,39 @@ impl MetadataCache {
     ///
     /// 返回缓存的引擎信息，如果不存在则返回 None
     pub fn get_engine_info(&self, engine_name: &str) -> Result<Option<EngineInfo>> {
-        let key = format!("{}{}", ENGINE_INFO_PREFIX, engine_name);
+        let key = format!("{ENGINE_INFO_PREFIX}{engine_name}");
         
-        match self.manager.get(&key)? {
+        match self.manager.get(METADATA_SCOPE, &key)? {
             Some(data) => {
                 let info: EngineInfo = bincode::serde::decode_from_slice(&data, bincode::config::standard())
                     .map(|(info, _)| info)
                     .map_err(|e| {
-                        CacheError::SerializationError(format!("反序列化引擎信息失败: {}", e))
+                        CacheError::SerializationError(format!("反序列化引擎信息失败: {e}"))
+                    })?;
+                Ok(Some(info))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// 异步获取引擎信息
+    ///
+    /// # 参数
+    ///
+    /// * `engine_name` - 引擎名称
+    ///
+    /// # 返回值
+    ///
+    /// 返回缓存的引擎信息，如果不存在则返回 None
+    pub async fn get_engine_info_async(&self, engine_name: &str) -> Result<Option<EngineInfo>> {
+        let key = format!("{ENGINE_INFO_PREFIX}{engine_name}");
+        
+        match self.manager.get_async(METADATA_SCOPE, &key).await? {
+            Some(data) => {
+                let info: EngineInfo = bincode::serde::decode_from_slice(&data, bincode::config::standard())
+                    .map(|(info, _)| info)
+                    .map_err(|e| {
+                        CacheError::SerializationError(format!("反序列化引擎信息失败: {e}"))
                     })?;
                 Ok(Some(info))
             }
@@ -100,8 +153,58 @@ impl MetadataCache {
     ///
     /// * `engine_name` - 引擎名称
     pub fn delete_engine_info(&self, engine_name: &str) -> Result<bool> {
-        let key = format!("{}{}", ENGINE_INFO_PREFIX, engine_name);
-        self.manager.delete(&key)
+        let key = format!("{ENGINE_INFO_PREFIX}{engine_name}");
+        self.manager.delete(METADATA_SCOPE, &key)
+    }
+
+    /// 异步删除引擎信息
+    ///
+    /// # 参数
+    ///
+    /// * `engine_name` - 引擎名称
+    pub async fn delete_engine_info_async(&self, engine_name: &str) -> Result<bool> {
+        let key = format!("{ENGINE_INFO_PREFIX}{engine_name}");
+        self.manager.delete_async(METADATA_SCOPE, &key).await
+    }
+
+    /// 批量缓存引擎信息
+    ///
+    /// # 参数
+    ///
+    /// * `items` - 引擎信息列表，每个元素包含引擎名称和引擎信息
+    /// * `ttl` - 生存时间，None 表示永不过期
+    pub fn set_engine_info_batch(
+        &self,
+        items: &[(&str, &EngineInfo)],
+        ttl: Option<Duration>,
+    ) -> Result<()> {
+        let ttl = ttl.or(Some(Duration::from_secs(86400 * 365))); // 默认1年
+        
+        for (engine_name, info) in items {
+            self.set_engine_info(engine_name, info, ttl)?;
+        }
+        
+        Ok(())
+    }
+
+    /// 异步批量缓存引擎信息
+    ///
+    /// # 参数
+    ///
+    /// * `items` - 引擎信息列表，每个元素包含引擎名称和引擎信息
+    /// * `ttl` - 生存时间，None 表示永不过期
+    pub async fn set_engine_info_batch_async(
+        &self,
+        items: &[(&str, &EngineInfo)],
+        ttl: Option<Duration>,
+    ) -> Result<()> {
+        let ttl = ttl.or(Some(Duration::from_secs(86400 * 365))); // 默认1年
+        
+        for (engine_name, info) in items {
+            self.set_engine_info_async(engine_name, info, ttl).await?;
+        }
+        
+        Ok(())
     }
 
     /// 缓存通用元数据
@@ -117,8 +220,25 @@ impl MetadataCache {
         data: Vec<u8>,
         ttl: Option<Duration>,
     ) -> Result<()> {
-        let full_key = format!("{}{}", METADATA_KEY_PREFIX, key);
-        self.manager.set(full_key, data, ttl)
+        let full_key = format!("{METADATA_KEY_PREFIX}{key}");
+        self.manager.set(METADATA_SCOPE, full_key, data, ttl)
+    }
+
+    /// 异步缓存通用元数据
+    ///
+    /// # 参数
+    ///
+    /// * `key` - 元数据键
+    /// * `data` - 元数据（已序列化的字节数组）
+    /// * `ttl` - 生存时间
+    pub async fn set_metadata_async(
+        &self,
+        key: &str,
+        data: Vec<u8>,
+        ttl: Option<Duration>,
+    ) -> Result<()> {
+        let full_key = format!("{METADATA_KEY_PREFIX}{key}");
+        self.manager.set_async(METADATA_SCOPE, full_key, data, ttl).await
     }
 
     /// 获取通用元数据
@@ -131,8 +251,22 @@ impl MetadataCache {
     ///
     /// 返回元数据字节数组，如果不存在则返回 None
     pub fn get_metadata(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        let full_key = format!("{}{}", METADATA_KEY_PREFIX, key);
-        self.manager.get(&full_key)
+        let full_key = format!("{METADATA_KEY_PREFIX}{key}");
+        self.manager.get(METADATA_SCOPE, &full_key)
+    }
+
+    /// 异步获取通用元数据
+    ///
+    /// # 参数
+    ///
+    /// * `key` - 元数据键
+    ///
+    /// # 返回值
+    ///
+    /// 返回元数据字节数组，如果不存在则返回 None
+    pub async fn get_metadata_async(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        let full_key = format!("{METADATA_KEY_PREFIX}{key}");
+        self.manager.get_async(METADATA_SCOPE, &full_key).await
     }
 
     /// 删除通用元数据
@@ -141,24 +275,164 @@ impl MetadataCache {
     ///
     /// * `key` - 元数据键
     pub fn delete_metadata(&self, key: &str) -> Result<bool> {
-        let full_key = format!("{}{}", METADATA_KEY_PREFIX, key);
-        self.manager.delete(&full_key)
+        let full_key = format!("{METADATA_KEY_PREFIX}{key}");
+        self.manager.delete(METADATA_SCOPE, &full_key)
     }
 
-    /// 列出所有引擎信息键
+    /// 异步删除通用元数据
+    ///
+    /// # 参数
+    ///
+    /// * `key` - 元数据键
+    pub async fn delete_metadata_async(&self, key: &str) -> Result<bool> {
+        let full_key = format!("{METADATA_KEY_PREFIX}{key}");
+        self.manager.delete_async(METADATA_SCOPE, &full_key).await
+    }
+
+    /// 批量缓存通用元数据
+    ///
+    /// # 参数
+    ///
+    /// * `items` - 元数据列表，每个元素包含键和值
+    /// * `ttl` - 生存时间
+    pub fn set_metadata_batch(
+        &self,
+        items: &[(&str, Vec<u8>)],
+        ttl: Option<Duration>,
+    ) -> Result<()> {
+        for (key, data) in items {
+            self.set_metadata(key, data.clone(), ttl)?;
+        }
+        
+        Ok(())
+    }
+
+    /// 异步批量缓存通用元数据
+    ///
+    /// # 参数
+    ///
+    /// * `items` - 元数据列表，每个元素包含键和值
+    /// * `ttl` - 生存时间
+    pub async fn set_metadata_batch_async(
+        &self,
+        items: &[(&str, Vec<u8>)],
+        ttl: Option<Duration>,
+    ) -> Result<()> {
+        for (key, data) in items {
+            self.set_metadata_async(key, data.clone(), ttl).await?;
+        }
+        
+        Ok(())
+    }
+
+    /// 批量获取通用元数据
+    ///
+    /// # 参数
+    ///
+    /// * `keys` - 元数据键列表
     ///
     /// # 返回值
     ///
-    /// 返回所有引擎名称列表
-    pub fn list_engine_names(&self) -> Result<Vec<String>> {
-        // 注意：这个操作可能较慢，因为需要扫描所有键
-        let names = Vec::new();
+    /// 返回元数据字节数组列表，与输入键列表顺序一致
+    pub fn get_metadata_batch(&self, keys: &[&str]) -> Result<Vec<Option<Vec<u8>>>> {
+        let mut results = Vec::with_capacity(keys.len());
         
-        // 这里需要遍历数据库，sled 提供了 scan_prefix 方法
-        // 但由于我们封装了 CacheManager，暂时返回空列表
-        // 实际实现需要暴露 sled 的扫描功能
+        for key in keys {
+            let result = self.get_metadata(key)?;
+            results.push(result);
+        }
         
-        Ok(names)
+        Ok(results)
+    }
+
+    /// 异步批量获取通用元数据
+    ///
+    /// # 参数
+    ///
+    /// * `keys` - 元数据键列表
+    ///
+    /// # 返回值
+    ///
+    /// 返回元数据字节数组列表，与输入键列表顺序一致
+    pub async fn get_metadata_batch_async(&self, keys: &[&str]) -> Result<Vec<Option<Vec<u8>>>> {
+        let mut results = Vec::with_capacity(keys.len());
+        
+        for key in keys {
+            let result = self.get_metadata_async(key).await?;
+            results.push(result);
+        }
+        
+        Ok(results)
+    }
+
+    /// 批量删除通用元数据
+    ///
+    /// # 参数
+    ///
+    /// * `keys` - 元数据键列表
+    ///
+    /// # 返回值
+    ///
+    /// 返回成功删除的条目数量
+    pub fn delete_metadata_batch(&self, keys: &[&str]) -> Result<usize> {
+        let mut deleted = 0;
+        
+        for key in keys {
+            if self.delete_metadata(key)? {
+                deleted += 1;
+            }
+        }
+        
+        Ok(deleted)
+    }
+
+    /// 异步批量删除通用元数据
+    ///
+    /// # 参数
+    ///
+    /// * `keys` - 元数据键列表
+    ///
+    /// # 返回值
+    ///
+    /// 返回成功删除的条目数量
+    pub async fn delete_metadata_batch_async(&self, keys: &[&str]) -> Result<usize> {
+        let mut deleted = 0;
+        
+        for key in keys {
+            if self.delete_metadata_async(key).await? {
+                deleted += 1;
+            }
+        }
+        
+        Ok(deleted)
+    }
+
+    /// 清空所有元数据缓存
+    pub fn clear(&self) -> Result<()> {
+        self.manager.clear_scope(METADATA_SCOPE)
+    }
+
+    /// 异步清空所有元数据缓存
+    pub async fn clear_async(&self) -> Result<()> {
+        self.manager.clear_scope_async(METADATA_SCOPE).await
+    }
+
+    /// 清理过期的元数据
+    ///
+    /// # 返回值
+    ///
+    /// 返回清理的条目数量
+    pub fn cleanup_expired(&self) -> Result<usize> {
+        self.manager.cleanup_expired_by_scope(METADATA_SCOPE)
+    }
+
+    /// 异步清理过期的元数据
+    ///
+    /// # 返回值
+    ///
+    /// 返回清理的条目数量
+    pub async fn cleanup_expired_async(&self) -> Result<usize> {
+        self.manager.cleanup_expired_by_scope_async(METADATA_SCOPE).await
     }
 
     /// 获取底层缓存管理器引用
@@ -190,11 +464,14 @@ mod tests {
         
         let config = CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
-            default_ttl_secs: 3600,
+            default_ttl_secs: 10,
             max_size_bytes: 1024 * 1024,
             enabled: true,
             compression: false,
             mode: CacheMode::HighThroughput,
+            enable_bloom_filter: false,
+            bloom_filter_expected_elements: 1000,
+            bloom_filter_false_positive_rate: 0.01,
         };
 
         let manager = CacheManager::instance(config).expect("Failed to create cache manager");

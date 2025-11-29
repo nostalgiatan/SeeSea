@@ -16,8 +16,8 @@
 //!
 //! 提供 TLS 配置和浏览器指纹对抗功能
 
-use crate::error::Result;
-use crate::net::types::{TlsConfig, TlsFingerprintLevel};
+use crate::errors::Result;
+use crate::net::config::{TlsConfig, TlsFingerprintLevel};
 use rand::seq::SliceRandom;
 use reqwest::ClientBuilder;
 
@@ -66,10 +66,12 @@ pub fn configure_tls(builder: ClientBuilder, config: &TlsConfig) -> Result<Clien
 /// 应用高级指纹保护
 fn apply_advanced_fingerprint_protection(builder: ClientBuilder) -> ClientBuilder {
     // 模拟现代浏览器的 TLS 配置
-    // 这里使用 reqwest 的默认配置，它已经模拟了浏览器行为
     builder
         .use_rustls_tls() // 使用 rustls 而不是系统 TLS
         .https_only(false) // 允许 HTTP（根据需要）
+        .tls_sni(true) // 启用 SNI
+        .min_tls_version(reqwest::tls::Version::TLS_1_2) // 设置最小 TLS 版本为 1.2
+        .tls_built_in_root_certs(true) // 使用内置根证书
 }
 
 /// 应用完全指纹保护（随机化）
@@ -78,8 +80,11 @@ fn apply_full_fingerprint_protection(builder: ClientBuilder) -> ClientBuilder {
     // 注意：reqwest 的 API 限制了我们能做的随机化程度
     // 对于更深入的随机化，需要使用底层的 rustls 配置
     builder
-        .use_rustls_tls()
-        .https_only(false)
+        .use_rustls_tls() // 使用 rustls 而不是系统 TLS
+        .https_only(false) // 允许 HTTP（根据需要）
+        .tls_sni(true) // 启用 SNI
+        .min_tls_version(reqwest::tls::Version::TLS_1_2) // 设置最小 TLS 版本为 1.2
+        .tls_built_in_root_certs(true) // 使用内置根证书
 }
 
 /// 生成随机 TLS 扩展顺序

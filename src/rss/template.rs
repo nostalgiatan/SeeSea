@@ -81,10 +81,10 @@ impl RssTemplateManager {
 
     /// 加载模板
     pub fn load_template(&self, name: &str) -> Result<RssTemplate, Box<dyn std::error::Error + Send + Sync>> {
-        let template_path = self.template_dir.join(format!("{}.rss.see", name));
+        let template_path = self.template_dir.join(format!("{name}.rss.see"));
 
         if !template_path.exists() {
-            return Err(format!("Template '{}' not found", name).into());
+            return Err(format!("Template '{name}' not found").into());
         }
 
         let content = fs::read_to_string(template_path)?;
@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn test_template_manager_creation() {
-        let manager = RssTemplateManager::new("rss/template");
+        let _manager = RssTemplateManager::new("rss/template");
         assert!(true);
     }
 }

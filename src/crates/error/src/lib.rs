@@ -125,7 +125,7 @@ impl fmt::Display for ErrorCategory {
 /// 错误类型的核心trait
 /// 
 /// 所有自定义错误类型都应该实现此trait，以提供统一的错误处理接口。
-pub trait ErrorKind: fmt::Debug + fmt::Display {
+pub trait ErrorKind: fmt::Debug + fmt::Display + Send + Sync {
     /// 获取错误码
     /// 
     /// 每个错误变体都应该有一个唯一的错误码，便于错误分类和处理。
@@ -349,7 +349,13 @@ impl ErrorKind for ErrorInfo {
     }
     
     fn source(&self) -> Option<&dyn ErrorKind> {
-        self.source.as_ref().map(|e| e.as_ref())
+        self.source.as_ref().map(|e| e.as_ref() as &dyn ErrorKind)
+    }
+}
+
+impl std::error::Error for ErrorInfo {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
     }
 }
 

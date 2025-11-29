@@ -1,0 +1,32 @@
+# SeeSea 安装配置文件
+# 用于配置 SeeSea 项目的安装选项
+
+[project]
+name = "SeeSea"
+version = "1.0.0"
+description = "Privacy-focused metasearch engine"
+author = "SeeSea Team"
+
+[install_options]
+default_dir = "/opt/seesea"
+create_desktop_shortcut = true
+create_start_menu_shortcut = true
+add_to_path = true
+create_uninstaller = true
+
+[commands]
+[[commands]]
+name = "start-service"
+program = "/opt/seesea/bin/seesea-service"
+args = ["start"]
+working_dir = "/opt/seesea"
+background = true
+
+[platform.windows]
+default_dir = "C:\\Program Files\\SeeSea"
+
+[platform.linux]
+default_dir = "/usr/local/seesea"
+
+[platform.macos]
+default_dir = "/Applications/SeeSea"

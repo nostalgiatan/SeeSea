@@ -3,13 +3,13 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use SeeSea::{
+use seesea_core::{
     api::ApiInterface,
     cache::CacheInterface,
-    net::NetworkInterface,
-    search::SearchConfig,
     cache::types::CacheImplConfig,
-    net::types::NetworkConfig,
+    net::NetworkInterface,
+    net::config::NetworkConfig,
+    search::SearchConfig,
 };
 
 #[tokio::main]
@@ -22,10 +22,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut network_config = NetworkConfig::default();
     network_config.pool.max_idle_connections = 200;
-    let network = Arc::new(NetworkInterface::new(network_config)?);
-    let cache = Arc::new(RwLock::new(CacheInterface::new(CacheImplConfig::default())?));
+    let network = Arc::new(NetworkInterface::new(network_config).map_err(|e| format!("Network error: {:?}", e))?);
+    let cache = Arc::new(RwLock::new(CacheInterface::new(CacheImplConfig::default()).map_err(|e| format!("Cache error: {:?}", e))?));
     
-    let api = ApiInterface::from_config(SearchConfig::default(), network, cache)?;
+    let api = ApiInterface::from_config(SearchConfig::default(), network, cache).map_err(|e| format!("API error: {:?}", e))?;
     let app = api.build_router();
 
     println!("📍 API 端点:");

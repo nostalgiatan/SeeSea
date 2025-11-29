@@ -205,9 +205,9 @@ mod tests {
 
     #[test]
     fn test_rss_interface_creation() {
-        let network_config = crate::net::types::NetworkConfig::default();
+        let network_config = crate::net::config::NetworkConfig::default();
         let client = Arc::new(HttpClient::new(network_config).unwrap());
-        let interface = RssInterface::new(client);
+        let _interface = RssInterface::new(client);
         assert!(true);
     }
 }

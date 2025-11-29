@@ -188,7 +188,7 @@ impl EngineManager {
     /// 引擎管理器实例
     pub fn new(mode: EngineMode, configured_engines: Vec<String>) -> Self {
         // 创建网络配置
-        let network_config = crate::net::types::NetworkConfig::default();
+        let network_config = crate::net::config::NetworkConfig::default();
         
         // 创建共享客户端
         let shared_client = Arc::new(

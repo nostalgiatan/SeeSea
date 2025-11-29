@@ -23,7 +23,11 @@ use async_trait::async_trait;
 pub trait ResultParser {
     /// 解析响应为搜索结果
     async fn parse(&self, response: &str, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
+}
 
+/// JSON结果解析器 trait
+#[async_trait]
+pub trait JsonResultParser {
     /// 解析单个结果项
     fn parse_item(&self, raw: &serde_json::Value) -> Result<SearchResultItem, Box<dyn Error + Send + Sync>> {
         Ok(SearchResultItem {
@@ -96,7 +100,7 @@ pub trait ResultFilter {
         results.retain(|item| {
             !blocked_domains.iter().any(|domain| {
                 item.url.contains(domain) ||
-                item.display_url.as_ref().map_or(false, |url| url.contains(domain))
+                item.display_url.as_ref().is_some_and(|url| url.contains(domain))
             })
         });
     }
@@ -220,7 +224,7 @@ pub trait ResultEnhancer {
     fn add_favicons(&self, results: &mut Vec<SearchResultItem>) -> Result<(), Box<dyn Error>> {
         for item in results.iter_mut() {
             if let Some(domain) = self.extract_domain(&item.url) {
-                let favicon_url = format!("https://www.google.com/s2/favicons?domain={}&sz=32", domain);
+                let favicon_url = format!("https://www.google.com/s2/favicons?domain={domain}&sz=32");
                 item.metadata.insert("favicon".to_string(), favicon_url);
             }
         }
@@ -248,7 +252,7 @@ pub trait ResultEnhancer {
 
     /// 检测语言
     fn detect_language(&self, title: &str, content: &str) -> String {
-        let text = format!("{} {}", title, content);
+        let text = format!("{title} {content}");
 
         // 简单的字符统计检测
         let chinese_chars = text.chars().filter(|c| is_chinese_char(*c)).count();

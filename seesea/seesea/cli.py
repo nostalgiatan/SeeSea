@@ -177,7 +177,6 @@ def engines(json):
                 'google': ['Google', 'Web', '全球最大的搜索引擎'],
                 'bing': ['Bing', 'Web', '微软搜索引擎'],
                 'duckduckgo': ['DuckDuckGo', 'Web', '隐私保护搜索引擎'],
-                'quark': ['Quark', 'Web', '夸克搜索引擎'],
                 'xinhua': ['新华网', 'News', '中国官方新闻媒体'],
                 'baidu': ['百度', 'Web', '中文搜索引擎'],
             }
@@ -192,7 +191,6 @@ def engines(json):
             usage_panel = Panel(
                 "[green]使用方法:[/green]\n"
                 "seesea search \"关键词\" -e google,bing  # 指定多个引擎\n"
-                "seesea search \"关键词\" -e quark         # 只用夸克搜索\n"
                 "seesea search \"关键词\" -e xinhua         # 只用新华网搜索",
                 title="引擎选择提示",
                 border_style="blue"

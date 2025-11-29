@@ -57,6 +57,7 @@ class SearchClient:
         engines: Optional[List[str]] = None,
         force: Optional[bool] = False,
         cache_timeline: Optional[int] = None,
+        include_deepweb: Optional[bool] = False,
     ) -> SearchResponse:
         """
         执行搜索
@@ -70,6 +71,7 @@ class SearchClient:
             engines: 指定使用的搜索引擎列表（如 ["yandex", "bing"]）
             force: 强制搜索，绕过缓存（默认 False）
             cache_timeline: 缓存刷新时间线（秒），超过此时间强制刷新（默认 3600）
+            include_deepweb: 是否包含深网搜索（如新华网），默认 False
 
         Returns:
             SearchResponse 对象，包含：
@@ -99,6 +101,7 @@ class SearchClient:
             engines,
             force,
             cache_timeline,
+            include_deepweb,
         )
         return SearchResponse.from_dict(result_dict)
     
@@ -157,6 +160,7 @@ class SearchClient:
         page: Optional[int] = 1,
         page_size: Optional[int] = 10,
         engines: Optional[List[str]] = None,
+        include_deepweb: Optional[bool] = False,
     ) -> Dict[str, Any]:
         """
         流式搜索 - 每个引擎完成时立即调用回调函数
@@ -167,6 +171,7 @@ class SearchClient:
             page: 页码
             page_size: 每页大小
             engines: 指定引擎列表
+            include_deepweb: 是否包含深网搜索（如新华网），默认 False
             
         Returns:
             最终聚合的搜索结果
@@ -182,6 +187,7 @@ class SearchClient:
             page,
             page_size,
             engines,
+            include_deepweb,
         )
     
     def search_fulltext(
@@ -190,6 +196,7 @@ class SearchClient:
         page: Optional[int] = 1,
         page_size: Optional[int] = 10,
         engines: Optional[List[str]] = None,
+        include_deepweb: Optional[bool] = False,
     ) -> SearchResponse:
         """
         全文搜索 - 搜索网络和历史数据库
@@ -201,6 +208,7 @@ class SearchClient:
             page: 页码
             page_size: 每页大小
             engines: 指定引擎列表
+            include_deepweb: 是否包含深网搜索（如新华网），默认 False
             
         Returns:
             SearchResponse 对象（网络 + 数据库 + RSS）
@@ -217,6 +225,7 @@ class SearchClient:
             page,
             page_size,
             engines,
+            include_deepweb,
         )
         return SearchResponse.from_dict(result_dict)
     

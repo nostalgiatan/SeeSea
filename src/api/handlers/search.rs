@@ -71,7 +71,7 @@ async fn execute_search(
 
     // 转换为内部搜索查询
     let search_query = params.to_search_query()
-        .map_err(|e| format!("参数错误: {}", e))?;
+        .map_err(|e| format!("参数错误: {e}"))?;
 
     // 获取引擎列表
     let engines = params.get_engines();
@@ -84,6 +84,7 @@ async fn execute_search(
         max_results: Some(1000), // 限制最大结果数为1000
         force: false,
         cache_timeline: Some(3600),
+        include_deepweb: params.include_deepweb, // 使用API参数
     };
 
     // 执行搜索

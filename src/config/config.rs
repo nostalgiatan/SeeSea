@@ -22,68 +22,92 @@ use crate::config::common::LogLevel;
 
 /// SeeSea 主配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct SeeSeaConfig {
     /// 通用配置
+    #[serde(default)]
     pub general: crate::config::general::GeneralConfig,
     /// 环境标识
+    #[serde(default)]
     pub environment: Environment,
     /// 服务器配置
+    #[serde(default)]
     pub server: crate::config::server::ServerConfig,
     /// 搜索配置
+    #[serde(default)]
     pub search: crate::config::search::SearchConfig,
     /// 隐私保护配置
+    #[serde(default)]
     pub privacy: crate::config::privacy::PrivacyConfig,
     /// 缓存配置
+    #[serde(default)]
     pub cache: crate::config::cache::CacheConfig,
     /// API 配置
+    #[serde(default)]
     pub api: crate::config::api::ApiConfig,
     /// 日志配置
+    #[serde(default)]
     pub logging: crate::config::logging::LoggingConfig,
     /// 搜索引擎配置
+    #[serde(default)]
     pub engines: crate::config::engines::EnginesConfig,
 }
 
-impl Default for SeeSeaConfig {
-    fn default() -> Self {
-        Self {
-            general: crate::config::general::GeneralConfig::default(),
-            environment: Environment::default(),
-            server: crate::config::server::ServerConfig::default(),
-            search: crate::config::search::SearchConfig::default(),
-            privacy: crate::config::privacy::PrivacyConfig::default(),
-            cache: crate::config::cache::CacheConfig::default(),
-            api: crate::config::api::ApiConfig::default(),
-            logging: crate::config::logging::LoggingConfig::default(),
-            engines: crate::config::engines::EnginesConfig::default(),
-        }
-    }
-}
 
 impl SeeSeaConfig {
     /// 创建开发环境配置
+    #[allow(clippy::field_reassign_with_default)]
     pub fn development() -> Self {
         let mut config = Self::default();
         config.environment = Environment::Development;
+        config.general.environment = Environment::Development;
         config.general.debug = true;
         config.logging.level = LogLevel::Debug;
         config
     }
     
     /// 创建测试环境配置
+    #[allow(clippy::field_reassign_with_default)]
     pub fn testing() -> Self {
         let mut config = Self::default();
         config.environment = Environment::Testing;
+        config.general.environment = Environment::Testing;
         config.general.debug = true;
         config.logging.level = LogLevel::Info;
         config
     }
     
     /// 创建生产环境配置
+    #[allow(clippy::field_reassign_with_default)]
     pub fn production() -> Self {
         let mut config = Self::default();
         config.environment = Environment::Production;
+        config.general.environment = Environment::Production;
         config.general.debug = false;
         config.logging.level = LogLevel::Warn;
+        
+        // 确保至少有一种输出格式
+        if config.search.formats.is_empty() {
+            config.search.formats.push("json".to_string());
+        }
+        
+        // 配置 TLS（使用默认证书路径）
+        config.server.tls = Some(crate::config::server::TlsConfig {
+            enabled: true,
+            cert_path: Some(std::path::PathBuf::from("/etc/ssl/certs/seesea.crt")),
+            key_path: Some(std::path::PathBuf::from("/etc/ssl/private/seesea.key")),
+            ca_path: None,
+            verify_client: false,
+        });
+        
+        // 配置 Tor
+        config.privacy.enable_tor = true;
+        config.privacy.tor_config.socks_port = 9050;
+        
+        config.privacy.fingerprint_protection.protection_level = crate::config::common::FingerprintLevel::Basic;
+        config.logging.structured = true;
+        config.general.enable_metrics = true;
+        config.server.secret_key = "a-very-strong-secret-key-for-production-use-only-123456789012345678901234567890".to_string();
         config
     }
     
@@ -212,13 +236,13 @@ impl ConfigError {
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConfigError::Io(msg) => write!(f, "IO 错误: {}", msg),
-            ConfigError::Parse(msg) => write!(f, "解析错误: {}", msg),
-            ConfigError::Validation(result) => write!(f, "验证失败: {:?}", result),
-            ConfigError::NotFound(msg) => write!(f, "配置文件不存在: {}", msg),
-            ConfigError::Permission(msg) => write!(f, "权限错误: {}", msg),
-            ConfigError::Environment(msg) => write!(f, "环境变量错误: {}", msg),
-            ConfigError::Conflict(msg) => write!(f, "配置冲突: {}", msg),
+            ConfigError::Io(msg) => write!(f, "IO 错误: {msg}"),
+            ConfigError::Parse(msg) => write!(f, "解析错误: {msg}"),
+            ConfigError::Validation(result) => write!(f, "验证失败: {result:?}"),
+            ConfigError::NotFound(msg) => write!(f, "配置文件不存在: {msg}"),
+            ConfigError::Permission(msg) => write!(f, "权限错误: {msg}"),
+            ConfigError::Environment(msg) => write!(f, "环境变量错误: {msg}"),
+            ConfigError::Conflict(msg) => write!(f, "配置冲突: {msg}"),
         }
     }
 }
@@ -376,4 +400,3 @@ impl ConfigLoader {
         }
     }
 }
-

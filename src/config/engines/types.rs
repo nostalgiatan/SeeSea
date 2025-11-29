@@ -14,7 +14,7 @@
 
 //! 引擎配置类型定义
 
-use crate::config::common::{BaseEngineConfig, ConfigValidationResult};
+use crate::config::common::{BaseEngineConfig, ConfigValidationResult, EngineType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -22,14 +22,19 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnginesConfig {
     /// 引擎列表
+    #[serde(default)]
     pub engines: HashMap<String, EngineConfig>,
     /// 引擎分类配置
+    #[serde(default)]
     pub categories: HashMap<String, CategoryConfig>,
     /// 全局引擎设置
+    #[serde(default)]
     pub global_settings: GlobalEngineSettings,
     /// 引擎发现配置
+    #[serde(default)]
     pub discovery: EngineDiscoveryConfig,
     /// 引擎健康检查配置
+    #[serde(default)]
     pub health_check: HealthCheckConfig,
 }
 
@@ -52,6 +57,7 @@ pub struct EngineConfig {
 
 /// 引擎网络配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct EngineNetworkConfig {
     /// 请求配置
     pub request: RequestConfig,
@@ -151,6 +157,7 @@ pub struct TimeoutConfig {
 
 /// 引擎性能配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct EnginePerformanceConfig {
     /// 并发配置
     pub concurrency: ConcurrencyConfig,
@@ -287,6 +294,7 @@ pub struct ServiceNode {
 
 /// 引擎结果配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct EngineResultsConfig {
     /// 结果解析配置
     pub parsing: ResultParsingConfig,
@@ -331,6 +339,7 @@ pub enum ParserType {
 
 /// 结果过滤配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ResultFilteringConfig {
     /// 是否启用过滤
     pub enabled: bool,
@@ -382,6 +391,7 @@ pub struct ResultLimitingConfig {
 
 /// 引擎特定配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct EngineSpecificConfig {
     /// 引擎类型特定配置
     pub api_key: Option<String>,
@@ -507,14 +517,19 @@ pub struct GlobalEngineSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineDiscoveryConfig {
     /// 是否启用自动发现
+    #[serde(default = "default_true")]
     pub enabled: bool,
     /// 发现路径
+    #[serde(default = "default_discovery_paths")]
     pub discovery_paths: Vec<String>,
     /// 发现模式
+    #[serde(default = "default_discovery_patterns")]
     pub discovery_patterns: Vec<String>,
     /// 是否启用热重载
+    #[serde(default = "default_false")]
     pub enable_hot_reload: bool,
     /// 重载间隔（秒）
+    #[serde(default = "default_reload_interval")]
     pub reload_interval: u64,
 }
 
@@ -559,8 +574,32 @@ pub enum HttpMethod {
 
 impl Default for EnginesConfig {
     fn default() -> Self {
+        let mut engines = HashMap::new();
+        
+        // 添加一个默认启用的搜索引擎
+        engines.insert(
+            "baidu".to_string(),
+            EngineConfig {
+                base: BaseEngineConfig {
+                    name: "baidu".to_string(),
+                    engine_type: EngineType::Online,
+                    enabled: true,
+                    weight: 1.0,
+                    timeout: None,
+                    categories: vec!["general".to_string()],
+                    languages: vec!["zh-CN".to_string()],
+                    custom_params: HashMap::new(),
+                },
+                network: EngineNetworkConfig::default(),
+                performance: EnginePerformanceConfig::default(),
+                results: EngineResultsConfig::default(),
+                specific: EngineSpecificConfig::default(),
+                dependencies: EngineDependencies::default(),
+            }
+        );
+        
         Self {
-            engines: HashMap::new(),
+            engines,
             categories: HashMap::new(),
             global_settings: GlobalEngineSettings::default(),
             discovery: EngineDiscoveryConfig::default(),
@@ -590,16 +629,16 @@ impl EnginesConfig {
         // 验证各个引擎配置
         for (engine_name, engine_config) in &self.engines {
             if engine_config.base.name != *engine_name {
-                result.add_error(format!("引擎 {} 的名称与配置不匹配", engine_name));
+                result.add_error(format!("引擎 {engine_name} 的名称与配置不匹配"));
             }
 
             if engine_config.base.weight < 0.0 {
-                result.add_error(format!("引擎 {} 的权重不能为负数", engine_name));
+                result.add_error(format!("引擎 {engine_name} 的权重不能为负数"));
             }
 
             if let Some(timeout) = engine_config.base.timeout {
                 if timeout == 0 {
-                    result.add_error(format!("引擎 {} 的超时时间必须大于 0", engine_name));
+                    result.add_error(format!("引擎 {engine_name} 的超时时间必须大于 0"));
                 }
             }
         }
@@ -646,7 +685,7 @@ impl EnginesConfig {
             .iter()
             .filter(|(_, config)| config.base.enabled)
             .filter(|(_, config)| {
-                category.map_or(true, |cat| config.base.categories.contains(&cat.to_string()))
+                category.is_none_or(|cat| config.base.categories.contains(&cat.to_string()))
             })
             .map(|(_, config)| config.base.weight)
             .sum()
@@ -693,16 +732,128 @@ impl Default for HealthCheckConfig {
     }
 }
 
-impl Default for EngineNetworkConfig {
+
+
+
+impl Default for EngineDependencies {
     fn default() -> Self {
         Self {
-            request: RequestConfig::default(),
-            response: ResponseConfig::default(),
-            retry: RetryConfig::default(),
-            timeout: TimeoutConfig::default(),
+            required: Vec::new(),
+            optional: Vec::new(),
+            system_requirements: SystemRequirements {
+                min_memory_mb: None,
+                min_cpu_cores: None,
+                min_disk_space_mb: None,
+                supported_platforms: Vec::new(),
+            },
         }
     }
 }
+
+impl Default for ConcurrencyConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_requests: 1,
+            request_queue_size: 10,
+            enable_batching: false,
+            batch_size: 1,
+            batch_timeout: 100,
+        }
+    }
+}
+
+impl Default for EngineCachingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            cache_strategy: CacheStrategy::QueryBased,
+            cache_ttl: 3600,
+            cache_key_prefix: String::new(),
+            cache_errors: false,
+            cache_size_limit: None,
+        }
+    }
+}
+
+impl Default for EngineRateLimitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            requests_per_second: 0,
+            requests_per_minute: 0,
+            requests_per_hour: 0,
+            burst_size: 0,
+            algorithm: RateLimitAlgorithm::TokenBucket,
+        }
+    }
+}
+
+impl Default for LoadBalancingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            strategy: LoadBalancingStrategy::RoundRobin,
+            health_check: false,
+            failover: false,
+            nodes: Vec::new(),
+        }
+    }
+}
+
+impl Default for ResultParsingConfig {
+    fn default() -> Self {
+        Self {
+            parser_type: ParserType::Html,
+            selectors: HashMap::new(),
+            regex_patterns: HashMap::new(),
+            custom_parser: None,
+            field_mapping: HashMap::new(),
+        }
+    }
+}
+
+
+impl Default for ResultSortingConfig {
+    fn default() -> Self {
+        Self {
+            sort_by: Vec::new(),
+            sort_direction: SortDirection::Desc,
+            custom_sorter: None,
+        }
+    }
+}
+
+impl Default for ResultLimitingConfig {
+    fn default() -> Self {
+        Self {
+            max_results: 10,
+            min_results: 0,
+            truncate_results: false,
+            truncate_length: 0,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_false() -> bool {
+    false
+}
+
+fn default_reload_interval() -> u64 {
+    60 // 1 minute
+}
+
+fn default_discovery_paths() -> Vec<String> {
+    vec!["./engines".to_string()]
+}
+
+fn default_discovery_patterns() -> Vec<String> {
+    vec!["*.rs".to_string(), "*.json".to_string()]
+}
+
 
 impl Default for RequestConfig {
     fn default() -> Self {

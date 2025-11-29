@@ -212,8 +212,8 @@ mod tests {
         assert_eq!(config.expiration, 300);
     }
 
-    #[test]
-    fn test_magic_link_generation_and_verification() {
+    #[tokio::test]
+    async fn test_magic_link_generation_and_verification() {
         let config = MagicLinkConfig {
             enabled: true,
             expiration: 300,
@@ -234,8 +234,8 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_magic_link_invalid_token() {
+    #[tokio::test]
+    async fn test_magic_link_invalid_token() {
         let config = MagicLinkConfig::default();
         let state = MagicLinkState::new(config);
 
@@ -243,8 +243,8 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_magic_link_cleanup() {
+    #[tokio::test]
+    async fn test_magic_link_cleanup() {
         let config = MagicLinkConfig::default();
         let state = MagicLinkState::new(config);
 

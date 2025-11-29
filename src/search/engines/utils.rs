@@ -13,11 +13,17 @@
 // limitations under the License.
 
 //! Utility functions for search engines
-//!
+//! 
 //! This module provides optimized helper functions that reduce allocations
-//! and improve performance across all search engines.
+//! and improve performance across all search engines, including a generic engine
+//! implementation that can be used by all search engines.
 
 use std::borrow::Cow;
+use std::sync::Arc;
+use std::error::Error;
+use crate::derive::types::{EngineInfo, RequestParams};
+use crate::net::client::HttpClient;
+use crate::net::config::RequestOptions;
 
 /// Build a URL query string efficiently with pre-allocated capacity
 ///
@@ -120,6 +126,200 @@ where
     
     result.shrink_to_fit(); // Release excess capacity
     result
+}
+
+/// Generic engine implementation that provides common functionality for all search engines
+///
+/// This struct provides a generic implementation of the core engine functionality,
+/// including HTTP client management and request handling.
+pub struct GenericEngine {
+    /// Engine metadata and capabilities
+    pub info: EngineInfo,
+    /// Shared HTTP client for making requests
+    pub client: Arc<HttpClient>,
+}
+
+impl GenericEngine {
+    /// Create a new generic engine with a default HTTP client
+    ///
+    /// # Arguments
+    ///
+    /// * `info` - Engine metadata and capabilities
+    ///
+    /// # Returns
+    ///
+    /// A new GenericEngine instance
+    pub fn new(info: EngineInfo) -> Self {
+        use crate::net::config::NetworkConfig;
+        
+        let client = HttpClient::new(NetworkConfig::default())
+            .unwrap_or_else(|_| panic!("Failed to create HTTP client for {}", info.name));
+        Self::with_client(info, Arc::new(client))
+    }
+    
+    /// Create a new generic engine with a shared HTTP client
+    ///
+    /// # Arguments
+    ///
+    /// * `info` - Engine metadata and capabilities
+    /// * `client` - Shared HTTP client
+    ///
+    /// # Returns
+    ///
+    /// A new GenericEngine instance
+    pub fn with_client(info: EngineInfo, client: Arc<HttpClient>) -> Self {
+        Self {
+            info,
+            client,
+        }
+    }
+    
+    /// Generic fetch implementation that handles HTTP requests for all engines
+    ///
+    /// This method provides a common implementation for fetching HTTP responses,
+    /// handling headers, cookies, and common HTTP errors.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - Request parameters including URL, headers, and cookies
+    ///
+    /// # Returns
+    ///
+    /// The response text or an error
+    pub async fn fetch(&self, params: &RequestParams) -> Result<String, Box<dyn Error + Send + Sync>> {
+        // Get the URL from params
+        let url = params.url.as_ref()
+            .ok_or("请求 URL 未设置")?;
+
+        // Create request options
+        let mut options = RequestOptions::default();
+        
+        // Add custom headers
+        for (key, value) in &params.headers {
+            options.headers.push((key.clone(), value.clone()));
+        }
+
+        // Add cookies as headers
+        for (key, value) in &params.cookies {
+            options.headers.push(("Cookie".to_string(), format!("{key}={value}")));
+        }
+
+        // Send the request
+        let response = self.client.get(url, Some(options)).await
+            .map_err(|e| format!("Request failed: {e}"))?;
+
+        // Check status code
+        let status = response.status();
+        match status.as_u16() {
+            403 => return Err(format!("{} 访问被拒绝，可能触发了反爬虫机制", self.info.name).into()),
+            429 => return Err(format!("{} 请求过于频繁，请稍后重试", self.info.name).into()),
+            503 => return Err(format!("{} 服务暂时不可用，请稍后重试", self.info.name).into()),
+            _ if !status.is_success() => return Err(format!("HTTP 错误: {status}").into()),
+            _ => {} // Continue processing
+        }
+
+        // Get response text
+        let text = response.text().await
+            .map_err(|e| format!("Failed to read response: {e}"))?;
+
+        Ok(text)
+    }
+}
+
+/// 测试生成宏，用于生成通用的引擎测试用例
+///
+/// 这个宏生成引擎的通用测试用例，包括：
+/// - 引擎创建测试
+/// - 默认实现测试
+/// - 引擎信息测试
+/// - 请求准备测试
+/// - 分页请求测试
+///
+/// # 参数
+///
+/// * `$engine_name` - 引擎结构体名称
+/// * `$expected_name` - 引擎名称字符串
+/// * `$expected_engine_type` - 引擎类型
+/// * `$supports_safe_search` - 是否支持安全搜索
+/// * `$max_page_size` - 最大页面大小
+/// * `$expected_url` - 预期的URL域名
+/// * `$expected_query_param` - 预期的查询参数名称
+///
+/// # 示例
+///
+/// ```ignore
+/// engine_tests! {
+///     BingEngine,
+///     "Bing",
+///     EngineType::General,
+///     true,
+///     10,
+///     "www.bing.com",
+///     "q",
+/// }
+/// ```
+#[macro_export]
+macro_rules! engine_tests {
+    ($engine_name:ident, $expected_name:expr, $expected_engine_type:expr, $supports_safe_search:expr, $max_page_size:expr, $expected_url:expr, $expected_query_param:expr) => {
+        #[test]
+        fn test_engine_creation() {
+            let engine = $engine_name::new();
+            assert_eq!(engine.info().name, $expected_name);
+            assert_eq!(engine.info().engine_type, $expected_engine_type);
+        }
+        
+        #[test]
+        fn test_default() {
+            let engine = $engine_name::default();
+            assert_eq!(engine.info().name, $expected_name);
+        }
+        
+        #[test]
+        fn test_engine_info() {
+            let engine = $engine_name::new();
+            let info = engine.info();
+            
+            assert!(info.capabilities.supports_pagination);
+            assert!(info.capabilities.supports_time_range);
+            assert_eq!(info.capabilities.supports_safe_search, $supports_safe_search);
+            assert_eq!(info.capabilities.max_page_size, $max_page_size);
+        }
+        
+        #[test]
+        fn test_request_preparation() {
+            let engine = $engine_name::new();
+            let mut params = RequestParams::default();
+            
+            let result = engine.request("test query", &mut params);
+            assert!(result.is_ok());
+            assert!(params.url.is_some());
+            
+            let url = params.url.expect("URL should be set after request preparation");
+            assert!(url.contains($expected_url));
+            assert!(url.contains(&format!("{}=", $expected_query_param)));
+        }
+        
+        #[test]
+        fn test_request_with_pagination() {
+            let engine = $engine_name::new();
+            let mut params = RequestParams::default();
+            params.page = 2;
+            
+            let result = engine.request("test", &mut params);
+            assert!(result.is_ok());
+            
+            let url = params.url.expect("URL should be set after request preparation");
+            // 检查URL是否包含分页参数
+            assert!(url.contains("pn=") || url.contains("first=") || url.contains("page=") || url.contains("start="));
+        }
+        
+        #[tokio::test]
+        async fn test_is_available() {
+            let engine = $engine_name::new();
+            // 注意：这个测试需要网络连接，在CI环境中可能会失败
+            let _ = engine.is_available().await;
+        }
+    };
 }
 
 #[cfg(test)]

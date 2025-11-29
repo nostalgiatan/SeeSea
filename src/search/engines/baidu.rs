@@ -13,38 +13,38 @@
 // limitations under the License.
 
 //! Baidu 搜索引擎实现
-//!
+//! 
 //! 这是一个基于 Baidu API 的搜索引擎实现。
 //! 参考了 Python SearXNG 的 Baidu 引擎实现。
-//!
+//! 
 //! ## 功能特性
-//!
+//! 
 //! - 支持基本的网页搜索
 //! - 支持分页
 //! - 支持时间范围过滤
 //! - 使用 JSON API
-//!
+//! 
 //! ## API 说明
-//!
+//! 
 //! Baidu 使用 JSON API 进行搜索：
 //! - wd: 查询关键词
 //! - rn: 每页结果数量
 //! - pn: 分页偏移量
 //! - tn: 响应格式（json）
 //! - gpc: 时间范围过滤
-//!
+//! 
 //! ## 安全性
-//!
+//! 
 //! - 避免使用 unwrap()，使用 ? 操作符处理错误
 //! - 所有网络请求都有超时设置
 //! - 处理 CAPTCHA 检测
-//!
+//! 
 //! ## 示例
-//!
+//! 
 //! ```no_run
 //! use SeeSea::search::engines::baidu::BaiduEngine;
 //! use SeeSea::derive::{SearchEngine, SearchQuery};
-//!
+//! 
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let engine = BaiduEngine::new();
@@ -57,88 +57,60 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::error::Error;
+use std::sync::Arc;
 
 use crate::derive::{
-    EngineCapabilities, EngineInfo, EngineStatus, EngineType,
-    ResultType, SearchEngine, SearchQuery, SearchResult,
-    SearchResultItem, TimeRange, AboutInfo, RequestResponseEngine, RequestParams,
+    EngineCapabilities, EngineInfo, EngineStatus, EngineType, TimeRange,
+    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
 };
-use crate::net::client::HttpClient;
-use crate::net::types::{NetworkConfig, RequestOptions};
+use crate::net::config::RequestOptions;
 use super::utils::build_query_string_owned;
 
-/// Baidu 搜索引擎
-///
-/// 使用 Baidu JSON API 进行搜索的引擎实现
-pub struct BaiduEngine {
-    /// 引擎信息
-    info: EngineInfo,
-    /// HTTP 客户端
-    client: Arc<HttpClient>,
+// 使用引擎生成宏定义引擎基本结构
+define_engine! {
+    BaiduEngine,
+    EngineInfo {
+        name: "Baidu".to_string(),
+        engine_type: EngineType::General,
+        description: "百度是中国最大的搜索引擎".to_string(),
+        status: EngineStatus::Active,
+        categories: vec!["general".to_string(), "web".to_string()],
+        capabilities: EngineCapabilities {
+            result_types: vec![ResultType::Web],
+            supported_params: vec![
+                "time_range".to_string(),
+            ],
+            max_page_size: 10,
+            supports_pagination: true,
+            supports_time_range: true,
+            supports_language_filter: false,
+            supports_region_filter: false,
+            supports_safe_search: false,
+            rate_limit: Some(60),
+        },
+        about: AboutInfo {
+            website: Some("https://www.baidu.com".to_string()),
+            wikidata_id: Some("Q688151".to_string()),
+            official_api_documentation: Some("https://developers.baidu.com".to_string()),
+            use_official_api: false,
+            require_api_key: false,
+            results: "JSON".to_string(),
+        },
+        shortcut: Some("baidu".to_string()),
+        timeout: Some(10),
+        disabled: false,
+        inactive: false,
+        version: Some("1.0.0".to_string()),
+        last_checked: None,
+        using_tor_proxy: false,
+        display_error_messages: true,
+        tokens: Vec::new(),
+        max_page: 50, // Baidu 最多支持 50 页
+    }
 }
 
 impl BaiduEngine {
-    /// 创建新的 Baidu 引擎实例
-    ///
-    /// # 示例
-    ///
-    /// ```
-    /// use SeeSea::search::engines::baidu::BaiduEngine;
-    ///
-    /// let engine = BaiduEngine::new();
-    /// ```
-    pub fn new() -> Self {
-        let client = HttpClient::new(NetworkConfig::default())
-            .unwrap_or_else(|_| panic!("Failed to create HTTP client"));
-        Self::with_client(Arc::new(client))
-    }
-
-    pub fn with_client(client: Arc<HttpClient>) -> Self {
-        Self {
-            info: EngineInfo {
-                name: "Baidu".to_string(),
-                engine_type: EngineType::General,
-                description: "百度是中国最大的搜索引擎".to_string(),
-                status: EngineStatus::Active,
-                categories: vec!["general".to_string(), "web".to_string()],
-                capabilities: EngineCapabilities {
-                    result_types: vec![ResultType::Web],
-                    supported_params: vec![
-                        "time_range".to_string(),
-                    ],
-                    max_page_size: 10,
-                    supports_pagination: true,
-                    supports_time_range: true,
-                    supports_language_filter: false,
-                    supports_region_filter: false,
-                    supports_safe_search: false,
-                    rate_limit: Some(60),
-                },
-                about: AboutInfo {
-                    website: Some("https://www.baidu.com".to_string()),
-                    wikidata_id: Some("Q14772".to_string()),
-                    official_api_documentation: None,
-                    use_official_api: false,
-                    require_api_key: false,
-                    results: "JSON".to_string(),
-                },
-                shortcut: Some("baidu".to_string()),
-                timeout: Some(10),
-                disabled: false,
-                inactive: false,
-                version: Some("1.0.0".to_string()),
-                last_checked: None,
-                using_tor_proxy: false,
-                display_error_messages: true,
-                tokens: Vec::new(),
-                max_page: 50,
-            },
-            client,
-        }
-    }
-
     /// 将时间范围转换为秒数
     ///
     /// # 参数
@@ -295,30 +267,7 @@ impl BaiduEngine {
             false
         }
     }
-}
-
-impl Default for BaiduEngine {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl SearchEngine for BaiduEngine {
-    /// 获取引擎信息
-    fn info(&self) -> &EngineInfo {
-        &self.info
-    }
-
-    /// 执行搜索
-    async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
-        <Self as RequestResponseEngine>::search(self, query).await
-    }
-
-    /// 检查引擎是否可用
-    async fn is_available(&self) -> bool {
-        self.client.get("https://www.baidu.com", None).await.is_ok()
-    }
+    
 }
 
 #[async_trait]
@@ -328,7 +277,7 @@ impl RequestResponseEngine for BaiduEngine {
     /// 准备请求参数
     fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
         let results_per_page = 10;
-        let page_offset = (params.pageno - 1) * results_per_page;
+        let page_offset = (params.page - 1) * results_per_page;
         
         // 构建查询参数
         let mut query_params = vec![
@@ -354,14 +303,14 @@ impl RequestResponseEngine for BaiduEngine {
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
                 let past = now.saturating_sub(seconds);
-                query_params.push(("gpc", format!("stf={},{}", past, now) + "|stftype=1"));
+                query_params.push(("gpc", format!("stf={past},{now}|stftype=1")));
             }
         }
         
         // Build URL with optimized query string
-        let query_string = build_query_string_owned(query_params.into_iter());
+        let query_string = build_query_string_owned(query_params);
         
-        params.url = Some(format!("https://www.baidu.com/s?{}", query_string));
+        params.url = Some(format!("https://www.baidu.com/s?{query_string}"));
         params.method = "GET".to_string();
         
         Ok(())
@@ -382,8 +331,8 @@ impl RequestResponseEngine for BaiduEngine {
         }
 
         // 发送请求
-        let response = self.client.get(url, Some(options)).await
-            .map_err(|e| format!("Request failed: {}", e))?;
+        let response = self.generic.client.get(url, Some(options)).await
+            .map_err(|e| format!("Request failed: {e}"))?;
 
         // 检查状态码
         let status = response.status();
@@ -400,12 +349,12 @@ impl RequestResponseEngine for BaiduEngine {
         }
 
         if !status.is_success() {
-            return Err(format!("HTTP 错误: {}", status).into());
+            return Err(format!("HTTP 错误: {status}").into());
         }
 
         // 获取响应文本
         let text = response.text().await
-            .map_err(|e| format!("Failed to read response: {}", e))?;
+            .map_err(|e| format!("Failed to read response: {e}"))?;
 
         Ok((text, location))
     }
@@ -426,6 +375,7 @@ impl RequestResponseEngine for BaiduEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::derive::SearchEngine;
 
     #[test]
     fn test_engine_creation() {
@@ -479,7 +429,7 @@ mod tests {
     fn test_request_with_pagination() {
         let engine = BaiduEngine::new();
         let mut params = RequestParams::default();
-        params.pageno = 2;
+        params.page = 2;
         
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());

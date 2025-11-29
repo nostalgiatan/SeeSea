@@ -390,6 +390,7 @@ cache_interface.cleanup()?;
 
 ## 参考
 
-- [API 文档](../docs/api.md)
-- [缓存系统](../docs/cache.md)
-- [RSS 功能](../docs/rss.md)
+- [API 文档](./API.md)
+- [搜索使用指南](./SEARCH_USAGE.md)
+- [类型系统](./TYPE_SYSTEM.md)
+- [最佳实践](./BEST_PRACTICES.md)

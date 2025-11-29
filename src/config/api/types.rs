@@ -24,31 +24,46 @@ pub struct ApiConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
     /// API 版本
+    #[serde(default = "default_api_version")]
     pub version: String,
     /// 是否启用 CORS
+    #[serde(default = "default_true")]
     pub enable_cors: bool,
     /// CORS 配置
+    #[serde(default)]
     pub cors: CorsConfig,
     /// 请求速率限制
+    #[serde(default)]
     pub rate_limit: RateLimitConfig,
     /// 认证配置
+    #[serde(default)]
     pub auth: AuthConfig,
     /// 响应格式配置
+    #[serde(default)]
     pub response_format: ResponseFormatConfig,
     /// API 路由配置
+    #[serde(default)]
     pub routes: RouteConfig,
     /// 中间件配置
+    #[serde(default)]
     pub middleware: MiddlewareConfig,
     /// API 安全配置
+    #[serde(default)]
     pub security: SecurityConfig,
     /// API 文档配置
+    #[serde(default)]
     pub documentation: DocumentationConfig,
     /// 指标配置
+    #[serde(default)]
     pub metrics: MetricsConfig,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_api_version() -> String {
+    "v1".to_string()
 }
 
 /// 指标配置
@@ -87,20 +102,28 @@ impl Default for MetricsConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CorsConfig {
     /// 是否启用
+    #[serde(default = "default_true")]
     pub enabled: bool,
     /// 允许的源
+    #[serde(default)]
     pub allowed_origins: Vec<String>,
     /// 允许的方法
+    #[serde(default)]
     pub allowed_methods: Vec<String>,
     /// 允许的头部
+    #[serde(default)]
     pub allowed_headers: Vec<String>,
     /// 暴露的头部
+    #[serde(default)]
     pub exposed_headers: Vec<String>,
     /// 是否允许凭证
+    #[serde(default)]
     pub allow_credentials: bool,
     /// 预检请求缓存时间（秒）
+    #[serde(default)]
     pub max_age: usize,
     /// 是否通配符源
+    #[serde(default)]
     pub allow_wildcard_origin: bool,
 }
 
@@ -110,20 +133,28 @@ pub struct RateLimitConfig {
     /// 是否启用
     pub enabled: bool,
     /// 限制策略
+    #[serde(default)]
     pub strategy: RateLimitStrategy,
     /// 每秒请求数限制
+    #[serde(default)]
     pub requests_per_second: u32,
     /// 每分钟请求数限制
+    #[serde(default)]
     pub requests_per_minute: u32,
     /// 每小时请求数限制
+    #[serde(default)]
     pub requests_per_hour: u32,
     /// 每天请求数限制
+    #[serde(default)]
     pub requests_per_day: u32,
     /// 突发请求限制
+    #[serde(default)]
     pub burst_size: u32,
     /// 基于用户的限制
+    #[serde(default)]
     pub user_based_limits: UserBasedLimits,
     /// 基于端点的限制
+    #[serde(default)]
     pub endpoint_based_limits: EndpointBasedLimits,
 }
 
@@ -139,6 +170,12 @@ pub enum RateLimitStrategy {
     TokenBucket,
     /// 漏桶
     LeakyBucket,
+}
+
+impl Default for RateLimitStrategy {
+    fn default() -> Self {
+        Self::SlidingWindow
+    }
 }
 
 /// 基于用户的限制
@@ -184,10 +221,13 @@ pub struct AuthConfig {
     /// 认证类型
     pub auth_type: AuthType,
     /// API 密钥配置
+    #[serde(default)]
     pub api_key: ApiKeyConfig,
     /// JWT 配置
+    #[serde(default)]
     pub jwt: JwtConfig,
     /// 基础认证配置
+    #[serde(default)]
     pub basic_auth: BasicAuthConfig,
     /// OAuth 配置
     pub oauth: Option<OAuthConfig>,
@@ -338,16 +378,22 @@ pub struct ResponseFormatConfig {
     /// 默认格式
     pub default_format: String,
     /// 支持的格式
+    #[serde(default)]
     pub supported_formats: Vec<ResponseFormat>,
     /// 是否包含调试信息
+    #[serde(default)]
     pub include_debug_info: bool,
     /// 是否包含性能指标
+    #[serde(default)]
     pub include_metrics: bool,
     /// 是否包含请求 ID
+    #[serde(default)]
     pub include_request_id: bool,
     /// 响应压缩
+    #[serde(default)]
     pub compression: ResponseCompressionConfig,
     /// 分页配置
+    #[serde(default)]
     pub pagination: PaginationConfig,
 }
 
@@ -489,12 +535,16 @@ pub struct MiddlewareConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityConfig {
     /// 是否启用 HTTPS 强制
+    #[serde(default)]
     pub force_https: bool,
     /// 安全头部
+    #[serde(default)]
     pub security_headers: SecurityHeadersConfig,
     /// 输入验证
+    #[serde(default)]
     pub input_validation: InputValidationConfig,
     /// 输出过滤
+    #[serde(default)]
     pub output_filtering: OutputFilteringConfig,
 }
 
@@ -571,13 +621,16 @@ pub struct DocumentationConfig {
 
 /// 文档类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum DocumentationType {
     /// OpenAPI 3.0
+    #[serde(rename = "open_api_3")]
+    #[serde(alias = "openapi3")]
     OpenApi3,
     /// Swagger 2.0
+    #[serde(rename = "swagger2")]
     Swagger2,
     /// 自定义文档
+    #[serde(rename = "custom")]
     Custom,
 }
 

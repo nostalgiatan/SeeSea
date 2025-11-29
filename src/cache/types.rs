@@ -29,6 +29,86 @@ pub type CacheKey = String;
 /// 缓存的值以字节数组形式存储，支持任意可序列化的数据
 pub type CacheValue = Vec<u8>;
 
+/// 类型安全的缓存键生成器
+///
+/// 用于生成类型安全的缓存键，避免拼写错误和类型不匹配
+pub trait CacheKeyGenerator {
+    /// 生成缓存键
+    fn generate_key(&self) -> CacheKey;
+}
+
+/// 基本字符串键生成器
+impl CacheKeyGenerator for String {
+    fn generate_key(&self) -> CacheKey {
+        self.clone()
+    }
+}
+
+/// 字符串切片键生成器
+impl CacheKeyGenerator for &str {
+    fn generate_key(&self) -> CacheKey {
+        self.to_string()
+    }
+}
+
+/// 整数键生成器
+impl CacheKeyGenerator for u64 {
+    fn generate_key(&self) -> CacheKey {
+        self.to_string()
+    }
+}
+
+/// 布尔键生成器
+impl CacheKeyGenerator for bool {
+    fn generate_key(&self) -> CacheKey {
+        self.to_string()
+    }
+}
+
+/// 键组合生成器
+///
+/// 用于组合多个键生成一个复合键
+pub struct CompositeKey {
+    parts: Vec<String>,
+}
+
+impl Default for CompositeKey {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CompositeKey {
+    /// 创建新的复合键
+    pub fn new() -> Self {
+        Self {
+            parts: Vec::new(),
+        }
+    }
+    
+    /// 添加字符串键部分
+    pub fn add_str(mut self, part: &str) -> Self {
+        self.parts.push(part.to_string());
+        self
+    }
+}
+
+impl<T: CacheKeyGenerator> std::ops::Add<T> for CompositeKey {
+    type Output = Self;
+    
+    fn add(mut self, part: T) -> Self::Output {
+        self.parts.push(part.generate_key());
+        self
+    }
+}
+
+impl CompositeKey {
+    /// 生成最终键
+    pub fn generate(self) -> CacheKey {
+        self.parts.join(":")
+    }
+}
+
 /// 缓存实现配置
 ///
 /// 定义缓存的全局配置参数
@@ -46,6 +126,12 @@ pub struct CacheImplConfig {
     pub compression: bool,
     /// 缓存模式
     pub mode: CacheMode,
+    /// 是否启用布隆过滤器防止缓存穿透
+    pub enable_bloom_filter: bool,
+    /// 布隆过滤器预计元素数量
+    pub bloom_filter_expected_elements: u64,
+    /// 布隆过滤器期望误判率
+    pub bloom_filter_false_positive_rate: f64,
 }
 
 impl Default for CacheImplConfig {
@@ -57,6 +143,9 @@ impl Default for CacheImplConfig {
             enabled: true,
             compression: false,
             mode: CacheMode::HighThroughput,
+            enable_bloom_filter: true, // 默认启用布隆过滤器
+            bloom_filter_expected_elements: 1_000_000, // 默认预计100万元素
+            bloom_filter_false_positive_rate: 0.01, // 默认1%误判率
         }
     }
 }
@@ -75,6 +164,9 @@ impl CacheImplConfig {
                 crate::config::cache::types::CacheBackend::Memory => CacheMode::LowLatency,
                 _ => CacheMode::HighThroughput,
             },
+            enable_bloom_filter: true, // 默认启用布隆过滤器
+            bloom_filter_expected_elements: 1_000_000, // 默认预计100万元素
+            bloom_filter_false_positive_rate: 0.01, // 默认1%误判率
         }
     }
 }
@@ -90,6 +182,49 @@ pub enum CacheMode {
     HighThroughput,
     /// 低内存模式（节省内存，较慢）
     LowMemory,
+}
+
+/// 缓存操作类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CacheOperation {
+    /// 读取操作
+    Get,
+    /// 写入操作
+    Set,
+    /// 删除操作
+    Delete,
+    /// 批量读取操作
+    GetBatch,
+    /// 批量写入操作
+    SetBatch,
+    /// 批量删除操作
+    DeleteBatch,
+}
+
+/// 延迟统计信息
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LatencyStats {
+    /// 操作次数
+    pub count: u64,
+    /// 总延迟（纳秒）
+    pub total_ns: u64,
+    /// 最小延迟（纳秒）
+    pub min_ns: u64,
+    /// 最大延迟（纳秒）
+    pub max_ns: u64,
+    /// 平均延迟（纳秒）
+    pub avg_ns: u64,
+}
+
+/// 热点键信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HotKeyInfo {
+    /// 键名
+    pub key: String,
+    /// 访问次数
+    pub access_count: u64,
+    /// 作用域
+    pub scope: String,
 }
 
 /// 缓存统计信息
@@ -111,6 +246,20 @@ pub struct CacheStats {
     pub estimated_size_bytes: u64,
     /// 过期清理次数
     pub evictions: u64,
+    /// 读取操作延迟统计
+    pub get_latency: LatencyStats,
+    /// 写入操作延迟统计
+    pub set_latency: LatencyStats,
+    /// 删除操作延迟统计
+    pub delete_latency: LatencyStats,
+    /// 批量读取操作延迟统计
+    pub get_batch_latency: LatencyStats,
+    /// 批量写入操作延迟统计
+    pub set_batch_latency: LatencyStats,
+    /// 批量删除操作延迟统计
+    pub delete_batch_latency: LatencyStats,
+    /// 热点键列表（前N个）
+    pub hot_keys: Vec<HotKeyInfo>,
 }
 
 impl CacheStats {
@@ -144,6 +293,8 @@ pub struct CacheEntryMetadata {
     pub last_accessed_at: u64,
     /// 数据大小（字节）
     pub size_bytes: usize,
+    /// 缓存作用域
+    pub scope: String,
 }
 
 impl CacheEntryMetadata {
@@ -153,7 +304,8 @@ impl CacheEntryMetadata {
     ///
     /// * `ttl` - 生存时间，None 表示永不过期
     /// * `size_bytes` - 数据大小
-    pub fn new(ttl: Option<Duration>, size_bytes: usize) -> Self {
+    /// * `scope` - 缓存作用域
+    pub fn new(ttl: Option<Duration>, size_bytes: usize, scope: String) -> Self {
         let now = current_timestamp();
         Self {
             created_at: now,
@@ -161,6 +313,7 @@ impl CacheEntryMetadata {
             access_count: 0,
             last_accessed_at: now,
             size_bytes,
+            scope,
         }
     }
 
@@ -219,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_cache_entry_metadata_expiration() {
-        let metadata = CacheEntryMetadata::new(Some(Duration::from_secs(1)), 100);
+        let metadata = CacheEntryMetadata::new(Some(Duration::from_secs(1)), 100, "test.scope".to_string());
         assert!(!metadata.is_expired());
 
         std::thread::sleep(Duration::from_millis(1100));
@@ -228,13 +381,13 @@ mod tests {
 
     #[test]
     fn test_cache_entry_metadata_no_expiration() {
-        let metadata = CacheEntryMetadata::new(None, 100);
+        let metadata = CacheEntryMetadata::new(None, 100, "test.scope".to_string());
         assert!(!metadata.is_expired());
     }
 
     #[test]
     fn test_cache_entry_metadata_access() {
-        let mut metadata = CacheEntryMetadata::new(None, 100);
+        let mut metadata = CacheEntryMetadata::new(None, 100, "test.scope".to_string());
         assert_eq!(metadata.access_count, 0);
 
         metadata.update_access();

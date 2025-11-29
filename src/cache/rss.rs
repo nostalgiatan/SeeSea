@@ -24,6 +24,9 @@ use serde::{Deserialize, Serialize};
 
 type Result<T> = std::result::Result<T, CacheError>;
 
+/// RSS 缓存作用域
+const RSS_SCOPE: &str = "rss";
+
 /// RSS 缓存键前缀
 const RSS_KEY_PREFIX: &str = "rss:";
 const RSS_META_PREFIX: &str = "rss_meta:";
@@ -60,12 +63,12 @@ impl RssCache {
 
     /// 生成 RSS feed 缓存键
     pub fn generate_feed_key(url: &str) -> String {
-        format!("{}{}", RSS_KEY_PREFIX, url)
+        format!("{RSS_KEY_PREFIX}{url}")
     }
 
     /// 生成 RSS 元数据缓存键
     pub fn generate_meta_key(url: &str) -> String {
-        format!("{}{}", RSS_META_PREFIX, url)
+        format!("{RSS_META_PREFIX}{url}")
     }
 
     /// 获取当前时间戳
@@ -134,8 +137,8 @@ impl RssCache {
 
         // 序列化并存储 feed
         let feed_bytes = bincode::serde::encode_to_vec(&deduped_feed, bincode::config::standard())
-            .map_err(|e| CacheError::SerializationError(format!("Failed to serialize feed: {}", e)))?;
-        self.manager.set(key, feed_bytes, ttl)?;
+            .map_err(|e| CacheError::SerializationError(format!("Failed to serialize feed: {e}")))?;
+        self.manager.set(RSS_SCOPE, key, feed_bytes, ttl)?;
 
         // 存储元数据
         let meta = RssFeedCacheMeta {
@@ -147,8 +150,8 @@ impl RssCache {
             item_count: deduped_items.len(),
         };
         let meta_bytes = bincode::serde::encode_to_vec(&meta, bincode::config::standard())
-            .map_err(|e| CacheError::SerializationError(format!("Failed to serialize meta: {}", e)))?;
-        self.manager.set(meta_key, meta_bytes, None)?;
+            .map_err(|e| CacheError::SerializationError(format!("Failed to serialize meta: {e}")))?;
+        self.manager.set(RSS_SCOPE, meta_key, meta_bytes, None)?;
 
         Ok(())
     }
@@ -156,9 +159,9 @@ impl RssCache {
     /// 从缓存获取 RSS feed
     pub fn get(&self, url: &str) -> Result<Option<RssFeed>> {
         let key = Self::generate_feed_key(url);
-        if let Some(bytes) = self.manager.get(&key)? {
+        if let Some(bytes) = self.manager.get(RSS_SCOPE, &key)? {
             let (feed, _) = bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
-                .map_err(|e| CacheError::SerializationError(format!("Failed to deserialize feed: {}", e)))?;
+                .map_err(|e| CacheError::SerializationError(format!("Failed to deserialize feed: {e}")))?;
             Ok(Some(feed))
         } else {
             Ok(None)
@@ -168,9 +171,9 @@ impl RssCache {
     /// 获取 RSS feed 元数据
     pub fn get_meta(&self, url: &str) -> Result<Option<RssFeedCacheMeta>> {
         let key = Self::generate_meta_key(url);
-        if let Some(bytes) = self.manager.get(&key)? {
+        if let Some(bytes) = self.manager.get(RSS_SCOPE, &key)? {
             let (meta, _) = bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
-                .map_err(|e| CacheError::SerializationError(format!("Failed to deserialize meta: {}", e)))?;
+                .map_err(|e| CacheError::SerializationError(format!("Failed to deserialize meta: {e}")))?;
             Ok(Some(meta))
         } else {
             Ok(None)
@@ -203,8 +206,8 @@ impl RssCache {
         let key = Self::generate_feed_key(url);
         let meta_key = Self::generate_meta_key(url);
         
-        self.manager.delete(&key)?;
-        self.manager.delete(&meta_key)?;
+        self.manager.delete(RSS_SCOPE, &key)?;
+        self.manager.delete(RSS_SCOPE, &meta_key)?;
         
         Ok(())
     }
@@ -245,7 +248,7 @@ impl RssCache {
             }
 
             let (key, value) = item.map_err(|e| {
-                CacheError::DatabaseError(format!("遍历缓存失败: {}", e))
+                CacheError::DatabaseError(format!("遍历缓存失败: {e}"))
             })?;
 
             let key_str = String::from_utf8_lossy(&key);
@@ -311,7 +314,7 @@ impl RssCache {
 
         for item in self.manager.iter() {
             let (key, _value) = item.map_err(|e| {
-                CacheError::DatabaseError(format!("遍历缓存失败: {}", e))
+                CacheError::DatabaseError(format!("遍历缓存失败: {e}"))
             })?;
 
             let key_str = String::from_utf8_lossy(&key);

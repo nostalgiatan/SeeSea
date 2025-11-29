@@ -20,12 +20,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// 引擎加载模式
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum EngineLoadingMode {
     /// 全局模式 - 加载所有可用引擎
     Global,
     /// 设置模式 - 只加载配置中指定的引擎
+    #[default]
     Settings,
 }
 
@@ -120,12 +121,14 @@ pub enum AuthType {
 /// 日志级别
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum LogLevel {
     /// 错误级别
     Error,
     /// 警告级别
     Warn,
     /// 信息级别
+    #[default]
     Info,
     /// 调试级别
     Debug,
@@ -133,13 +136,16 @@ pub enum LogLevel {
     Trace,
 }
 
+
 /// 日志格式
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum LogFormat {
     /// 简单格式
     Simple,
     /// 完整格式
+    #[default]
     Full,
     /// JSON 格式
     Json,
@@ -147,11 +153,14 @@ pub enum LogFormat {
     Compact,
 }
 
+
 /// 日志输出
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum LogOutput {
     /// 标准输出
+    #[default]
     Stdout,
     /// 标准错误
     Stderr,
@@ -160,6 +169,7 @@ pub enum LogOutput {
     /// 同时输出到标准输出和文件
     Both,
 }
+
 
 /// 基础的引擎配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]

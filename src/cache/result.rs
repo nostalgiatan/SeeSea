@@ -23,8 +23,11 @@ use std::time::Duration;
 
 type Result<T> = std::result::Result<T, CacheError>;
 
+/// 搜索结果缓存作用域
+const RESULT_SCOPE: &str = "search.result";
+
 /// 搜索结果缓存键前缀
-const RESULT_KEY_PREFIX: &str = "result:";
+const RESULT_KEY_PREFIX: &str = "search.result:";
 
 /// 搜索结果缓存
 ///
@@ -82,13 +85,13 @@ impl ResultCache {
     pub fn get(&self, query: &SearchQuery, engine_name: &str) -> Result<Option<SearchResult>> {
         let key = Self::generate_key(query, engine_name);
         
-        match self.manager.get(&key)? {
+        match self.manager.get(RESULT_SCOPE, &key)? {
             Some(data) => {
                 // 反序列化搜索结果
                 let result: SearchResult = bincode::serde::decode_from_slice(&data, bincode::config::standard())
                     .map(|(res, _)| res)
                     .map_err(|e| {
-                        CacheError::SerializationError(format!("反序列化搜索结果失败: {}", e))
+                        CacheError::SerializationError(format!("反序列化搜索结果失败: {e}"))
                     })?;
                 Ok(Some(result))
             }
@@ -146,10 +149,10 @@ impl ResultCache {
         
         // 序列化搜索结果
         let data = bincode::serde::encode_to_vec(result, bincode::config::standard()).map_err(|e| {
-            CacheError::SerializationError(format!("序列化搜索结果失败: {}", e))
+            CacheError::SerializationError(format!("序列化搜索结果失败: {e}"))
         })?;
 
-        self.manager.set(key, data, ttl)
+        self.manager.set(RESULT_SCOPE, key, data, ttl)
     }
 
     /// 删除缓存的搜索结果
@@ -160,12 +163,12 @@ impl ResultCache {
     /// * `engine_name` - 引擎名称
     pub fn delete(&self, query: &SearchQuery, engine_name: &str) -> Result<bool> {
         let key = Self::generate_key(query, engine_name);
-        self.manager.delete(&key)
+        self.manager.delete(RESULT_SCOPE, &key)
     }
 
     /// 清空所有搜索结果缓存
     pub fn clear_all(&self) -> Result<()> {
-        self.manager.clear()
+        self.manager.clear_scope(RESULT_SCOPE)
     }
 
     /// 获取底层缓存管理器引用
@@ -200,25 +203,29 @@ impl ResultCache {
         let mut matched_items = Vec::new();
         let max = max_results.unwrap_or(usize::MAX);
 
-        // 遍历所有以 result: 开头的缓存键
-        for item in self.manager.iter() {
+        // 解析作用域，获取顶级作用域
+        let (top_scope, _) = {
+            let parts: Vec<&str> = RESULT_SCOPE.split('.').collect();
+            (parts[0].to_string(), "".to_string())
+        };
+        
+        // 获取搜索结果对应的 tree
+        let tree = self.manager.get_or_create_tree(&top_scope)?;
+
+        // 遍历该 tree 中的所有键
+        for item in tree.iter() {
             if matched_items.len() >= max {
                 break;
             }
 
             let (key, value) = item.map_err(|e| {
-                CacheError::DatabaseError(format!("遍历缓存失败: {}", e))
+                CacheError::DatabaseError(format!("遍历缓存失败: {e}"))
             })?;
-
-            let key_str = String::from_utf8_lossy(&key);
-            
-            // 只处理搜索结果缓存
-            if !key_str.starts_with(RESULT_KEY_PREFIX) {
-                continue;
-            }
 
             // 检查是否过期（如果不包含过期结果）
             if !include_stale {
+                // 获取元数据
+                let key_str = String::from_utf8_lossy(&key);
                 if let Some(metadata) = self.manager.get_metadata(&key_str)? {
                     if metadata.is_expired() {
                         continue;
@@ -283,7 +290,7 @@ impl ResultCache {
             }
 
             let (key, value) = item.map_err(|e| {
-                CacheError::DatabaseError(format!("遍历缓存失败: {}", e))
+                CacheError::DatabaseError(format!("遍历缓存失败: {e}"))
             })?;
 
             let key_str = String::from_utf8_lossy(&key);
@@ -352,9 +359,12 @@ mod tests {
             enabled: true,
             compression: false,
             mode: CacheMode::HighThroughput,
+            enable_bloom_filter: false,
+            bloom_filter_expected_elements: 1000,
+            bloom_filter_false_positive_rate: 0.01,
         };
 
-        let manager = CacheManager::instance(config).expect("Failed to create cache manager");
+        let manager = Arc::new(CacheManager::new(config).expect("Failed to create cache manager"));
         ResultCache::new(manager)
     }
 

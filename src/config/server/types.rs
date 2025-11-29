@@ -22,43 +22,61 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
     /// 绑定地址
+    #[serde(default)]
     pub bind_address: String,
     /// 端口号
+    #[serde(default)]
     pub port: u16,
     /// 是否启用限流
+    #[serde(default)]
     pub limiter: bool,
     /// 是否为公共实例
+    #[serde(default)]
     pub public_instance: bool,
     /// 密钥
+    #[serde(default)]
     pub secret_key: String,
     /// 基础URL
+    #[serde(default)]
     pub base_url: Option<String>,
     /// 静态文件路径
+    #[serde(default)]
     pub static_path: Option<PathBuf>,
     /// TLS 配置
+    #[serde(default)]
     pub tls: Option<TlsConfig>,
     /// 工作线程数（可选，默认为 CPU 核心数）
+    #[serde(default)]
     pub worker_threads: Option<usize>,
     /// 请求超时时间（秒）
+    #[serde(default)]
     pub request_timeout: u64,
     /// 最大请求体大小（字节）
+    #[serde(default)]
     pub max_request_size: usize,
     /// 是否启用压缩
+    #[serde(default)]
     pub enable_compression: bool,
 }
 
 /// TLS 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct TlsConfig {
     /// 是否启用 TLS
+    #[serde(default)]
     pub enabled: bool,
     /// 证书文件路径
+    #[serde(default)]
     pub cert_path: Option<PathBuf>,
     /// 私钥文件路径
+    #[serde(default)]
     pub key_path: Option<PathBuf>,
     /// CA 证书路径
+    #[serde(default)]
     pub ca_path: Option<PathBuf>,
     /// 是否验证客户端证书
+    #[serde(default)]
     pub verify_client: bool,
 }
 
@@ -150,14 +168,3 @@ impl ServerConfig {
     }
 }
 
-impl Default for TlsConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            cert_path: None,
-            key_path: None,
-            ca_path: None,
-            verify_client: false,
-        }
-    }
-}

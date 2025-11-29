@@ -19,24 +19,34 @@ use serde::{Deserialize, Serialize};
 
 /// 隐私保护配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct PrivacyConfig {
     /// User-Agent 轮换
+    #[serde(default)]
     pub user_agent_rotation: UserAgentRotationConfig,
     /// 代理链配置
+    #[serde(default)]
     pub proxy_chain: Vec<ProxyConfig>,
     /// 是否启用 Tor
+    #[serde(default)]
     pub enable_tor: bool,
     /// Tor 配置
+    #[serde(default)]
     pub tor_config: TorConfig,
     /// TLS 指纹保护
+    #[serde(default)]
     pub fingerprint_protection: FingerprintProtectionConfig,
     /// 请求时序随机化
+    #[serde(default)]
     pub request_timing: TimingConfig,
     /// DNS 配置
+    #[serde(default)]
     pub dns_config: DnsConfig,
     /// 请求头配置
+    #[serde(default)]
     pub headers: HeaderConfig,
     /// Cookie 处理
+    #[serde(default)]
     pub cookie_handling: CookieConfig,
 }
 
@@ -44,24 +54,31 @@ pub struct PrivacyConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserAgentRotationConfig {
     /// 是否启用
+    #[serde(default)]
     pub enabled: bool,
     /// 轮换策略
+    #[serde(default)]
     pub rotation_strategy: UaRotationStrategy,
     /// 自定义 User-Agent 列表
+    #[serde(default)]
     pub custom_user_agents: Vec<String>,
     /// 轮换间隔（请求数）
+    #[serde(default)]
     pub rotation_interval: usize,
     /// 是否包含移动端 UA
+    #[serde(default)]
     pub include_mobile: bool,
     /// 是否按浏览器类型分组
+    #[serde(default)]
     pub group_by_browser: bool,
 }
 
 /// User-Agent 轮换策略
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum UaRotationStrategy {
     /// 随机选择
+    #[default]
     Random,
     /// 轮询选择
     RoundRobin,
@@ -170,16 +187,22 @@ pub struct TimingConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DnsConfig {
     /// 是否启用 DoH
+    #[serde(default)]
     pub enabled: bool,
     /// DoH 服务器列表
+    #[serde(default)]
     pub servers: Vec<DnsServer>,
     /// 超时时间（毫秒）
+    #[serde(default)]
     pub timeout: u64,
     /// 重试次数
+    #[serde(default)]
     pub retry_count: u32,
     /// 是否启用 DNS 缓存
+    #[serde(default)]
     pub enable_cache: bool,
     /// 缓存过期时间（秒）
+    #[serde(default)]
     pub cache_ttl: u64,
 }
 
@@ -195,6 +218,7 @@ pub struct DnsServer {
     /// 权重
     pub weight: f32,
     /// 支持的查询类型
+    #[serde(default)]
     pub supported_types: Vec<DnsRecordType>,
 }
 
@@ -220,14 +244,19 @@ pub enum DnsRecordType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeaderConfig {
     /// 是否移除隐私敏感头
+    #[serde(default)]
     pub remove_privacy_headers: bool,
     /// 是否标准化 Accept 头
+    #[serde(default)]
     pub normalize_accept: bool,
     /// 是否随机化其他头
+    #[serde(default)]
     pub randomize_headers: bool,
     /// 自定义请求头
+    #[serde(default)]
     pub custom_headers: Vec<CustomHeader>,
     /// 移除的头列表
+    #[serde(default)]
     pub remove_headers: Vec<String>,
 }
 
@@ -258,24 +287,10 @@ pub enum HeaderCondition {
     RequestType(String),
 }
 
-/// Cookie 处理配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CookieConfig {
-    /// 是否接受 Cookie
-    pub accept_cookies: bool,
-    /// 是否发送 Cookie
-    pub send_cookies: bool,
-    /// Cookie 过滤策略
-    pub filter_policy: CookieFilterPolicy,
-    /// 会话 Cookie 是否持久化
-    pub persist_session_cookies: bool,
-    /// 第三方 Cookie 策略
-    pub third_party_policy: ThirdPartyCookiePolicy,
-}
-
 /// Cookie 过滤策略
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum CookieFilterPolicy {
     /// 允许所有 Cookie
     AllowAll,
@@ -288,16 +303,20 @@ pub enum CookieFilterPolicy {
     /// 基于域名黑名单
     Blacklist(Vec<String>),
     /// 完全禁用 Cookie
+    #[default]
     Disabled,
 }
+
 
 /// 第三方 Cookie 策略
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ThirdPartyCookiePolicy {
     /// 允许所有第三方 Cookie
     AllowAll,
     /// 阻止所有第三方 Cookie
+    #[default]
     BlockAll,
     /// 仅允许访问过的第三方
     BlockUnvisited,
@@ -305,21 +324,27 @@ pub enum ThirdPartyCookiePolicy {
     PrivacyBased,
 }
 
-impl Default for PrivacyConfig {
-    fn default() -> Self {
-        Self {
-            user_agent_rotation: UserAgentRotationConfig::default(),
-            proxy_chain: Vec::new(),
-            enable_tor: false,
-            tor_config: TorConfig::default(),
-            fingerprint_protection: FingerprintProtectionConfig::default(),
-            request_timing: TimingConfig::default(),
-            dns_config: DnsConfig::default(),
-            headers: HeaderConfig::default(),
-            cookie_handling: CookieConfig::default(),
-        }
-    }
+
+/// Cookie 处理配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CookieConfig {
+    /// 是否接受 Cookie
+    #[serde(default)]
+    pub accept_cookies: bool,
+    /// 是否发送 Cookie
+    #[serde(default)]
+    pub send_cookies: bool,
+    /// Cookie 过滤策略
+    #[serde(default)]
+    pub filter_policy: CookieFilterPolicy,
+    /// 会话 Cookie 是否持久化
+    #[serde(default)]
+    pub persist_session_cookies: bool,
+    /// 第三方 Cookie 策略
+    #[serde(default)]
+    pub third_party_policy: ThirdPartyCookiePolicy,
 }
+
 
 impl PrivacyConfig {
     /// 验证隐私配置
