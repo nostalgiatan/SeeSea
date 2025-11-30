@@ -100,6 +100,7 @@ jobs:
 
     - name: Build seesea-core with maturin
       run: |
+        # 直接在主目录构建，不使用工作区
         maturin build --release --strip
         mkdir -p building
         cp target/wheels/*.whl building/
@@ -119,8 +120,10 @@ jobs:
       working-directory: ./installer
       run: |
         cargo install cargo-packager
-        # Build installer for the current platform
-        cargo packager --release
+        # 确保两个whl文件就位后再构建installer
+        ls -la ../building/
+        # 直接构建installer，不使用工作区
+        cargo packager --release --manifest-path Cargo.toml
 
     # Rename Windows installer
     - name: Rename Windows installer
@@ -215,6 +218,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
@@ -222,10 +227,14 @@ jobs:
         components: clippy, rustfmt
 
     - name: Run Clippy
-      run: cargo clippy -- -D warnings
+      run: |
+        # 直接在主目录运行 clippy，不使用工作区
+        cargo clippy --manifest-path Cargo.toml -- -D warnings
 
     - name: Run Rustfmt
-      run: cargo fmt --check
+      run: |
+        # 直接在主目录运行 rustfmt，不使用工作区
+        cargo fmt --manifest-path Cargo.toml --check
 
   audit:
     name: Security Audit
@@ -233,6 +242,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
@@ -241,7 +252,9 @@ jobs:
       run: cargo install cargo-audit
 
     - name: Run Security Audit
-      run: cargo audit
+      run: |
+        # 直接在主目录运行 audit，不使用工作区
+        cargo audit --manifest-path Cargo.toml
 
   python-lint:
     name: Python Linting
