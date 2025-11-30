@@ -9,74 +9,148 @@ on:
 
 jobs:
   build:
-    name: Build on ${{ matrix.platform }}
+    name: Build on ${{ matrix.platform }} (Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
+          # Linux builds for Python 3.9-3.12
           - os: ubuntu-latest
             platform: linux
             arch: x64
-            target: x86_64-unknown-linux-gnu
+            python-version: '3.9'
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            python-version: '3.10'
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            python-version: '3.11'
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            python-version: '3.12'
+          # Windows builds for Python 3.9-3.12
           - os: windows-latest
             platform: windows
             arch: x64
-            target: x86_64-pc-windows-msvc
+            python-version: '3.9'
+          - os: windows-latest
+            platform: windows
+            arch: x64
+            python-version: '3.10'
+          - os: windows-latest
+            platform: windows
+            arch: x64
+            python-version: '3.11'
+          - os: windows-latest
+            platform: windows
+            arch: x64
+            python-version: '3.12'
+          # macOS x64 builds for Python 3.9-3.12
           - os: macos-latest
             platform: macos
             arch: x64
-            target: x86_64-apple-darwin
+            python-version: '3.9'
+          - os: macos-latest
+            platform: macos
+            arch: x64
+            python-version: '3.10'
+          - os: macos-latest
+            platform: macos
+            arch: x64
+            python-version: '3.11'
+          - os: macos-latest
+            platform: macos
+            arch: x64
+            python-version: '3.12'
+          # macOS arm64 builds for Python 3.9-3.12
           - os: macos-latest
             platform: macos
             arch: arm64
-            target: aarch64-apple-darwin
+            python-version: '3.9'
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            python-version: '3.10'
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            python-version: '3.11'
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            python-version: '3.12'
 
     steps:
     - uses: actions/checkout@v4
-
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: stable
-        target: ${{ matrix.target }}
+        submodules: recursive
 
-    - name: Cache Cargo dependencies
-      uses: actions/cache@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
+        python-version: ${{ matrix.python-version }}
 
-    - name: Build SeeSea Core
-      run: cargo build --release --target ${{ matrix.target }}
-
-    - name: Build Installer
-      run: cargo build --release --target ${{ matrix.target }} -p seesea-installer
-
-    - name: Run Tests
-      run: cargo test --target ${{ matrix.target }}
-
-    - name: Prepare Release Artifacts
-      shell: bash
+    - name: Install dependencies
       run: |
-        mkdir -p release
-        if [ "${{ matrix.platform }}" = "windows" ]; then
-          cp target/${{ matrix.target }}/release/seesea-installer.exe release/seesea-installer-${{ matrix.platform }}-${{ matrix.arch }}.exe
-          cp target/${{ matrix.target }}/release/SeeSea.exe release/seesea-${{ matrix.platform }}-${{ matrix.arch }}.exe
-        else
-          cp target/${{ matrix.target }}/release/seesea-installer release/seesea-installer-${{ matrix.platform }}-${{ matrix.arch }}
-          cp target/${{ matrix.target }}/release/SeeSea release/seesea-${{ matrix.platform }}-${{ matrix.arch }}
-        fi
+        python -m pip install --upgrade pip
+        pip install maturin setuptools wheel
+
+    - name: Build seesea-core with maturin
+      run: |
+        maturin build --release --strip
+        mkdir -p building
+        cp target/wheels/*.whl building/
+
+    - name: Build seesea Python package
+      working-directory: ./seesea
+      run: |
+        python -m pip install -e .
+        python -m build --wheel
+        cp dist/*.whl ../building/
+
+    - name: Copy install.toml to building directory
+      run: |
+        cp install.toml building/
+
+    - name: Build installer with cargo packager
+      working-directory: ./installer
+      run: |
+        cargo install cargo-packager
+        # Build installer for the current platform
+        cargo packager --release
+
+    # Rename Windows installer
+    - name: Rename Windows installer
+      if: matrix.platform == 'windows'
+      run: |
+        # Remove dot from Python version (e.g., py3.9 -> py39)
+        $PYTHON_VERSION_NO_DOT = "${{ matrix.python-version }}".Replace(".", "")
+        mv ../target/release/seesea-installer_1.0.0_x64-setup.exe ../building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}-setup.exe
+
+    # Rename Linux installer
+    - name: Rename Linux installer
+      if: matrix.platform == 'linux'
+      run: |
+        # Remove dot from Python version (e.g., py3.9 -> py39)
+        PYTHON_VERSION_NO_DOT=$(echo "${{ matrix.python-version }}" | tr -d '.')
+        mv ../target/release/seesea-installer_1.0.0_x64.AppImage ../building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.AppImage
+
+    # Rename macOS installer
+    - name: Rename macOS installer
+      if: matrix.platform == 'macos'
+      run: |
+        # Remove dot from Python version (e.g., py3.9 -> py39)
+        PYTHON_VERSION_NO_DOT=$(echo "${{ matrix.python-version }}" | tr -d '.')
+        mv ../target/release/seesea-installer_1.0.0_${{ matrix.arch }}.dmg ../building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.dmg
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: seesea-${{ matrix.platform }}-${{ matrix.arch }}
-        path: release/*
+        name: seesea-${{ matrix.platform }}-${{ matrix.arch }}-py${{ matrix.python-version }}
+        path: building/*
 
   release:
     name: Create Release
@@ -90,18 +164,48 @@ jobs:
     - name: Download All Artifacts
       uses: actions/download-artifact@v4
       with:
-        path: release
+        path: building
 
     - name: List Release Files
-      run: ls -la release
+      run: ls -la building/**/*
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          release/**/*
+          building/**/*
         draft: false
         prerelease: false
+        body: |
+          ## SeeSea Release
+          
+          This release includes:
+          - seesea Python package wheel
+          - seesea-core native wheel for various platforms and Python versions
+          - Self-contained installer with Python version support
+          - Configuration files
+          
+          ### Supported Platforms
+          - Linux x64
+          - Windows x64
+          - macOS x64
+          - macOS arm64
+          
+          ### Supported Python Versions
+          - Python 3.9
+          - Python 3.10
+          - Python 3.11
+          - Python 3.12
+          
+          ### Installation
+          ```bash
+          # Using pip
+          pip install seesea seesea-core
+          
+          # Using installer
+          # Download the appropriate installer for your platform and Python version
+          # e.g., seesea-installer_1.0.0_py3.12_x64-setup.exe for Windows with Python 3.12
+          ```
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -138,3 +242,32 @@ jobs:
 
     - name: Run Security Audit
       run: cargo audit
+
+  python-lint:
+    name: Python Linting
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install black ruff mypy
+
+    - name: Run Black
+      working-directory: ./seesea
+      run: black --check .
+
+    - name: Run Ruff
+      working-directory: ./seesea
+      run: ruff check .
+
+    - name: Run Mypy
+      working-directory: ./seesea
+      run: mypy .
