@@ -60,8 +60,7 @@ pub struct ServerConfig {
 }
 
 /// TLS 配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TlsConfig {
     /// 是否启用 TLS
     #[serde(default)]
@@ -119,7 +118,9 @@ impl ServerConfig {
         }
 
         // 检查 TLS 配置
-        if let Some(tls) = &self.tls && tls.enabled {
+        if let Some(tls) = &self.tls
+            && tls.enabled
+        {
             if tls.cert_path.is_none() {
                 result.add_error("启用 TLS 时必须指定证书文件路径".to_string());
             }
@@ -165,4 +166,3 @@ impl ServerConfig {
         self.tls.as_ref().map(|t| t.enabled).unwrap_or(false)
     }
 }
-

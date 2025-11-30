@@ -61,11 +61,10 @@ impl MetadataCache {
         ttl: Option<Duration>,
     ) -> Result<()> {
         let key = format!("{ENGINE_INFO_PREFIX}{engine_name}");
-        
+
         // 序列化引擎信息
-        let data = bincode::serde::encode_to_vec(info, bincode::config::standard()).map_err(|e| {
-            CacheError::SerializationError(format!("序列化引擎信息失败: {e}"))
-        })?;
+        let data = bincode::serde::encode_to_vec(info, bincode::config::standard())
+            .map_err(|e| CacheError::SerializationError(format!("序列化引擎信息失败: {e}")))?;
 
         // 引擎信息通常不过期，使用较长的TTL或永不过期
         let ttl = ttl.or(Some(Duration::from_secs(86400 * 365))); // 默认1年
@@ -86,11 +85,10 @@ impl MetadataCache {
         ttl: Option<Duration>,
     ) -> Result<()> {
         let key = format!("{ENGINE_INFO_PREFIX}{engine_name}");
-        
+
         // 序列化引擎信息
-        let data = bincode::serde::encode_to_vec(info, bincode::config::standard()).map_err(|e| {
-            CacheError::SerializationError(format!("序列化引擎信息失败: {e}"))
-        })?;
+        let data = bincode::serde::encode_to_vec(info, bincode::config::standard())
+            .map_err(|e| CacheError::SerializationError(format!("序列化引擎信息失败: {e}")))?;
 
         // 引擎信息通常不过期，使用较长的TTL或永不过期
         let ttl = ttl.or(Some(Duration::from_secs(86400 * 365))); // 默认1年
@@ -108,14 +106,15 @@ impl MetadataCache {
     /// 返回缓存的引擎信息，如果不存在则返回 None
     pub fn get_engine_info(&self, engine_name: &str) -> Result<Option<EngineInfo>> {
         let key = format!("{ENGINE_INFO_PREFIX}{engine_name}");
-        
+
         match self.manager.get(METADATA_SCOPE, &key)? {
             Some(data) => {
-                let info: EngineInfo = bincode::serde::decode_from_slice(&data, bincode::config::standard())
-                    .map(|(info, _)| info)
-                    .map_err(|e| {
-                        CacheError::SerializationError(format!("反序列化引擎信息失败: {e}"))
-                    })?;
+                let info: EngineInfo =
+                    bincode::serde::decode_from_slice(&data, bincode::config::standard())
+                        .map(|(info, _)| info)
+                        .map_err(|e| {
+                            CacheError::SerializationError(format!("反序列化引擎信息失败: {e}"))
+                        })?;
                 Ok(Some(info))
             }
             None => Ok(None),
@@ -133,14 +132,15 @@ impl MetadataCache {
     /// 返回缓存的引擎信息，如果不存在则返回 None
     pub async fn get_engine_info_async(&self, engine_name: &str) -> Result<Option<EngineInfo>> {
         let key = format!("{ENGINE_INFO_PREFIX}{engine_name}");
-        
+
         match self.manager.get_async(METADATA_SCOPE, &key).await? {
             Some(data) => {
-                let info: EngineInfo = bincode::serde::decode_from_slice(&data, bincode::config::standard())
-                    .map(|(info, _)| info)
-                    .map_err(|e| {
-                        CacheError::SerializationError(format!("反序列化引擎信息失败: {e}"))
-                    })?;
+                let info: EngineInfo =
+                    bincode::serde::decode_from_slice(&data, bincode::config::standard())
+                        .map(|(info, _)| info)
+                        .map_err(|e| {
+                            CacheError::SerializationError(format!("反序列化引擎信息失败: {e}"))
+                        })?;
                 Ok(Some(info))
             }
             None => Ok(None),
@@ -179,11 +179,11 @@ impl MetadataCache {
         ttl: Option<Duration>,
     ) -> Result<()> {
         let ttl = ttl.or(Some(Duration::from_secs(86400 * 365))); // 默认1年
-        
+
         for (engine_name, info) in items {
             self.set_engine_info(engine_name, info, ttl)?;
         }
-        
+
         Ok(())
     }
 
@@ -199,11 +199,11 @@ impl MetadataCache {
         ttl: Option<Duration>,
     ) -> Result<()> {
         let ttl = ttl.or(Some(Duration::from_secs(86400 * 365))); // 默认1年
-        
+
         for (engine_name, info) in items {
             self.set_engine_info_async(engine_name, info, ttl).await?;
         }
-        
+
         Ok(())
     }
 
@@ -214,12 +214,7 @@ impl MetadataCache {
     /// * `key` - 元数据键
     /// * `data` - 元数据（已序列化的字节数组）
     /// * `ttl` - 生存时间
-    pub fn set_metadata(
-        &self,
-        key: &str,
-        data: Vec<u8>,
-        ttl: Option<Duration>,
-    ) -> Result<()> {
+    pub fn set_metadata(&self, key: &str, data: Vec<u8>, ttl: Option<Duration>) -> Result<()> {
         let full_key = format!("{METADATA_KEY_PREFIX}{key}");
         self.manager.set(METADATA_SCOPE, full_key, data, ttl)
     }
@@ -238,7 +233,9 @@ impl MetadataCache {
         ttl: Option<Duration>,
     ) -> Result<()> {
         let full_key = format!("{METADATA_KEY_PREFIX}{key}");
-        self.manager.set_async(METADATA_SCOPE, full_key, data, ttl).await
+        self.manager
+            .set_async(METADATA_SCOPE, full_key, data, ttl)
+            .await
     }
 
     /// 获取通用元数据
@@ -303,7 +300,7 @@ impl MetadataCache {
         for (key, data) in items {
             self.set_metadata(key, data.clone(), ttl)?;
         }
-        
+
         Ok(())
     }
 
@@ -321,7 +318,7 @@ impl MetadataCache {
         for (key, data) in items {
             self.set_metadata_async(key, data.clone(), ttl).await?;
         }
-        
+
         Ok(())
     }
 
@@ -336,12 +333,12 @@ impl MetadataCache {
     /// 返回元数据字节数组列表，与输入键列表顺序一致
     pub fn get_metadata_batch(&self, keys: &[&str]) -> Result<Vec<Option<Vec<u8>>>> {
         let mut results = Vec::with_capacity(keys.len());
-        
+
         for key in keys {
             let result = self.get_metadata(key)?;
             results.push(result);
         }
-        
+
         Ok(results)
     }
 
@@ -356,12 +353,12 @@ impl MetadataCache {
     /// 返回元数据字节数组列表，与输入键列表顺序一致
     pub async fn get_metadata_batch_async(&self, keys: &[&str]) -> Result<Vec<Option<Vec<u8>>>> {
         let mut results = Vec::with_capacity(keys.len());
-        
+
         for key in keys {
             let result = self.get_metadata_async(key).await?;
             results.push(result);
         }
-        
+
         Ok(results)
     }
 
@@ -376,13 +373,13 @@ impl MetadataCache {
     /// 返回成功删除的条目数量
     pub fn delete_metadata_batch(&self, keys: &[&str]) -> Result<usize> {
         let mut deleted = 0;
-        
+
         for key in keys {
             if self.delete_metadata(key)? {
                 deleted += 1;
             }
         }
-        
+
         Ok(deleted)
     }
 
@@ -397,13 +394,13 @@ impl MetadataCache {
     /// 返回成功删除的条目数量
     pub async fn delete_metadata_batch_async(&self, keys: &[&str]) -> Result<usize> {
         let mut deleted = 0;
-        
+
         for key in keys {
             if self.delete_metadata_async(key).await? {
                 deleted += 1;
             }
         }
-        
+
         Ok(deleted)
     }
 
@@ -432,7 +429,9 @@ impl MetadataCache {
     ///
     /// 返回清理的条目数量
     pub async fn cleanup_expired_async(&self) -> Result<usize> {
-        self.manager.cleanup_expired_by_scope_async(METADATA_SCOPE).await
+        self.manager
+            .cleanup_expired_by_scope_async(METADATA_SCOPE)
+            .await
     }
 
     /// 获取底层缓存管理器引用
@@ -453,7 +452,7 @@ mod tests {
     fn temp_metadata_cache() -> MetadataCache {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
-        
+
         let temp_dir = std::env::temp_dir();
         let unique_id = COUNTER.fetch_add(1, Ordering::SeqCst);
         let db_path = temp_dir.join(format!(
@@ -461,7 +460,7 @@ mod tests {
             std::process::id(),
             unique_id
         ));
-        
+
         let config = CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
             default_ttl_secs: 10,
@@ -528,9 +527,10 @@ mod tests {
         let _ = cache.set_engine_info(engine_name, &info, None);
 
         // 获取引擎信息
-        let cached = cache.get_engine_info(engine_name)
+        let cached = cache
+            .get_engine_info(engine_name)
             .expect("获取引擎信息失败");
-        
+
         assert!(cached.is_some());
         let cached_info = cached.unwrap();
         assert_eq!(cached_info.name, info.name);
@@ -541,9 +541,10 @@ mod tests {
     #[serial]
     fn test_metadata_cache_miss() {
         let cache = temp_metadata_cache();
-        
+
         // 获取不存在的引擎信息
-        let cached = cache.get_engine_info("NonExistent")
+        let cached = cache
+            .get_engine_info("NonExistent")
             .expect("获取引擎信息失败");
         assert!(cached.is_none());
     }
@@ -557,18 +558,27 @@ mod tests {
 
         // 缓存引擎信息
         let _ = cache.set_engine_info(engine_name, &info, None);
-        
-        assert!(cache.get_engine_info(engine_name)
-            .expect("获取引擎信息失败").is_some());
+
+        assert!(
+            cache
+                .get_engine_info(engine_name)
+                .expect("获取引擎信息失败")
+                .is_some()
+        );
 
         // 删除引擎信息
-        let deleted = cache.delete_engine_info(engine_name)
+        let deleted = cache
+            .delete_engine_info(engine_name)
             .expect("删除引擎信息失败");
         assert!(deleted);
 
         // 验证已删除
-        assert!(cache.get_engine_info(engine_name)
-            .expect("获取引擎信息失败").is_none());
+        assert!(
+            cache
+                .get_engine_info(engine_name)
+                .expect("获取引擎信息失败")
+                .is_none()
+        );
     }
 
     #[test]
@@ -579,13 +589,13 @@ mod tests {
         let data = b"test data".to_vec();
 
         // 缓存元数据
-        cache.set_metadata(key, data.clone(), None)
+        cache
+            .set_metadata(key, data.clone(), None)
             .expect("缓存元数据失败");
 
         // 获取元数据
-        let cached = cache.get_metadata(key)
-            .expect("获取元数据失败");
-        
+        let cached = cache.get_metadata(key).expect("获取元数据失败");
+
         assert!(cached.is_some());
         assert_eq!(cached.unwrap(), data);
     }
@@ -598,19 +608,15 @@ mod tests {
         let data = b"test data".to_vec();
 
         // 缓存元数据
-        cache.set_metadata(key, data, None)
-            .expect("缓存元数据失败");
-        
-        assert!(cache.get_metadata(key)
-            .expect("获取元数据失败").is_some());
+        cache.set_metadata(key, data, None).expect("缓存元数据失败");
+
+        assert!(cache.get_metadata(key).expect("获取元数据失败").is_some());
 
         // 删除元数据
-        let deleted = cache.delete_metadata(key)
-            .expect("删除元数据失败");
+        let deleted = cache.delete_metadata(key).expect("删除元数据失败");
         assert!(deleted);
 
         // 验证已删除
-        assert!(cache.get_metadata(key)
-            .expect("获取元数据失败").is_none());
+        assert!(cache.get_metadata(key).expect("获取元数据失败").is_none());
     }
 }

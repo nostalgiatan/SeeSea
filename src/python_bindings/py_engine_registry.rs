@@ -16,14 +16,17 @@
 //!
 //! 提供从Python端动态注册搜索引擎的功能
 
+use async_trait::async_trait;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::collections::HashMap;
-use async_trait::async_trait;
 
-use crate::derive::{SearchEngine, SearchQuery, SearchResult, EngineInfo, EngineType, EngineStatus, EngineCapabilities, ResultType};
+use crate::derive::{
+    EngineCapabilities, EngineInfo, EngineStatus, EngineType, ResultType, SearchEngine,
+    SearchQuery, SearchResult,
+};
 
 /// 统一的tokio运行时辅助函数
 ///
@@ -40,10 +43,12 @@ where
         }
         Err(_) => {
             // 不在运行时上下文中，创建一个新的运行时来执行
-            let rt = tokio::runtime::Runtime::new()
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                    format!("Failed to create tokio runtime: {}", e)
-                ))?;
+            let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "Failed to create tokio runtime: {}",
+                    e
+                ))
+            })?;
             Ok(rt.block_on(future))
         }
     }
@@ -73,7 +78,12 @@ impl PythonEngineWrapper {
                 status: EngineStatus::Active,
                 categories,
                 capabilities: EngineCapabilities {
-                    result_types: vec![ResultType::Web, ResultType::News, ResultType::Image, ResultType::Video],
+                    result_types: vec![
+                        ResultType::Web,
+                        ResultType::News,
+                        ResultType::Image,
+                        ResultType::Video,
+                    ],
                     supported_params: vec![],
                     max_page_size: 50,
                     supports_pagination: true,
@@ -119,9 +129,12 @@ impl SearchEngine for PythonEngineWrapper {
         &self.info
     }
 
-    async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn std::error::Error + Send + Sync>> {
+    async fn search(
+        &self,
+        query: &SearchQuery,
+    ) -> Result<SearchResult, Box<dyn std::error::Error + Send + Sync>> {
         let callback_guard = self.callback.read().await;
-        
+
         if let Some(ref callback) = *callback_guard {
             // 调用Python回调函数
             let result = Python::attach(|py| -> PyResult<SearchResult> {
@@ -129,14 +142,14 @@ impl SearchEngine for PythonEngineWrapper {
                 dict.set_item("query", &query.query)?;
                 dict.set_item("page", query.page)?;
                 dict.set_item("page_size", query.page_size)?;
-                
+
                 if let Some(ref lang) = query.language {
                     dict.set_item("language", lang)?;
                 }
                 if let Some(ref region) = query.region {
                     dict.set_item("region", region)?;
                 }
-                
+
                 // 调用Python函数
                 let py_result = callback.call1(py, (dict,))?;
 
@@ -151,40 +164,47 @@ impl SearchEngine for PythonEngineWrapper {
                         let asyncio = py_inner.import("asyncio")?;
                         let run_result = asyncio.call_method1("run", (coro,))?;
                         Ok(run_result.into())
-                    }).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                        format!("Failed to run async callback: {}", e)
-                    ))?
+                    })
+                    .map_err(|e| {
+                        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                            "Failed to run async callback: {}",
+                            e
+                        ))
+                    })?
                 } else {
                     py_result.into()
                 };
-                
+
                 // 解析结果
                 let result_dict = final_result.bind(py).cast::<PyDict>()?;
-                
+
                 // 提取结果列表
                 let items = if let Ok(Some(results_list)) = result_dict.get_item("results") {
-                    results_list.extract::<Vec<HashMap<String, String>>>()?
+                    results_list
+                        .extract::<Vec<HashMap<String, String>>>()?
                         .into_iter()
-                        .map(|item| {
-                            crate::derive::SearchResultItem {
-                                title: item.get("title").cloned().unwrap_or_default(),
-                                url: item.get("url").cloned().unwrap_or_default(),
-                                content: item.get("snippet").or(item.get("content")).cloned().unwrap_or_default(),
-                                display_url: item.get("display_url").cloned(),
-                                site_name: item.get("site_name").cloned(),
-                                result_type: ResultType::Web,
-                                thumbnail: item.get("thumbnail").cloned(),
-                                metadata: HashMap::new(),
-                                published_date: None,
-                                score: 1.0,
-                                template: None,
-                            }
+                        .map(|item| crate::derive::SearchResultItem {
+                            title: item.get("title").cloned().unwrap_or_default(),
+                            url: item.get("url").cloned().unwrap_or_default(),
+                            content: item
+                                .get("snippet")
+                                .or(item.get("content"))
+                                .cloned()
+                                .unwrap_or_default(),
+                            display_url: item.get("display_url").cloned(),
+                            site_name: item.get("site_name").cloned(),
+                            result_type: ResultType::Web,
+                            thumbnail: item.get("thumbnail").cloned(),
+                            metadata: HashMap::new(),
+                            published_date: None,
+                            score: 1.0,
+                            template: None,
                         })
                         .collect()
                 } else {
                     vec![]
                 };
-                
+
                 Ok(SearchResult {
                     engine_name: self.info.name.clone(),
                     total_results: Some(items.len()),
@@ -195,7 +215,7 @@ impl SearchEngine for PythonEngineWrapper {
                     items,
                 })
             });
-            
+
             result.map_err(|e| format!("Python callback error: {}", e).into())
         } else {
             Err("No callback registered for this Python engine".into())
@@ -207,7 +227,9 @@ impl SearchEngine for PythonEngineWrapper {
         callback_guard.is_some()
     }
 
-    async fn health_check(&self) -> Result<crate::derive::engine::EngineHealth, Box<dyn std::error::Error + Send + Sync>> {
+    async fn health_check(
+        &self,
+    ) -> Result<crate::derive::engine::EngineHealth, Box<dyn std::error::Error + Send + Sync>> {
         Ok(crate::derive::engine::EngineHealth {
             status: if self.is_available().await {
                 EngineStatus::Active
@@ -219,7 +241,10 @@ impl SearchEngine for PythonEngineWrapper {
         })
     }
 
-    fn validate_query(&self, query: &SearchQuery) -> Result<(), crate::derive::types::ValidationError> {
+    fn validate_query(
+        &self,
+        query: &SearchQuery,
+    ) -> Result<(), crate::derive::types::ValidationError> {
         if query.query.is_empty() {
             return Err(crate::errors::validation::empty_field("query"));
         }
@@ -291,14 +316,17 @@ impl PyEngineRegistry {
         let engines = self.engines.read().await;
         engines.get(name).cloned()
     }
-    
+
     /// 获取所有已注册引擎的列表（同步版本，用于Rust调用）
     pub fn get_all_engines_sync(&self) -> Vec<(String, Arc<PythonEngineWrapper>)> {
         // 使用tokio的block_on来同步获取
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 let engines = self.engines.read().await;
-                engines.iter().map(|(k, v)| (k.clone(), Arc::clone(v))).collect()
+                engines
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Arc::clone(v)))
+                    .collect()
             })
         })
     }
@@ -335,7 +363,7 @@ pub fn register_engine(
     callback: Py<PyAny>,
 ) -> PyResult<bool> {
     let registry = get_global_registry();
-    
+
     let engine_type_enum = match engine_type.to_lowercase().as_str() {
         "general" | "web" => EngineType::General,
         "news" => EngineType::News,
@@ -348,15 +376,12 @@ pub fn register_engine(
         "custom" => EngineType::Custom,
         _ => EngineType::General,
     };
-    
+
     execute_with_runtime(async move {
-        registry.register_engine_internal(
-            name,
-            engine_type_enum,
-            description,
-            categories,
-            callback,
-        ).await.map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
+        registry
+            .register_engine_internal(name, engine_type_enum, description, categories, callback)
+            .await
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
         Ok(true)
     })?
 }
@@ -365,27 +390,21 @@ pub fn register_engine(
 #[pyfunction]
 pub fn list_engines() -> PyResult<Vec<String>> {
     let registry = get_global_registry();
-    execute_with_runtime(async move {
-        Ok(registry.list_engines_internal().await)
-    })?
+    execute_with_runtime(async move { Ok(registry.list_engines_internal().await) })?
 }
 
 /// Python函数：注销一个引擎
 #[pyfunction]
 pub fn unregister_engine(name: String) -> PyResult<bool> {
     let registry = get_global_registry();
-    execute_with_runtime(async move {
-        Ok(registry.unregister_engine_internal(&name).await)
-    })?
+    execute_with_runtime(async move { Ok(registry.unregister_engine_internal(&name).await) })?
 }
 
 /// Python函数：检查引擎是否已注册
 #[pyfunction]
 pub fn has_engine(name: String) -> PyResult<bool> {
     let registry = get_global_registry();
-    execute_with_runtime(async move {
-        Ok(registry.has_engine_internal(&name).await)
-    })?
+    execute_with_runtime(async move { Ok(registry.has_engine_internal(&name).await) })?
 }
 
 /// 从Python全局注册表获取引擎（同步版本，用于SearchInterface）
@@ -393,23 +412,20 @@ pub fn has_engine(name: String) -> PyResult<bool> {
 /// 这个函数尝试从Python全局注册表获取引擎实例
 pub fn try_get_python_engine_sync(name: &str) -> Option<Arc<PythonEngineWrapper>> {
     let registry = get_global_registry();
-    
+
     // 尝试在当前运行时中执行，如果没有运行时则创建临时运行时
     match tokio::runtime::Handle::try_current() {
         Ok(_) => {
             // 有运行时，使用 block_in_place
             tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    registry.get_engine(name).await
-                })
+                tokio::runtime::Handle::current()
+                    .block_on(async { registry.get_engine(name).await })
             })
         }
         Err(_) => {
             // 没有运行时，创建一个新的
             if let Ok(rt) = tokio::runtime::Runtime::new() {
-                rt.block_on(async {
-                    registry.get_engine(name).await
-                })
+                rt.block_on(async { registry.get_engine(name).await })
             } else {
                 None
             }
@@ -429,7 +445,7 @@ mod tests {
             "Test engine".to_string(),
             vec!["test".to_string()],
         );
-        
+
         assert_eq!(wrapper.info().name, "test_engine");
         assert_eq!(wrapper.info().description, "Test engine");
     }
@@ -437,11 +453,11 @@ mod tests {
     #[tokio::test]
     async fn test_registry_operations() {
         let registry = PyEngineRegistry::new();
-        
+
         // 测试初始状态
         let engines = registry.list_engines_internal().await;
         assert_eq!(engines.len(), 0);
-        
+
         // 注意：实际的注册测试需要Python环境
     }
 }

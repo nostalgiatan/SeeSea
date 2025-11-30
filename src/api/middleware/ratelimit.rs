@@ -24,9 +24,9 @@ use axum::{
 };
 use dashmap::DashMap;
 use governor::{
-    clock::DefaultClock,
-    state::{direct::NotKeyed, InMemoryState},
     Quota, RateLimiter,
+    clock::DefaultClock,
+    state::{InMemoryState, direct::NotKeyed},
 };
 use std::net::IpAddr;
 use std::num::NonZeroU32;
@@ -42,7 +42,7 @@ pub type IpLimiterMap = Arc<DashMap<IpAddr, Arc<SimpleRateLimiter>>>;
 pub struct RateLimitConfig {
     /// 每秒请求数限制
     pub requests_per_second: u32,
-    
+
     /// 突发请求容量
     pub burst_size: u32,
 
@@ -74,14 +74,12 @@ impl RateLimiterState {
     /// 创建新的限流器状态
     pub fn new(config: RateLimitConfig) -> Self {
         let quota = Quota::per_second(
-            NonZeroU32::new(config.requests_per_second).unwrap_or(NonZeroU32::new(100).unwrap())
+            NonZeroU32::new(config.requests_per_second).unwrap_or(NonZeroU32::new(100).unwrap()),
         )
-        .allow_burst(
-            NonZeroU32::new(config.burst_size).unwrap_or(NonZeroU32::new(200).unwrap())
-        );
-        
+        .allow_burst(NonZeroU32::new(config.burst_size).unwrap_or(NonZeroU32::new(200).unwrap()));
+
         let global_limiter = Arc::new(RateLimiter::direct(quota));
-        
+
         Self {
             global_limiter,
             ip_limiters: Arc::new(DashMap::new()),
@@ -90,20 +88,19 @@ impl RateLimiterState {
     }
 
     /// 获取或创建IP限流器
-    fn get_or_create_limiter(&self, ip: IpAddr) -> Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>> {
+    fn get_or_create_limiter(
+        &self,
+        ip: IpAddr,
+    ) -> Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>> {
         self.ip_limiters
             .entry(ip)
             .or_insert_with(|| {
                 // 每个IP的限流为全局的10%，但至少1请求/秒
                 let per_ip_rate = std::cmp::max(1, self.config.requests_per_second / 10);
                 let per_ip_burst = std::cmp::max(2, self.config.burst_size / 10);
-                
-                let quota = Quota::per_second(
-                    NonZeroU32::new(per_ip_rate).unwrap()
-                )
-                .allow_burst(
-                    NonZeroU32::new(per_ip_burst).unwrap()
-                );
+
+                let quota = Quota::per_second(NonZeroU32::new(per_ip_rate).unwrap())
+                    .allow_burst(NonZeroU32::new(per_ip_burst).unwrap());
                 Arc::new(RateLimiter::direct(quota))
             })
             .clone()
@@ -143,14 +140,15 @@ fn create_rate_limit_response() -> Response {
         serde_json::json!({
             "code": "RATE_LIMIT_EXCEEDED",
             "message": "请求过于频繁，请稍后再试"
-        }).to_string()
-    ).into_response();
-    
-    response.headers_mut().insert(
-        "Retry-After",
-        HeaderValue::from_static("60"),
-    );
-    
+        })
+        .to_string(),
+    )
+        .into_response();
+
+    response
+        .headers_mut()
+        .insert("Retry-After", HeaderValue::from_static("60"));
+
     response
 }
 
@@ -160,16 +158,18 @@ fn extract_client_ip(req: &Request) -> Option<IpAddr> {
     if let Some(forwarded) = req.headers().get("x-forwarded-for")
         && let Ok(forwarded_str) = forwarded.to_str()
         && let Some(ip_str) = forwarded_str.split(',').next()
-        && let Ok(ip) = ip_str.trim().parse() {
-            return Some(ip);
-        }
+        && let Ok(ip) = ip_str.trim().parse()
+    {
+        return Some(ip);
+    }
 
     // 尝试从X-Real-IP获取
     if let Some(real_ip) = req.headers().get("x-real-ip")
         && let Ok(ip_str) = real_ip.to_str()
-        && let Ok(ip) = ip_str.parse() {
-            return Some(ip);
-        }
+        && let Ok(ip) = ip_str.parse()
+    {
+        return Some(ip);
+    }
 
     None
 }

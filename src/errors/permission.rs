@@ -13,13 +13,13 @@
 // limitations under the License.
 
 //! 权限相关错误定义
-//! 
+//!
 //! 包含访问权限、认证、授权等相关错误的定义和创建函数。
 
-use crate::errors::{ErrorInfo, ErrorCategory, ErrorSeverity};
+use crate::errors::{ErrorCategory, ErrorInfo, ErrorSeverity};
 
 /// 权限错误码常量
-/// 
+///
 /// 权限错误码范围：6000-6999
 pub const PERMISSION_ERROR_BASE: u32 = 6000;
 pub const PERMISSION_DENIED: u32 = PERMISSION_ERROR_BASE + 1;
@@ -34,21 +34,24 @@ pub const INSUFFICIENT_ROLE: u32 = PERMISSION_ERROR_BASE + 9;
 pub const ACCESS_DENIED: u32 = PERMISSION_ERROR_BASE + 10;
 
 /// 创建权限被拒绝错误
-/// 
+///
 /// # 参数
 /// - `resource`: 资源名称
 /// - `operation`: 操作类型
-/// 
+///
 /// # 返回
 /// 包含权限被拒绝信息的错误对象
 pub fn permission_denied(resource: &str, operation: &str) -> ErrorInfo {
-    ErrorInfo::new(PERMISSION_DENIED, format!("拒绝访问资源 '{resource}' 的 '{operation}' 操作"))
-        .with_category(ErrorCategory::Permission)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        PERMISSION_DENIED,
+        format!("拒绝访问资源 '{resource}' 的 '{operation}' 操作"),
+    )
+    .with_category(ErrorCategory::Permission)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 创建未授权错误
-/// 
+///
 /// # 返回
 /// 包含未授权信息的错误对象
 pub fn unauthorized() -> ErrorInfo {
@@ -58,7 +61,7 @@ pub fn unauthorized() -> ErrorInfo {
 }
 
 /// 创建无效凭证错误
-/// 
+///
 /// # 返回
 /// 包含无效凭证信息的错误对象
 pub fn invalid_credentials() -> ErrorInfo {
@@ -68,7 +71,7 @@ pub fn invalid_credentials() -> ErrorInfo {
 }
 
 /// 创建令牌过期错误
-/// 
+///
 /// # 返回
 /// 包含令牌过期信息的错误对象
 pub fn token_expired() -> ErrorInfo {
@@ -78,7 +81,7 @@ pub fn token_expired() -> ErrorInfo {
 }
 
 /// 创建无效令牌错误
-/// 
+///
 /// # 返回
 /// 包含无效令牌信息的错误对象
 pub fn invalid_token() -> ErrorInfo {
@@ -88,7 +91,7 @@ pub fn invalid_token() -> ErrorInfo {
 }
 
 /// 创建缺少令牌错误
-/// 
+///
 /// # 返回
 /// 包含缺少令牌信息的错误对象
 pub fn missing_token() -> ErrorInfo {
@@ -98,10 +101,10 @@ pub fn missing_token() -> ErrorInfo {
 }
 
 /// 创建账户锁定错误
-/// 
+///
 /// # 参数
 /// - `username`: 被锁定的用户名
-/// 
+///
 /// # 返回
 /// 包含账户锁定信息的错误对象
 pub fn account_locked(username: &str) -> ErrorInfo {
@@ -111,10 +114,10 @@ pub fn account_locked(username: &str) -> ErrorInfo {
 }
 
 /// 创建账户禁用错误
-/// 
+///
 /// # 参数
 /// - `username`: 被禁用的用户名
-/// 
+///
 /// # 返回
 /// 包含账户禁用信息的错误对象
 pub fn account_disabled(username: &str) -> ErrorInfo {
@@ -124,24 +127,27 @@ pub fn account_disabled(username: &str) -> ErrorInfo {
 }
 
 /// 创建角色权限不足错误
-/// 
+///
 /// # 参数
 /// - `role`: 当前角色
 /// - `required_role`: 所需角色
-/// 
+///
 /// # 返回
 /// 包含角色权限不足信息的错误对象
 pub fn insufficient_role(role: &str, required_role: &str) -> ErrorInfo {
-    ErrorInfo::new(INSUFFICIENT_ROLE, format!("角色 '{role}' 权限不足，需要 '{required_role}' 角色"))
-        .with_category(ErrorCategory::Permission)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        INSUFFICIENT_ROLE,
+        format!("角色 '{role}' 权限不足，需要 '{required_role}' 角色"),
+    )
+    .with_category(ErrorCategory::Permission)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 创建访问被拒绝错误
-/// 
+///
 /// # 参数
 /// - `reason`: 访问被拒绝的原因
-/// 
+///
 /// # 返回
 /// 包含访问被拒绝信息的错误对象
 pub fn access_denied(reason: &str) -> ErrorInfo {
@@ -151,10 +157,10 @@ pub fn access_denied(reason: &str) -> ErrorInfo {
 }
 
 /// 通用权限错误创建函数
-/// 
+///
 /// # 参数
 /// - `message`: 权限错误的详细信息
-/// 
+///
 /// # 返回
 /// 包含权限错误信息的错误对象
 pub fn permission_error(message: impl Into<String>) -> ErrorInfo {

@@ -136,7 +136,10 @@ pub trait RssFeedSource: Send + Sync {
     fn url(&self) -> &str;
 
     /// 获取 Feed 内容
-    async fn fetch(&self, query: &RssFeedQuery) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>>;
+    async fn fetch(
+        &self,
+        query: &RssFeedQuery,
+    ) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>>;
 
     /// 解析 Feed 内容
     fn parse(&self, content: &str) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>>;

@@ -16,7 +16,7 @@
 //!
 //! 基于 BM25 算法和其他启发式规则进行评分
 
-use crate::derive::{SearchResultItem, SearchQuery};
+use crate::derive::{SearchQuery, SearchResultItem};
 use std::collections::HashMap;
 
 /// BM25 参数
@@ -30,10 +30,7 @@ pub struct BM25Params {
 
 impl Default for BM25Params {
     fn default() -> Self {
-        Self {
-            k1: 1.5,
-            b: 0.75,
-        }
+        Self { k1: 1.5, b: 0.75 }
     }
 }
 
@@ -99,23 +96,23 @@ pub fn get_engine_authority(engine_name: &str) -> f64 {
         "startpage" => 0.85,
         "qwant" => 0.83,
         "yahoo" => 0.80,
-        
+
         // 中国引擎 (中国模式保留)
         "baidu" => 0.95,
         "search360" => 0.85,
         "sogou" => 0.80,
-        
+
         // 其他引擎
         "yandex" => 0.85,
         "mojeek" => 0.75,
-        
+
         // 专业引擎
         "wikipedia" => 0.95,
         "wikidata" => 0.90,
         "github" => 0.92,
         "stackoverflow" => 0.93,
         "unsplash" => 0.85,
-        
+
         _ => 0.70,
     }
 }
@@ -141,9 +138,9 @@ fn term_frequency(tokens: &[String]) -> HashMap<String, usize> {
 /// BM25 评分算法
 ///
 /// BM25 是目前最流行的搜索排名算法之一，被用于 Elasticsearch、Lucene 等
-/// 
+///
 /// 公式: BM25(D,Q) = Σ IDF(qi) * (f(qi,D) * (k1 + 1)) / (f(qi,D) + k1 * (1 - b + b * |D|/avgdl))
-/// 
+///
 /// 其中:
 /// - D: 文档
 /// - Q: 查询
@@ -200,36 +197,45 @@ pub(crate) fn calculate_score(
     if query_tokens.is_empty() {
         return 0.0;
     }
-    
+
     // 1. 标题评分（优化：减少tokenize调用）
     let title_tokens = tokenize(&item.title);
-    let title_bm25 = bm25_score_optimized(&title_tokens, &query_tokens, scoring_context.avg_title_length, &scoring_context.bm25_params);
+    let title_bm25 = bm25_score_optimized(
+        &title_tokens,
+        &query_tokens,
+        scoring_context.avg_title_length,
+        &scoring_context.bm25_params,
+    );
     let title_exact = exact_match_bonus_optimized(&item.title, &query.query);
     let title_score = (title_bm25 * 0.7 + title_exact * 0.3).min(1.0);
-    
+
     // 2. 内容评分（优化：减少tokenize调用）
     let content_tokens = tokenize(&item.content);
-    let content_bm25 = bm25_score_optimized(&content_tokens, &query_tokens, scoring_context.avg_content_length, &scoring_context.bm25_params);
+    let content_bm25 = bm25_score_optimized(
+        &content_tokens,
+        &query_tokens,
+        scoring_context.avg_content_length,
+        &scoring_context.bm25_params,
+    );
     let content_exact = exact_match_bonus_optimized(&item.content, &query.query);
     let content_score = (content_bm25 * 0.8 + content_exact * 0.2).min(1.0);
-    
+
     // 3. URL 相关性（优化：使用预计算的query_tokens）
     let url_score = url_relevance_optimized(&item.url, &query_tokens);
-    
+
     // 4. 引擎权威度（优化：缓存引擎权威度）
     let authority_score = get_engine_authority(engine_name);
-    
+
     // 5. 位置评分
     let pos_score = position_score(position);
-    
+
     // 加权求和
-    let final_score = 
-        title_score * scoring_context.weights.title_bm25 +
-        content_score * scoring_context.weights.content_bm25 +
-        url_score * scoring_context.weights.url_match +
-        authority_score * scoring_context.weights.engine_authority +
-        pos_score * scoring_context.weights.position_weight;
-    
+    let final_score = title_score * scoring_context.weights.title_bm25
+        + content_score * scoring_context.weights.content_bm25
+        + url_score * scoring_context.weights.url_match
+        + authority_score * scoring_context.weights.engine_authority
+        + pos_score * scoring_context.weights.position_weight;
+
     // 确保在 [0, 1] 范围内
     final_score.clamp(0.0, 1.0)
 }
@@ -246,27 +252,28 @@ pub(crate) fn bm25_score_optimized(
     if doc_tokens.is_empty() || query_tokens.is_empty() {
         return 0.0;
     }
-    
+
     let doc_length = doc_tokens.len() as f64;
     let tf = term_frequency(doc_tokens);
-    
+
     let mut score = 0.0;
-    
+
     for query_token in query_tokens {
         if let Some(&freq) = tf.get(query_token) {
             let freq = freq as f64;
-            
+
             // IDF 简化版本（假设文档集合较小）
             let idf = 1.0; // 在单文档评分中简化
-            
+
             // BM25 公式
             let numerator = freq * (params.k1 + 1.0);
-            let denominator = freq + params.k1 * (1.0 - params.b + params.b * (doc_length / avg_doc_length));
-            
+            let denominator =
+                freq + params.k1 * (1.0 - params.b + params.b * (doc_length / avg_doc_length));
+
             score += idf * (numerator / denominator);
         }
     }
-    
+
     // 归一化到 0-1
     let max_possible_score = query_tokens.len() as f64 * (params.k1 + 1.0);
     if max_possible_score > 0.0 {
@@ -284,11 +291,11 @@ pub(crate) fn exact_match_bonus_optimized(text: &str, query: &str) -> f64 {
     if query.len() > text.len() {
         return 0.0;
     }
-    
+
     // 只在需要时才进行完整的小写转换
     let text_lower = text.to_lowercase();
     let query_lower = query.to_lowercase();
-    
+
     if text_lower.contains(&query_lower) {
         // 完整查询出现在文本中
         if text_lower == query_lower {
@@ -299,7 +306,7 @@ pub(crate) fn exact_match_bonus_optimized(text: &str, query: &str) -> f64 {
             return 0.5; // 包含匹配
         }
     }
-    
+
     0.0
 }
 
@@ -310,17 +317,17 @@ pub(crate) fn url_relevance_optimized(url: &str, query_tokens: &[String]) -> f64
     if query_tokens.is_empty() {
         return 0.0;
     }
-    
+
     // 只转换一次URL为小写
     let url_lower = url.to_lowercase();
-    
+
     let mut matches = 0;
     for token in query_tokens {
         if url_lower.contains(token) {
             matches += 1;
         }
     }
-    
+
     matches as f64 / query_tokens.len() as f64
 }
 
@@ -335,19 +342,23 @@ pub fn score_results(
     if items.is_empty() {
         return;
     }
-    
+
     let weights = weights.unwrap_or_default();
     let bm25_params = bm25_params.unwrap_or_default();
-    
+
     // 计算平均文档长度
-    let avg_title_length = items.iter()
+    let avg_title_length = items
+        .iter()
         .map(|i| tokenize(&i.title).len())
-        .sum::<usize>() as f64 / items.len() as f64;
-    
-    let avg_content_length = items.iter()
+        .sum::<usize>() as f64
+        / items.len() as f64;
+
+    let avg_content_length = items
+        .iter()
         .map(|i| tokenize(&i.content).len())
-        .sum::<usize>() as f64 / items.len() as f64;
-    
+        .sum::<usize>() as f64
+        / items.len() as f64;
+
     // 创建评分上下文
     let scoring_context = ScoringContext {
         avg_title_length,
@@ -355,16 +366,10 @@ pub fn score_results(
         weights,
         bm25_params,
     };
-    
+
     // 计算每个结果的评分
     for (position, item) in items.iter_mut().enumerate() {
-        item.score = calculate_score(
-            item,
-            query,
-            engine_name,
-            position,
-            &scoring_context,
-        );
+        item.score = calculate_score(item, query, engine_name, position, &scoring_context);
     }
 }
 
@@ -376,10 +381,12 @@ pub fn score_and_sort_results(
     weights: Option<ScoringWeights>,
 ) {
     score_results(items, query, engine_name, weights, None);
-    
+
     // 按分数降序排序
     items.sort_by(|a, b| {
-        b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 }
 
@@ -396,15 +403,15 @@ mod tests {
     #[test]
     fn test_bm25() {
         let params = BM25Params::default();
-        
+
         // 文档包含查询词
         let score1 = bm25_score("rust programming language", "rust", 3.0, &params);
         assert!(score1 > 0.0);
-        
+
         // 文档不包含查询词
         let score2 = bm25_score("python programming", "rust", 3.0, &params);
         assert_eq!(score2, 0.0);
-        
+
         // 多次出现应该分数更高
         let score3 = bm25_score("rust rust rust", "rust", 3.0, &params);
         assert!(score3 > score1);
@@ -412,8 +419,11 @@ mod tests {
 
     #[test]
     fn test_exact_match() {
-        assert_eq!(exact_match_bonus("rust programming", "rust programming"), 1.0);
-        assert_eq!(exact_match_bonus("rust programming language", "rust"), 0.8);  // starts with "rust"
+        assert_eq!(
+            exact_match_bonus("rust programming", "rust programming"),
+            1.0
+        );
+        assert_eq!(exact_match_bonus("rust programming language", "rust"), 0.8); // starts with "rust"
         assert_eq!(exact_match_bonus("python", "rust"), 0.0);
     }
 
@@ -421,7 +431,7 @@ mod tests {
     fn test_url_relevance() {
         let score = url_relevance("https://www.rust-lang.org/", "rust");
         assert!(score > 0.0);
-        
+
         let score2 = url_relevance("https://www.python.org/", "rust");
         assert_eq!(score2, 0.0);
     }

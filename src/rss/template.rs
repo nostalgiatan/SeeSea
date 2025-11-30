@@ -16,10 +16,10 @@
 //!
 //! 提供 RSS 模板加载和管理功能
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
 
 /// RSS 模板元数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,19 +67,23 @@ impl RssTemplateManager {
             let path = entry.path();
 
             if path.extension().and_then(|s| s.to_str()) == Some("see")
-                && let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    // 移除 .rss 部分
-                    if let Some(name) = stem.strip_suffix(".rss") {
-                        templates.push(name.to_string());
-                    }
+                && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+            {
+                // 移除 .rss 部分
+                if let Some(name) = stem.strip_suffix(".rss") {
+                    templates.push(name.to_string());
                 }
+            }
         }
 
         Ok(templates)
     }
 
     /// 加载模板
-    pub fn load_template(&self, name: &str) -> Result<RssTemplate, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn load_template(
+        &self,
+        name: &str,
+    ) -> Result<RssTemplate, Box<dyn std::error::Error + Send + Sync>> {
         let template_path = self.template_dir.join(format!("{name}.rss.see"));
 
         if !template_path.exists() {
@@ -91,7 +95,10 @@ impl RssTemplateManager {
     }
 
     /// 解析模板内容 (TOML 格式)
-    fn parse_template(&self, content: &str) -> Result<RssTemplate, Box<dyn std::error::Error + Send + Sync>> {
+    fn parse_template(
+        &self,
+        content: &str,
+    ) -> Result<RssTemplate, Box<dyn std::error::Error + Send + Sync>> {
         #[derive(Deserialize)]
         struct RawTemplate {
             meta: RawMeta,
@@ -113,8 +120,12 @@ impl RssTemplateManager {
             update_interval: u64,
         }
 
-        fn default_true() -> bool { true }
-        fn default_update_interval() -> u64 { 3600 }
+        fn default_true() -> bool {
+            true
+        }
+        fn default_update_interval() -> u64 {
+            3600
+        }
 
         let raw: RawTemplate = toml::from_str(content)?;
 
@@ -134,7 +145,10 @@ impl RssTemplateManager {
     }
 
     /// 获取模板信息
-    pub fn get_template_info(&self, name: &str) -> Result<RssTemplateMeta, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn get_template_info(
+        &self,
+        name: &str,
+    ) -> Result<RssTemplateMeta, Box<dyn std::error::Error + Send + Sync>> {
         let template = self.load_template(name)?;
         Ok(template.meta)
     }

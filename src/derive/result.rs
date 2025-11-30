@@ -15,21 +15,28 @@
 //! 搜索结果处理 trait
 
 use crate::derive::types::*;
-use std::error::Error;
 use async_trait::async_trait;
+use std::error::Error;
 
 /// 结果解析器 trait
 #[async_trait]
 pub trait ResultParser {
     /// 解析响应为搜索结果
-    async fn parse(&self, response: &str, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
+    async fn parse(
+        &self,
+        response: &str,
+        query: &SearchQuery,
+    ) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
 }
 
 /// JSON结果解析器 trait
 #[async_trait]
 pub trait JsonResultParser {
     /// 解析单个结果项
-    fn parse_item(&self, raw: &serde_json::Value) -> Result<SearchResultItem, Box<dyn Error + Send + Sync>> {
+    fn parse_item(
+        &self,
+        raw: &serde_json::Value,
+    ) -> Result<SearchResultItem, Box<dyn Error + Send + Sync>> {
         Ok(SearchResultItem {
             title: self.extract_title(raw)?,
             url: self.extract_url(raw)?,
@@ -46,34 +53,58 @@ pub trait JsonResultParser {
     }
 
     /// 提取标题
-    fn extract_title(&self, raw: &serde_json::Value) -> Result<String, Box<dyn Error + Send + Sync>>;
+    fn extract_title(
+        &self,
+        raw: &serde_json::Value,
+    ) -> Result<String, Box<dyn Error + Send + Sync>>;
 
     /// 提取URL
     fn extract_url(&self, raw: &serde_json::Value) -> Result<String, Box<dyn Error + Send + Sync>>;
 
     /// 提取内容
-    fn extract_content(&self, raw: &serde_json::Value) -> Result<String, Box<dyn Error + Send + Sync>>;
+    fn extract_content(
+        &self,
+        raw: &serde_json::Value,
+    ) -> Result<String, Box<dyn Error + Send + Sync>>;
 
     /// 提取显示URL
-    fn extract_display_url(&self, raw: &serde_json::Value) -> Result<String, Box<dyn Error + Send + Sync>>;
+    fn extract_display_url(
+        &self,
+        raw: &serde_json::Value,
+    ) -> Result<String, Box<dyn Error + Send + Sync>>;
 
     /// 提取网站名称
-    fn extract_site_name(&self, raw: &serde_json::Value) -> Result<String, Box<dyn Error + Send + Sync>>;
+    fn extract_site_name(
+        &self,
+        raw: &serde_json::Value,
+    ) -> Result<String, Box<dyn Error + Send + Sync>>;
 
     /// 提取评分
     fn extract_score(&self, raw: &serde_json::Value) -> Result<f64, Box<dyn Error + Send + Sync>>;
 
     /// 提取结果类型
-    fn extract_result_type(&self, raw: &serde_json::Value) -> Result<ResultType, Box<dyn Error + Send + Sync>>;
+    fn extract_result_type(
+        &self,
+        raw: &serde_json::Value,
+    ) -> Result<ResultType, Box<dyn Error + Send + Sync>>;
 
     /// 提取缩略图
-    fn extract_thumbnail(&self, raw: &serde_json::Value) -> Result<String, Box<dyn Error + Send + Sync>>;
+    fn extract_thumbnail(
+        &self,
+        raw: &serde_json::Value,
+    ) -> Result<String, Box<dyn Error + Send + Sync>>;
 
     /// 提取发布日期
-    fn extract_published_date(&self, raw: &serde_json::Value) -> Result<chrono::DateTime<chrono::Utc>, Box<dyn Error + Send + Sync>>;
+    fn extract_published_date(
+        &self,
+        raw: &serde_json::Value,
+    ) -> Result<chrono::DateTime<chrono::Utc>, Box<dyn Error + Send + Sync>>;
 
     /// 提取元数据
-    fn extract_metadata(&self, raw: &serde_json::Value) -> Result<std::collections::HashMap<String, String>, Box<dyn Error + Send + Sync>>;
+    fn extract_metadata(
+        &self,
+        raw: &serde_json::Value,
+    ) -> Result<std::collections::HashMap<String, String>, Box<dyn Error + Send + Sync>>;
 }
 
 /// 结果过滤器 trait
@@ -99,8 +130,11 @@ pub trait ResultFilter {
     fn filter_domains(&self, results: &mut Vec<SearchResultItem>, blocked_domains: &[String]) {
         results.retain(|item| {
             !blocked_domains.iter().any(|domain| {
-                item.url.contains(domain) ||
-                item.display_url.as_ref().is_some_and(|url| url.contains(domain))
+                item.url.contains(domain)
+                    || item
+                        .display_url
+                        .as_ref()
+                        .is_some_and(|url| url.contains(domain))
             })
         });
     }
@@ -131,7 +165,11 @@ pub trait ResultSorter {
 
     /// 按评分排序
     fn sort_by_score(&self, results: &mut Vec<SearchResultItem>) {
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
 
     /// 按相关性排序
@@ -139,7 +177,9 @@ pub trait ResultSorter {
         results.sort_by(|a, b| {
             let score_a = self.calculate_relevance(a, query);
             let score_b = self.calculate_relevance(b, query);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
 
@@ -181,7 +221,9 @@ pub trait ResultSorter {
         results.sort_by(|a, b| {
             let score_a = self.calculate_combined_score(a, query);
             let score_b = self.calculate_combined_score(b, query);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
 
@@ -195,7 +237,10 @@ pub trait ResultSorter {
     }
 
     /// 计算时效性加分
-    fn calculate_freshness_bonus(&self, published_date: &Option<chrono::DateTime<chrono::Utc>>) -> f64 {
+    fn calculate_freshness_bonus(
+        &self,
+        published_date: &Option<chrono::DateTime<chrono::Utc>>,
+    ) -> f64 {
         match published_date {
             Some(date) => {
                 let now = chrono::Utc::now();
@@ -224,7 +269,8 @@ pub trait ResultEnhancer {
     fn add_favicons(&self, results: &mut Vec<SearchResultItem>) -> Result<(), Box<dyn Error>> {
         for item in results.iter_mut() {
             if let Some(domain) = self.extract_domain(&item.url) {
-                let favicon_url = format!("https://www.google.com/s2/favicons?domain={domain}&sz=32");
+                let favicon_url =
+                    format!("https://www.google.com/s2/favicons?domain={domain}&sz=32");
                 item.metadata.insert("favicon".to_string(), favicon_url);
             }
         }
@@ -241,7 +287,10 @@ pub trait ResultEnhancer {
     }
 
     /// 添加语言检测
-    fn add_language_detection(&self, results: &mut Vec<SearchResultItem>) -> Result<(), Box<dyn Error>> {
+    fn add_language_detection(
+        &self,
+        results: &mut Vec<SearchResultItem>,
+    ) -> Result<(), Box<dyn Error>> {
         for item in results.iter_mut() {
             // 简单的语言检测逻辑
             let language = self.detect_language(&item.title, &item.content);
@@ -269,13 +318,18 @@ pub trait ResultEnhancer {
     fn add_page_info(&self, results: &mut Vec<SearchResultItem>) -> Result<(), Box<dyn Error>> {
         for item in results.iter_mut() {
             if let Ok(parsed) = url::Url::parse(&item.url) {
-                item.metadata.insert("scheme".to_string(), parsed.scheme().to_string());
-                item.metadata.insert("host".to_string(), parsed.host_str().unwrap_or("").to_string());
+                item.metadata
+                    .insert("scheme".to_string(), parsed.scheme().to_string());
+                item.metadata.insert(
+                    "host".to_string(),
+                    parsed.host_str().unwrap_or("").to_string(),
+                );
                 if let Some(port) = parsed.port() {
                     item.metadata.insert("port".to_string(), port.to_string());
                 }
                 if let Some(path) = parsed.path_segments() {
-                    item.metadata.insert("path_depth".to_string(), path.count().to_string());
+                    item.metadata
+                        .insert("path_depth".to_string(), path.count().to_string());
                 }
             }
         }
@@ -298,7 +352,8 @@ pub trait ResultFormatter {
         let mut html = String::from("<div class=\"search-results\">");
 
         for item in results {
-            html.push_str(&format!(r#"
+            html.push_str(&format!(
+                r#"
 <div class="result-item">
     <h3 class="title"><a href="{url}">{title}</a></h3>
     <div class="url">{display_url}</div>

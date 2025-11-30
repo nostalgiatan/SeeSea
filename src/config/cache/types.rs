@@ -335,7 +335,7 @@ impl Default for CacheConfig {
         Self {
             backend: CacheBackend::Sled,
             database_path: PathBuf::from("./cache/seesea.db"),
-            ttl: 3600, // 1 hour
+            ttl: 3600,                    // 1 hour
             max_size: 1024 * 1024 * 1024, // 1GB
             enable_result_cache: true,
             enable_metadata_cache: true,

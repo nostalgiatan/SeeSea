@@ -16,35 +16,29 @@
 //!
 //! 提供高层次的 HTTP API 接口供外部调用
 
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use axum::{
     Router,
     routing::{get, post},
 };
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
+use super::handlers::{
+    cache, handle_engines_list, handle_favicon, handle_health, handle_index,
+    handle_magic_link_generate, handle_metrics, handle_realtime_metrics, handle_search,
+    handle_search_post, handle_stats, handle_version, rss,
+};
+use super::metrics::{MetricsCollector, MetricsConfig};
+use super::middleware::{
+    AuthConfig, AuthState, CircuitBreakerConfig, CircuitBreakerState, IpFilterConfig,
+    IpFilterState, MagicLinkConfig, MagicLinkState, RateLimitConfig, RateLimiterState,
+    circuit_breaker_middleware, cors, ip_filter_middleware, jwt_auth_middleware,
+    magic_link_middleware, rate_limit_middleware,
+};
+use super::network::{NetworkConfig, NetworkMode};
 use crate::cache::CacheInterface;
 use crate::net::NetworkInterface;
 use crate::search::SearchInterface;
-use super::handlers::{
-    rss, cache,
-    handle_search, handle_search_post,
-    handle_health,
-    handle_stats, handle_engines_list, handle_version,
-    handle_metrics, handle_realtime_metrics,
-    handle_magic_link_generate,
-    handle_index, handle_favicon,
-};
-use super::middleware::{
-    cors, 
-    RateLimiterState, RateLimitConfig, rate_limit_middleware,
-    CircuitBreakerState, CircuitBreakerConfig, circuit_breaker_middleware,
-    IpFilterState, IpFilterConfig, ip_filter_middleware,
-    AuthState, AuthConfig, jwt_auth_middleware,
-    MagicLinkState, MagicLinkConfig, magic_link_middleware,
-};
-use super::network::{NetworkConfig, NetworkMode};
-use super::metrics::{MetricsCollector, MetricsConfig};
 
 /// 服务器配置
 #[derive(Debug, Clone)]
@@ -119,7 +113,7 @@ impl ApiInterface {
     ) -> Self {
         let metrics = Arc::new(MetricsCollector::new(MetricsConfig::default()));
         let magic_link = Arc::new(MagicLinkState::new(MagicLinkConfig::default()));
-        
+
         let state = ApiState {
             search,
             version,
@@ -132,17 +126,17 @@ impl ApiInterface {
             enabled: network_config.external.enable_rate_limit,
             ..Default::default()
         }));
-        
+
         let circuit_breaker = Arc::new(CircuitBreakerState::new(CircuitBreakerConfig {
             enabled: network_config.external.enable_circuit_breaker,
             ..Default::default()
         }));
-        
+
         let ip_filter = Arc::new(IpFilterState::new(IpFilterConfig {
             enabled: network_config.external.enable_ip_filter,
             ..Default::default()
         }));
-        
+
         let auth_state = Arc::new(AuthState::new(AuthConfig {
             enabled: network_config.external.enable_jwt_auth,
             ..Default::default()
@@ -197,42 +191,32 @@ impl ApiInterface {
             // 首页路由
             .route("/", get(handle_index))
             .route("/favicon.ico", get(handle_favicon))
-            
             // 搜索相关路由
             .route("/api/search", get(handle_search))
             .route("/api/search", post(handle_search_post))
-            
             // 引擎信息路由
             .route("/api/engines", get(handle_engines_list))
-            
             // RSS 相关路由
             .route("/api/rss/feeds", get(rss::handle_rss_feeds_list))
             .route("/api/rss/fetch", post(rss::handle_rss_fetch))
             .route("/api/rss/templates", get(rss::handle_rss_templates_list))
             .route("/api/rss/template/add", post(rss::handle_rss_template_add))
-            
             // 缓存管理路由
             .route("/api/cache/stats", get(cache::handle_cache_stats))
             .route("/api/cache/clear", post(cache::handle_cache_clear))
             .route("/api/cache/cleanup", post(cache::handle_cache_cleanup))
-            
             // 统计信息路由
             .route("/api/stats", get(handle_stats))
-            
             // 健康检查路由
             .route("/api/health", get(handle_health))
             .route("/health", get(handle_health))
-            
             // 版本信息路由
             .route("/api/version", get(handle_version))
-            
             // 指标路由
             .route("/api/metrics", get(handle_metrics))
             .route("/api/metrics/realtime", get(handle_realtime_metrics))
-            
             // 魔法链接管理路由（仅内网）
             .route("/api/magic-link/generate", post(handle_magic_link_generate))
-            
             .with_state(self.state.clone())
     }
 
@@ -243,38 +227,29 @@ impl ApiInterface {
     /// 返回配置好的 Axum Router
     pub fn build_external_router(&self) -> Router {
         use axum::middleware;
-        
+
         Router::new()
             // 首页路由
             .route("/", get(handle_index))
             .route("/favicon.ico", get(handle_favicon))
-            
             // 搜索相关路由
             .route("/api/search", get(handle_search))
             .route("/api/search", post(handle_search_post))
-            
             // 引擎信息路由
             .route("/api/engines", get(handle_engines_list))
-            
             // RSS 相关路由（可能需要认证）
             .route("/api/rss/feeds", get(rss::handle_rss_feeds_list))
             .route("/api/rss/fetch", post(rss::handle_rss_fetch))
-            
             // 统计信息路由
             .route("/api/stats", get(handle_stats))
-            
             // 健康检查路由
             .route("/api/health", get(handle_health))
             .route("/health", get(handle_health))
-            
             // 版本信息路由
             .route("/api/version", get(handle_version))
-            
             // 指标路由（只读）
             .route("/api/metrics", get(handle_metrics))
-            
             .with_state(self.state.clone())
-            
             // 应用中间件（顺序很重要）
             // 1. 魔法链接（最先检查，可以绕过认证）
             .layer(middleware::from_fn_with_state(
@@ -314,118 +289,146 @@ impl ApiInterface {
     /// # Returns
     ///
     /// 返回结果
-    pub async fn serve(&self, _config: ServerConfig) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn serve(
+        &self,
+        _config: ServerConfig,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // 根据网络模式启动服务器
         match self.network_config.mode {
-            NetworkMode::Internal => {
-                self.serve_internal().await
-            }
-            NetworkMode::External => {
-                self.serve_external().await
-            }
-            NetworkMode::Dual => {
-                self.serve_dual().await
-            }
+            NetworkMode::Internal => self.serve_internal().await,
+            NetworkMode::External => self.serve_external().await,
+            NetworkMode::Dual => self.serve_dual().await,
         }
     }
 
     /// 启动内网服务器
     async fn serve_internal(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let app = self.build_internal_router();
-        let addr = format!("{}:{}", 
-            self.network_config.internal.host, 
-            self.network_config.internal.port
+        let addr = format!(
+            "{}:{}",
+            self.network_config.internal.host, self.network_config.internal.port
         );
-        
+
         println!("🔒 内网服务器启动在: {addr}");
         println!("   - 仅允许本地访问");
         println!("   - 无安全限制");
-        
+
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         axum::serve(listener, app).await?;
-        
+
         Ok(())
     }
 
     /// 启动外网服务器
     async fn serve_external(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let app = self.build_external_router();
-        let addr = format!("{}:{}", 
-            self.network_config.external.host, 
-            self.network_config.external.port
+        let addr = format!(
+            "{}:{}",
+            self.network_config.external.host, self.network_config.external.port
         );
-        
+
         println!("🌐 外网服务器启动在: {addr}");
-        println!("   - 启用限流: {}", self.network_config.external.enable_rate_limit);
-        println!("   - 启用熔断: {}", self.network_config.external.enable_circuit_breaker);
-        println!("   - 启用IP过滤: {}", self.network_config.external.enable_ip_filter);
-        println!("   - 启用JWT认证: {}", self.network_config.external.enable_jwt_auth);
-        println!("   - 启用魔法链接: {}", self.network_config.external.enable_magic_link);
-        
+        println!(
+            "   - 启用限流: {}",
+            self.network_config.external.enable_rate_limit
+        );
+        println!(
+            "   - 启用熔断: {}",
+            self.network_config.external.enable_circuit_breaker
+        );
+        println!(
+            "   - 启用IP过滤: {}",
+            self.network_config.external.enable_ip_filter
+        );
+        println!(
+            "   - 启用JWT认证: {}",
+            self.network_config.external.enable_jwt_auth
+        );
+        println!(
+            "   - 启用魔法链接: {}",
+            self.network_config.external.enable_magic_link
+        );
+
         self.print_metrics_dashboard().await;
-        
+
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         axum::serve(listener, app).await?;
-        
+
         Ok(())
     }
 
     /// 启动双模式服务器（内网+外网）
     async fn serve_dual(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!("🚀 双模式服务器启动");
-        
+
         // 启动内网服务器
         if self.network_config.internal.enabled {
             let internal_app = self.build_internal_router();
-            let internal_addr = format!("{}:{}", 
-                self.network_config.internal.host, 
-                self.network_config.internal.port
+            let internal_addr = format!(
+                "{}:{}",
+                self.network_config.internal.host, self.network_config.internal.port
             );
-            
+
             println!("\n🔒 内网服务器: {internal_addr}");
             println!("   - 仅允许本地访问");
             println!("   - 无安全限制");
-            
+
             let internal_listener = tokio::net::TcpListener::bind(&internal_addr).await?;
-            tokio::spawn(async move {
-                axum::serve(internal_listener, internal_app).await
-            });
+            tokio::spawn(async move { axum::serve(internal_listener, internal_app).await });
         }
-        
+
         // 启动外网服务器
         if self.network_config.external.enabled {
             let external_app = self.build_external_router();
-            let external_addr = format!("{}:{}", 
-                self.network_config.external.host, 
-                self.network_config.external.port
+            let external_addr = format!(
+                "{}:{}",
+                self.network_config.external.host, self.network_config.external.port
             );
-            
+
             println!("\n🌐 外网服务器: {external_addr}");
-            println!("   - 启用限流: {}", self.network_config.external.enable_rate_limit);
-            println!("   - 启用熔断: {}", self.network_config.external.enable_circuit_breaker);
-            println!("   - 启用IP过滤: {}", self.network_config.external.enable_ip_filter);
-            println!("   - 启用JWT认证: {}", self.network_config.external.enable_jwt_auth);
-            println!("   - 启用魔法链接: {}", self.network_config.external.enable_magic_link);
-            
+            println!(
+                "   - 启用限流: {}",
+                self.network_config.external.enable_rate_limit
+            );
+            println!(
+                "   - 启用熔断: {}",
+                self.network_config.external.enable_circuit_breaker
+            );
+            println!(
+                "   - 启用IP过滤: {}",
+                self.network_config.external.enable_ip_filter
+            );
+            println!(
+                "   - 启用JWT认证: {}",
+                self.network_config.external.enable_jwt_auth
+            );
+            println!(
+                "   - 启用魔法链接: {}",
+                self.network_config.external.enable_magic_link
+            );
+
             self.print_metrics_dashboard().await;
-            
+
             let external_listener = tokio::net::TcpListener::bind(&external_addr).await?;
             axum::serve(external_listener, external_app).await?;
         }
-        
+
         Ok(())
     }
 
     /// 打印指标面板
     async fn print_metrics_dashboard(&self) {
         let metrics = self.state.metrics.get_realtime_metrics().await;
-        
+
         println!("\n📊 实时指标面板");
         println!("┌─────────────────────────────────────┐");
         println!("│ 请求总数: {:>24} │", metrics.total_requests);
         println!("│ 成功请求: {:>24} │", metrics.successful_requests);
         println!("│ 失败请求: {:>24} │", metrics.failed_requests);
-        println!("│ 平均响应时间: {:>17.2} ms │", metrics.avg_response_time_ms);
+        println!(
+            "│ 平均响应时间: {:>17.2} ms │",
+            metrics.avg_response_time_ms
+        );
         println!("│ 活跃连接: {:>24} │", metrics.active_connections);
         println!("│ 限流拒绝: {:>24} │", metrics.rate_limited);
         println!("│ 熔断拒绝: {:>24} │", metrics.circuit_breaker_trips);
@@ -453,9 +456,9 @@ impl ApiInterface {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::search::SearchConfig;
-    use crate::net::config::NetworkConfig;
     use crate::cache::types::CacheImplConfig;
+    use crate::net::config::NetworkConfig;
+    use crate::search::SearchConfig;
 
     #[tokio::test]
     async fn test_api_interface_creation() {
@@ -471,10 +474,8 @@ mod tests {
 
     #[test]
     fn test_api_router_creation() {
-        let search = Arc::new(
-            SearchInterface::new(SearchConfig::default()).unwrap()
-        );
-        
+        let search = Arc::new(SearchInterface::new(SearchConfig::default()).unwrap());
+
         let api = ApiInterface::new(search, "0.1.0".to_string());
         let _internal_router = api.build_internal_router();
         let _external_router = api.build_external_router();

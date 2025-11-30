@@ -16,9 +16,9 @@
 //!
 //! 定义所有 API 相关的数据结构和类型
 
-use serde::{Deserialize, Serialize};
 use crate::derive::SearchQuery;
 use crate::search::engine_config::EngineListConfig;
+use serde::{Deserialize, Serialize};
 
 /// API 搜索请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,7 +63,7 @@ pub struct ApiSearchRequest {
     /// 指定搜索引擎（可选，逗号分隔）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub engines: Option<String>,
-    
+
     /// 是否包含深网搜索（默认false）
     #[serde(default = "default_include_deepweb")]
     pub include_deepweb: bool,
@@ -114,7 +114,7 @@ impl ApiSearchRequest {
     }
 
     /// 获取搜索引擎列表
-    /// 
+    ///
     /// 根据以下优先级返回引擎列表:
     /// 1. 如果指定了 engines 参数，使用自定义引擎列表
     /// 2. 如果指定了 engine_count 参数，根据引擎延迟选择低延迟引擎
@@ -137,7 +137,7 @@ impl ApiSearchRequest {
             } else {
                 config.fast_engines
             };
-            
+
             if let Some(count) = self.engine_count {
                 // 根据引擎数量限制引擎列表
                 // 引擎按默认顺序排列（配置中已按延迟优化排序）
@@ -162,25 +162,25 @@ impl ApiSearchRequest {
 pub struct ApiSearchResponse {
     /// 查询字符串
     pub query: String,
-    
+
     /// 搜索结果列表
     pub results: Vec<ApiSearchResultItem>,
-    
+
     /// 结果总数
     pub total_count: usize,
-    
+
     /// 当前页码
     pub page: u32,
-    
+
     /// 每页结果数
     pub page_size: u32,
-    
+
     /// 使用的搜索引擎列表
     pub engines_used: Vec<String>,
-    
+
     /// 查询耗时（毫秒）
     pub query_time_ms: u64,
-    
+
     /// 是否来自缓存
     pub cached: bool,
 }
@@ -190,17 +190,17 @@ pub struct ApiSearchResponse {
 pub struct ApiSearchResultItem {
     /// 结果标题
     pub title: String,
-    
+
     /// 结果URL
     pub url: String,
-    
+
     /// 结果描述/摘要
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    
+
     /// 来源引擎
     pub engine: String,
-    
+
     /// 评分（用于排序）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<f64>,
@@ -211,10 +211,10 @@ pub struct ApiSearchResultItem {
 pub struct ApiErrorResponse {
     /// 错误代码
     pub code: String,
-    
+
     /// 错误消息
     pub message: String,
-    
+
     /// 详细错误信息（可选）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<String>,
@@ -225,13 +225,13 @@ pub struct ApiErrorResponse {
 pub struct ApiHealthResponse {
     /// 服务状态
     pub status: String,
-    
+
     /// 版本号
     pub version: String,
-    
+
     /// 可用引擎数量
     pub available_engines: usize,
-    
+
     /// 总引擎数量
     pub total_engines: usize,
 }
@@ -241,16 +241,16 @@ pub struct ApiHealthResponse {
 pub struct ApiEngineInfo {
     /// 引擎名称
     pub name: String,
-    
+
     /// 引擎描述
     pub description: String,
-    
+
     /// 引擎类型
     pub engine_type: String,
-    
+
     /// 是否可用
     pub enabled: bool,
-    
+
     /// 支持的功能
     pub capabilities: Vec<String>,
 }
@@ -260,19 +260,19 @@ pub struct ApiEngineInfo {
 pub struct ApiStatsResponse {
     /// 总搜索次数
     pub total_searches: u64,
-    
+
     /// 缓存命中次数
     pub cache_hits: u64,
-    
+
     /// 缓存未命中次数
     pub cache_misses: u64,
-    
+
     /// 缓存命中率
     pub cache_hit_rate: f64,
-    
+
     /// 引擎失败次数
     pub engine_failures: u64,
-    
+
     /// 超时次数
     pub timeouts: u64,
 }
@@ -286,7 +286,7 @@ impl ApiStatsResponse {
         } else {
             0.0
         };
-        
+
         Self {
             total_searches: stats.total_searches,
             cache_hits: stats.cache_hits,
@@ -347,7 +347,7 @@ mod tests {
     fn test_api_search_request_default_all_engines() {
         let json = r#"{"q": "test"}"#;
         let request: ApiSearchRequest = serde_json::from_str(json).unwrap();
-        
+
         let engines = request.get_engines();
         // 默认情况下应返回快速引擎
         let config = EngineListConfig::default();
@@ -381,7 +381,7 @@ mod tests {
     #[test]
     fn test_api_stats_response_cache_hit_rate() {
         use crate::search::SearchStatsResult;
-        
+
         let stats = SearchStatsResult {
             total_searches: 100,
             cache_hits: 60,
@@ -389,27 +389,27 @@ mod tests {
             engine_failures: 5,
             timeouts: 2,
         };
-        
+
         let api_stats = ApiStatsResponse::from_search_stats(&stats);
         assert_eq!(api_stats.cache_hit_rate, 0.6);
     }
-    
+
     #[test]
     fn test_api_search_request_include_deepweb() {
         // 测试默认情况（不包含深网搜索）
         let json = r#"{"q": "test"}"#;
         let request: ApiSearchRequest = serde_json::from_str(json).unwrap();
         assert_eq!(request.include_deepweb, false);
-        
+
         let config = EngineListConfig::default();
         let engines = request.get_engines();
         assert_eq!(engines, config.fast_engines);
-        
+
         // 测试包含深网搜索
         let json = r#"{"q": "test", "include_deepweb": true}"#;
         let request: ApiSearchRequest = serde_json::from_str(json).unwrap();
         assert_eq!(request.include_deepweb, true);
-        
+
         let engines = request.get_engines();
         assert_eq!(engines, config.global_engines);
     }

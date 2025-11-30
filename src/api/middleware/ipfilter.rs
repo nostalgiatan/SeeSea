@@ -31,7 +31,7 @@ use std::sync::Arc;
 pub struct IpFilterConfig {
     /// 是否启用白名单模式
     pub whitelist_mode: bool,
-    
+
     /// 是否启用
     pub enabled: bool,
 }
@@ -123,15 +123,18 @@ pub async fn ip_filter_middleware(
 
     // 提取客户端IP
     if let Some(ip) = extract_client_ip(&req)
-        && !state.is_allowed(&ip) {
-            return (
-                StatusCode::FORBIDDEN,
-                serde_json::json!({
-                    "code": "IP_BLOCKED",
-                    "message": "您的IP地址已被封禁"
-                }).to_string()
-            ).into_response();
-        }
+        && !state.is_allowed(&ip)
+    {
+        return (
+            StatusCode::FORBIDDEN,
+            serde_json::json!({
+                "code": "IP_BLOCKED",
+                "message": "您的IP地址已被封禁"
+            })
+            .to_string(),
+        )
+            .into_response();
+    }
 
     next.run(req).await
 }
@@ -142,16 +145,18 @@ fn extract_client_ip(req: &Request) -> Option<IpAddr> {
     if let Some(forwarded) = req.headers().get("x-forwarded-for")
         && let Ok(forwarded_str) = forwarded.to_str()
         && let Some(ip_str) = forwarded_str.split(',').next()
-        && let Ok(ip) = ip_str.trim().parse() {
-            return Some(ip);
-        }
+        && let Ok(ip) = ip_str.trim().parse()
+    {
+        return Some(ip);
+    }
 
     // 尝试从X-Real-IP获取
     if let Some(real_ip) = req.headers().get("x-real-ip")
         && let Ok(ip_str) = real_ip.to_str()
-        && let Ok(ip) = ip_str.parse() {
-            return Some(ip);
-        }
+        && let Ok(ip) = ip_str.parse()
+    {
+        return Some(ip);
+    }
 
     None
 }
@@ -171,13 +176,13 @@ mod tests {
     fn test_ip_filter_blacklist() {
         let config = IpFilterConfig::default();
         let state = IpFilterState::new(config);
-        
+
         let ip: IpAddr = "192.168.1.1".parse().unwrap();
         assert!(state.is_allowed(&ip));
-        
+
         state.add_to_blacklist(ip, "Test ban".to_string());
         assert!(!state.is_allowed(&ip));
-        
+
         state.remove_from_blacklist(&ip);
         assert!(state.is_allowed(&ip));
     }
@@ -187,13 +192,13 @@ mod tests {
         let mut config = IpFilterConfig::default();
         config.whitelist_mode = true;
         let state = IpFilterState::new(config);
-        
+
         let ip: IpAddr = "192.168.1.1".parse().unwrap();
         assert!(!state.is_allowed(&ip));
-        
+
         state.add_to_whitelist(ip, "Test allow".to_string());
         assert!(state.is_allowed(&ip));
-        
+
         state.remove_from_whitelist(&ip);
         assert!(!state.is_allowed(&ip));
     }

@@ -19,8 +19,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 引擎模式
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum EngineMode {
     /// 全局模式
     #[default]
@@ -32,7 +31,6 @@ pub enum EngineMode {
     /// 深网模式：仅使用深网引擎
     DeepWeb,
 }
-
 
 /// 搜索引擎配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,9 +111,7 @@ impl Default for EngineListConfig {
             .collect();
 
         // 深网引擎列表（仅包含新华网）
-        let deepweb_engines = vec![
-            "xinhua".to_string(),
-        ];
+        let deepweb_engines = vec!["xinhua".to_string()];
 
         Self {
             global_engines,
@@ -136,7 +132,8 @@ impl EngineListConfig {
             }
             EngineMode::Custom(engines) => {
                 // 验证自定义引擎是否在可用列表中
-                engines.iter()
+                engines
+                    .iter()
                     .filter(|engine| self.all_available_engines.contains(engine))
                     .cloned()
                     .collect()
@@ -183,8 +180,10 @@ impl EngineListConfig {
     pub fn validate_engines(&self, engines: &[String]) -> Result<(), String> {
         for engine in engines {
             if !self.is_engine_available(engine) {
-                return Err(format!("Engine '{}' is not available. Available engines: {:?}",
-                    engine, self.all_available_engines));
+                return Err(format!(
+                    "Engine '{}' is not available. Available engines: {:?}",
+                    engine, self.all_available_engines
+                ));
             }
         }
         Ok(())
@@ -192,7 +191,8 @@ impl EngineListConfig {
 
     /// 过滤可用引擎
     pub fn filter_available_engines(&self, engines: &[String]) -> Vec<String> {
-        engines.iter()
+        engines
+            .iter()
             .filter(|engine| self.is_engine_available(engine))
             .cloned()
             .collect()
@@ -223,9 +223,10 @@ mod tests {
         let global_engines = config.get_engines_for_mode(&EngineMode::Global);
         assert_eq!(global_engines, config.global_engines);
 
-        let custom_engines = config.get_engines_for_mode(&EngineMode::Custom(
-            vec!["yandex".to_string(), "baidu".to_string()]
-        ));
+        let custom_engines = config.get_engines_for_mode(&EngineMode::Custom(vec![
+            "yandex".to_string(),
+            "baidu".to_string(),
+        ]));
         assert_eq!(custom_engines, vec!["yandex", "baidu"]);
     }
 
@@ -273,7 +274,11 @@ mod tests {
     fn test_filter_available_engines() {
         let config = EngineListConfig::default();
 
-        let engines = vec!["yandex".to_string(), "nonexistent".to_string(), "baidu".to_string()];
+        let engines = vec![
+            "yandex".to_string(),
+            "nonexistent".to_string(),
+            "baidu".to_string(),
+        ];
         let filtered = config.filter_available_engines(&engines);
 
         assert_eq!(filtered.len(), 2);

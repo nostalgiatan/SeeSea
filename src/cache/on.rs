@@ -134,7 +134,7 @@ mod tests {
     fn test_cache_interface_creation() {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!("test_cache_interface_{}", std::process::id()));
-        
+
         let config = CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
             default_ttl_secs: 3600,
@@ -155,7 +155,7 @@ mod tests {
     fn test_cache_interface_results_and_metadata() {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!("test_cache_interface_2_{}", std::process::id()));
-        
+
         let config = CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
             default_ttl_secs: 3600,
@@ -169,11 +169,10 @@ mod tests {
         };
 
         let interface = CacheInterface::new(config).expect("创建缓存接口失败");
-        
+
         // 测试可以获取子缓存
         let _ = interface.results();
         let _ = interface.metadata();
         let _ = interface.manager();
     }
 }
-

@@ -13,13 +13,13 @@
 // limitations under the License.
 
 //! 网络相关错误定义
-//! 
+//!
 //! 包含网络请求、连接、超时等相关错误的定义和创建函数。
 
-use crate::errors::{ErrorInfo, ErrorCategory, ErrorSeverity};
+use crate::errors::{ErrorCategory, ErrorInfo, ErrorSeverity};
 
 /// 网络错误码常量
-/// 
+///
 /// 网络错误码范围：1000-1999
 pub const NETWORK_ERROR_BASE: u32 = 1000;
 pub const CONNECTION_TIMEOUT: u32 = NETWORK_ERROR_BASE + 1;
@@ -50,10 +50,10 @@ pub const SERVICE_UNAVAILABLE: u32 = HTTP_SERVER_ERROR_BASE + 3; // 503
 pub const GATEWAY_TIMEOUT: u32 = HTTP_SERVER_ERROR_BASE + 4; // 504
 
 /// 创建连接超时错误
-/// 
+///
 /// # 参数
 /// - `host`: 连接的主机名或IP地址
-/// 
+///
 /// # 返回
 /// 包含连接超时信息的错误对象
 pub fn connection_timeout(host: &str) -> ErrorInfo {
@@ -63,10 +63,10 @@ pub fn connection_timeout(host: &str) -> ErrorInfo {
 }
 
 /// 创建连接拒绝错误
-/// 
+///
 /// # 参数
 /// - `host`: 连接的主机名或IP地址
-/// 
+///
 /// # 返回
 /// 包含连接拒绝信息的错误对象
 pub fn connection_refused(host: &str) -> ErrorInfo {
@@ -76,10 +76,10 @@ pub fn connection_refused(host: &str) -> ErrorInfo {
 }
 
 /// 创建DNS解析失败错误
-/// 
+///
 /// # 参数
 /// - `domain`: 无法解析的域名
-/// 
+///
 /// # 返回
 /// 包含DNS解析失败信息的错误对象
 pub fn dns_resolve_failed(domain: &str) -> ErrorInfo {
@@ -89,10 +89,10 @@ pub fn dns_resolve_failed(domain: &str) -> ErrorInfo {
 }
 
 /// 创建无效响应错误
-/// 
+///
 /// # 参数
 /// - `host`: 发送请求的主机名
-/// 
+///
 /// # 返回
 /// 包含无效响应信息的错误对象
 pub fn invalid_response(host: &str) -> ErrorInfo {
@@ -102,10 +102,10 @@ pub fn invalid_response(host: &str) -> ErrorInfo {
 }
 
 /// 创建SSL错误
-/// 
+///
 /// # 参数
 /// - `message`: SSL错误的详细信息
-/// 
+///
 /// # 返回
 /// 包含SSL错误信息的错误对象
 pub fn ssl_error(message: &str) -> ErrorInfo {
@@ -115,11 +115,11 @@ pub fn ssl_error(message: &str) -> ErrorInfo {
 }
 
 /// 创建HTTP错误
-/// 
+///
 /// # 参数
 /// - `status`: HTTP状态码
 /// - `message`: HTTP错误的详细信息
-/// 
+///
 /// # 返回
 /// 包含HTTP错误信息的错误对象
 pub fn http_error(status: u16, message: &str) -> ErrorInfo {
@@ -129,10 +129,10 @@ pub fn http_error(status: u16, message: &str) -> ErrorInfo {
 }
 
 /// 创建网络不可达错误
-/// 
+///
 /// # 参数
 /// - `host`: 无法访问的主机名或IP地址
-/// 
+///
 /// # 返回
 /// 包含网络不可达信息的错误对象
 pub fn network_unreachable(host: &str) -> ErrorInfo {
@@ -142,10 +142,10 @@ pub fn network_unreachable(host: &str) -> ErrorInfo {
 }
 
 /// 创建代理错误
-/// 
+///
 /// # 参数
 /// - `message`: 代理错误的详细信息
-/// 
+///
 /// # 返回
 /// 包含代理错误信息的错误对象
 pub fn proxy_error(message: &str) -> ErrorInfo {
@@ -155,10 +155,10 @@ pub fn proxy_error(message: &str) -> ErrorInfo {
 }
 
 /// 创建重定向次数过多错误
-/// 
+///
 /// # 参数
 /// - `url`: 导致重定向的URL
-/// 
+///
 /// # 返回
 /// 包含重定向次数过多信息的错误对象
 pub fn too_many_redirects(url: &str) -> ErrorInfo {
@@ -168,10 +168,10 @@ pub fn too_many_redirects(url: &str) -> ErrorInfo {
 }
 
 /// 创建请求取消错误
-/// 
+///
 /// # 参数
 /// - `message`: 请求取消的原因
-/// 
+///
 /// # 返回
 /// 包含请求取消信息的错误对象
 pub fn request_cancelled(message: &str) -> ErrorInfo {
@@ -181,10 +181,10 @@ pub fn request_cancelled(message: &str) -> ErrorInfo {
 }
 
 /// 创建400 Bad Request错误
-/// 
+///
 /// # 参数
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 包含指定消息的400错误对象
 pub fn bad_request(message: &str) -> ErrorInfo {
@@ -194,10 +194,10 @@ pub fn bad_request(message: &str) -> ErrorInfo {
 }
 
 /// 创建401 Unauthorized错误
-/// 
+///
 /// # 参数
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 包含指定消息的401错误对象
 pub fn unauthorized(message: &str) -> ErrorInfo {
@@ -207,10 +207,10 @@ pub fn unauthorized(message: &str) -> ErrorInfo {
 }
 
 /// 创建403 Forbidden错误
-/// 
+///
 /// # 参数
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 包含指定消息的403错误对象
 pub fn forbidden(message: &str) -> ErrorInfo {
@@ -220,10 +220,10 @@ pub fn forbidden(message: &str) -> ErrorInfo {
 }
 
 /// 创建404 Not Found错误
-/// 
+///
 /// # 参数
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 包含指定消息的404错误对象
 pub fn not_found(message: &str) -> ErrorInfo {
@@ -233,10 +233,10 @@ pub fn not_found(message: &str) -> ErrorInfo {
 }
 
 /// 创建405 Method Not Allowed错误
-/// 
+///
 /// # 参数
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 包含指定消息的405错误对象
 pub fn method_not_allowed(message: &str) -> ErrorInfo {
@@ -246,10 +246,10 @@ pub fn method_not_allowed(message: &str) -> ErrorInfo {
 }
 
 /// 创建429 Too Many Requests错误
-/// 
+///
 /// # 参数
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 包含指定消息的429错误对象
 pub fn too_many_requests(message: &str) -> ErrorInfo {
@@ -259,23 +259,26 @@ pub fn too_many_requests(message: &str) -> ErrorInfo {
 }
 
 /// 创建500 Internal Server Error错误
-/// 
+///
 /// # 参数
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 包含指定消息的500错误对象
 pub fn internal_server_error(message: &str) -> ErrorInfo {
-    ErrorInfo::new(INTERNAL_SERVER_ERROR, format!("Internal Server Error: {message}"))
-        .with_category(ErrorCategory::Network)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        INTERNAL_SERVER_ERROR,
+        format!("Internal Server Error: {message}"),
+    )
+    .with_category(ErrorCategory::Network)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 创建502 Bad Gateway错误
-/// 
+///
 /// # 参数
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 包含指定消息的502错误对象
 pub fn bad_gateway(message: &str) -> ErrorInfo {
@@ -285,23 +288,26 @@ pub fn bad_gateway(message: &str) -> ErrorInfo {
 }
 
 /// 创建503 Service Unavailable错误
-/// 
+///
 /// # 参数
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 包含指定消息的503错误对象
 pub fn service_unavailable(message: &str) -> ErrorInfo {
-    ErrorInfo::new(SERVICE_UNAVAILABLE, format!("Service Unavailable: {message}"))
-        .with_category(ErrorCategory::Network)
-        .with_severity(ErrorSeverity::Warning)
+    ErrorInfo::new(
+        SERVICE_UNAVAILABLE,
+        format!("Service Unavailable: {message}"),
+    )
+    .with_category(ErrorCategory::Network)
+    .with_severity(ErrorSeverity::Warning)
 }
 
 /// 创建504 Gateway Timeout错误
-/// 
+///
 /// # 参数
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 包含指定消息的504错误对象
 pub fn gateway_timeout(message: &str) -> ErrorInfo {
@@ -311,25 +317,24 @@ pub fn gateway_timeout(message: &str) -> ErrorInfo {
 }
 
 /// 向后兼容的网络错误创建函数
-/// 
+///
 /// 此函数保持与现有代码的兼容性，新代码建议使用更具体的错误创建函数。
-/// 
+///
 /// # 参数
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 包含指定消息的网络错误对象
 pub fn network_error(message: impl Into<String>) -> ErrorInfo {
-    ErrorInfo::new(NETWORK_ERROR_BASE, message.into())
-        .with_category(ErrorCategory::Network)
+    ErrorInfo::new(NETWORK_ERROR_BASE, message.into()).with_category(ErrorCategory::Network)
 }
 
 /// 根据HTTP状态码创建对应的错误对象
-/// 
+///
 /// # 参数
 /// - `status`: HTTP状态码
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 对应HTTP状态码的错误对象
 pub fn http_error_by_status(status: u16, message: &str) -> ErrorInfo {

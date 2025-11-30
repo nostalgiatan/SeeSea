@@ -13,22 +13,22 @@
 // limitations under the License.
 
 //! SeeSea - 看海看得远，看得广
-//! 
+//!
 //! 一个基于 Rust 实现的隐私保护型元搜索引擎，专注于提供高性能、隐私优先的多模态搜索服务
-//! 
+//!
 //! ## 核心特性
-//! 
+//!
 //! - **隐私优先**：支持 Tor 网络、TLS 指纹混淆、DNS over HTTPS 等多层隐私保护
 //! - **多模态搜索**：整合网页搜索、RSS 聚合、浏览器自动化三种数据获取方式
 //! - **高性能架构**：基于 Rust 异步编程，支持高并发搜索请求
 //! - **智能缓存**：语义级缓存系统，支持向量相似性匹配和智能去重
 //! - **多引擎聚合**：支持 12+ 专业搜索引擎，覆盖通用、图片、视频、新闻等多种搜索场景
 //! - **Python SDK**：强大的 Python 绑定，支持灵活的引擎扩展和集成
-//! 
+//!
 //! ## 架构概览
-//! 
+//!
 //! SeeSea 采用模块化设计，主要包含以下核心模块：
-//! 
+//!
 //! - **config**：配置管理系统，支持多环境配置和动态更新
 //! - **cache**：智能缓存系统，支持语义匹配和向量相似性搜索
 //! - **derive**：核心数据结构和 trait 定义，包括搜索引擎、查询、结果等
@@ -37,18 +37,18 @@
 //! - **api**：REST API 接口，提供完整的搜索服务
 //! - **rss**：RSS 聚合和订阅管理
 //! - **errors**：统一的错误处理系统
-//! 
+//!
 //! ## 快速开始
-//! 
+//!
 //! ```rust
 //! use seesea::{SearchEngine, SearchQuery, QueryBuilder};
-//! 
+//!
 //! // 创建查询
 //! let query = QueryBuilder::new("Rust 编程")
 //!     .engine("bing")
 //!     .page(1)
 //!     .build();
-//! 
+//!
 //! // 执行搜索
 //! let result = engine.search(&query).await;
 //! ```
@@ -91,14 +91,13 @@ pub type Error = errors::ErrorInfo;
 pub type Result<T> = errors::Result<T>;
 
 // 重新导出主要类型，方便外部使用
-pub use config::{SeeSeaConfig, ConfigManager, ConfigError};
-pub use cache::{CacheInterface, CacheImplConfig, CacheMode};
+pub use cache::{CacheImplConfig, CacheInterface, CacheMode};
+pub use config::{ConfigError, ConfigManager, SeeSeaConfig};
 pub use derive::{
-    SearchEngine, SearchQuery, SearchResult, EngineInfo,
-    QueryBuilder, ResultParser,
-    RssFeed, RssFeedItem, RssFeedQuery, RssFeedSource,
+    EngineInfo, QueryBuilder, ResultParser, RssFeed, RssFeedItem, RssFeedQuery, RssFeedSource,
+    SearchEngine, SearchQuery, SearchResult,
 };
-pub use net::{NetworkInterface, NetworkConfig, HttpClient};
+pub use net::{HttpClient, NetworkConfig, NetworkInterface};
 
 // Python module definition
 #[cfg(feature = "python")]
@@ -108,7 +107,9 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 #[pymodule]
 fn seesea_core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    use python_bindings::{py_search, py_api, py_config, py_cache, py_rss, py_browser, py_engine_registry};
+    use python_bindings::{
+        py_api, py_browser, py_cache, py_config, py_engine_registry, py_rss, py_search,
+    };
 
     m.add_class::<py_search::PySearchClient>()?;
     m.add_class::<py_api::PyApiServer>()?;
@@ -118,7 +119,7 @@ fn seesea_core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<py_rss::PyRssClient>()?;
     m.add_class::<py_browser::PyBrowserConfig>()?;
     m.add_class::<py_browser::PyBrowserEngineClient>()?;
-    
+
     // 引擎注册表函数（不再暴露类，只暴露函数）
     m.add_function(wrap_pyfunction!(py_engine_registry::register_engine, m)?)?;
     m.add_function(wrap_pyfunction!(py_engine_registry::unregister_engine, m)?)?;
@@ -126,7 +127,10 @@ fn seesea_core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_engine_registry::has_engine, m)?)?;
 
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    m.add("__doc__", "SeeSea - Privacy-focused metasearch engine with RSS and browser engine support")?;
+    m.add(
+        "__doc__",
+        "SeeSea - Privacy-focused metasearch engine with RSS and browser engine support",
+    )?;
 
     Ok(())
 }

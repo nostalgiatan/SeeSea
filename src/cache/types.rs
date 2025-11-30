@@ -81,11 +81,9 @@ impl Default for CompositeKey {
 impl CompositeKey {
     /// 创建新的复合键
     pub fn new() -> Self {
-        Self {
-            parts: Vec::new(),
-        }
+        Self { parts: Vec::new() }
     }
-    
+
     /// 添加字符串键部分
     pub fn add_str(mut self, part: &str) -> Self {
         self.parts.push(part.to_string());
@@ -95,7 +93,7 @@ impl CompositeKey {
 
 impl<T: CacheKeyGenerator> std::ops::Add<T> for CompositeKey {
     type Output = Self;
-    
+
     fn add(mut self, part: T) -> Self::Output {
         self.parts.push(part.generate_key());
         self
@@ -138,14 +136,14 @@ impl Default for CacheImplConfig {
     fn default() -> Self {
         Self {
             db_path: "./data/cache.db".to_string(),
-            default_ttl_secs: 3600, // 1小时
+            default_ttl_secs: 3600,             // 1小时
             max_size_bytes: 1024 * 1024 * 1024, // 1GB
             enabled: true,
             compression: false,
             mode: CacheMode::HighThroughput,
-            enable_bloom_filter: true, // 默认启用布隆过滤器
+            enable_bloom_filter: true,                 // 默认启用布隆过滤器
             bloom_filter_expected_elements: 1_000_000, // 默认预计100万元素
-            bloom_filter_false_positive_rate: 0.01, // 默认1%误判率
+            bloom_filter_false_positive_rate: 0.01,    // 默认1%误判率
         }
     }
 }
@@ -164,9 +162,9 @@ impl CacheImplConfig {
                 crate::config::cache::types::CacheBackend::Memory => CacheMode::LowLatency,
                 _ => CacheMode::HighThroughput,
             },
-            enable_bloom_filter: true, // 默认启用布隆过滤器
+            enable_bloom_filter: true,                 // 默认启用布隆过滤器
             bloom_filter_expected_elements: 1_000_000, // 默认预计100万元素
-            bloom_filter_false_positive_rate: 0.01, // 默认1%误判率
+            bloom_filter_false_positive_rate: 0.01,    // 默认1%误判率
         }
     }
 }
@@ -372,7 +370,8 @@ mod tests {
 
     #[test]
     fn test_cache_entry_metadata_expiration() {
-        let metadata = CacheEntryMetadata::new(Some(Duration::from_secs(1)), 100, "test.scope".to_string());
+        let metadata =
+            CacheEntryMetadata::new(Some(Duration::from_secs(1)), 100, "test.scope".to_string());
         assert!(!metadata.is_expired());
 
         std::thread::sleep(Duration::from_millis(1100));

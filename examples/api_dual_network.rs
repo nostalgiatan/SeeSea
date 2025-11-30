@@ -33,12 +33,12 @@ async fn main() {
     // 创建网络配置
     let mut network_config = NetworkConfig::default();
     network_config.mode = NetworkMode::Dual;
-    
+
     // 配置内网
     network_config.internal.enabled = true;
     network_config.internal.host = "127.0.0.1".to_string();
     network_config.internal.port = 8081;
-    
+
     // 配置外网
     network_config.external.enabled = true;
     network_config.external.host = "0.0.0.0".to_string();
@@ -81,7 +81,10 @@ async fn main() {
     // 示例：生成一个魔法链接
     let magic_token = api.magic_link().generate_token("示例访问".to_string());
     println!("📧 生成的魔法链接令牌: {}", magic_token);
-    println!("   使用方式: http://localhost:8080/api/search?q=test&magic_token={}", magic_token);
+    println!(
+        "   使用方式: http://localhost:8080/api/search?q=test&magic_token={}",
+        magic_token
+    );
     println!();
 
     // 启动服务器（这会阻塞）

@@ -56,8 +56,7 @@ pub struct EngineConfig {
 }
 
 /// 引擎网络配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EngineNetworkConfig {
     /// 请求配置
     pub request: RequestConfig,
@@ -156,8 +155,7 @@ pub struct TimeoutConfig {
 }
 
 /// 引擎性能配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EnginePerformanceConfig {
     /// 并发配置
     pub concurrency: ConcurrencyConfig,
@@ -293,8 +291,7 @@ pub struct ServiceNode {
 }
 
 /// 引擎结果配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EngineResultsConfig {
     /// 结果解析配置
     pub parsing: ResultParsingConfig,
@@ -338,8 +335,7 @@ pub enum ParserType {
 }
 
 /// 结果过滤配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResultFilteringConfig {
     /// 是否启用过滤
     pub enabled: bool,
@@ -390,8 +386,7 @@ pub struct ResultLimitingConfig {
 }
 
 /// 引擎特定配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EngineSpecificConfig {
     /// 引擎类型特定配置
     pub api_key: Option<String>,
@@ -575,7 +570,7 @@ pub enum HttpMethod {
 impl Default for EnginesConfig {
     fn default() -> Self {
         let mut engines = HashMap::new();
-        
+
         // 添加一个默认启用的搜索引擎
         engines.insert(
             "baidu".to_string(),
@@ -595,9 +590,9 @@ impl Default for EnginesConfig {
                 results: EngineResultsConfig::default(),
                 specific: EngineSpecificConfig::default(),
                 dependencies: EngineDependencies::default(),
-            }
+            },
         );
-        
+
         Self {
             engines,
             categories: HashMap::new(),
@@ -622,7 +617,9 @@ impl EnginesConfig {
             result.add_error("最大并发引擎数必须大于 0".to_string());
         }
 
-        if self.global_settings.failure_threshold < 0.0 || self.global_settings.failure_threshold > 1.0 {
+        if self.global_settings.failure_threshold < 0.0
+            || self.global_settings.failure_threshold > 1.0
+        {
             result.add_error("失败阈值必须在 0.0-1.0 之间".to_string());
         }
 
@@ -636,7 +633,9 @@ impl EnginesConfig {
                 result.add_error(format!("引擎 {engine_name} 的权重不能为负数"));
             }
 
-            if let Some(timeout) = engine_config.base.timeout && timeout == 0 {
+            if let Some(timeout) = engine_config.base.timeout
+                && timeout == 0
+            {
                 result.add_error(format!("引擎 {engine_name} 的超时时间必须大于 0"));
             }
         }
@@ -719,7 +718,7 @@ impl Default for HealthCheckConfig {
         Self {
             enabled: true,
             check_interval: 300, // 5 minutes
-            check_timeout: 10,    // 10 seconds
+            check_timeout: 10,   // 10 seconds
             failure_threshold: 3,
             recovery_threshold: 2,
             health_endpoint: None,
@@ -727,9 +726,6 @@ impl Default for HealthCheckConfig {
         }
     }
 }
-
-
-
 
 impl Default for EngineDependencies {
     fn default() -> Self {
@@ -808,7 +804,6 @@ impl Default for ResultParsingConfig {
     }
 }
 
-
 impl Default for ResultSortingConfig {
     fn default() -> Self {
         Self {
@@ -849,7 +844,6 @@ fn default_discovery_paths() -> Vec<String> {
 fn default_discovery_patterns() -> Vec<String> {
     vec!["*.rs".to_string(), "*.json".to_string()]
 }
-
 
 impl Default for RequestConfig {
     fn default() -> Self {
@@ -895,10 +889,10 @@ impl Default for RetryConfig {
 impl Default for TimeoutConfig {
     fn default() -> Self {
         Self {
-            connect_timeout: 10000,    // 10 seconds
-            request_timeout: 30000,    // 30 seconds
-            read_timeout: 30000,       // 30 seconds
-            total_timeout: 60000,      // 1 minute
+            connect_timeout: 10000, // 10 seconds
+            request_timeout: 30000, // 30 seconds
+            read_timeout: 30000,    // 30 seconds
+            total_timeout: 60000,   // 1 minute
             enable_slow_request_detection: true,
             slow_request_threshold: 5000, // 5 seconds
         }

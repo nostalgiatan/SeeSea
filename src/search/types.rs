@@ -48,7 +48,7 @@ impl Default for SearchRequest {
             max_results: Some(100),
             force: false,
             cache_timeline: Some(3600), // 默认1小时刷新
-            include_deepweb: false,      // 默认不包含深网搜索
+            include_deepweb: false,     // 默认不包含深网搜索
         }
     }
 }
@@ -84,9 +84,9 @@ pub struct SearchConfig {
 impl Default for SearchConfig {
     fn default() -> Self {
         Self {
-            default_timeout: Duration::from_secs(60),  // 增加到60秒
+            default_timeout: Duration::from_secs(60), // 增加到60秒
             enable_cache: true,
-            max_concurrent_engines: 20,          // 拉满并发数
+            max_concurrent_engines: 20, // 拉满并发数
         }
     }
 }

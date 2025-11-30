@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! 重试策略模块
-//! 
+//!
 //! 提供多种重试策略，包括固定延迟、指数退避等。
 
 use std::time::Duration;
@@ -68,8 +68,11 @@ impl RetryStrategy {
                 increment,
                 max_delay,
             } => {
-                let total_increment = Duration::from_millis(increment.as_millis() as u64 * (attempt - 1) as u64);
-                let delay = initial_delay.checked_add(total_increment).unwrap_or(*max_delay);
+                let total_increment =
+                    Duration::from_millis(increment.as_millis() as u64 * (attempt - 1) as u64);
+                let delay = initial_delay
+                    .checked_add(total_increment)
+                    .unwrap_or(*max_delay);
                 std::cmp::min(delay, *max_delay)
             }
             RetryStrategy::ExponentialBackoff {

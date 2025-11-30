@@ -18,11 +18,11 @@
 
 use axum::{
     extract::Request,
-    http::{header::AUTHORIZATION, StatusCode},
+    http::{StatusCode, header::AUTHORIZATION},
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -33,13 +33,13 @@ use uuid::Uuid;
 pub struct AuthConfig {
     /// 是否启用认证
     pub enabled: bool,
-    
+
     /// JWT 密钥
     pub jwt_secret: String,
-    
+
     /// JWT 过期时间（秒）
     pub jwt_expiration: u64,
-    
+
     /// API 密钥列表
     pub api_keys: Vec<String>,
 }
@@ -48,7 +48,7 @@ impl Default for AuthConfig {
     fn default() -> Self {
         // Warning: Default secret should be changed in production
         tracing::warn!("Using default JWT secret - CHANGE THIS IN PRODUCTION!");
-        
+
         Self {
             enabled: false,
             jwt_secret: format!("jwt_default_secret_{}", Uuid::new_v4()),
@@ -84,7 +84,7 @@ impl AuthState {
     pub fn new(config: AuthConfig) -> Self {
         let encoding_key = EncodingKey::from_secret(config.jwt_secret.as_bytes());
         let decoding_key = DecodingKey::from_secret(config.jwt_secret.as_bytes());
-        
+
         Self {
             config,
             encoding_key,
@@ -110,11 +110,7 @@ impl AuthState {
 
     /// 验证JWT令牌
     pub fn verify_token(&self, token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
-        let token_data = decode::<Claims>(
-            token,
-            &self.decoding_key,
-            &Validation::default(),
-        )?;
+        let token_data = decode::<Claims>(token, &self.decoding_key, &Validation::default())?;
 
         Ok(token_data.claims)
     }
@@ -128,7 +124,8 @@ impl AuthState {
     pub fn verify_auth_header(&self, auth_header: &str) -> Result<Claims, String> {
         // Bearer token
         if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            return self.verify_token(token)
+            return self
+                .verify_token(token)
                 .map_err(|e| format!("Invalid JWT token: {e}"));
         }
 
@@ -181,8 +178,10 @@ pub async fn jwt_auth_middleware(
                     serde_json::json!({
                         "code": "AUTH_FAILED",
                         "message": format!("认证失败: {}", e)
-                    }).to_string()
-                ).into_response();
+                    })
+                    .to_string(),
+                )
+                    .into_response();
             }
         }
     }
@@ -193,8 +192,10 @@ pub async fn jwt_auth_middleware(
         serde_json::json!({
             "code": "AUTH_REQUIRED",
             "message": "需要认证"
-        }).to_string()
-    ).into_response()
+        })
+        .to_string(),
+    )
+        .into_response()
 }
 
 #[cfg(test)]
@@ -221,7 +222,7 @@ mod tests {
 
         let token = state.generate_token("test_user".to_string()).unwrap();
         let claims = state.verify_token(&token).unwrap();
-        
+
         assert_eq!(claims.sub, "test_user");
     }
 
@@ -268,4 +269,3 @@ mod tests {
         assert!(state.verify_auth_header(auth_header).is_err());
     }
 }
-

@@ -16,11 +16,11 @@
 //!
 //! 提供 RSS feed 结果的专门缓存功能，支持持久化和自动更新
 
-use crate::cache::manager::{CacheManager, CacheError};
+use crate::cache::manager::{CacheError, CacheManager};
 use crate::derive::rss::RssFeed;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
 
 type Result<T> = std::result::Result<T, CacheError>;
 
@@ -137,7 +137,9 @@ impl RssCache {
 
         // 序列化并存储 feed
         let feed_bytes = bincode::serde::encode_to_vec(&deduped_feed, bincode::config::standard())
-            .map_err(|e| CacheError::SerializationError(format!("Failed to serialize feed: {e}")))?;
+            .map_err(|e| {
+                CacheError::SerializationError(format!("Failed to serialize feed: {e}"))
+            })?;
         self.manager.set(RSS_SCOPE, key, feed_bytes, ttl)?;
 
         // 存储元数据
@@ -150,7 +152,9 @@ impl RssCache {
             item_count: deduped_items.len(),
         };
         let meta_bytes = bincode::serde::encode_to_vec(&meta, bincode::config::standard())
-            .map_err(|e| CacheError::SerializationError(format!("Failed to serialize meta: {e}")))?;
+            .map_err(|e| {
+                CacheError::SerializationError(format!("Failed to serialize meta: {e}"))
+            })?;
         self.manager.set(RSS_SCOPE, meta_key, meta_bytes, None)?;
 
         Ok(())
@@ -161,7 +165,9 @@ impl RssCache {
         let key = Self::generate_feed_key(url);
         if let Some(bytes) = self.manager.get(RSS_SCOPE, &key)? {
             let (feed, _) = bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
-                .map_err(|e| CacheError::SerializationError(format!("Failed to deserialize feed: {e}")))?;
+                .map_err(|e| {
+                    CacheError::SerializationError(format!("Failed to deserialize feed: {e}"))
+                })?;
             Ok(Some(feed))
         } else {
             Ok(None)
@@ -173,7 +179,9 @@ impl RssCache {
         let key = Self::generate_meta_key(url);
         if let Some(bytes) = self.manager.get(RSS_SCOPE, &key)? {
             let (meta, _) = bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
-                .map_err(|e| CacheError::SerializationError(format!("Failed to deserialize meta: {e}")))?;
+                .map_err(|e| {
+                    CacheError::SerializationError(format!("Failed to deserialize meta: {e}"))
+                })?;
             Ok(Some(meta))
         } else {
             Ok(None)
@@ -205,10 +213,10 @@ impl RssCache {
     pub fn delete(&self, url: &str) -> Result<()> {
         let key = Self::generate_feed_key(url);
         let meta_key = Self::generate_meta_key(url);
-        
+
         self.manager.delete(RSS_SCOPE, &key)?;
         self.manager.delete(RSS_SCOPE, &meta_key)?;
-        
+
         Ok(())
     }
 
@@ -247,32 +255,36 @@ impl RssCache {
                 break;
             }
 
-            let (key, value) = item.map_err(|e| {
-                CacheError::DatabaseError(format!("遍历缓存失败: {e}"))
-            })?;
+            let (key, value) =
+                item.map_err(|e| CacheError::DatabaseError(format!("遍历缓存失败: {e}")))?;
 
             let key_str = String::from_utf8_lossy(&key);
-            
+
             // 只处理 RSS feed 缓存
             if !key_str.starts_with(RSS_KEY_PREFIX) {
                 continue;
             }
 
             // 提取 feed URL（移除前缀）
-            let feed_url = key_str.strip_prefix(RSS_KEY_PREFIX).unwrap_or(&key_str).to_string();
+            let feed_url = key_str
+                .strip_prefix(RSS_KEY_PREFIX)
+                .unwrap_or(&key_str)
+                .to_string();
 
             // 检查是否过期（如果不包含过期结果）
             if !include_stale
                 && let Some(metadata) = self.manager.get_metadata(&key_str)?
-                && metadata.is_expired() {
-                    continue;
-                }
+                && metadata.is_expired()
+            {
+                continue;
+            }
 
             // 反序列化 RSS feed
-            let feed: RssFeed = match bincode::serde::decode_from_slice(&value, bincode::config::standard()) {
-                Ok((f, _)) => f,
-                Err(_) => continue, // 跳过损坏的数据
-            };
+            let feed: RssFeed =
+                match bincode::serde::decode_from_slice(&value, bincode::config::standard()) {
+                    Ok((f, _)) => f,
+                    Err(_) => continue, // 跳过损坏的数据
+                };
 
             // 在 RSS items 中搜索关键词
             for rss_item in feed.items {
@@ -284,10 +296,14 @@ impl RssCache {
                 let matches = keywords.iter().any(|keyword| {
                     let keyword_lower = keyword.to_lowercase();
                     rss_item.title.to_lowercase().contains(&keyword_lower)
-                        || rss_item.description.as_ref()
+                        || rss_item
+                            .description
+                            .as_ref()
                             .map(|d| d.to_lowercase().contains(&keyword_lower))
                             .unwrap_or(false)
-                        || rss_item.content.as_ref()
+                        || rss_item
+                            .content
+                            .as_ref()
                             .map(|c| c.to_lowercase().contains(&keyword_lower))
                             .unwrap_or(false)
                         || rss_item.link.to_lowercase().contains(&keyword_lower)
@@ -311,23 +327,25 @@ impl RssCache {
         let mut feeds = Vec::new();
 
         for item in self.manager.iter() {
-            let (key, _value) = item.map_err(|e| {
-                CacheError::DatabaseError(format!("遍历缓存失败: {e}"))
-            })?;
+            let (key, _value) =
+                item.map_err(|e| CacheError::DatabaseError(format!("遍历缓存失败: {e}")))?;
 
             let key_str = String::from_utf8_lossy(&key);
-            
+
             // 只处理 RSS feed 缓存
             if !key_str.starts_with(RSS_KEY_PREFIX) {
                 continue;
             }
 
             // 提取 feed URL（移除前缀）
-            let feed_url = key_str.strip_prefix(RSS_KEY_PREFIX).unwrap_or(&key_str).to_string();
-            
+            let feed_url = key_str
+                .strip_prefix(RSS_KEY_PREFIX)
+                .unwrap_or(&key_str)
+                .to_string();
+
             // 获取元数据
             let meta = self.get_meta(&feed_url).ok().flatten();
-            
+
             feeds.push((feed_url, meta));
         }
 
@@ -345,7 +363,7 @@ mod tests {
         let url = "https://example.com/rss";
         let feed_key = RssCache::generate_feed_key(url);
         let meta_key = RssCache::generate_meta_key(url);
-        
+
         assert!(feed_key.starts_with(RSS_KEY_PREFIX));
         assert!(meta_key.starts_with(RSS_META_PREFIX));
     }

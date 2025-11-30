@@ -16,14 +16,14 @@
 //!
 //! 提供统一的 RSS feed 外部接口
 
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use crate::derive::rss::*;
-use crate::net::client::HttpClient;
-use crate::cache::rss::RssCache;
 use super::fetcher::RssFetcher;
 use super::parser::RssParser;
 use super::template::RssTemplateManager;
+use crate::cache::rss::RssCache;
+use crate::derive::rss::*;
+use crate::net::client::HttpClient;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// RSS Feed 接口
 ///
@@ -66,14 +66,16 @@ impl RssInterface {
     }
 
     /// 获取 RSS feed（支持缓存）
-    pub async fn fetch(&self, query: &RssFeedQuery) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn fetch(
+        &self,
+        query: &RssFeedQuery,
+    ) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>> {
         // 检查缓存
         if let Some(ref cache) = self.cache {
             let cache_guard = cache.read().await;
-            
+
             // 检查是否需要更新
-            let needs_update = cache_guard.needs_update(&query.url)
-                .unwrap_or(true);
+            let needs_update = cache_guard.needs_update(&query.url).unwrap_or(true);
 
             if !needs_update {
                 // 从缓存获取
@@ -92,8 +94,8 @@ impl RssInterface {
             let _ = cache_guard.set(
                 &query.url,
                 &feed,
-                false, // 临时
-                None,  // 无自动更新间隔
+                false,                                      // 临时
+                None,                                       // 无自动更新间隔
                 Some(std::time::Duration::from_secs(3600)), // 1小时TTL
             );
         }
@@ -110,10 +112,9 @@ impl RssInterface {
         // 检查缓存
         if let Some(ref cache) = self.cache {
             let cache_guard = cache.read().await;
-            
+
             // 检查是否需要更新
-            let needs_update = cache_guard.needs_update(url)
-                .unwrap_or(true);
+            let needs_update = cache_guard.needs_update(url).unwrap_or(true);
 
             if !needs_update {
                 // 从缓存获取
@@ -148,12 +149,18 @@ impl RssInterface {
     }
 
     /// 解析 RSS feed 内容
-    pub fn parse(&self, content: &str) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn parse(
+        &self,
+        content: &str,
+    ) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>> {
         self.parser.parse(content)
     }
 
     /// 获取多个 RSS feeds
-    pub async fn fetch_multiple(&self, queries: Vec<RssFeedQuery>) -> Vec<Result<RssFeed, Box<dyn std::error::Error + Send + Sync>>> {
+    pub async fn fetch_multiple(
+        &self,
+        queries: Vec<RssFeedQuery>,
+    ) -> Vec<Result<RssFeed, Box<dyn std::error::Error + Send + Sync>>> {
         let mut results = Vec::new();
         for query in queries {
             results.push(self.fetch(&query).await);
@@ -176,7 +183,9 @@ impl RssInterface {
         template_name: &str,
         categories: Option<Vec<String>>,
     ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
-        let manager = self.template_manager.as_ref()
+        let manager = self
+            .template_manager
+            .as_ref()
             .ok_or("Template manager not initialized")?;
 
         let template = manager.load_template(template_name)?;
@@ -185,12 +194,15 @@ impl RssInterface {
         for (category, url) in template.feeds {
             // 如果指定了分类，只添加指定的分类
             if let Some(ref cats) = categories
-                && !cats.contains(&category) {
-                    continue;
-                }
+                && !cats.contains(&category)
+            {
+                continue;
+            }
 
             // 获取并缓存
-            let _ = self.fetch_persistent(&url, template.meta.update_interval).await;
+            let _ = self
+                .fetch_persistent(&url, template.meta.update_interval)
+                .await;
             added_count += 1;
         }
 

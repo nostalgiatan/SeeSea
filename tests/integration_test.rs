@@ -2,8 +2,8 @@
 
 #[cfg(test)]
 mod search_engine_tests {
-    use seesea_core::search::engines::bing::BingEngine;
     use seesea_core::derive::{SearchEngine, SearchQuery};
+    use seesea_core::search::engines::bing::BingEngine;
 
     /// Test that Bing engine can be created
     #[test]
@@ -45,10 +45,10 @@ mod search_engine_tests {
         ));
 
         let mut orchestrator = SearchOrchestrator::new(config, network, cache);
-        
+
         // Register engines
         orchestrator.register_engine(Box::new(BingEngine::new()));
-        
+
         // Verify engines were registered
         assert!(true);
         */

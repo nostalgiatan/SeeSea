@@ -14,14 +14,14 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::error::Error;
+use std::sync::Arc;
 
-use crate::derive::{
-    EngineCapabilities, EngineInfo, EngineStatus, EngineType,
-    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
-};
 use super::utils::build_query_string_owned;
+use crate::derive::{
+    AboutInfo, EngineCapabilities, EngineInfo, EngineStatus, EngineType, RequestParams,
+    RequestResponseEngine, ResultType, SearchResultItem,
+};
 
 // 使用宏定义引擎结构体和基本方法
 define_engine! {
@@ -65,8 +65,9 @@ define_engine! {
 }
 
 impl SogouEngine {
-
-    fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn parse_html_results(
+        html: &str,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use scraper::{Html, Selector};
 
         if html.is_empty() {
@@ -81,7 +82,7 @@ impl SogouEngine {
             .expect("valid selector");
 
         for result in document.select(&result_selector) {
-             let title_selector = Selector::parse("h3.vr-title a")
+            let title_selector = Selector::parse("h3.vr-title a")
                 .or_else(|_| Selector::parse("h3[class*=\"vr-title\"] a"))
                 .expect("valid selector");
             let title_elem = result.select(&title_selector).next();
@@ -97,10 +98,8 @@ impl SogouEngine {
                 continue;
             }
 
-             let url_elem = title_elem;
-            let url = url_elem.value().attr("href")
-                .unwrap_or("")
-                .to_string();
+            let url_elem = title_elem;
+            let url = url_elem.value().attr("href").unwrap_or("").to_string();
 
             // Handle redirect URLs: if url.startswith("/link?url="):
             if url.starts_with("/link?url=") {
@@ -113,11 +112,15 @@ impl SogouEngine {
                 continue;
             }
 
-             // if not content: content = extract_text(item.xpath('.//div[contains(@class, "fz-mid space-txt")]'))
-            let content = result.select(&Selector::parse("div.text-layout p.star-wiki").expect("valid selector")).next()
+            // if not content: content = extract_text(item.xpath('.//div[contains(@class, "fz-mid space-txt")]'))
+            let content = result
+                .select(&Selector::parse("div.text-layout p.star-wiki").expect("valid selector"))
+                .next()
                 .map(|c| c.text().collect::<String>().trim().to_string())
                 .or_else(|| {
-                    result.select(&Selector::parse("div.fz-mid.space-txt").expect("valid selector")).next()
+                    result
+                        .select(&Selector::parse("div.fz-mid.space-txt").expect("valid selector"))
+                        .next()
                         .map(|c| c.text().collect::<String>().trim().to_string())
                 })
                 .unwrap_or_default();
@@ -145,15 +148,19 @@ impl SogouEngine {
 impl RequestResponseEngine for SogouEngine {
     type Response = String;
 
-    fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-         // query_params = {"query": query, "page": params["pageno"]}
+    fn request(
+        &self,
+        query: &str,
+        params: &mut RequestParams,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // query_params = {"query": query, "page": params["pageno"]}
         let mut query_params = vec![
             ("query", query.to_string()),
             ("page", params.page.to_string()),
         ];
 
         // Add time range filter if specified
-         if let Some(ref tr) = params.time_range {
+        if let Some(ref tr) = params.time_range {
             let s_from = match tr.as_str() {
                 "day" => "inttime_day",
                 "week" => "inttime_week",
@@ -176,12 +183,18 @@ impl RequestResponseEngine for SogouEngine {
         Ok(())
     }
 
-    async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
+    async fn fetch(
+        &self,
+        params: &RequestParams,
+    ) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         // 使用通用引擎的fetch方法
         self.generic.fetch(params).await
     }
 
-    fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn response(
+        &self,
+        resp: Self::Response,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         Self::parse_html_results(&resp)
     }
 }

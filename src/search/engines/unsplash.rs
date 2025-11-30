@@ -13,16 +13,16 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::error::Error;
 use serde_json::Value;
+use std::collections::HashMap;
+use std::error::Error;
+use std::sync::Arc;
 
-use crate::derive::{
-    EngineCapabilities, EngineInfo, EngineStatus, EngineType, 
-    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
-};
 use super::utils::build_query_string_owned;
+use crate::derive::{
+    AboutInfo, EngineCapabilities, EngineInfo, EngineStatus, EngineType, RequestParams,
+    RequestResponseEngine, ResultType, SearchResultItem,
+};
 
 // 使用宏定义引擎结构体和基本方法
 define_engine! {
@@ -66,7 +66,6 @@ define_engine! {
 }
 
 impl UnsplashEngine {
-
     /// Clean URL by removing ixid parameter
     /// Python lines 24-30: def clean_url(url):
     ///     parsed = urlparse(url)
@@ -74,26 +73,28 @@ impl UnsplashEngine {
     ///     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(query), parsed.fragment))
     fn clean_url(url_str: &str) -> String {
         use url::Url;
-        
+
         if let Ok(mut url) = Url::parse(url_str) {
             // Filter out ixid parameter
-            let filtered_pairs: Vec<(String, String)> = url.query_pairs()
+            let filtered_pairs: Vec<(String, String)> = url
+                .query_pairs()
                 .filter(|(k, _)| k != "ixid")
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect();
-            
+
             // Clear existing query parameters
             url.set_query(None);
-            
+
             // Add filtered parameters back
             if !filtered_pairs.is_empty() {
-                let query_string = filtered_pairs.iter()
+                let query_string = filtered_pairs
+                    .iter()
                     .map(|(k, v)| format!("{k}={v}"))
                     .collect::<Vec<_>>()
                     .join("&");
                 url.set_query(Some(&query_string));
             }
-            
+
             url.to_string()
         } else {
             // Fallback for invalid URLs
@@ -101,7 +102,9 @@ impl UnsplashEngine {
         }
     }
 
-    fn parse_json_result(json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn parse_json_result(
+        json_str: &str,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         let api_result: Value = serde_json::from_str(json_str)?;
         let mut items = Vec::new();
 
@@ -109,32 +112,36 @@ impl UnsplashEngine {
         if let Some(results_array) = api_result.get("results").and_then(|r| r.as_array()) {
             for result in results_array {
                 // Python: 'url': clean_url(result['links']['html'])
-                let url_raw = result.get("links")
+                let url_raw = result
+                    .get("links")
                     .and_then(|l| l.get("html"))
                     .and_then(|h| h.as_str())
                     .unwrap_or("");
-                
+
                 if url_raw.is_empty() {
                     continue;
                 }
-                
+
                 let url = Self::clean_url(url_raw);
 
                 // Python: 'title': result.get('alt_description') or 'unknown'
-                let title = result.get("alt_description")
+                let title = result
+                    .get("alt_description")
                     .and_then(|a| a.as_str())
                     .or_else(|| result.get("description").and_then(|d| d.as_str()))
                     .unwrap_or("unknown")
                     .to_string();
 
                 // Python: 'content': result.get('description') or ''
-                let content = result.get("description")
+                let content = result
+                    .get("description")
                     .and_then(|d| d.as_str())
                     .unwrap_or("")
                     .to_string();
 
                 // Python: 'thumbnail_src': clean_url(result['urls']['thumb'])
-                let thumbnail = result.get("urls")
+                let thumbnail = result
+                    .get("urls")
                     .and_then(|u| u.get("thumb"))
                     .and_then(|t| t.as_str())
                     .map(Self::clean_url);
@@ -142,20 +149,28 @@ impl UnsplashEngine {
                 // Python: 'img_src': clean_url(result['urls']['regular'])
                 // 'template': 'images.html'
                 let mut metadata = HashMap::new();
-                if let Some(img_src) = result.get("urls").and_then(|u| u.get("regular")).and_then(|r| r.as_str()) {
+                if let Some(img_src) = result
+                    .get("urls")
+                    .and_then(|u| u.get("regular"))
+                    .and_then(|r| r.as_str())
+                {
                     metadata.insert("img_src".to_string(), Self::clean_url(img_src));
                 }
-                
+
                 // Additional metadata from Unsplash
                 if let Some(user) = result.get("user") {
                     if let Some(username) = user.get("name").and_then(|n| n.as_str()) {
                         metadata.insert("photographer".to_string(), format!("by {username}"));
                     }
-                    if let Some(profile_url) = user.get("links").and_then(|l| l.get("html")).and_then(|h| h.as_str()) {
+                    if let Some(profile_url) = user
+                        .get("links")
+                        .and_then(|l| l.get("html"))
+                        .and_then(|h| h.as_str())
+                    {
                         metadata.insert("photographer_url".to_string(), profile_url.to_string());
                     }
                 }
-                
+
                 if let Some(width) = result.get("width").and_then(|w| w.as_i64()) {
                     metadata.insert("width".to_string(), width.to_string());
                 }
@@ -190,7 +205,11 @@ impl UnsplashEngine {
 impl RequestResponseEngine for UnsplashEngine {
     type Response = String;
 
-    fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn request(
+        &self,
+        query: &str,
+        params: &mut RequestParams,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Python: params['url'] = search_url + urlencode({'query': query, 'page': params['pageno'], 'per_page': page_size})
         // search_url = base_url + 'napi/search/photos?'
         // base_url = 'https://unsplash.com/'
@@ -202,19 +221,27 @@ impl RequestResponseEngine for UnsplashEngine {
         ];
 
         let query_string = build_query_string_owned(query_params);
-        
-        params.url = Some(format!("https://unsplash.com/napi/search/photos?{query_string}"));
+
+        params.url = Some(format!(
+            "https://unsplash.com/napi/search/photos?{query_string}"
+        ));
         params.method = "GET".to_string();
 
         Ok(())
     }
 
-    async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
+    async fn fetch(
+        &self,
+        params: &RequestParams,
+    ) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         // 使用通用引擎的fetch方法
         self.generic.fetch(params).await
     }
 
-    fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn response(
+        &self,
+        resp: Self::Response,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         Self::parse_json_result(&resp)
     }
 }

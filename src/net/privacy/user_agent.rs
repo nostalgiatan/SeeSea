@@ -61,7 +61,7 @@ impl UserAgentGenerator {
 
 impl Iterator for UserAgentGenerator {
     type Item = String;
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         Some(self.next_ua().to_string())
     }
@@ -84,20 +84,16 @@ impl Default for UserAgentGenerator {
 /// User-Agent 字符串
 pub fn get_user_agent(config: &PrivacyConfig) -> String {
     match config.user_agent_strategy {
-        UserAgentStrategy::Fixed => {
-            config.custom_user_agent.clone()
-                .unwrap_or_else(|| String::from("Mozilla/5.0"))
-        }
-        UserAgentStrategy::Random => {
-            get_random_user_agent()
-        }
-        UserAgentStrategy::Realistic => {
-            get_realistic_user_agents()[0].clone()
-        }
-        UserAgentStrategy::Custom => {
-            config.custom_user_agent.clone()
-                .unwrap_or_else(get_random_user_agent)
-        }
+        UserAgentStrategy::Fixed => config
+            .custom_user_agent
+            .clone()
+            .unwrap_or_else(|| String::from("Mozilla/5.0")),
+        UserAgentStrategy::Random => get_random_user_agent(),
+        UserAgentStrategy::Realistic => get_realistic_user_agents()[0].clone(),
+        UserAgentStrategy::Custom => config
+            .custom_user_agent
+            .clone()
+            .unwrap_or_else(get_random_user_agent),
     }
 }
 
@@ -111,7 +107,7 @@ pub fn get_user_agent(config: &PrivacyConfig) -> String {
 pub fn get_random_user_agent() -> String {
     let agents = get_realistic_user_agents();
     let mut rng = rand::rng();
-    
+
     agents
         .choose(&mut rng)
         .cloned()
@@ -127,31 +123,31 @@ fn get_realistic_user_agents() -> Vec<String> {
     vec![
         // Chrome on Windows
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string(),
-        
+
         // Firefox on Windows
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0".to_string(),
-        
+
         // Edge on Windows
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0".to_string(),
-        
+
         // Chrome on macOS
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string(),
-        
+
         // Safari on macOS
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15".to_string(),
-        
+
         // Firefox on macOS
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0".to_string(),
-        
+
         // Chrome on Linux
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string(),
-        
+
         // Firefox on Linux
         "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0".to_string(),
-        
+
         // Chrome on Android
         "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.144 Mobile Safari/537.36".to_string(),
-        
+
         // Safari on iOS
         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1".to_string(),
     ]

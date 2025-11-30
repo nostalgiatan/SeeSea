@@ -32,7 +32,9 @@ use std::net::IpAddr;
 /// 成功返回 IP 地址列表，失败返回错误
 pub async fn resolve_via_doh(hostname: &str, config: &DnsConfig) -> Result<Vec<IpAddr>> {
     if config.doh_servers.is_empty() {
-        return Err(crate::errors::network_error("No DoH servers configured".to_string()));
+        return Err(crate::errors::network_error(
+            "No DoH servers configured".to_string(),
+        ));
     }
 
     // 尝试每个 DoH 服务器
@@ -43,7 +45,9 @@ pub async fn resolve_via_doh(hostname: &str, config: &DnsConfig) -> Result<Vec<I
         }
     }
 
-    Err(crate::errors::network_error(format!("All DoH servers failed to resolve {hostname}")))
+    Err(crate::errors::network_error(format!(
+        "All DoH servers failed to resolve {hostname}"
+    )))
 }
 
 /// 查询单个 DoH 服务器
@@ -70,7 +74,10 @@ async fn query_doh_server(hostname: &str, server_url: &str) -> Result<Vec<IpAddr
         .map_err(|e| crate::errors::network_error(format!("DoH query failed: {e}")))?;
 
     if !response.status().is_success() {
-        return Err(crate::errors::network_error(format!("DoH server returned error: {}", response.status())));
+        return Err(crate::errors::network_error(format!(
+            "DoH server returned error: {}",
+            response.status()
+        )));
     }
 
     // 解析 JSON 响应
@@ -84,14 +91,17 @@ async fn query_doh_server(hostname: &str, server_url: &str) -> Result<Vec<IpAddr
     if let Some(answers) = json.get("Answer").and_then(|a| a.as_array()) {
         for answer in answers {
             if let Some(data) = answer.get("data").and_then(|d| d.as_str())
-                && let Ok(ip) = data.parse::<IpAddr>() {
-                    ips.push(ip);
-                }
+                && let Ok(ip) = data.parse::<IpAddr>()
+            {
+                ips.push(ip);
+            }
         }
     }
 
     if ips.is_empty() {
-        Err(crate::errors::network_error(format!("No IP addresses in DoH response for {hostname}")))
+        Err(crate::errors::network_error(format!(
+            "No IP addresses in DoH response for {hostname}"
+        )))
     } else {
         Ok(ips)
     }

@@ -13,38 +13,38 @@
 // limitations under the License.
 
 //! Baidu 搜索引擎实现
-//! 
+//!
 //! 这是一个基于 Baidu API 的搜索引擎实现。
 //! 参考了 Python SearXNG 的 Baidu 引擎实现。
-//! 
+//!
 //! ## 功能特性
-//! 
+//!
 //! - 支持基本的网页搜索
 //! - 支持分页
 //! - 支持时间范围过滤
 //! - 使用 JSON API
-//! 
+//!
 //! ## API 说明
-//! 
+//!
 //! Baidu 使用 JSON API 进行搜索：
 //! - wd: 查询关键词
 //! - rn: 每页结果数量
 //! - pn: 分页偏移量
 //! - tn: 响应格式（json）
 //! - gpc: 时间范围过滤
-//! 
+//!
 //! ## 安全性
-//! 
+//!
 //! - 避免使用 unwrap()，使用 ? 操作符处理错误
 //! - 所有网络请求都有超时设置
 //! - 处理 CAPTCHA 检测
-//! 
+//!
 //! ## 示例
-//! 
+//!
 //! ```no_run
 //! use SeeSea::search::engines::baidu::BaiduEngine;
 //! use SeeSea::derive::{SearchEngine, SearchQuery};
-//! 
+//!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let engine = BaiduEngine::new();
@@ -60,12 +60,12 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 
+use super::utils::build_query_string_owned;
 use crate::derive::{
-    EngineCapabilities, EngineInfo, EngineStatus, EngineType, TimeRange,
-    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
+    AboutInfo, EngineCapabilities, EngineInfo, EngineStatus, EngineType, RequestParams,
+    RequestResponseEngine, ResultType, SearchResultItem, TimeRange,
 };
 use crate::net::config::RequestOptions;
-use super::utils::build_query_string_owned;
 
 // 使用引擎生成宏定义引擎基本结构
 define_engine! {
@@ -123,10 +123,10 @@ impl BaiduEngine {
     #[allow(dead_code)]
     fn time_range_to_seconds(time_range: TimeRange) -> u64 {
         match time_range {
-            TimeRange::Day => 86400,      // 1 天
-            TimeRange::Week => 604800,    // 7 天
-            TimeRange::Month => 2592000,  // 30 天
-            TimeRange::Year => 31536000,  // 365 天
+            TimeRange::Day => 86400,     // 1 天
+            TimeRange::Week => 604800,   // 7 天
+            TimeRange::Month => 2592000, // 30 天
+            TimeRange::Year => 31536000, // 365 天
             _ => 0,
         }
     }
@@ -144,7 +144,9 @@ impl BaiduEngine {
     /// # 错误
     ///
     /// 如果 JSON 解析失败返回错误
-    fn parse_json_results(json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn parse_json_results(
+        json_str: &str,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use serde_json::Value;
 
         // 检查是否有有效的 JSON 数据
@@ -154,11 +156,12 @@ impl BaiduEngine {
 
         // 检查是否收到了HTML/CAPTCHA而不是JSON
         let trimmed = json_str.trim();
-        if trimmed.starts_with('<') ||
-           trimmed.starts_with("Found") ||
-           trimmed.contains("wappass.baidu.com") ||
-           trimmed.contains("captcha") ||
-           trimmed.to_lowercase().contains("please verify") {
+        if trimmed.starts_with('<')
+            || trimmed.starts_with("Found")
+            || trimmed.contains("wappass.baidu.com")
+            || trimmed.contains("captcha")
+            || trimmed.to_lowercase().contains("please verify")
+        {
             return Err("Baidu返回HTML/CAPTTCHA页面而不是JSON，可能触发了反爬虫机制".into());
         }
 
@@ -166,33 +169,40 @@ impl BaiduEngine {
         let json: Value = match serde_json::from_str(json_str) {
             Ok(json) => json,
             Err(e) => {
-                return Err(format!("Baidu JSON解析失败: {}。响应内容前100字符: {}",
-                    e, &json_str[..json_str.len().min(100)]).into());
+                return Err(format!(
+                    "Baidu JSON解析失败: {}。响应内容前100字符: {}",
+                    e,
+                    &json_str[..json_str.len().min(100)]
+                )
+                .into());
             }
         };
         let mut items = Vec::new();
-        
+
         if let Some(feed) = json.get("feed") {
             if let Some(entries) = feed.get("entry").and_then(|e| e.as_array()) {
                 for entry in entries {
-                    let title = entry.get("title")
+                    let title = entry
+                        .get("title")
                         .and_then(|t| t.as_str())
                         .unwrap_or("")
                         .to_string();
-                    
-                    let url = entry.get("url")
+
+                    let url = entry
+                        .get("url")
                         .or_else(|| entry.get("link"))
                         .and_then(|u| u.as_str())
                         .unwrap_or("")
                         .to_string();
-                    
-                    let content = entry.get("content")
+
+                    let content = entry
+                        .get("content")
                         .or_else(|| entry.get("abstract"))
                         .or_else(|| entry.get("summary"))
                         .and_then(|c| c.as_str())
                         .unwrap_or("")
                         .to_string();
-                    
+
                     if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
                         items.push(SearchResultItem {
                             title,
@@ -212,24 +222,27 @@ impl BaiduEngine {
             }
         } else if let Some(results) = json.get("results").and_then(|r| r.as_array()) {
             for result in results {
-                let title = result.get("title")
+                let title = result
+                    .get("title")
                     .and_then(|t| t.as_str())
                     .unwrap_or("")
                     .to_string();
-                
-                let url = result.get("url")
+
+                let url = result
+                    .get("url")
                     .or_else(|| result.get("link"))
                     .and_then(|u| u.as_str())
                     .unwrap_or("")
                     .to_string();
-                
-                let content = result.get("content")
+
+                let content = result
+                    .get("content")
                     .or_else(|| result.get("abstract"))
                     .or_else(|| result.get("summary"))
                     .and_then(|c| c.as_str())
                     .unwrap_or("")
                     .to_string();
-                
+
                 if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
                     items.push(SearchResultItem {
                         title,
@@ -247,7 +260,7 @@ impl BaiduEngine {
                 }
             }
         }
-        
+
         Ok(items)
     }
 
@@ -267,7 +280,6 @@ impl BaiduEngine {
             false
         }
     }
-    
 }
 
 #[async_trait]
@@ -275,10 +287,14 @@ impl RequestResponseEngine for BaiduEngine {
     type Response = (String, Option<String>); // (JSON 字符串, Location 头)
 
     /// 准备请求参数
-    fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn request(
+        &self,
+        query: &str,
+        params: &mut RequestParams,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let results_per_page = 10;
         let page_offset = (params.page - 1) * results_per_page;
-        
+
         // 构建查询参数
         let mut query_params = vec![
             ("wd", query.to_string()),
@@ -286,7 +302,7 @@ impl RequestResponseEngine for BaiduEngine {
             ("pn", page_offset.to_string()),
             ("tn", "json".to_string()),
         ];
-        
+
         // 添加时间范围过滤
         if let Some(ref time_range) = params.time_range {
             let seconds = match time_range.as_str() {
@@ -296,7 +312,7 @@ impl RequestResponseEngine for BaiduEngine {
                 "year" => 31536000,
                 _ => 0,
             };
-            
+
             if seconds > 0 {
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -306,20 +322,22 @@ impl RequestResponseEngine for BaiduEngine {
                 query_params.push(("gpc", format!("stf={past},{now}|stftype=1")));
             }
         }
-        
+
         // Build URL with optimized query string
         let query_string = build_query_string_owned(query_params);
-        
+
         params.url = Some(format!("https://www.baidu.com/s?{query_string}"));
         params.method = "GET".to_string();
-        
+
         Ok(())
     }
 
     /// 发送请求并获取响应
-    async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
-        let url = params.url.as_ref()
-            .ok_or("请求 URL 未设置")?;
+    async fn fetch(
+        &self,
+        params: &RequestParams,
+    ) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
+        let url = params.url.as_ref().ok_or("请求 URL 未设置")?;
 
         // 创建请求选项
         let mut options = RequestOptions::default();
@@ -331,14 +349,19 @@ impl RequestResponseEngine for BaiduEngine {
         }
 
         // 发送请求
-        let response = self.generic.client.get(url, Some(options)).await
+        let response = self
+            .generic
+            .client
+            .get(url, Some(options))
+            .await
             .map_err(|e| format!("Request failed: {e}"))?;
 
         // 检查状态码
         let status = response.status();
 
         // 检查重定向（可能是 CAPTCHA）
-        let location = response.headers()
+        let location = response
+            .headers()
             .get("location")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
@@ -353,21 +376,26 @@ impl RequestResponseEngine for BaiduEngine {
         }
 
         // 获取响应文本
-        let text = response.text().await
+        let text = response
+            .text()
+            .await
             .map_err(|e| format!("Failed to read response: {e}"))?;
 
         Ok((text, location))
     }
 
     /// 解析响应为结果列表
-    fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn response(
+        &self,
+        resp: Self::Response,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         let (json_str, location) = resp;
-        
+
         // 检查是否遇到 CAPTCHA
         if Self::detect_captcha(location.as_deref()) {
             return Err("检测到 Baidu CAPTCHA，请稍后重试".into());
         }
-        
+
         Self::parse_json_results(&json_str)
     }
 }
@@ -388,13 +416,21 @@ mod tests {
     fn test_time_range_conversion() {
         assert_eq!(BaiduEngine::time_range_to_seconds(TimeRange::Day), 86400);
         assert_eq!(BaiduEngine::time_range_to_seconds(TimeRange::Week), 604800);
-        assert_eq!(BaiduEngine::time_range_to_seconds(TimeRange::Month), 2592000);
-        assert_eq!(BaiduEngine::time_range_to_seconds(TimeRange::Year), 31536000);
+        assert_eq!(
+            BaiduEngine::time_range_to_seconds(TimeRange::Month),
+            2592000
+        );
+        assert_eq!(
+            BaiduEngine::time_range_to_seconds(TimeRange::Year),
+            31536000
+        );
     }
 
     #[test]
     fn test_detect_captcha() {
-        assert!(BaiduEngine::detect_captcha(Some("https://wappass.baidu.com/static/captcha")));
+        assert!(BaiduEngine::detect_captcha(Some(
+            "https://wappass.baidu.com/static/captcha"
+        )));
         assert!(!BaiduEngine::detect_captcha(Some("https://www.baidu.com")));
         assert!(!BaiduEngine::detect_captcha(None));
     }
@@ -403,7 +439,7 @@ mod tests {
     fn test_engine_info() {
         let engine = BaiduEngine::new();
         let info = engine.info();
-        
+
         assert!(info.capabilities.supports_pagination);
         assert!(info.capabilities.supports_time_range);
         assert!(!info.capabilities.supports_safe_search);
@@ -414,12 +450,14 @@ mod tests {
     fn test_request_preparation() {
         let engine = BaiduEngine::new();
         let mut params = RequestParams::default();
-        
+
         let result = engine.request("测试查询", &mut params);
         assert!(result.is_ok());
         assert!(params.url.is_some());
-        
-        let url = params.url.expect("URL should be set after request preparation");
+
+        let url = params
+            .url
+            .expect("URL should be set after request preparation");
         assert!(url.contains("www.baidu.com"));
         assert!(url.contains("wd="));
         assert!(url.contains("tn=json"));
@@ -430,11 +468,13 @@ mod tests {
         let engine = BaiduEngine::new();
         let mut params = RequestParams::default();
         params.page = 2;
-        
+
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
-        
-        let url = params.url.expect("URL should be set after request preparation");
+
+        let url = params
+            .url
+            .expect("URL should be set after request preparation");
         assert!(url.contains("pn=10")); // (2-1) * 10 = 10
     }
 

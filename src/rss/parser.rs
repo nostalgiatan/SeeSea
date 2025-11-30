@@ -28,7 +28,10 @@ impl RssParser {
     }
 
     /// 解析 RSS 2.0 feed
-    pub fn parse_rss2(&self, content: &str) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn parse_rss2(
+        &self,
+        content: &str,
+    ) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>> {
         let mut items = Vec::new();
 
         // 使用更强大的解析方法：查找标签对之间的内容
@@ -66,7 +69,10 @@ impl RssParser {
     }
 
     /// 解析单个item
-    fn parse_single_item(&self, item_content: &str) -> Result<RssFeedItem, Box<dyn std::error::Error + Send + Sync>> {
+    fn parse_single_item(
+        &self,
+        item_content: &str,
+    ) -> Result<RssFeedItem, Box<dyn std::error::Error + Send + Sync>> {
         let mut item = RssFeedItem {
             title: String::new(),
             link: String::new(),
@@ -128,26 +134,27 @@ impl RssParser {
 
         // 查找channel内容
         if let Some(channel_start) = content.find("<channel>")
-            && let Some(channel_end) = content.find("</channel>") {
-                let channel_content = &content[channel_start..channel_end + 10];
+            && let Some(channel_end) = content.find("</channel>")
+        {
+            let channel_content = &content[channel_start..channel_end + 10];
 
-                // 解析各个字段
-                if let Some(title) = self.extract_full_tag_content(channel_content, "title") {
-                    meta.title = title;
-                }
-
-                if let Some(link) = self.extract_full_tag_content(channel_content, "link") {
-                    meta.link = link;
-                }
-
-                if let Some(desc) = self.extract_full_tag_content(channel_content, "description") {
-                    meta.description = Some(desc);
-                }
-
-                if let Some(lang) = self.extract_full_tag_content(channel_content, "language") {
-                    meta.language = Some(lang);
-                }
+            // 解析各个字段
+            if let Some(title) = self.extract_full_tag_content(channel_content, "title") {
+                meta.title = title;
             }
+
+            if let Some(link) = self.extract_full_tag_content(channel_content, "link") {
+                meta.link = link;
+            }
+
+            if let Some(desc) = self.extract_full_tag_content(channel_content, "description") {
+                meta.description = Some(desc);
+            }
+
+            if let Some(lang) = self.extract_full_tag_content(channel_content, "language") {
+                meta.language = Some(lang);
+            }
+        }
 
         meta
     }
@@ -176,7 +183,10 @@ impl RssParser {
     }
 
     /// 解析 Atom feed
-    pub fn parse_atom(&self, content: &str) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn parse_atom(
+        &self,
+        content: &str,
+    ) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>> {
         // Atom 格式解析
         let mut items = Vec::new();
         let mut meta = RssFeedMeta {
@@ -208,7 +218,7 @@ impl RssParser {
 
         for line in lines {
             let trimmed = line.trim();
-            
+
             if trimmed.starts_with("<entry>") || trimmed.starts_with("<entry ") {
                 in_entry = true;
                 current_item = RssFeedItem {
@@ -235,26 +245,33 @@ impl RssParser {
                     current_item.pub_date = Some(updated);
                 } else if let Some(content) = Self::extract_tag_content(trimmed, "content") {
                     current_item.content = Some(content);
-                } else if trimmed.contains("<link") && trimmed.contains("href=")
-                    && let Some(href) = Self::extract_attribute(trimmed, "href") {
-                        current_item.link = href;
-                    }
+                } else if trimmed.contains("<link")
+                    && trimmed.contains("href=")
+                    && let Some(href) = Self::extract_attribute(trimmed, "href")
+                {
+                    current_item.link = href;
+                }
             } else if let Some(title) = Self::extract_tag_content(trimmed, "title") {
                 if meta.title.is_empty() {
                     meta.title = title;
                 }
-            } else if trimmed.contains("<link") && trimmed.contains("href=")
+            } else if trimmed.contains("<link")
+                && trimmed.contains("href=")
                 && meta.link.is_empty()
-                && let Some(href) = Self::extract_attribute(trimmed, "href") {
-                    meta.link = href;
-                }
+                && let Some(href) = Self::extract_attribute(trimmed, "href")
+            {
+                meta.link = href;
+            }
         }
 
         Ok(RssFeed { meta, items })
     }
 
     /// 自动检测并解析 feed
-    pub fn parse(&self, content: &str) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn parse(
+        &self,
+        content: &str,
+    ) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>> {
         // 检测 feed 类型
         if content.contains("<rss") {
             self.parse_rss2(content)
@@ -271,17 +288,18 @@ impl RssParser {
         let end_tag = format!("</{tag}>");
 
         if let Some(start_pos) = line.find(&start_tag)
-            && let Some(end_pos) = line.find(&end_tag) {
-                let content_start = start_pos + start_tag.len();
-                if content_start < end_pos {
-                    let mut content = line[content_start..end_pos].to_string();
-                    // 移除CDATA标记
-                    content = content.replace("<![CDATA[", "").replace("]]>", "");
-                    // 清理空白字符
-                    content = content.trim().to_string();
-                    return Some(content);
-                }
+            && let Some(end_pos) = line.find(&end_tag)
+        {
+            let content_start = start_pos + start_tag.len();
+            if content_start < end_pos {
+                let mut content = line[content_start..end_pos].to_string();
+                // 移除CDATA标记
+                content = content.replace("<![CDATA[", "").replace("]]>", "");
+                // 清理空白字符
+                content = content.trim().to_string();
+                return Some(content);
             }
+        }
         None
     }
 

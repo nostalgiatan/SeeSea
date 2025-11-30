@@ -16,9 +16,9 @@
 //!
 //! 提供灵活的配置文件加载功能
 
-use crate::config::{SeeSeaConfig, ConfigError, ConfigLoadResult};
-use std::path::{Path, PathBuf};
+use crate::config::{ConfigError, ConfigLoadResult, SeeSeaConfig};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use tokio::fs;
 
 /// 配置加载器
@@ -97,12 +97,8 @@ impl ConfigLoader {
                     loaded_files.push(path.clone());
                     config
                 }
-                ConfigSource::Environment => {
-                    self.load_from_environment()?
-                }
-                ConfigSource::Defaults => {
-                    self.load_from_defaults()?
-                }
+                ConfigSource::Environment => self.load_from_environment()?,
+                ConfigSource::Defaults => self.load_from_defaults()?,
             };
 
             // 合并配置
@@ -123,7 +119,10 @@ impl ConfigLoader {
 
         let load_result = ConfigLoadResult {
             config: final_config,
-            file_path: loaded_files.first().map(|p| p.to_string_lossy().to_string()).unwrap_or_default(),
+            file_path: loaded_files
+                .first()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default(),
             used_defaults: loaded_files.is_empty(),
             warnings,
             summary,
@@ -152,7 +151,8 @@ impl ConfigLoader {
         path: P,
     ) -> Result<SeeSeaConfig, ConfigError> {
         let path = path.as_ref();
-        let content = fs::read_to_string(path).await
+        let content = fs::read_to_string(path)
+            .await
             .map_err(|e| ConfigError::IoError(format!("读取配置文件失败: {e}")))?;
 
         let config = self.parse_config_content(&content, path)?;
@@ -191,7 +191,8 @@ impl ConfigLoader {
         }
 
         // 如果没找到，返回默认路径
-        let default_path = self.search_paths
+        let default_path = self
+            .search_paths
             .first()
             .map(|p| p.join(&self.file_patterns[0]))
             .ok_or_else(|| ConfigError::NotFound(String::new()))?;
@@ -200,30 +201,39 @@ impl ConfigLoader {
     }
 
     /// 解析配置内容
-    fn parse_config_content(&self, content: &str, path: &Path) -> Result<SeeSeaConfig, ConfigError> {
+    fn parse_config_content(
+        &self,
+        content: &str,
+        path: &Path,
+    ) -> Result<SeeSeaConfig, ConfigError> {
         match path.extension().and_then(|s| s.to_str()) {
-            Some("toml") => {
-                toml::from_str(content).map_err(|e| ConfigError::ParseError(format!("TOML 解析错误: {e}")))
-            }
-            Some("json") => {
-                serde_json::from_str(content).map_err(|e| ConfigError::ParseError(format!("JSON 解析错误: {e}")))
-            }
+            Some("toml") => toml::from_str(content)
+                .map_err(|e| ConfigError::ParseError(format!("TOML 解析错误: {e}"))),
+            Some("json") => serde_json::from_str(content)
+                .map_err(|e| ConfigError::ParseError(format!("JSON 解析错误: {e}"))),
             Some("yaml") | Some("yml") => {
                 // TODO: Add serde_yaml dependency if needed
-                Err(ConfigError::Parse("YAML support not yet implemented".to_string()))
+                Err(ConfigError::Parse(
+                    "YAML support not yet implemented".to_string(),
+                ))
             }
-            Some(ext) => {
-                Err(ConfigError::ParseError(format!("不支持的配置文件格式: {ext}")))
-            }
+            Some(ext) => Err(ConfigError::ParseError(format!(
+                "不支持的配置文件格式: {ext}"
+            ))),
             None => {
                 // 默认尝试 TOML
-                toml::from_str(content).map_err(|e| ConfigError::ParseError(format!("TOML 解析错误: {e}")))
+                toml::from_str(content)
+                    .map_err(|e| ConfigError::ParseError(format!("TOML 解析错误: {e}")))
             }
         }
     }
 
     /// 合并配置
-    fn merge_config(&self, target: &mut SeeSeaConfig, source: &mut SeeSeaConfig) -> Result<(), ConfigError> {
+    fn merge_config(
+        &self,
+        target: &mut SeeSeaConfig,
+        source: &mut SeeSeaConfig,
+    ) -> Result<(), ConfigError> {
         // 这里可以使用 serde_json 来深度合并配置
         // 简化实现：直接替换主要字段
 
@@ -248,7 +258,11 @@ impl ConfigLoader {
     }
 
     /// 合并服务器配置
-    fn merge_server_config(&self, target: &mut crate::config::ServerConfig, source: &mut crate::config::ServerConfig) -> Result<(), ConfigError> {
+    fn merge_server_config(
+        &self,
+        target: &mut crate::config::ServerConfig,
+        source: &mut crate::config::ServerConfig,
+    ) -> Result<(), ConfigError> {
         if source.bind_address != crate::config::ServerConfig::default().bind_address {
             target.bind_address = source.bind_address.clone();
         }
@@ -262,7 +276,11 @@ impl ConfigLoader {
     }
 
     /// 合并搜索配置
-    fn merge_search_config(&self, target: &mut crate::config::SearchConfig, source: &mut crate::config::SearchConfig) -> Result<(), ConfigError> {
+    fn merge_search_config(
+        &self,
+        target: &mut crate::config::SearchConfig,
+        source: &mut crate::config::SearchConfig,
+    ) -> Result<(), ConfigError> {
         if source.results_per_page != crate::config::SearchConfig::default().results_per_page {
             target.results_per_page = source.results_per_page;
         }
@@ -273,18 +291,30 @@ impl ConfigLoader {
     }
 
     /// 合并隐私配置
-    fn merge_privacy_config(&self, target: &mut crate::config::PrivacyConfig, source: &mut crate::config::PrivacyConfig) -> Result<(), ConfigError> {
+    fn merge_privacy_config(
+        &self,
+        target: &mut crate::config::PrivacyConfig,
+        source: &mut crate::config::PrivacyConfig,
+    ) -> Result<(), ConfigError> {
         if source.enable_tor != crate::config::PrivacyConfig::default().enable_tor {
             target.enable_tor = source.enable_tor;
         }
-        if source.user_agent_rotation.enabled != crate::config::PrivacyConfig::default().user_agent_rotation.enabled {
+        if source.user_agent_rotation.enabled
+            != crate::config::PrivacyConfig::default()
+                .user_agent_rotation
+                .enabled
+        {
             target.user_agent_rotation.enabled = source.user_agent_rotation.enabled;
         }
         Ok(())
     }
 
     /// 合并缓存配置
-    fn merge_cache_config(&self, target: &mut crate::config::CacheConfig, source: &mut crate::config::CacheConfig) -> Result<(), ConfigError> {
+    fn merge_cache_config(
+        &self,
+        target: &mut crate::config::CacheConfig,
+        source: &mut crate::config::CacheConfig,
+    ) -> Result<(), ConfigError> {
         if source.enable_result_cache != crate::config::CacheConfig::default().enable_result_cache {
             target.enable_result_cache = source.enable_result_cache;
         }
@@ -295,7 +325,11 @@ impl ConfigLoader {
     }
 
     /// 合并 API 配置
-    fn merge_api_config(&self, target: &mut crate::config::ApiConfig, source: &mut crate::config::ApiConfig) -> Result<(), ConfigError> {
+    fn merge_api_config(
+        &self,
+        target: &mut crate::config::ApiConfig,
+        source: &mut crate::config::ApiConfig,
+    ) -> Result<(), ConfigError> {
         if source.version != crate::config::ApiConfig::default().version {
             target.version = source.version.clone();
         }
@@ -306,7 +340,11 @@ impl ConfigLoader {
     }
 
     /// 合并日志配置
-    fn merge_logging_config(&self, target: &mut crate::config::LoggingConfig, source: &mut crate::config::LoggingConfig) -> Result<(), ConfigError> {
+    fn merge_logging_config(
+        &self,
+        target: &mut crate::config::LoggingConfig,
+        source: &mut crate::config::LoggingConfig,
+    ) -> Result<(), ConfigError> {
         if source.level != crate::config::LoggingConfig::default().level {
             target.level = source.level;
         }
@@ -317,7 +355,11 @@ impl ConfigLoader {
     }
 
     /// 合并引擎配置
-    fn merge_engines_config(&self, target: &mut crate::config::EnginesConfig, source: &mut crate::config::EnginesConfig) -> Result<(), ConfigError> {
+    fn merge_engines_config(
+        &self,
+        target: &mut crate::config::EnginesConfig,
+        source: &mut crate::config::EnginesConfig,
+    ) -> Result<(), ConfigError> {
         // 合并引擎配置
         for (name, engine) in source.engines.drain() {
             target.engines.insert(name, engine);
@@ -329,9 +371,9 @@ impl ConfigLoader {
     fn apply_env_overrides(&self, config: &mut SeeSeaConfig) -> Result<(), ConfigError> {
         // 服务器配置
         if let Ok(port) = std::env::var(format!("{}_PORT", self.env_prefix)) {
-            config.server.port = port.parse().map_err(|_| {
-                ConfigError::EnvironmentError("无效的端口号".to_string())
-            })?;
+            config.server.port = port
+                .parse()
+                .map_err(|_| ConfigError::EnvironmentError("无效的端口号".to_string()))?;
         }
 
         if let Ok(secret_key) = std::env::var(format!("{}_SECRET_KEY", self.env_prefix)) {
@@ -369,10 +411,11 @@ impl ConfigLoader {
         }
 
         // 搜索配置
-        if let Ok(results_per_page) = std::env::var(format!("{}_RESULTS_PER_PAGE", self.env_prefix)) {
-            config.search.results_per_page = results_per_page.parse().map_err(|_| {
-                ConfigError::EnvironmentError("无效的结果数量".to_string())
-            })?;
+        if let Ok(results_per_page) = std::env::var(format!("{}_RESULTS_PER_PAGE", self.env_prefix))
+        {
+            config.search.results_per_page = results_per_page
+                .parse()
+                .map_err(|_| ConfigError::EnvironmentError("无效的结果数量".to_string()))?;
         }
 
         Ok(())
@@ -387,7 +430,12 @@ impl ConfigLoader {
     }
 
     /// 应用嵌套默认值
-    fn apply_nested_default(&self, config: &mut SeeSeaConfig, key: &str, value: &serde_json::Value) {
+    fn apply_nested_default(
+        &self,
+        config: &mut SeeSeaConfig,
+        key: &str,
+        value: &serde_json::Value,
+    ) {
         match key {
             "server.port" => {
                 if let Some(port) = value.as_u64() {
@@ -436,16 +484,16 @@ impl ConfigLoader {
             config.general.data_directory.as_path(),
             config.general.temp_directory.as_path(),
         ];
-        
+
         if let Some(parent) = config.cache.database_path.parent() {
             dirs.push(parent);
         }
 
         for dir in dirs {
             if !dir.exists() {
-                fs::create_dir_all(dir).await.map_err(|e| {
-                    ConfigError::IoError(format!("创建目录失败 {dir:?}: {e}"))
-                })?;
+                fs::create_dir_all(dir)
+                    .await
+                    .map_err(|e| ConfigError::IoError(format!("创建目录失败 {dir:?}: {e}")))?;
             }
         }
 
@@ -468,14 +516,19 @@ impl ConfigLoader {
         }
 
         if !config.cache.database_path.is_absolute() {
-            config.cache.database_path = config.general.data_directory.join(&config.cache.database_path);
+            config.cache.database_path = config
+                .general
+                .data_directory
+                .join(&config.cache.database_path);
         }
     }
 
     /// 验证必要配置
     fn validate_required_config(&self, config: &SeeSeaConfig) -> Result<(), ConfigError> {
         if config.server.secret_key == "change-me-in-production" {
-            return Err(ConfigError::Conflict("生产环境需要更改默认密钥".to_string()));
+            return Err(ConfigError::Conflict(
+                "生产环境需要更改默认密钥".to_string(),
+            ));
         }
 
         if config.server.bind_address.is_empty() {
@@ -507,7 +560,6 @@ pub enum ConfigSource {
 mod tests {
     use super::*;
 
-
     #[tokio::test]
     async fn test_config_loader_creation() {
         let loader = ConfigLoader::new();
@@ -519,14 +571,14 @@ mod tests {
     fn test_config_loading() -> Result<(), Box<dyn std::error::Error>> {
         // 使用默认配置进行测试，避免手动创建复杂的配置文件
         let loader = ConfigLoader::new();
-        
+
         // 测试从默认配置加载
         let config = loader.load_from_defaults()?;
-        
+
         // 验证默认配置是否正确加载
         assert_eq!(config.general.instance_name, "SeeSea");
         assert_eq!(config.server.port, 8080);
-        
+
         Ok(())
     }
 
@@ -536,17 +588,14 @@ mod tests {
         // Using temp-env provides safe environment variable manipulation for tests
         // It automatically cleans up even on panic
         temp_env::with_vars(
-            vec![
-                ("SEEA_PORT", Some("8888")),
-                ("SEEA_DEBUG", Some("true")),
-            ],
+            vec![("SEEA_PORT", Some("8888")), ("SEEA_DEBUG", Some("true"))],
             || {
                 // Use tokio test runtime
                 let runtime = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .unwrap();
-                    
+
                 runtime.block_on(async {
                     let loader = ConfigLoader::new();
                     let result = loader.load_from_environment();

@@ -62,11 +62,11 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 
-use crate::derive::{
-    EngineCapabilities, EngineInfo, EngineStatus, EngineType, TimeRange,
-    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
-};
 use super::utils::build_query_string_owned;
+use crate::derive::{
+    AboutInfo, EngineCapabilities, EngineInfo, EngineStatus, EngineType, RequestParams,
+    RequestResponseEngine, ResultType, SearchResultItem, TimeRange,
+};
 
 // 使用引擎生成宏定义引擎基本结构
 define_engine! {
@@ -114,8 +114,6 @@ define_engine! {
 }
 
 impl BingEngine {
-    
-
     /// 计算分页偏移量
     ///
     /// Bing 的分页从 1 开始，每页 10 个结果
@@ -181,8 +179,12 @@ impl BingEngine {
     /// * `language` - 语言代码
     /// * `region` - 地区代码
     fn set_bing_cookies(params: &mut RequestParams, language: &str, region: &str) {
-        params.cookies.insert("_EDGE_CD".to_string(), format!("m={region}&u={language}"));
-        params.cookies.insert("_EDGE_S".to_string(), format!("mkt={region}&ui={language}"));
+        params
+            .cookies
+            .insert("_EDGE_CD".to_string(), format!("m={region}&u={language}"));
+        params
+            .cookies
+            .insert("_EDGE_S".to_string(), format!("mkt={region}&ui={language}"));
     }
 
     /// 解码 Bing 的 base64 编码 URL
@@ -201,11 +203,12 @@ impl BingEngine {
         if !url.starts_with("https://www.bing.com/ck/a?") {
             return url.to_string();
         }
-        
+
         // 解析 URL 获取查询参数
         if let Ok(parsed_url) = url::Url::parse(url) {
             // 获取 u 参数
-            if let Some(param_u) = parsed_url.query_pairs()
+            if let Some(param_u) = parsed_url
+                .query_pairs()
                 .find(|(k, _)| k == "u")
                 .map(|(_, v)| v.to_string())
             {
@@ -215,17 +218,18 @@ impl BingEngine {
                     // 添加 base64 padding
                     let padding_len = (4 - (encoded_url.len() % 4)) % 4;
                     let padded_url = format!("{}{}", encoded_url, "=".repeat(padding_len));
-                    
+
                     // 解码 base64
                     use base64::{Engine as _, engine::general_purpose::URL_SAFE};
                     if let Ok(decoded_bytes) = URL_SAFE.decode(&padded_url)
-                        && let Ok(decoded_url) = String::from_utf8(decoded_bytes) {
-                            return decoded_url;
-                        }
+                        && let Ok(decoded_url) = String::from_utf8(decoded_bytes)
+                    {
+                        return decoded_url;
+                    }
                 }
             }
         }
-        
+
         url.to_string()
     }
 
@@ -242,22 +246,24 @@ impl BingEngine {
     /// # 错误
     ///
     /// 如果 HTML 解析失败返回错误
-    fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn parse_html_results(
+        html: &str,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use scraper::{Html, Selector};
-        
+
         // 检查是否有结果
         if html.contains("There are no results") || html.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let document = Html::parse_document(html);
         let mut items = Vec::new();
-        
+
         let results_selector = match Selector::parse("ol#b_results > li.b_algo") {
             Ok(sel) => sel,
             Err(_) => return Ok(Vec::new()),
         };
-        
+
         for result in document.select(&results_selector) {
             // 提取链接和标题 (h2/a)
             let link_selector = Selector::parse("h2 > a").expect("valid selector");
@@ -265,31 +271,32 @@ impl BingEngine {
                 Some(elem) => elem,
                 None => continue,
             };
-            
+
             let title = link_elem.text().collect::<String>().trim().to_string();
             let mut url = link_elem.value().attr("href").unwrap_or("").to_string();
-            
+
             // 解码 base64 编码的 URL
             url = Self::decode_bing_url(&url);
-            
+
             // 提取内容 (p)
             let content_selector = Selector::parse("p").expect("valid selector");
             let mut content = String::new();
-            
+
             for p_elem in result.select(&content_selector) {
-                let text = p_elem.text()
+                let text = p_elem
+                    .text()
                     .filter(|t| !t.trim().is_empty())
                     .collect::<Vec<_>>()
                     .join(" ")
                     .trim()
                     .to_string();
-                
+
                 if !text.is_empty() && text != "Web" {
                     content = text;
                     break;
                 }
             }
-            
+
             // 只添加有效结果
             if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
                 items.push(SearchResultItem {
@@ -307,7 +314,7 @@ impl BingEngine {
                 });
             }
         }
-        
+
         Ok(items)
     }
 }
@@ -326,19 +333,23 @@ impl RequestResponseEngine for BingEngine {
     /// # 返回
     ///
     /// 成功返回 Ok(())，失败返回错误
-    fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn request(
+        &self,
+        query: &str,
+        params: &mut RequestParams,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Configure language and region
         let language = params.language.as_deref().unwrap_or("en").to_string();
         let region = params.language.as_deref().unwrap_or("us").to_string();
-        
+
         Self::set_bing_cookies(params, &language, &region);
-        
+
         // Build query parameters
         let mut query_params = vec![
             ("q", query.to_string()),
             ("pq", query.to_string()), // Prevents pagination issues
         ];
-        
+
         // Add pagination if not first page
         if params.page > 1 {
             query_params.push(("first", Self::page_offset(params.page).to_string()));
@@ -346,13 +357,13 @@ impl RequestResponseEngine for BingEngine {
                 query_params.push(("FORM", form));
             }
         }
-        
+
         // Build base URL with optimized query string
         let base_url = "https://www.bing.com/search";
         let query_string = build_query_string_owned(query_params);
-        
+
         let mut url = format!("{base_url}?{query_string}");
-        
+
         // Append time range filter if specified
         if let Some(ref time_range) = params.time_range {
             let tr = match time_range.as_str() {
@@ -368,17 +379,20 @@ impl RequestResponseEngine for BingEngine {
                 url.push_str(&format!("&filters={}", urlencoding::encode(&filter_value)));
             }
         }
-        
+
         params.url = Some(url);
         params.method = "GET".to_string();
-        
+
         Ok(())
     }
 
     /// 发送请求并获取响应
-    /// 
+    ///
     /// 使用通用引擎的 fetch 实现
-    async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
+    async fn fetch(
+        &self,
+        params: &RequestParams,
+    ) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         self.generic.fetch(params).await
     }
 
@@ -391,7 +405,10 @@ impl RequestResponseEngine for BingEngine {
     /// # 返回
     ///
     /// 搜索结果项列表或错误
-    fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn response(
+        &self,
+        resp: Self::Response,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         Self::parse_html_results(&resp)
     }
 }
@@ -439,7 +456,7 @@ mod tests {
     fn test_engine_info() {
         let engine = BingEngine::new();
         let info = engine.info();
-        
+
         assert!(info.capabilities.supports_pagination);
         assert!(info.capabilities.supports_time_range);
         assert!(info.capabilities.supports_safe_search);
@@ -451,12 +468,12 @@ mod tests {
     fn test_request_preparation() {
         let engine = BingEngine::new();
         let mut params = RequestParams::default();
-        
+
         let result = engine.request("test query", &mut params);
         assert!(result.is_ok());
         assert!(params.url.is_some());
         assert_eq!(params.method, "GET");
-        
+
         let url = params.url.expect("Expected valid value");
         assert!(url.contains("www.bing.com"));
         assert!(url.contains("q=test%20query"));
@@ -468,10 +485,10 @@ mod tests {
         let engine = BingEngine::new();
         let mut params = RequestParams::default();
         params.page = 3;
-        
+
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
-        
+
         let url = params.url.expect("Expected valid value");
         assert!(url.contains("first=21")); // (3-1) * 10 + 1 = 21
         assert!(url.contains("FORM=PERE1")); // page 3 -> PERE1
@@ -482,24 +499,36 @@ mod tests {
         let engine = BingEngine::new();
         let mut params = RequestParams::default();
         params.time_range = Some("week".to_string());
-        
+
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
-        
+
         let url = params.url.expect("Expected valid value");
         // 检查URL是否包含正确的过滤参数，允许不同的编码方式
-        assert!(url.contains("filters="), "URL should contain filters parameter");
+        assert!(
+            url.contains("filters="),
+            "URL should contain filters parameter"
+        );
         assert!(url.contains("ex1"), "URL should contain ex1 filter");
-        assert!(url.contains("ez2"), "URL should contain ez2 time range (week)");
+        assert!(
+            url.contains("ez2"),
+            "URL should contain ez2 time range (week)"
+        );
     }
 
     #[test]
     fn test_set_cookies() {
         let mut params = RequestParams::default();
         BingEngine::set_bing_cookies(&mut params, "en", "us");
-        
-        assert_eq!(params.cookies.get("_EDGE_CD"), Some(&"m=us&u=en".to_string()));
-        assert_eq!(params.cookies.get("_EDGE_S"), Some(&"mkt=us&ui=en".to_string()));
+
+        assert_eq!(
+            params.cookies.get("_EDGE_CD"),
+            Some(&"m=us&u=en".to_string())
+        );
+        assert_eq!(
+            params.cookies.get("_EDGE_S"),
+            Some(&"mkt=us&ui=en".to_string())
+        );
     }
 
     #[test]

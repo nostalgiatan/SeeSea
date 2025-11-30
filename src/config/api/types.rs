@@ -629,7 +629,6 @@ pub enum DocumentationType {
     Custom,
 }
 
-
 impl Default for RouteConfig {
     fn default() -> Self {
         Self {

@@ -35,10 +35,10 @@ use uuid::Uuid;
 pub struct MagicLinkConfig {
     /// 是否启用
     pub enabled: bool,
-    
+
     /// 链接有效期（秒）
     pub expiration: u64,
-    
+
     /// 密钥
     pub secret: String,
 }
@@ -47,7 +47,7 @@ impl Default for MagicLinkConfig {
     fn default() -> Self {
         // Warning: Default secret should be changed in production
         tracing::warn!("Using default MagicLink secret - CHANGE THIS IN PRODUCTION!");
-        
+
         Self {
             enabled: true,
             expiration: 300, // 5 minutes
@@ -88,22 +88,22 @@ impl MagicLinkState {
     pub fn generate_token(&self, purpose: String) -> String {
         // 生成随机UUID
         let uuid = Uuid::new_v4().to_string();
-        
+
         // 使用密钥、UUID和时间戳计算安全哈希作为令牌
         let mut hasher = Sha256::new();
         hasher.update(uuid.as_bytes());
         hasher.update(self.config.secret.as_bytes());
         hasher.update(Utc::now().timestamp().to_string().as_bytes());
         let token = format!("{:x}", hasher.finalize());
-        
+
         let info = MagicLinkInfo {
             created_at: Instant::now(),
             purpose,
             used: false,
         };
-        
+
         self.links.insert(token.clone(), info);
-        
+
         // 启动清理任务
         let links = self.links.clone();
         let expiration = self.config.expiration;
@@ -112,7 +112,7 @@ impl MagicLinkState {
             tokio::time::sleep(Duration::from_secs(expiration + 60)).await;
             links.remove(&token_clone);
         });
-        
+
         token
     }
 
@@ -120,20 +120,20 @@ impl MagicLinkState {
     pub fn verify_token(&self, token: &str) -> Result<String, String> {
         if let Some(mut entry) = self.links.get_mut(token) {
             let info = entry.value_mut();
-            
+
             // 检查是否过期
             if info.created_at.elapsed() > Duration::from_secs(self.config.expiration) {
                 return Err("Magic link expired".to_string());
             }
-            
+
             // 检查是否已使用
             if info.used {
                 return Err("Magic link already used".to_string());
             }
-            
+
             // 标记为已使用
             info.used = true;
-            
+
             Ok(info.purpose.clone())
         } else {
             Err("Invalid magic link".to_string())
@@ -143,9 +143,8 @@ impl MagicLinkState {
     /// 清理过期的链接
     pub fn cleanup_expired(&self) {
         let expiration = Duration::from_secs(self.config.expiration);
-        self.links.retain(|_, info| {
-            info.created_at.elapsed() < expiration + Duration::from_secs(60)
-        });
+        self.links
+            .retain(|_, info| info.created_at.elapsed() < expiration + Duration::from_secs(60));
     }
 
     /// 获取活跃链接数量
@@ -174,27 +173,30 @@ pub async fn magic_link_middleware(
     // 检查查询参数中的magic_token
     let uri = req.uri();
     let query_str = uri.query().unwrap_or("");
-    
+
     if let Ok(query) = serde_urlencoded::from_str::<MagicLinkQuery>(query_str)
-        && let Some(token) = query.token {
-            match state.verify_token(&token) {
-                Ok(_purpose) => {
-                    // 魔法链接验证成功，添加标记到请求扩展
-                    // 这样后续的认证中间件可以跳过
-                    tracing::info!("Magic link verified successfully");
-                    return next.run(req).await;
-                }
-                Err(e) => {
-                    return (
-                        StatusCode::UNAUTHORIZED,
-                        serde_json::json!({
-                            "code": "MAGIC_LINK_INVALID",
-                            "message": format!("魔法链接无效: {}", e)
-                        }).to_string()
-                    ).into_response();
-                }
+        && let Some(token) = query.token
+    {
+        match state.verify_token(&token) {
+            Ok(_purpose) => {
+                // 魔法链接验证成功，添加标记到请求扩展
+                // 这样后续的认证中间件可以跳过
+                tracing::info!("Magic link verified successfully");
+                return next.run(req).await;
+            }
+            Err(e) => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    serde_json::json!({
+                        "code": "MAGIC_LINK_INVALID",
+                        "message": format!("魔法链接无效: {}", e)
+                    })
+                    .to_string(),
+                )
+                    .into_response();
             }
         }
+    }
 
     // 没有魔法链接，继续正常流程
     next.run(req).await
@@ -222,12 +224,12 @@ mod tests {
 
         let token = state.generate_token("test_purpose".to_string());
         assert!(!token.is_empty());
-        
+
         // 首次验证应该成功
         let result = state.verify_token(&token);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "test_purpose");
-        
+
         // 再次验证应该失败（已使用）
         let result = state.verify_token(&token);
         assert!(result.is_err());
@@ -249,7 +251,7 @@ mod tests {
 
         let _token = state.generate_token("test".to_string());
         assert_eq!(state.active_links_count(), 1);
-        
+
         state.cleanup_expired();
         // 应该还在，因为还没过期
         assert_eq!(state.active_links_count(), 1);

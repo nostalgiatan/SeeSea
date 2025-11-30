@@ -69,16 +69,16 @@ impl DnsResolver {
     async fn resolve_system(&self, hostname: &str) -> Result<Vec<IpAddr>> {
         use tokio::net::lookup_host;
 
-        let addrs = lookup_host(format!("{hostname}:0"))
-            .await
-            .map_err(|e| crate::errors::network_error(format!("System DNS resolution failed: {e}")))?;
+        let addrs = lookup_host(format!("{hostname}:0")).await.map_err(|e| {
+            crate::errors::network_error(format!("System DNS resolution failed: {e}"))
+        })?;
 
-        let addrs: Vec<IpAddr> = addrs
-            .map(|addr| addr.ip())
-            .collect();
+        let addrs: Vec<IpAddr> = addrs.map(|addr| addr.ip()).collect();
 
         if addrs.is_empty() {
-            return Err(crate::errors::network_error(format!("No IP addresses found for {hostname}")));
+            return Err(crate::errors::network_error(format!(
+                "No IP addresses found for {hostname}"
+            )));
         }
 
         Ok(addrs)

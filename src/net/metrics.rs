@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! 网络指标监控模块
-//! 
+//!
 //! 提供网络请求指标的收集和报告功能。
 
 use std::sync::Arc;
@@ -82,7 +82,8 @@ impl MetricsCollector {
         metrics.total_requests += 1;
         metrics.successful_requests += 1;
         metrics.total_response_time += duration_ms;
-        metrics.average_response_time = metrics.total_response_time as f64 / metrics.total_requests as f64;
+        metrics.average_response_time =
+            metrics.total_response_time as f64 / metrics.total_requests as f64;
 
         if metrics.max_response_time == 0 || duration_ms > metrics.max_response_time {
             metrics.max_response_time = duration_ms;
@@ -106,7 +107,8 @@ impl MetricsCollector {
         metrics.total_requests += 1;
         metrics.failed_requests += 1;
         metrics.total_response_time += duration_ms;
-        metrics.average_response_time = metrics.total_response_time as f64 / metrics.total_requests as f64;
+        metrics.average_response_time =
+            metrics.total_response_time as f64 / metrics.total_requests as f64;
 
         if metrics.max_response_time == 0 || duration_ms > metrics.max_response_time {
             metrics.max_response_time = duration_ms;

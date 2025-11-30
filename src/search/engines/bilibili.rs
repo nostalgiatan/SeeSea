@@ -13,16 +13,16 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::error::Error;
 use rand::Rng;
+use std::collections::HashMap;
+use std::error::Error;
+use std::sync::Arc;
 
-use crate::derive::{
-    EngineCapabilities, EngineInfo, EngineStatus, EngineType,
-    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
-};
 use super::utils::build_query_string_owned;
+use crate::derive::{
+    AboutInfo, EngineCapabilities, EngineInfo, EngineStatus, EngineType, RequestParams,
+    RequestResponseEngine, ResultType, SearchResultItem,
+};
 
 // 使用宏定义引擎结构体和基本方法
 define_engine! {
@@ -66,97 +66,95 @@ define_engine! {
 }
 
 impl BilibiliEngine {
-
-    fn parse_json_results(json_str: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn parse_json_results(
+        json_str: &str,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use serde_json::Value;
 
         let json: Value = serde_json::from_str(json_str)?;
         let mut items = Vec::with_capacity(20);
 
- 
         if let Some(data) = json.get("data")
             && let Some(results) = data.get("result")
-            && let Some(result_array) = results.as_array() {
-                for item in result_array {
-         
-                    let raw_title = item.get("title")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default();
+            && let Some(result_array) = results.as_array()
+        {
+            for item in result_array {
+                let raw_title = item
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
 
-                    // 提取keywords并清理HTML标签
-                    let (title, keywords) = extract_keywords_and_clean_html(raw_title);
+                // 提取keywords并清理HTML标签
+                let (title, keywords) = extract_keywords_and_clean_html(raw_title);
 
-                    if title.is_empty() {
-                        continue;
-                    }
-
-                    let url = item.get("arcurl")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-
-                    if url.is_empty() {
-                        continue;
-                    }
-
-                    let thumbnail = item.get("pic")
-                        .and_then(|v| v.as_str())
-                        .map(|s| {
-                            if s.starts_with("//") || !s.starts_with("http") {
-                                format!("https:{s}")
-                            } else {
-                                s.to_string()
-                            }
-                        });
-
-                    let content = item.get("description")
-                        .and_then(|v| v.as_str())
-                        .map(strip_html_entities)
-                        .unwrap_or_default();
-
-                    let author = item.get("author")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-
-                    let video_id = item.get("aid")
-                        .and_then(|v| v.as_i64())
-                        .unwrap_or(0);
-
-                    let published_date = item.get("pubdate")
-                        .and_then(|v| v.as_i64())
-                        .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0));
-
-                    let duration_str = item.get("duration")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-
-                    let iframe_url = format!("https://player.bilibili.com/player.html?aid={video_id}&high_quality=1&autoplay=false&danmaku=0");
-
-                    let mut metadata = HashMap::new();
-                    metadata.insert("author".to_string(), author.to_string());
-                    metadata.insert("length".to_string(), duration_str.to_string());
-                    metadata.insert("iframe_src".to_string(), iframe_url);
-
-                    // 添加keywords到metadata
-                    if !keywords.is_empty() {
-                        metadata.insert("keywords".to_string(), keywords.join(","));
-                    }
-
-                    items.push(SearchResultItem {
-                        title,
-                        url: url.clone(),
-                        content,
-                        display_url: Some(url),
-                        site_name: Some("Bilibili".to_string()),
-                        score: 1.0,
-                        result_type: ResultType::Video,
-                        thumbnail,
-                        published_date,
-                        template: Some("videos.html".to_string()),
-                        metadata,
-                    });
+                if title.is_empty() {
+                    continue;
                 }
+
+                let url = item
+                    .get("arcurl")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                if url.is_empty() {
+                    continue;
+                }
+
+                let thumbnail = item.get("pic").and_then(|v| v.as_str()).map(|s| {
+                    if s.starts_with("//") || !s.starts_with("http") {
+                        format!("https:{s}")
+                    } else {
+                        s.to_string()
+                    }
+                });
+
+                let content = item
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(strip_html_entities)
+                    .unwrap_or_default();
+
+                let author = item.get("author").and_then(|v| v.as_str()).unwrap_or("");
+
+                let video_id = item.get("aid").and_then(|v| v.as_i64()).unwrap_or(0);
+
+                let published_date = item
+                    .get("pubdate")
+                    .and_then(|v| v.as_i64())
+                    .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0));
+
+                let duration_str = item.get("duration").and_then(|v| v.as_str()).unwrap_or("");
+
+                let iframe_url = format!(
+                    "https://player.bilibili.com/player.html?aid={video_id}&high_quality=1&autoplay=false&danmaku=0"
+                );
+
+                let mut metadata = HashMap::new();
+                metadata.insert("author".to_string(), author.to_string());
+                metadata.insert("length".to_string(), duration_str.to_string());
+                metadata.insert("iframe_src".to_string(), iframe_url);
+
+                // 添加keywords到metadata
+                if !keywords.is_empty() {
+                    metadata.insert("keywords".to_string(), keywords.join(","));
+                }
+
+                items.push(SearchResultItem {
+                    title,
+                    url: url.clone(),
+                    content,
+                    display_url: Some(url),
+                    site_name: Some("Bilibili".to_string()),
+                    score: 1.0,
+                    result_type: ResultType::Video,
+                    thumbnail,
+                    published_date,
+                    template: Some("videos.html".to_string()),
+                    metadata,
+                });
             }
+        }
 
         Ok(items)
     }
@@ -169,7 +167,8 @@ impl BilibiliEngine {
                 let chars = b"0123456789abcdef";
                 chars[rng.random_range(0..16)] as char
             })
-            .collect::<String>() + "infoc";
+            .collect::<String>()
+            + "infoc";
 
         HashMap::from([
             ("innersign".to_string(), "0".to_string()),
@@ -183,14 +182,15 @@ impl BilibiliEngine {
     }
 }
 
-
-
 #[async_trait]
 impl RequestResponseEngine for BilibiliEngine {
     type Response = String;
 
-    fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
-      
+    fn request(
+        &self,
+        query: &str,
+        params: &mut RequestParams,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let base_url = "https://api.bilibili.com/x/web-interface/search/type";
 
         let query_params = vec![
@@ -214,12 +214,18 @@ impl RequestResponseEngine for BilibiliEngine {
         Ok(())
     }
 
-    async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
+    async fn fetch(
+        &self,
+        params: &RequestParams,
+    ) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         // 使用通用引擎的fetch方法
         self.generic.fetch(params).await
     }
 
-    fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn response(
+        &self,
+        resp: Self::Response,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         Self::parse_json_results(&resp)
     }
 }
@@ -247,7 +253,9 @@ fn extract_keywords_and_clean_html(html: &str) -> (String, Vec<String>) {
     // 提取所有keywords
     for caps in keyword_regex.captures_iter(html) {
         if let Some(keyword_match) = caps.get(1) {
-            let keyword = strip_html_entities(keyword_match.as_str()).trim().to_string();
+            let keyword = strip_html_entities(keyword_match.as_str())
+                .trim()
+                .to_string();
             if !keyword.is_empty() {
                 keywords.push(keyword);
             }
@@ -262,7 +270,10 @@ fn extract_keywords_and_clean_html(html: &str) -> (String, Vec<String>) {
 
     // 清理多余的空白和HTML实体
     cleaned_html = strip_html_entities(&cleaned_html);
-    cleaned_html = cleaned_html.split_whitespace().collect::<Vec<_>>().join(" ");
+    cleaned_html = cleaned_html
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
 
     (cleaned_html, keywords)
 }

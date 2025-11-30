@@ -16,20 +16,19 @@
 //!
 //! 包含各种 API 请求的处理逻辑
 
-pub mod search;
-pub mod health;
+pub mod cache;
 pub mod config;
+pub mod health;
 pub mod metrics;
 pub mod rss;
-pub mod cache;
+pub mod search;
 pub mod static_files;
 
 // Re-export handlers for convenient use
-pub use search::{handle_search, handle_search_post};
-pub use health::handle_health;
 pub use config::handle_magic_link_generate;
+pub use health::handle_health;
 pub use metrics::{
-    handle_stats, handle_engines_list, handle_version,
-    handle_metrics, handle_realtime_metrics
+    handle_engines_list, handle_metrics, handle_realtime_metrics, handle_stats, handle_version,
 };
-pub use static_files::{handle_index, handle_favicon};
+pub use search::{handle_search, handle_search_post};
+pub use static_files::{handle_favicon, handle_index};

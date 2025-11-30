@@ -13,11 +13,11 @@
 // limitations under the License.
 
 //! HTTP 客户端核心实现
-//! 
+//!
 //! 提供基于 reqwest 的强大 HTTP 客户端封装
-//! 
+//!
 //! # 特性
-//! 
+//!
 //! - **异步设计**：所有公共方法都是异步的，便于在 tokio 任务中使用
 //! - **单例模式**：支持全局单例实例，便于在应用程序中共享
 //! - **隐私保护**：支持 User-Agent 轮换、请求头伪造等隐私保护功能
@@ -25,47 +25,47 @@
 //! - **TLS 配置**：支持 TLS 指纹混淆，提高隐私保护
 //! - **指标监控**：提供请求统计、响应时间等指标
 //! - **可配置**：支持灵活的配置选项
-//! 
+//!
 //! # 单例模式使用示例
-//! 
+//!
 //! ```rust,no_run
 //! use seesea::net::client::HttpClient;
 //! use seesea::net::config::NetworkConfig;
-//! 
+//!
 //! // 获取或创建全局单例实例（使用默认配置）
 //! let http_client = HttpClient::instance().unwrap();
-//! 
+//!
 //! // 使用指定配置获取或创建全局单例实例
 //! let config = NetworkConfig::default();
 //! let http_client = HttpClient::instance_with_config(config).unwrap();
-//! 
+//!
 //! // 发送 GET 请求
 //! let response = http_client.get("https://example.com", None).await.unwrap();
 //! ```
-//! 
+//!
 //! # 普通实例使用示例
-//! 
+//!
 //! ```rust,no_run
 //! use seesea::net::client::HttpClient;
 //! use seesea::net::config::NetworkConfig;
-//! 
+//!
 //! // 创建普通实例
 //! let config = NetworkConfig::default();
 //! let http_client = HttpClient::new(config).unwrap();
-//! 
+//!
 //! // 发送 GET 请求
 //! let response = http_client.get("https://example.com", None).await.unwrap();
 //! ```
 
 use crate::errors::Result;
 use crate::net::config::{NetworkConfig, RequestOptions};
-use crate::net::privacy::PrivacyManager;
-use crate::net::retry::{RetryConfig};
 use crate::net::metrics::MetricsCollector;
+use crate::net::privacy::PrivacyManager;
+use crate::net::retry::RetryConfig;
+use once_cell::sync::OnceCell;
 use reqwest::{Client, ClientBuilder, Response};
 use std::sync::Arc;
 use std::time::Duration;
-use once_cell::sync::OnceCell;
 
 /// HTTP 客户端封装
 #[derive(Clone)]
@@ -185,9 +185,9 @@ impl HttpClient {
         ));
 
         // 构建客户端
-        let client = builder
-            .build()
-            .map_err(|e| crate::errors::http_error(0, &format!("Failed to build HTTP client: {e}")))?;
+        let client = builder.build().map_err(|e| {
+            crate::errors::http_error(0, &format!("Failed to build HTTP client: {e}"))
+        })?;
 
         Ok(Self {
             client: Arc::new(client),
@@ -244,7 +244,9 @@ impl HttpClient {
     /// # 返回
     ///
     /// 返回全局 HttpClient 实例
-    pub fn instance_with_project_config(project_config: &crate::config::SeeSeaConfig) -> Result<Arc<Self>> {
+    pub fn instance_with_project_config(
+        project_config: &crate::config::SeeSeaConfig,
+    ) -> Result<Arc<Self>> {
         let client = Self::from_project_config(project_config)?;
         Ok(GLOBAL_HTTP_CLIENT.get_or_init(|| Arc::new(client)).clone())
     }
@@ -259,7 +261,8 @@ impl HttpClient {
     ///
     /// 如果单例已存在，返回 Err，否则返回 Ok
     pub fn set_instance(client: Self) -> Result<()> {
-        GLOBAL_HTTP_CLIENT.set(Arc::new(client))
+        GLOBAL_HTTP_CLIENT
+            .set(Arc::new(client))
             .map_err(|_| crate::errors::http_error(0, "Global HTTP client instance already exists"))
     }
 
@@ -269,7 +272,9 @@ impl HttpClient {
     ///
     /// 由于 OnceCell 的限制，此方法目前不支持清除已初始化的单例
     /// 后续可以考虑使用其他同步机制来实现此功能
-    #[deprecated(note = "Clearing the global instance is not supported due to OnceCell limitations")]
+    #[deprecated(
+        note = "Clearing the global instance is not supported due to OnceCell limitations"
+    )]
     pub fn clear_instance() {
         // 由于 OnceCell 的限制，无法清除已初始化的单例
         // 此方法保留用于向后兼容性
@@ -288,10 +293,8 @@ impl HttpClient {
     pub async fn get(&self, url: &str, options: Option<RequestOptions>) -> Result<Response> {
         let start_time = self.metrics_collector.start_request();
         let opts = options.unwrap_or_default();
-        
-        let mut request = self.client
-            .get(url)
-            .timeout(opts.timeout);
+
+        let mut request = self.client.get(url).timeout(opts.timeout);
 
         // 添加隐私保护请求头
         if let Some(ref privacy_mgr) = self.privacy_manager {
@@ -307,25 +310,24 @@ impl HttpClient {
         }
 
         // 发送请求
-        let result = request
-            .send()
-            .await;
+        let result = request.send().await;
 
         // 记录指标
         match &result {
             Ok(_) => {
-                self.metrics_collector.record_successful_request(start_time).await;
-            },
+                self.metrics_collector
+                    .record_successful_request(start_time)
+                    .await;
+            }
             Err(_) => {
-                self.metrics_collector.record_failed_request(start_time).await;
+                self.metrics_collector
+                    .record_failed_request(start_time)
+                    .await;
             }
         }
 
         // 处理结果
-        result
-            .map_err(|e| {
-                crate::errors::http_error(0, &format!("GET request failed: {e}"))
-            })
+        result.map_err(|e| crate::errors::http_error(0, &format!("GET request failed: {e}")))
     }
 
     /// 发送 POST 请求
@@ -339,14 +341,16 @@ impl HttpClient {
     /// # 返回
     ///
     /// 成功返回 HTTP 响应，失败返回错误
-    pub async fn post(&self, url: &str, body: Vec<u8>, options: Option<RequestOptions>) -> Result<Response> {
+    pub async fn post(
+        &self,
+        url: &str,
+        body: Vec<u8>,
+        options: Option<RequestOptions>,
+    ) -> Result<Response> {
         let start_time = self.metrics_collector.start_request();
         let opts = options.unwrap_or_default();
-        
-        let mut request = self.client
-            .post(url)
-            .timeout(opts.timeout)
-            .body(body);
+
+        let mut request = self.client.post(url).timeout(opts.timeout).body(body);
 
         // 添加隐私保护请求头
         if let Some(ref privacy_mgr) = self.privacy_manager {
@@ -362,25 +366,24 @@ impl HttpClient {
         }
 
         // 发送请求
-        let result = request
-            .send()
-            .await;
+        let result = request.send().await;
 
         // 记录指标
         match &result {
             Ok(_) => {
-                self.metrics_collector.record_successful_request(start_time).await;
-            },
+                self.metrics_collector
+                    .record_successful_request(start_time)
+                    .await;
+            }
             Err(_) => {
-                self.metrics_collector.record_failed_request(start_time).await;
+                self.metrics_collector
+                    .record_failed_request(start_time)
+                    .await;
             }
         }
 
         // 处理结果
-        result
-            .map_err(|e| {
-                crate::errors::http_error(0, &format!("POST request failed: {e}"))
-            })
+        result.map_err(|e| crate::errors::http_error(0, &format!("POST request failed: {e}")))
     }
 
     /// 发送 POST JSON 请求
@@ -394,14 +397,16 @@ impl HttpClient {
     /// # 返回
     ///
     /// 成功返回 HTTP 响应，失败返回错误
-    pub async fn post_json<T: serde::Serialize>(&self, url: &str, json: &T, options: Option<RequestOptions>) -> Result<Response> {
+    pub async fn post_json<T: serde::Serialize>(
+        &self,
+        url: &str,
+        json: &T,
+        options: Option<RequestOptions>,
+    ) -> Result<Response> {
         let start_time = self.metrics_collector.start_request();
         let opts = options.unwrap_or_default();
-        
-        let mut request = self.client
-            .post(url)
-            .timeout(opts.timeout)
-            .json(json);
+
+        let mut request = self.client.post(url).timeout(opts.timeout).json(json);
 
         // 添加自定义请求头
         for (key, value) in opts.headers {
@@ -409,25 +414,24 @@ impl HttpClient {
         }
 
         // 发送请求
-        let result = request
-            .send()
-            .await;
+        let result = request.send().await;
 
         // 记录指标
         match &result {
             Ok(_) => {
-                self.metrics_collector.record_successful_request(start_time).await;
-            },
+                self.metrics_collector
+                    .record_successful_request(start_time)
+                    .await;
+            }
             Err(_) => {
-                self.metrics_collector.record_failed_request(start_time).await;
+                self.metrics_collector
+                    .record_failed_request(start_time)
+                    .await;
             }
         }
 
         // 处理结果
-        result
-            .map_err(|e| {
-                crate::errors::http_error(0, &format!("POST JSON request failed: {e}"))
-            })
+        result.map_err(|e| crate::errors::http_error(0, &format!("POST JSON request failed: {e}")))
     }
 
     /// 获取网络配置
@@ -472,7 +476,10 @@ mod tests {
     fn test_http_client_config_access() {
         let config = NetworkConfig::default();
         let client = HttpClient::new(config.clone()).unwrap();
-        assert_eq!(client.config().pool.max_idle_connections, config.pool.max_idle_connections);
+        assert_eq!(
+            client.config().pool.max_idle_connections,
+            config.pool.max_idle_connections
+        );
     }
 
     #[tokio::test]
@@ -480,7 +487,7 @@ mod tests {
         // 测试单例模式
         let client1 = HttpClient::instance().await.unwrap();
         let client2 = HttpClient::instance().await.unwrap();
-        
+
         // 验证两个实例是同一个
         assert!(Arc::ptr_eq(&client1, &client2));
     }
@@ -491,7 +498,7 @@ mod tests {
         let config = NetworkConfig::default();
         let client1 = HttpClient::instance_with_config(config.clone()).unwrap();
         let client2 = HttpClient::instance_with_config(config).unwrap();
-        
+
         // 验证两个实例是同一个
         assert!(Arc::ptr_eq(&client1, &client2));
     }
@@ -501,17 +508,17 @@ mod tests {
         // 测试重试配置
         let config = NetworkConfig::default();
         let mut client = HttpClient::new(config).unwrap();
-        
+
         // 获取默认重试配置
         let _default_retry = client.retry_config().clone();
-        
+
         // 修改重试配置
         let new_retry = RetryConfig {
             max_retries: 5,
             ..Default::default()
         };
         client.set_retry_config(new_retry.clone());
-        
+
         // 验证配置已更新
         assert_eq!(client.retry_config().max_retries, new_retry.max_retries);
     }
@@ -520,10 +527,10 @@ mod tests {
     async fn test_http_client_get_request() {
         // 测试GET请求（使用example.com，应该返回200 OK）
         let client = HttpClient::new(NetworkConfig::default()).unwrap();
-        
+
         // 这里使用example.com，它应该始终可用
         let response = assert_ok!(client.get("https://example.com", None).await);
-        
+
         // 验证状态码
         assert_eq!(response.status().as_u16(), 200);
     }
@@ -532,10 +539,14 @@ mod tests {
     async fn test_http_client_get_request_not_found() {
         // 测试GET请求（使用不存在的URL，应该返回404 Not Found）
         let client = HttpClient::new(NetworkConfig::default()).unwrap();
-        
+
         // 这里使用example.com的不存在路径，应该返回404
-        let response = assert_ok!(client.get("https://example.com/this-path-does-not-exist-12345", None).await);
-        
+        let response = assert_ok!(
+            client
+                .get("https://example.com/this-path-does-not-exist-12345", None)
+                .await
+        );
+
         // 验证状态码
         assert_eq!(response.status().as_u16(), 404);
     }
@@ -544,11 +555,15 @@ mod tests {
     async fn test_http_client_post_request() {
         // 测试POST请求
         let client = HttpClient::new(NetworkConfig::default()).unwrap();
-        
+
         // 使用httpbin.org进行测试，它提供了测试POST请求的端点
         let body = b"test=value&another=123";
-        let response = assert_ok!(client.post("https://httpbin.org/post", body.to_vec(), None).await);
-        
+        let response = assert_ok!(
+            client
+                .post("https://httpbin.org/post", body.to_vec(), None)
+                .await
+        );
+
         // 验证状态码
         assert_eq!(response.status().as_u16(), 200);
     }
@@ -557,11 +572,15 @@ mod tests {
     async fn test_http_client_post_json_request() {
         // 测试POST JSON请求
         let client = HttpClient::new(NetworkConfig::default()).unwrap();
-        
+
         // 使用httpbin.org进行测试
         let json_data = serde_json::json!({"test": "value", "number": 123});
-        let response = assert_ok!(client.post_json("https://httpbin.org/post", &json_data, None).await);
-        
+        let response = assert_ok!(
+            client
+                .post_json("https://httpbin.org/post", &json_data, None)
+                .await
+        );
+
         // 验证状态码
         assert_eq!(response.status().as_u16(), 200);
     }
@@ -572,10 +591,10 @@ mod tests {
         let mut config = NetworkConfig::default();
         config.pool.idle_timeout_secs = 1; // 设置较短的超时时间
         let client = HttpClient::new(config).unwrap();
-        
+
         // 使用一个不存在的IP地址，应该超时
         let result = client.get("https://192.0.2.1:9999", None).await;
-        
+
         // 验证请求失败（超时）
         assert!(result.is_err());
     }

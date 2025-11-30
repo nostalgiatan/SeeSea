@@ -13,17 +13,17 @@
 // limitations under the License.
 
 //! Utility functions for search engines
-//! 
+//!
 //! This module provides optimized helper functions that reduce allocations
 //! and improve performance across all search engines, including a generic engine
 //! implementation that can be used by all search engines.
 
-use std::borrow::Cow;
-use std::sync::Arc;
-use std::error::Error;
 use crate::derive::types::{EngineInfo, RequestParams};
 use crate::net::client::HttpClient;
 use crate::net::config::RequestOptions;
+use std::borrow::Cow;
+use std::error::Error;
+use std::sync::Arc;
 
 /// Build a URL query string efficiently with pre-allocated capacity
 ///
@@ -47,14 +47,15 @@ where
     I: IntoIterator<Item = (&'a str, Cow<'a, str>)>,
 {
     let params: Vec<_> = params.into_iter().collect();
-    
+
     // Pre-calculate exact size needed to avoid reallocations
-    let estimated_size: usize = params.iter()
+    let estimated_size: usize = params
+        .iter()
         .map(|(k, v)| k.len() + v.len() + 2) // key + value + '=' + '&'
         .sum();
-    
+
     let mut query_string = String::with_capacity(estimated_size);
-    
+
     for (i, (key, value)) in params.iter().enumerate() {
         if i > 0 {
             query_string.push('&');
@@ -63,7 +64,7 @@ where
         query_string.push('=');
         query_string.push_str(&urlencoding::encode(value));
     }
-    
+
     query_string
 }
 
@@ -76,13 +77,11 @@ where
     I: IntoIterator<Item = (&'static str, String)>,
 {
     let params: Vec<_> = params.into_iter().collect();
-    
-    let estimated_size: usize = params.iter()
-        .map(|(k, v)| k.len() + v.len() + 2)
-        .sum();
-    
+
+    let estimated_size: usize = params.iter().map(|(k, v)| k.len() + v.len() + 2).sum();
+
     let mut query_string = String::with_capacity(estimated_size);
-    
+
     for (i, (key, value)) in params.iter().enumerate() {
         if i > 0 {
             query_string.push('&');
@@ -91,7 +90,7 @@ where
         query_string.push('=');
         query_string.push_str(&urlencoding::encode(value));
     }
-    
+
     query_string
 }
 
@@ -113,7 +112,7 @@ where
 {
     // Most search results are 50-200 chars, pre-allocate for typical case
     let mut result = String::with_capacity(150);
-    
+
     for text in iter {
         let trimmed = text.trim();
         if !trimmed.is_empty() {
@@ -123,7 +122,7 @@ where
             result.push_str(trimmed);
         }
     }
-    
+
     result.shrink_to_fit(); // Release excess capacity
     result
 }
@@ -151,12 +150,12 @@ impl GenericEngine {
     /// A new GenericEngine instance
     pub fn new(info: EngineInfo) -> Self {
         use crate::net::config::NetworkConfig;
-        
+
         let client = HttpClient::new(NetworkConfig::default())
             .unwrap_or_else(|_| panic!("Failed to create HTTP client for {}", info.name));
         Self::with_client(info, Arc::new(client))
     }
-    
+
     /// Create a new generic engine with a shared HTTP client
     ///
     /// # Arguments
@@ -168,12 +167,9 @@ impl GenericEngine {
     ///
     /// A new GenericEngine instance
     pub fn with_client(info: EngineInfo, client: Arc<HttpClient>) -> Self {
-        Self {
-            info,
-            client,
-        }
+        Self { info, client }
     }
-    
+
     /// Generic fetch implementation that handles HTTP requests for all engines
     ///
     /// This method provides a common implementation for fetching HTTP responses,
@@ -186,14 +182,16 @@ impl GenericEngine {
     /// # Returns
     ///
     /// The response text or an error
-    pub async fn fetch(&self, params: &RequestParams) -> Result<String, Box<dyn Error + Send + Sync>> {
+    pub async fn fetch(
+        &self,
+        params: &RequestParams,
+    ) -> Result<String, Box<dyn Error + Send + Sync>> {
         // Get the URL from params
-        let url = params.url.as_ref()
-            .ok_or("请求 URL 未设置")?;
+        let url = params.url.as_ref().ok_or("请求 URL 未设置")?;
 
         // Create request options
         let mut options = RequestOptions::default();
-        
+
         // Add custom headers
         for (key, value) in &params.headers {
             options.headers.push((key.clone(), value.clone()));
@@ -201,17 +199,24 @@ impl GenericEngine {
 
         // Add cookies as headers
         for (key, value) in &params.cookies {
-            options.headers.push(("Cookie".to_string(), format!("{key}={value}")));
+            options
+                .headers
+                .push(("Cookie".to_string(), format!("{key}={value}")));
         }
 
         // Send the request
-        let response = self.client.get(url, Some(options)).await
+        let response = self
+            .client
+            .get(url, Some(options))
+            .await
             .map_err(|e| format!("Request failed: {e}"))?;
 
         // Check status code
         let status = response.status();
         match status.as_u16() {
-            403 => return Err(format!("{} 访问被拒绝，可能触发了反爬虫机制", self.info.name).into()),
+            403 => {
+                return Err(format!("{} 访问被拒绝，可能触发了反爬虫机制", self.info.name).into());
+            }
             429 => return Err(format!("{} 请求过于频繁，请稍后重试", self.info.name).into()),
             503 => return Err(format!("{} 服务暂时不可用，请稍后重试", self.info.name).into()),
             _ if !status.is_success() => return Err(format!("HTTP 错误: {status}").into()),
@@ -219,7 +224,9 @@ impl GenericEngine {
         }
 
         // Get response text
-        let text = response.text().await
+        let text = response
+            .text()
+            .await
             .map_err(|e| format!("Failed to read response: {e}"))?;
 
         Ok(text)
@@ -267,52 +274,64 @@ macro_rules! engine_tests {
             assert_eq!(engine.info().name, $expected_name);
             assert_eq!(engine.info().engine_type, $expected_engine_type);
         }
-        
+
         #[test]
         fn test_default() {
             let engine = $engine_name::default();
             assert_eq!(engine.info().name, $expected_name);
         }
-        
+
         #[test]
         fn test_engine_info() {
             let engine = $engine_name::new();
             let info = engine.info();
-            
+
             assert!(info.capabilities.supports_pagination);
             assert!(info.capabilities.supports_time_range);
-            assert_eq!(info.capabilities.supports_safe_search, $supports_safe_search);
+            assert_eq!(
+                info.capabilities.supports_safe_search,
+                $supports_safe_search
+            );
             assert_eq!(info.capabilities.max_page_size, $max_page_size);
         }
-        
+
         #[test]
         fn test_request_preparation() {
             let engine = $engine_name::new();
             let mut params = RequestParams::default();
-            
+
             let result = engine.request("test query", &mut params);
             assert!(result.is_ok());
             assert!(params.url.is_some());
-            
-            let url = params.url.expect("URL should be set after request preparation");
+
+            let url = params
+                .url
+                .expect("URL should be set after request preparation");
             assert!(url.contains($expected_url));
             assert!(url.contains(&format!("{}=", $expected_query_param)));
         }
-        
+
         #[test]
         fn test_request_with_pagination() {
             let engine = $engine_name::new();
             let mut params = RequestParams::default();
             params.page = 2;
-            
+
             let result = engine.request("test", &mut params);
             assert!(result.is_ok());
-            
-            let url = params.url.expect("URL should be set after request preparation");
+
+            let url = params
+                .url
+                .expect("URL should be set after request preparation");
             // 检查URL是否包含分页参数
-            assert!(url.contains("pn=") || url.contains("first=") || url.contains("page=") || url.contains("start="));
+            assert!(
+                url.contains("pn=")
+                    || url.contains("first=")
+                    || url.contains("page=")
+                    || url.contains("start=")
+            );
         }
-        
+
         #[tokio::test]
         async fn test_is_available() {
             let engine = $engine_name::new();
@@ -334,7 +353,7 @@ mod tests {
             ("page", Cow::Borrowed("1")),
             ("lang", Cow::Borrowed("en")),
         ];
-        
+
         let result = build_query_string(params.into_iter());
         assert!(result.contains("q=test%20query"));
         assert!(result.contains("page=1"));
@@ -343,11 +362,8 @@ mod tests {
 
     #[test]
     fn test_build_query_string_owned() {
-        let params = vec![
-            ("q", "test query".to_string()),
-            ("page", "1".to_string()),
-        ];
-        
+        let params = vec![("q", "test query".to_string()), ("page", "1".to_string())];
+
         let result = build_query_string_owned(params.into_iter());
         assert!(result.contains("q=test%20query"));
         assert!(result.contains("page=1"));

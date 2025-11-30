@@ -17,8 +17,8 @@
 //! 提供首页和静态资源服务
 
 use axum::{
-    response::{Html, IntoResponse},
     http::StatusCode,
+    response::{Html, IntoResponse},
 };
 
 /// 嵌入的 HTML 首页内容

@@ -13,11 +13,11 @@
 // limitations under the License.
 
 //! 基础错误类型定义
-//! 
+//!
 //! 从 error crate 重新导出核心错误类型，提供统一的错误基础。
 
 // 从 error crate 重新导出核心错误类型
-pub use error::{ErrorInfo, ErrorKind, ErrorSeverity, ErrorCategory};
+pub use error::{ErrorCategory, ErrorInfo, ErrorKind, ErrorSeverity};
 
 /// Result 类型别名
 pub type Result<T> = std::result::Result<T, ErrorInfo>;

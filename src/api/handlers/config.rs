@@ -17,9 +17,9 @@
 //! 处理配置相关的 API 请求
 
 use axum::{
-    extract::{State, Json},
-    response::{IntoResponse, Response},
+    extract::{Json, State},
     http::StatusCode,
+    response::{IntoResponse, Response},
 };
 use serde_json::json;
 
@@ -30,16 +30,21 @@ pub async fn handle_magic_link_generate(
     State(state): State<ApiState>,
     Json(params): Json<serde_json::Value>,
 ) -> Response {
-    let purpose = params.get("purpose")
+    let purpose = params
+        .get("purpose")
         .and_then(|v| v.as_str())
         .unwrap_or("general")
         .to_string();
-    
+
     let token = state.magic_link.generate_token(purpose);
-    
-    (StatusCode::OK, Json(json!({
-        "token": token,
-        "expires_in": 300,
-        "url": format!("/api/search?magic_token={}", token)
-    }))).into_response()
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "token": token,
+            "expires_in": 300,
+            "url": format!("/api/search?magic_token={}", token)
+        })),
+    )
+        .into_response()
 }

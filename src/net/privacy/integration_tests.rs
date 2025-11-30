@@ -16,8 +16,10 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::net::privacy::{PrivacyManager, PrivacyLevel};
-    use crate::net::config::{PrivacyConfig, TlsConfig, DnsConfig, UserAgentStrategy, TlsFingerprintLevel};
+    use crate::net::config::{
+        DnsConfig, PrivacyConfig, TlsConfig, TlsFingerprintLevel, UserAgentStrategy,
+    };
+    use crate::net::privacy::{PrivacyLevel, PrivacyManager};
 
     #[tokio::test]
     async fn test_privacy_manager_integration() {
@@ -85,7 +87,10 @@ mod tests {
 
         let stats = manager.get_stats().await;
         assert!(stats.fake_headers_enabled);
-        assert!(matches!(stats.privacy_level, PrivacyLevel::Medium | PrivacyLevel::High));
+        assert!(matches!(
+            stats.privacy_level,
+            PrivacyLevel::Medium | PrivacyLevel::High
+        ));
     }
 
     #[tokio::test]
@@ -110,11 +115,8 @@ mod tests {
         let mut tls_config = TlsConfig::default();
         tls_config.fingerprint_level = TlsFingerprintLevel::Full;
 
-        let manager = PrivacyManager::new(
-            PrivacyConfig::default(),
-            tls_config,
-            DnsConfig::default(),
-        );
+        let manager =
+            PrivacyManager::new(PrivacyConfig::default(), tls_config, DnsConfig::default());
 
         let params = manager.get_tls_params().await;
         assert!(!params.cipher_suites.is_empty());

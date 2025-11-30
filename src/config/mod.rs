@@ -13,13 +13,13 @@
 // limitations under the License.
 
 //! # 配置管理模块
-//! 
+//!
 //! 配置管理模块是 SeeSea 的核心组件之一，负责处理所有配置相关的功能，包括配置加载、验证、合并和动态更新。
-//! 
+//!
 //! ## 模块架构
-//! 
+//!
 //! 配置管理模块采用分层设计，主要包含以下核心组件：
-//! 
+//!
 //! - **common**：通用类型定义，包括配置验证结果、引擎基础配置等
 //! - **general**：通用配置，包括应用名称、版本、环境等
 //! - **server**：服务器配置，包括监听地址、端口、TLS 配置等
@@ -34,36 +34,36 @@
 //! - **on**：公共接口，包括配置管理器和全局配置访问
 //! - **loader**：配置加载器，负责从各种源加载配置
 //! - **validator**：配置验证器，负责验证配置的有效性
-//! 
+//!
 //! ## 配置加载流程
-//! 
+//!
 //! 1. 从默认配置文件加载基础配置
 //! 2. 从环境变量加载覆盖配置
 //! 3. 从命令行参数加载最终覆盖配置
 //! 4. 验证配置的有效性
 //! 5. 初始化全局配置实例
 //! 6. 提供配置访问接口
-//! 
+//!
 //! ## 配置源优先级
-//! 
+//!
 //! 配置按照以下优先级从高到低加载：
 //! 1. 命令行参数
 //! 2. 环境变量
 //! 3. 本地配置文件（local.toml）
 //! 4. 环境配置文件（production.toml, development.toml 等）
 //! 5. 默认配置
-//! 
+//!
 //! ## 使用示例
-//! 
+//!
 //! ```rust
 //! use seesea::config::{init_config, get_global_config};
-//! 
+//!
 //! // 初始化配置
 //! init_config(None).await?;
-//! 
+//!
 //! // 获取全局配置
 //! let config = get_global_config();
-//! 
+//!
 //! // 使用配置
 //! let search_config = &config.search;
 //! println!("默认搜索引擎: {:?}", search_config.default_engines);
@@ -116,15 +116,15 @@ pub mod validator;
 
 /// 配置验证结果和通用配置类型
 pub use common::{
-    ConfigValidationResult,  // 配置验证结果类型
-    BaseEngineConfig,        // 引擎基础配置
-    EngineLoadingMode,       // 引擎加载模式
-    LogLevel,                // 日志级别
-    LogFormat,               // 日志格式
-    LogOutput,               // 日志输出方式
-    EngineType as CommonEngineType,  // 引擎类型
-    AuthType,                // 认证类型
-    FingerprintLevel,        // 指纹保护级别
+    AuthType,                       // 认证类型
+    BaseEngineConfig,               // 引擎基础配置
+    ConfigValidationResult,         // 配置验证结果类型
+    EngineLoadingMode,              // 引擎加载模式
+    EngineType as CommonEngineType, // 引擎类型
+    FingerprintLevel,               // 指纹保护级别
+    LogFormat,                      // 日志格式
+    LogLevel,                       // 日志级别
+    LogOutput,                      // 日志输出方式
 };
 
 /// 服务器配置，包括监听地址、端口、TLS 配置等
@@ -153,19 +153,19 @@ pub use types::Environment;
 
 /// 主配置类型和相关结果类型
 pub use config::{
-    SeeSeaConfig,      // 主配置类型，整合所有子配置
-    ConfigLoadResult,  // 配置加载结果
-    ConfigSummary,     // 配置摘要
-    ConfigError,       // 配置错误类型
-    ConfigSource,      // 配置源类型
+    ConfigError,      // 配置错误类型
+    ConfigLoadResult, // 配置加载结果
+    ConfigSource,     // 配置源类型
+    ConfigSummary,    // 配置摘要
+    SeeSeaConfig,     // 主配置类型，整合所有子配置
 };
 
 /// 配置管理器和全局配置访问接口
 pub use on::{
-    ConfigManager,            // 配置管理器，负责配置的加载、更新和访问
-    get_global_config,        // 获取全局配置实例
-    init_config,              // 初始化配置
-    init_config_with_env,     // 使用指定环境初始化配置
+    ConfigManager,        // 配置管理器，负责配置的加载、更新和访问
+    get_global_config,    // 获取全局配置实例
+    init_config,          // 初始化配置
+    init_config_with_env, // 使用指定环境初始化配置
 };
 
 /// 配置加载器，负责从各种源加载配置
@@ -173,6 +173,6 @@ pub use loader::ConfigLoader;
 
 /// 配置验证器和验证函数
 pub use validator::{
-    ConfigValidator,  // 配置验证器 trait
-    validate_config,  // 验证配置的函数
+    ConfigValidator, // 配置验证器 trait
+    validate_config, // 验证配置的函数
 };

@@ -28,7 +28,7 @@ use tokio::sync::RwLock;
 pub struct MetricsConfig {
     /// 是否启用指标收集
     pub enabled: bool,
-    
+
     /// 指标暴露端口
     pub port: u16,
 }
@@ -47,28 +47,28 @@ impl Default for MetricsConfig {
 pub struct RealtimeMetrics {
     /// 请求总数
     pub total_requests: u64,
-    
+
     /// 成功请求数
     pub successful_requests: u64,
-    
+
     /// 失败请求数
     pub failed_requests: u64,
-    
+
     /// 平均响应时间（毫秒）
     pub avg_response_time_ms: f64,
-    
+
     /// 当前活跃连接数
     pub active_connections: u64,
-    
+
     /// 限流拒绝数
     pub rate_limited: u64,
-    
+
     /// 熔断拒绝数
     pub circuit_breaker_trips: u64,
-    
+
     /// IP封禁拒绝数
     pub ip_blocked: u64,
-    
+
     /// 启动时间
     pub uptime_seconds: u64,
 }
@@ -77,13 +77,13 @@ pub struct RealtimeMetrics {
 pub struct MetricsCollector {
     /// Prometheus句柄
     prometheus_handle: Option<PrometheusHandle>,
-    
+
     /// 实时指标
     realtime_metrics: Arc<RwLock<RealtimeMetrics>>,
-    
+
     /// 启动时间
     start_time: Instant,
-    
+
     /// 配置
     config: MetricsConfig,
 }
@@ -93,25 +93,26 @@ impl MetricsCollector {
     pub fn new(config: MetricsConfig) -> Self {
         let prometheus_handle = if config.enabled {
             // 初始化Prometheus导出器
-            let handle = PrometheusBuilder::new()
-                .install_recorder()
-                .ok();
-            
+            let handle = PrometheusBuilder::new().install_recorder().ok();
+
             // 注册指标描述
             describe_counter!("seesea_requests_total", "Total number of requests");
             describe_counter!("seesea_requests_success", "Number of successful requests");
             describe_counter!("seesea_requests_failed", "Number of failed requests");
             describe_counter!("seesea_rate_limited", "Number of rate limited requests");
-            describe_counter!("seesea_circuit_breaker_trips", "Number of circuit breaker trips");
+            describe_counter!(
+                "seesea_circuit_breaker_trips",
+                "Number of circuit breaker trips"
+            );
             describe_counter!("seesea_ip_blocked", "Number of IP blocked requests");
             describe_gauge!("seesea_active_connections", "Current active connections");
             describe_histogram!("seesea_response_time_ms", "Response time in milliseconds");
-            
+
             handle
         } else {
             None
         };
-        
+
         Self {
             prometheus_handle,
             realtime_metrics: Arc::new(RwLock::new(RealtimeMetrics::default())),
@@ -127,13 +128,13 @@ impl MetricsCollector {
         }
 
         counter!("seesea_requests_total").increment(1);
-        
+
         if success {
             counter!("seesea_requests_success").increment(1);
         } else {
             counter!("seesea_requests_failed").increment(1);
         }
-        
+
         histogram!("seesea_response_time_ms").record(response_time_ms);
 
         // 更新实时指标
@@ -144,14 +145,15 @@ impl MetricsCollector {
         } else {
             metrics.failed_requests += 1;
         }
-        
+
         // 更新平均响应时间（使用增量平均算法）
         if metrics.total_requests == 1 {
             metrics.avg_response_time_ms = response_time_ms;
         } else {
             let prev_total = (metrics.total_requests - 1) as f64;
-            metrics.avg_response_time_ms = 
-                (metrics.avg_response_time_ms * prev_total + response_time_ms) / metrics.total_requests as f64;
+            metrics.avg_response_time_ms = (metrics.avg_response_time_ms * prev_total
+                + response_time_ms)
+                / metrics.total_requests as f64;
         }
     }
 
@@ -162,7 +164,7 @@ impl MetricsCollector {
         }
 
         counter!("seesea_rate_limited").increment(1);
-        
+
         let mut metrics = self.realtime_metrics.write().await;
         metrics.rate_limited += 1;
     }
@@ -174,7 +176,7 @@ impl MetricsCollector {
         }
 
         counter!("seesea_circuit_breaker_trips").increment(1);
-        
+
         let mut metrics = self.realtime_metrics.write().await;
         metrics.circuit_breaker_trips += 1;
     }
@@ -186,7 +188,7 @@ impl MetricsCollector {
         }
 
         counter!("seesea_ip_blocked").increment(1);
-        
+
         let mut metrics = self.realtime_metrics.write().await;
         metrics.ip_blocked += 1;
     }
@@ -198,7 +200,7 @@ impl MetricsCollector {
         }
 
         gauge!("seesea_active_connections").set(count as f64);
-        
+
         let mut metrics = self.realtime_metrics.write().await;
         metrics.active_connections = count;
     }
@@ -277,12 +279,12 @@ mod tests {
 
         collector.increment_active_connections().await;
         collector.increment_active_connections().await;
-        
+
         let metrics = collector.get_realtime_metrics().await;
         assert_eq!(metrics.active_connections, 2);
 
         collector.decrement_active_connections().await;
-        
+
         let metrics = collector.get_realtime_metrics().await;
         assert_eq!(metrics.active_connections, 1);
     }

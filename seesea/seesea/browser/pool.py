@@ -38,4 +38,3 @@ Performance Benefits:
 - Lower memory usage compared to per-request browsers
 - Better scalability for concurrent requests
 """
-

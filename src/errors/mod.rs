@@ -13,13 +13,13 @@
 // limitations under the License.
 
 //! # 错误处理模块
-//! 
+//!
 //! 错误处理模块是 SeeSea 的核心组件之一，提供统一的错误处理机制，支持多种错误类型和详细的错误信息。
-//! 
+//!
 //! ## 模块架构
-//! 
+//!
 //! 错误处理模块采用分层设计，主要包含以下核心组件：
-//! 
+//!
 //! - **base**：基础错误类型定义，包括错误信息、类型、严重程度和类别
 //! - **network**：网络相关错误，如连接失败、超时等
 //! - **search**：搜索相关错误，如引擎不可用、搜索失败等
@@ -31,35 +31,35 @@
 //! - **database**：数据库相关错误，如连接失败、查询失败等
 //! - **business**：业务逻辑相关错误，如业务规则违反、状态错误等
 //! - **system**：系统相关错误，如内存不足、系统调用失败等
-//! 
+//!
 //! ## 错误分类
-//! 
+//!
 //! SeeSea 的错误分为以下几个主要类别：
-//! 
+//!
 //! - **ErrorCategory**：错误类别，如网络、搜索、解析等
 //! - **ErrorKind**：具体错误类型，如连接失败、超时、解析错误等
 //! - **ErrorSeverity**：错误严重程度，如调试、信息、警告、错误、致命等
-//! 
+//!
 //! ## 核心功能
-//! 
+//!
 //! - **结构化错误信息**：提供详细的错误信息，包括错误代码、描述、位置等
 //! - **错误链**：支持错误嵌套，便于追踪错误根源
 //! - **错误转换**：支持不同错误类型之间的转换
 //! - **错误格式化**：支持多种错误格式化方式
 //! - **错误日志**：便于日志记录和监控
-//! 
+//!
 //! ## 错误处理流程
-//! 
+//!
 //! 1. 当发生错误时，使用对应的错误创建函数创建错误实例
 //! 2. 错误实例包含详细的错误信息和上下文
 //! 3. 错误通过 Result 类型向上传播
 //! 4. 最终在适当的位置处理或记录错误
-//! 
+//!
 //! ## 使用示例
-//! 
+//!
 //! ```rust
 //! use seesea::{Error, Result, errors::new_network_error};
-//! 
+//!
 //! fn example_function() -> Result<()> {
 //!     // 模拟网络错误
 //!     return Err(new_network_error(
@@ -68,7 +68,7 @@
 //!         Some("https://example.com"),
 //!     ));
 //! }
-//! 
+//!
 //! // 处理错误
 //! match example_function() {
 //!     Ok(result) => println!("成功: {:?}", result),
@@ -118,41 +118,81 @@ pub mod system;
 
 /// 核心错误类型和结果类型
 pub use base::{
-    ErrorInfo,      // 详细的错误信息结构
-    ErrorKind,      // 具体错误类型枚举
-    ErrorSeverity,  // 错误严重程度枚举
-    ErrorCategory,  // 错误类别枚举
-    Result,         // 结果类型别名，简化错误处理
+    ErrorCategory, // 错误类别枚举
+    ErrorInfo,     // 详细的错误信息结构
+    ErrorKind,     // 具体错误类型枚举
+    ErrorSeverity, // 错误严重程度枚举
+    Result,        // 结果类型别名，简化错误处理
 };
 
 // 导出所有错误创建函数，方便外部使用
 
 /// 网络错误创建函数
-pub use network::{connection_timeout, connection_refused, dns_resolve_failed, invalid_response, ssl_error, http_error, network_unreachable, proxy_error, too_many_redirects, request_cancelled, bad_request, unauthorized as network_unauthorized, forbidden, not_found, method_not_allowed, too_many_requests, internal_server_error, bad_gateway, service_unavailable as network_service_unavailable, gateway_timeout, network_error, http_error_by_status};
+pub use network::{
+    bad_gateway, bad_request, connection_refused, connection_timeout, dns_resolve_failed,
+    forbidden, gateway_timeout, http_error, http_error_by_status, internal_server_error,
+    invalid_response, method_not_allowed, network_error, network_unreachable, not_found,
+    proxy_error, request_cancelled, service_unavailable as network_service_unavailable, ssl_error,
+    too_many_redirects, too_many_requests, unauthorized as network_unauthorized,
+};
 
 /// 搜索错误创建函数
-pub use search::{engine_unavailable, search_timeout, zero_results, invalid_query, unsupported_search_type, engine_error, result_parse_failed, search_rate_limited, search_depth_too_large, invalid_search_scope, search_error};
+pub use search::{
+    engine_error, engine_unavailable, invalid_query, invalid_search_scope, result_parse_failed,
+    search_depth_too_large, search_error, search_rate_limited, search_timeout,
+    unsupported_search_type, zero_results,
+};
 
 /// 解析错误创建函数
-pub use parse::{json_parse_error, xml_parse_error, html_parse_error, yaml_parse_error, csv_parse_error, invalid_format, missing_field, invalid_field_type, invalid_field_value, parse_timeout, parse_error};
+pub use parse::{
+    csv_parse_error, html_parse_error, invalid_field_type, invalid_field_value, invalid_format,
+    json_parse_error, missing_field, parse_error, parse_timeout, xml_parse_error, yaml_parse_error,
+};
 
 /// 验证错误创建函数
-pub use validation::{empty_field, field_too_short, field_too_long, invalid_email, invalid_url, invalid_date, invalid_number, invalid_enum_value, duplicate_value, unsupported_parameter, validation_error};
+pub use validation::{
+    duplicate_value, empty_field, field_too_long, field_too_short, invalid_date, invalid_email,
+    invalid_enum_value, invalid_number, invalid_url, unsupported_parameter, validation_error,
+};
 
 /// IO 错误创建函数
-pub use io::{file_not_found, file_open_failed, file_read_failed, file_write_failed, file_permission_denied, directory_not_found, directory_create_failed, invalid_path, file_too_large, disk_full, io_error};
+pub use io::{
+    directory_create_failed, directory_not_found, disk_full, file_not_found, file_open_failed,
+    file_permission_denied, file_read_failed, file_too_large, file_write_failed, invalid_path,
+    io_error,
+};
 
 /// 权限错误创建函数
-pub use permission::{permission_denied, unauthorized, invalid_credentials, token_expired, invalid_token, missing_token, account_locked, account_disabled, insufficient_role, access_denied, permission_error};
+pub use permission::{
+    access_denied, account_disabled, account_locked, insufficient_role, invalid_credentials,
+    invalid_token, missing_token, permission_denied, permission_error, token_expired, unauthorized,
+};
 
 /// 配置错误创建函数
-pub use configuration::{config_file_not_found, config_parse_failed, missing_config_item, invalid_config_value, config_type_error, config_value_out_of_range, config_conflict, config_version_mismatch, config_permission_error, config_validation_failed, configuration_error};
+pub use configuration::{
+    config_conflict, config_file_not_found, config_parse_failed, config_permission_error,
+    config_type_error, config_validation_failed, config_value_out_of_range,
+    config_version_mismatch, configuration_error, invalid_config_value, missing_config_item,
+};
 
 /// 数据库错误创建函数
-pub use database::{connection_failed, query_failed, transaction_failed, duplicate_key, foreign_key_violation, table_not_found, column_not_found, database_locked, database_full, invalid_sql, database_error};
+pub use database::{
+    column_not_found, connection_failed, database_error, database_full, database_locked,
+    duplicate_key, foreign_key_violation, invalid_sql, query_failed, table_not_found,
+    transaction_failed,
+};
 
 /// 业务逻辑错误创建函数
-pub use business::{resource_not_found, business_rule_violation, invalid_state, operation_not_allowed, quota_exceeded, rate_limit_exceeded, dependency_failed, validation_failed, internal_business_error, concurrency_error, business_error};
+pub use business::{
+    business_error, business_rule_violation, concurrency_error, dependency_failed,
+    internal_business_error, invalid_state, operation_not_allowed, quota_exceeded,
+    rate_limit_exceeded, resource_not_found, validation_failed,
+};
 
 /// 系统错误创建函数
-pub use system::{resource_exhausted, service_unavailable, configuration_error as system_configuration_error, system_timeout, internal_system_error, system_call_failed, version_incompatible, permission_error as system_permission_error, resource_leak, system_overload, system_error};
+pub use system::{
+    configuration_error as system_configuration_error, internal_system_error,
+    permission_error as system_permission_error, resource_exhausted, resource_leak,
+    service_unavailable, system_call_failed, system_error, system_overload, system_timeout,
+    version_incompatible,
+};
