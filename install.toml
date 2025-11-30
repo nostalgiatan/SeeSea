@@ -1,14 +1,4 @@
-commands = [
-    {
-        name = "install_python_packages",
-        description = "Install Python packages using pip",
-        program = "pip",
-        args = ["install", "seesea", "seesea-core"],
-        working_dir = ".",
-        background = false,
-        ignore_errors = false
-    }
-]
+commands = []
 
 [project]
 name = "SeeSea"

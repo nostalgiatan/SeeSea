@@ -133,8 +133,18 @@ jobs:
         ls -la target/release/
         # 然后使用cargo packager打包installer
         cargo packager --release --manifest-path Cargo.toml
-        # 检查cargo-packager生成的产物
-        ls -la target/release/
+        # 清理不需要的产物
+        if [ "${{ matrix.platform }}" = "linux" ]; then
+          # Linux只保留deb包
+          find target/release -name "*.AppImage" -delete
+          find target/release -name "*.tar.gz" -delete
+        elif [ "${{ matrix.platform }}" = "windows" ]; then
+          # Windows只保留exe安装程序
+          find target/release -name "*.zip" -delete
+        elif [ "${{ matrix.platform }}" = "macos" ]; then
+          # macOS只保留dmg镜像
+          find target/release -name "*.zip" -delete
+        fi
 
     # Rename Windows installer
     - name: Rename Windows installer
@@ -147,9 +157,10 @@ jobs:
           # List available files for debugging
           Get-ChildItem -Path "./installer/target/release/"
           
-          # Rename NSIS installer if it exists
-          if (Test-Path -Path "./installer/target/release/seesea-installer_1.0.0_x64-setup.exe") {
-            Move-Item -Path "./installer/target/release/seesea-installer_1.0.0_x64-setup.exe" -Destination "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}-setup.exe"
+          # 查找并重命名exe安装程序，使用更灵活的匹配
+          $EXE_FILE = Get-ChildItem -Path "./installer/target/release/" -Name "*.exe" | Select-Object -First 1
+          if ($EXE_FILE) {
+            Move-Item -Path "./installer/target/release/$EXE_FILE" -Destination "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}-setup.exe"
           }
         } else {
           Write-Host "target/release directory not found, skipping rename"
@@ -168,11 +179,10 @@ jobs:
           # List available files for debugging
           ls -la ./installer/target/release/
           
-          # Rename deb file if it exists
-          if [ -f "./installer/target/release/seesea-installer_1.0.0_amd64.deb" ]; then
-            mv ./installer/target/release/seesea-installer_1.0.0_amd64.deb ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.deb
-          elif [ -f "./installer/target/release/seesea-installer_1.0.0_x86_64.deb" ]; then
-            mv ./installer/target/release/seesea-installer_1.0.0_x86_64.deb ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.deb
+          # 查找并重命名deb包，使用更灵活的匹配
+          DEB_FILE=$(find ./installer/target/release/ -name "*.deb" | head -1)
+          if [ -n "$DEB_FILE" ]; then
+            mv "$DEB_FILE" "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.deb"
           fi
         else
           echo "target/release directory not found, skipping rename"
@@ -191,15 +201,10 @@ jobs:
           # List available files for debugging
           ls -la ./installer/target/release/
           
-          # Rename DMG file if it exists
-          if [ -f "./installer/target/release/seesea-installer_1.0.0_${{ matrix.arch }}.dmg" ]; then
-            mv ./installer/target/release/seesea-installer_1.0.0_${{ matrix.arch }}.dmg ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.dmg
-          # Check for x86_64 architecture
-          elif [ -f "./installer/target/release/seesea-installer_1.0.0_x86_64.dmg" ]; then
-            mv ./installer/target/release/seesea-installer_1.0.0_x86_64.dmg ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.dmg
-          # Check for arm64 architecture
-          elif [ -f "./installer/target/release/seesea-installer_1.0.0_arm64.dmg" ]; then
-            mv ./installer/target/release/seesea-installer_1.0.0_arm64.dmg ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.dmg
+          # 查找并重命名dmg镜像，使用更灵活的匹配
+          DMG_FILE=$(find ./installer/target/release/ -name "*.dmg" | head -1)
+          if [ -n "$DMG_FILE" ]; then
+            mv "$DMG_FILE" "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.dmg"
           fi
         else
           echo "target/release directory not found, skipping rename"
