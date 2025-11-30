@@ -119,10 +119,15 @@ jobs:
     - name: Build installer with cargo packager
       working-directory: ./installer
       run: |
+        # 安装cargo-packager
         cargo install cargo-packager
         # 确保两个whl文件就位后再构建installer
         ls -la ../building/
-        # 直接构建installer，不使用工作区
+        # 先构建installer可执行文件
+        cargo build --release
+        # 检查可执行文件是否生成
+        ls -la target/release/
+        # 然后使用cargo packager打包installer
         cargo packager --release --manifest-path Cargo.toml
 
     # Rename Windows installer
