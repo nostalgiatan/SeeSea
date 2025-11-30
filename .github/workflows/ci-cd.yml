@@ -131,19 +131,16 @@ jobs:
         cargo build --release
         # 检查可执行文件是否生成
         ls -la target/release/
-        # 然后使用cargo packager打包installer
-        cargo packager --release --manifest-path Cargo.toml
-        # 清理不需要的产物
+        # 然后使用cargo packager打包installer，指定产物类型
         if [ "${{ matrix.platform }}" = "linux" ]; then
-          # Linux只保留deb包
-          find target/release -name "*.AppImage" -delete
-          find target/release -name "*.tar.gz" -delete
+          # Linux生成deb包
+          cargo packager --release --manifest-path Cargo.toml --formats deb
         elif [ "${{ matrix.platform }}" = "windows" ]; then
-          # Windows只保留exe安装程序
-          find target/release -name "*.zip" -delete
+          # Windows生成NSIS安装程序
+          cargo packager --release --manifest-path Cargo.toml --formats nsis
         elif [ "${{ matrix.platform }}" = "macos" ]; then
-          # macOS只保留dmg镜像
-          find target/release -name "*.zip" -delete
+          # macOS生成DMG镜像
+          cargo packager --release --manifest-path Cargo.toml --formats dmg
         fi
 
     # Rename Windows installer
