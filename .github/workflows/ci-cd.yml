@@ -133,6 +133,8 @@ jobs:
         ls -la target/release/
         # 然后使用cargo packager打包installer
         cargo packager --release --manifest-path Cargo.toml
+        # 检查cargo-packager生成的产物
+        ls -la target/release/
 
     # Rename Windows installer
     - name: Rename Windows installer
@@ -166,21 +168,11 @@ jobs:
           # List available files for debugging
           ls -la ./installer/target/release/
           
-          # Rename AppImage file if it exists
-          if [ -f "./installer/target/release/seesea-installer_1.0.0_x86_64.AppImage" ]; then
-            mv ./installer/target/release/seesea-installer_1.0.0_x86_64.AppImage ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.AppImage
-          elif [ -f "./installer/target/release/seesea-installer_1.0.0_x64.AppImage" ]; then
-            mv ./installer/target/release/seesea-installer_1.0.0_x64.AppImage ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.AppImage
-          fi
-          
           # Rename deb file if it exists
           if [ -f "./installer/target/release/seesea-installer_1.0.0_amd64.deb" ]; then
             mv ./installer/target/release/seesea-installer_1.0.0_amd64.deb ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.deb
-          fi
-          
-          # Rename tar.gz file if it exists
-          if [ -f "./installer/target/release/seesea-installer_1.0.0_x86_64.tar.gz" ]; then
-            mv ./installer/target/release/seesea-installer_1.0.0_x86_64.tar.gz ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.tar.gz
+          elif [ -f "./installer/target/release/seesea-installer_1.0.0_x86_64.deb" ]; then
+            mv ./installer/target/release/seesea-installer_1.0.0_x86_64.deb ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.deb
           fi
         else
           echo "target/release directory not found, skipping rename"
