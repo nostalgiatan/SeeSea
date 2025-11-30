@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 初始化网络接口
     println!("🌐 初始化网络接口...");
     let network_config = NetworkConfig::default();
-    let network = Arc::new(NetworkInterface::new(network_config)?);
+    let _network = Arc::new(NetworkInterface::new(network_config)?);
     println!("  ✅ 网络接口初始化成功");
     println!();
 
@@ -82,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 初始化缓存接口
     println!("💾 初始化缓存接口...");
     let cache_config = CacheImplConfig::default();
-    let cache = Arc::new(tokio::sync::RwLock::new(
+    let _cache = Arc::new(tokio::sync::RwLock::new(
         CacheInterface::new(cache_config).map_err(|e| format!("Cache error: {e}"))?
     ));
     println!("  ✅ 缓存接口初始化成功");

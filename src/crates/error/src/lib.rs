@@ -328,12 +328,12 @@ impl fmt::Display for ErrorInfo {
         
         // 显示上下文信息
         for ctx in &self.context {
-            write!(f, "\n  上下文: {}", ctx)?;
+            write!(f, "\n  上下文: {ctx}")?;
         }
         
         // 显示源错误
         if let Some(source) = &self.source {
-            write!(f, "\n  由以下错误引起: {}", source)?;
+            write!(f, "\n  由以下错误引起: {source}")?;
         }
         Ok(())
     }
