@@ -14,18 +14,42 @@
 
 //! SeeSea 主程序入口
 
+use clap::{Parser};
 use seesea_core::api::on::ApiInterface;
 use seesea_core::cache::{CacheInterface, CacheImplConfig};
 use seesea_core::config::ConfigManager;
 use seesea_core::net::{NetworkConfig, NetworkInterface};
 use seesea_core::search::{SearchConfig, SearchInterface};
+use std::path::PathBuf;
 use std::sync::Arc;
+
+/// SeeSea 命令行应用
+#[derive(Parser)]
+#[command(name = "SeeSea")]
+#[command(about = "🌊 SeeSea - 隐私保护型元搜索引擎", long_about = None)]
+#[command(version)]
+struct Cli {
+    /// 配置文件路径
+    #[arg(short, long)]
+    config: Option<PathBuf>,
+    
+    /// 运行环境
+    #[arg(short, long, default_value = "development")]
+    environment: String,
+    
+    /// 启用调试模式
+    #[arg(short, long)]
+    debug: bool,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // 解析命令行参数
+    let cli = Cli::parse();
+    
     // 初始化日志
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(if cli.debug { tracing::Level::DEBUG } else { tracing::Level::INFO })
         .init();
 
     println!("🌊 SeeSea - 看海看得远，看得广");
@@ -34,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // 加载配置
     println!("📁 加载配置...");
-    let manager = ConfigManager::with_environment(None, "development").await?;
+    let manager = ConfigManager::with_environment(cli.config, &cli.environment).await?;
     let config = manager.get_config().await;
     println!("  ✅ 配置加载成功");
     println!("  📄 环境: {:?}", config.general.environment);
@@ -66,11 +90,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // 初始化API接口
     println!("🚀 初始化API接口...");
-    let api = ApiInterface::from_config(
-        search_config,
-        network,
-        cache,
-    )?;
+    
+    // 创建搜索接口
+    let search = Arc::new(SearchInterface::new(search_config)?);
+    
+    // 创建自定义网络配置，使用配置文件中的端口号
+    // 内网和外网使用不同的端口，避免冲突
+    let network_config = seesea_core::api::network::NetworkConfig {
+        mode: seesea_core::api::network::NetworkMode::Dual,
+        internal: seesea_core::api::network::InternalNetworkConfig {
+            enabled: true,
+            host: "127.0.0.1".to_string(),
+            port: config.server.port,  // 内网使用配置文件中的端口号
+        },
+        external: seesea_core::api::network::ExternalNetworkConfig {
+            enabled: true,
+            host: config.server.bind_address,
+            port: config.server.port + 1,  // 外网使用配置文件中的端口号+1，避免冲突
+            cors_origins: vec!["*".to_string()],
+            enable_rate_limit: config.server.limiter,
+            enable_circuit_breaker: true,
+            enable_ip_filter: true,
+            enable_jwt_auth: config.api.auth.enabled,
+            enable_magic_link: true,
+        },
+    };
+    
+    // 使用自定义网络配置创建API接口
+    let api = ApiInterface::with_network_config(
+        search,
+        env!("CARGO_PKG_VERSION").to_string(),
+        network_config,
+    );
+    
     println!("  ✅ API接口初始化成功");
     println!();
 
