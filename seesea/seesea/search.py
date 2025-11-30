@@ -33,20 +33,20 @@ from .types import (
 class SearchClient:
     """
     SeeSea 搜索客户端
-    
+
     提供高层次的搜索接口，自动处理并发、缓存和结果聚合。
-    
+
     示例:
         >>> client = SearchClient()
         >>> results = client.search("rust programming", page=1, page_size=20)
         >>> for item in results['results']:
         ...     print(f"{item['title']}: {item['url']}")
     """
-    
+
     def __init__(self):
         """初始化搜索客户端"""
         self._client = PySearchClient()
-    
+
     def search(
         self,
         query: str,
@@ -81,10 +81,10 @@ class SearchClient:
             - cached: 是否来自缓存
             - query_time_ms: 查询耗时（毫秒）
             - engines_used: 使用的引擎列表
-        
+
         Raises:
             RuntimeError: 搜索失败时抛出
-            
+
         示例:
             >>> client = SearchClient()
             >>> response = client.search("rust programming")
@@ -104,15 +104,15 @@ class SearchClient:
             include_deepweb,
         )
         return SearchResponse.from_dict(result_dict)
-    
+
     def clear_cache(self) -> None:
         """
         清除所有缓存
-        
+
         用于测试或强制刷新搜索结果
         """
         self._client.clear_cache()
-    
+
     def list_engines(self) -> List[str]:
         """
         列出所有可用的搜索引擎
@@ -122,20 +122,20 @@ class SearchClient:
         """
         engines = self._client.list_engines()
         return engines
-    
+
     def health_check(self) -> Dict[str, bool]:
         """
         检查所有引擎的健康状态
-        
+
         Returns:
             字典，键为引擎名称，值为是否健康
         """
         return self._client.health_check()
-    
+
     def get_stats(self) -> SearchStats:
         """
         获取搜索统计信息
-        
+
         Returns:
             SearchStats 对象，包含：
             - total_searches: 总搜索次数
@@ -144,7 +144,7 @@ class SearchClient:
             - engine_failures: 引擎失败次数
             - timeouts: 超时次数
             - cache_hit_rate: 缓存命中率（计算属性）
-            
+
         示例:
             >>> stats = client.get_stats()
             >>> print(f"总搜索: {stats.total_searches}")
@@ -152,7 +152,7 @@ class SearchClient:
         """
         stats_dict = self._client.get_stats()
         return SearchStats.from_dict(stats_dict)
-    
+
     def search_streaming(
         self,
         query: str,
@@ -164,7 +164,7 @@ class SearchClient:
     ) -> Dict[str, Any]:
         """
         流式搜索 - 每个引擎完成时立即调用回调函数
-        
+
         Args:
             query: 搜索关键词
             callback: 回调函数，签名为 callback(result_dict)
@@ -172,10 +172,10 @@ class SearchClient:
             page_size: 每页大小
             engines: 指定引擎列表
             include_deepweb: 是否包含深网搜索（如新华网），默认 False
-            
+
         Returns:
             最终聚合的搜索结果
-        
+
         示例:
             >>> def on_result(result):
             ...     print(f"引擎 {result['engine']} 完成: {len(result['items'])} 个结果")
@@ -189,7 +189,7 @@ class SearchClient:
             engines,
             include_deepweb,
         )
-    
+
     def search_fulltext(
         self,
         query: str,
@@ -200,19 +200,19 @@ class SearchClient:
     ) -> SearchResponse:
         """
         全文搜索 - 搜索网络和历史数据库
-        
+
         整合网络搜索、数据库缓存和 RSS 订阅源的结果。
-        
+
         Args:
             query: 搜索关键词
             page: 页码
             page_size: 每页大小
             engines: 指定引擎列表
             include_deepweb: 是否包含深网搜索（如新华网），默认 False
-            
+
         Returns:
             SearchResponse 对象（网络 + 数据库 + RSS）
-            
+
         示例:
             >>> response = client.search_fulltext("rust programming")
             >>> print(f"来源: {response.engines_used}")
@@ -228,17 +228,17 @@ class SearchClient:
             include_deepweb,
         )
         return SearchResponse.from_dict(result_dict)
-    
+
     def get_engine_states(self) -> Dict[str, EngineState]:
         """
         获取所有引擎的状态信息
-        
+
         Returns:
             字典，键为引擎名称，值为 EngineState 对象：
             - enabled: 是否启用
             - temporarily_disabled: 是否临时禁用
             - consecutive_failures: 连续失败次数
-            
+
         示例:
             >>> states = client.get_engine_states()
             >>> for name, state in states.items():
@@ -246,20 +246,17 @@ class SearchClient:
             ...         print(f"{name}: 临时禁用 (失败: {state.consecutive_failures})")
         """
         states_dict = self._client.get_engine_states()
-        return {
-            name: EngineState.from_dict(state)
-            for name, state in states_dict.items()
-        }
-    
+        return {name: EngineState.from_dict(state) for name, state in states_dict.items()}
+
     def get_cache_info(self) -> CacheInfo:
         """
         获取引擎缓存信息
-        
+
         Returns:
             CacheInfo 对象：
             - cache_size: 缓存大小
             - cached_engines: 已缓存的引擎列表
-            
+
         示例:
             >>> info = client.get_cache_info()
             >>> print(f"缓存大小: {info.cache_size}")
@@ -267,29 +264,29 @@ class SearchClient:
         """
         info_dict = self._client.get_cache_info()
         return CacheInfo.from_dict(info_dict)
-    
+
     def invalidate_engine(self, engine_name: str) -> None:
         """
         使特定引擎的缓存失效
-        
+
         Args:
             engine_name: 引擎名称
         """
         self._client.invalidate_engine(engine_name)
-    
+
     def list_global_engines(self) -> List[str]:
         """
         列出全局模式下的引擎
-        
+
         Returns:
             全局引擎列表
         """
         return self._client.list_global_engines()
-    
+
     def get_privacy_stats(self) -> Optional[PrivacyStats]:
         """
         获取隐私保护统计信息
-        
+
         Returns:
             PrivacyStats 对象（如果可用），包含：
             - privacy_level: 隐私级别（低/中/高/最大）
@@ -297,7 +294,7 @@ class SearchClient:
             - fingerprint_protection: TLS 指纹保护级别
             - doh_enabled: 是否启用 DNS over HTTPS
             - user_agent_strategy: User-Agent 策略
-            
+
         示例:
             >>> stats = client.get_privacy_stats()
             >>> if stats:
@@ -308,6 +305,6 @@ class SearchClient:
         if stats_dict is None:
             return None
         return PrivacyStats.from_dict(stats_dict)
-    
+
     def __repr__(self) -> str:
         return f"<SearchClient>"

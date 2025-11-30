@@ -83,11 +83,10 @@ async fn query_doh_server(hostname: &str, server_url: &str) -> Result<Vec<IpAddr
     let mut ips = Vec::new();
     if let Some(answers) = json.get("Answer").and_then(|a| a.as_array()) {
         for answer in answers {
-            if let Some(data) = answer.get("data").and_then(|d| d.as_str()) {
-                if let Ok(ip) = data.parse::<IpAddr>() {
+            if let Some(data) = answer.get("data").and_then(|d| d.as_str())
+                && let Ok(ip) = data.parse::<IpAddr>() {
                     ips.push(ip);
                 }
-            }
         }
     }
 

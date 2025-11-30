@@ -220,11 +220,10 @@ impl ConfigManager {
     /// 应用环境特定的覆盖
     fn apply_environment_overrides(config: &mut SeeSeaConfig, environment: &str) {
         // 从环境变量读取配置覆盖
-        if let Ok(port) = std::env::var("SEEA_PORT") {
-            if let Ok(port) = port.parse::<u16>() {
+        if let Ok(port) = std::env::var("SEEA_PORT")
+            && let Ok(port) = port.parse::<u16>() {
                 config.server.port = port;
             }
-        }
 
         if let Ok(debug) = std::env::var("SEEA_DEBUG") {
             config.general.debug = debug.parse().unwrap_or(false);

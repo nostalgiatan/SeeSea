@@ -218,11 +218,10 @@ impl BingEngine {
                     
                     // 解码 base64
                     use base64::{Engine as _, engine::general_purpose::URL_SAFE};
-                    if let Ok(decoded_bytes) = URL_SAFE.decode(&padded_url) {
-                        if let Ok(decoded_url) = String::from_utf8(decoded_bytes) {
+                    if let Ok(decoded_bytes) = URL_SAFE.decode(&padded_url)
+                        && let Ok(decoded_url) = String::from_utf8(decoded_bytes) {
                             return decoded_url;
                         }
-                    }
                 }
             }
         }

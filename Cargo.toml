@@ -1,11 +1,3 @@
-[workspace]
-members = [
-    ".",
-    "installer",
-]
-exclude = [
-    "test_console",
-]
 
 [package]
 name = "SeeSea"

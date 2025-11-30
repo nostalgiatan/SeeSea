@@ -39,7 +39,7 @@ from .utils import format_results
 console = Console()
 
 
-@click.group(invoke_without_command=True, help='SeeSea - 隐私保护型元搜索引擎')
+@click.group(invoke_without_command=True, help="SeeSea - 隐私保护型元搜索引擎")
 @click.pass_context
 def cli(ctx):
     """SeeSea - 隐私保护型元搜索引擎"""
@@ -49,14 +49,14 @@ def cli(ctx):
 
 
 @cli.command()
-@click.argument('query')
-@click.option('-p', '--page', default=1, help='页码 (默认: 1)')
-@click.option('-n', '--page-size', default=10, help='每页结果数 (默认: 10)')
-@click.option('-l', '--limit', default=10, help='显示结果数 (默认: 10)')
-@click.option('-j', '--json', is_flag=True, help='JSON 格式输出')
-@click.option('-v', '--verbose', is_flag=True, help='详细输出')
-@click.option('-e', '--engines', help='指定搜索引擎列表，用逗号分隔')
-@click.option('-c', '--count', type=int, help='使用的引擎数量（按延迟排序，选择低延迟引擎）')
+@click.argument("query")
+@click.option("-p", "--page", default=1, help="页码 (默认: 1)")
+@click.option("-n", "--page-size", default=10, help="每页结果数 (默认: 10)")
+@click.option("-l", "--limit", default=10, help="显示结果数 (默认: 10)")
+@click.option("-j", "--json", is_flag=True, help="JSON 格式输出")
+@click.option("-v", "--verbose", is_flag=True, help="详细输出")
+@click.option("-e", "--engines", help="指定搜索引擎列表，用逗号分隔")
+@click.option("-c", "--count", type=int, help="使用的引擎数量（按延迟排序，选择低延迟引擎）")
 def search(query, page, page_size, limit, json, verbose, engines, count):
     """执行搜索"""
     with Progress(
@@ -72,17 +72,14 @@ def search(query, page, page_size, limit, json, verbose, engines, count):
             # Parse engines parameter
             engines_list = None
             if engines:
-                engines_list = [e.strip() for e in engines.split(',') if e.strip()]
+                engines_list = [e.strip() for e in engines.split(",") if e.strip()]
             elif count:
                 # If count is specified but no engines, get all engines and take first N
                 all_engines = client.list_engines()
                 engines_list = all_engines[:count] if count < len(all_engines) else None
 
             results = client.search(
-                query=query,
-                page=page,
-                page_size=page_size,
-                engines=engines_list
+                query=query, page=page, page_size=page_size, engines=engines_list
             )
             progress.update(task, description="搜索完成")
 
@@ -94,19 +91,20 @@ def search(query, page, page_size, limit, json, verbose, engines, count):
     if json:
         # Convert SearchResponse to dict for JSON serialization
         results_dict = {
-            'query': results.query,
-            'results': [
+            "query": results.query,
+            "results": [
                 {
-                    'title': item.title,
-                    'url': item.url,
-                    'snippet': item.content,
-                    'score': getattr(item, 'score', 0)
-                } for item in results.results
+                    "title": item.title,
+                    "url": item.url,
+                    "snippet": item.content,
+                    "score": getattr(item, "score", 0),
+                }
+                for item in results.results
             ],
-            'total_count': results.total_count,
-            'cached': results.cached,
-            'query_time_ms': results.query_time_ms,
-            'engines_used': results.engines_used
+            "total_count": results.total_count,
+            "cached": results.cached,
+            "query_time_ms": results.query_time_ms,
+            "engines_used": results.engines_used,
         }
         console.print(json_module.dumps(results_dict, ensure_ascii=False, indent=2))
     else:
@@ -128,9 +126,9 @@ def search(query, page, page_size, limit, json, verbose, engines, count):
         for i, item in enumerate(formatted[:limit], 1):
             content = Text()
             content.append(f"{i}. ", style="cyan")
-            content.append(item['title'], style="bold")
+            content.append(item["title"], style="bold")
 
-            if item['description']:
+            if item["description"]:
                 content.append(f"\n   {item['description']}", style="dim")
 
             if verbose:
@@ -142,7 +140,7 @@ def search(query, page, page_size, limit, json, verbose, engines, count):
 
 
 @cli.command()
-@click.option('-j', '--json', is_flag=True, help='JSON 格式输出')
+@click.option("-j", "--json", is_flag=True, help="JSON 格式输出")
 def engines(json):
     """列出所有可用的搜索引擎"""
     with Progress(
@@ -174,15 +172,15 @@ def engines(json):
 
             # 添加引擎信息
             engine_info = {
-                'google': ['Google', 'Web', '全球最大的搜索引擎'],
-                'bing': ['Bing', 'Web', '微软搜索引擎'],
-                'duckduckgo': ['DuckDuckGo', 'Web', '隐私保护搜索引擎'],
-                'xinhua': ['新华网', 'News', '中国官方新闻媒体'],
-                'baidu': ['百度', 'Web', '中文搜索引擎'],
+                "google": ["Google", "Web", "全球最大的搜索引擎"],
+                "bing": ["Bing", "Web", "微软搜索引擎"],
+                "duckduckgo": ["DuckDuckGo", "Web", "隐私保护搜索引擎"],
+                "xinhua": ["新华网", "News", "中国官方新闻媒体"],
+                "baidu": ["百度", "Web", "中文搜索引擎"],
             }
 
             for engine in sorted(engine_list):
-                info = engine_info.get(engine, [engine.title(), 'Unknown', '搜索引擎'])
+                info = engine_info.get(engine, [engine.title(), "Unknown", "搜索引擎"])
                 table.add_row(info[0], info[1], info[2])
 
             console.print(table)
@@ -190,10 +188,10 @@ def engines(json):
             # 使用提示
             usage_panel = Panel(
                 "[green]使用方法:[/green]\n"
-                "seesea search \"关键词\" -e google,bing  # 指定多个引擎\n"
-                "seesea search \"关键词\" -e xinhua         # 只用新华网搜索",
+                'seesea search "关键词" -e google,bing  # 指定多个引擎\n'
+                'seesea search "关键词" -e xinhua         # 只用新华网搜索',
                 title="引擎选择提示",
-                border_style="blue"
+                border_style="blue",
             )
             console.print(usage_panel)
         else:
@@ -206,7 +204,7 @@ def rss():
     pass
 
 
-@rss.command('list')
+@rss.command("list")
 def rss_list():
     """列出可用RSS模板"""
     with Progress(
@@ -235,10 +233,10 @@ def rss_list():
 
         for i, template in enumerate(templates, 1):
             descriptions = {
-                'xinhua': '新华网官方RSS订阅源',
-                'people': '人民网官方RSS订阅源',
+                "xinhua": "新华网官方RSS订阅源",
+                "people": "人民网官方RSS订阅源",
             }
-            desc = descriptions.get(template, 'RSS订阅源')
+            desc = descriptions.get(template, "RSS订阅源")
             table.add_row(str(i), template, desc)
 
         console.print(table)
@@ -246,9 +244,9 @@ def rss_list():
         console.print("[yellow]没有找到可用模板[/yellow]")
 
 
-@rss.command('add')
-@click.argument('template')
-@click.option('-c', '--categories', help='分类列表，用逗号分隔')
+@rss.command("add")
+@click.argument("template")
+@click.option("-c", "--categories", help="分类列表，用逗号分隔")
 def rss_add(template, categories):
     """从模板添加RSS"""
     with Progress(
@@ -261,7 +259,7 @@ def rss_add(template, categories):
 
         try:
             client = RssClient()
-            categories_list = categories.split(',') if categories else None
+            categories_list = categories.split(",") if categories else None
             count = client.add_from_template(template, categories_list)
             progress.update(task, description="添加完成")
 
@@ -276,15 +274,15 @@ def rss_add(template, categories):
         f"模板: {template}\n"
         f"分类: {categories or '全部'}",
         title="添加成功",
-        border_style="green"
+        border_style="green",
     )
     console.print(success_panel)
 
 
-@rss.command('fetch')
-@click.argument('url')
-@click.option('-l', '--limit', default=10, help='显示项目数 (默认: 10)')
-@click.option('-v', '--verbose', is_flag=True, help='详细输出')
+@rss.command("fetch")
+@click.argument("url")
+@click.option("-l", "--limit", default=10, help="显示项目数 (默认: 10)")
+@click.option("-v", "--verbose", is_flag=True, help="详细输出")
 def rss_fetch(url, limit, verbose):
     """获取RSS feed"""
     with Progress(
@@ -309,41 +307,49 @@ def rss_fetch(url, limit, verbose):
     feed_info = Table(show_header=False, box=box.ROUNDED)
     feed_info.add_column("属性", style="bold blue")
     feed_info.add_column("值")
-    feed_info.add_row("标题", feed['meta']['title'])
-    feed_info.add_row("链接", feed['meta']['link'])
-    if feed['meta'].get('description'):
-        desc = feed['meta']['description'][:80] + "..." if len(feed['meta']['description']) > 80 else feed['meta']['description']
+    feed_info.add_row("标题", feed["meta"]["title"])
+    feed_info.add_row("链接", feed["meta"]["link"])
+    if feed["meta"].get("description"):
+        desc = (
+            feed["meta"]["description"][:80] + "..."
+            if len(feed["meta"]["description"]) > 80
+            else feed["meta"]["description"]
+        )
         feed_info.add_row("描述", desc)
-    feed_info.add_row("项目数", str(len(feed['items'])))
+    feed_info.add_row("项目数", str(len(feed["items"])))
 
     console.print(Panel(feed_info, title="RSS Feed 信息", border_style="blue"))
 
     # 显示项目列表
     console.print(f"\nRSS 项目 (显示前{min(limit, len(feed['items']))}个):\n")
 
-    for i, item in enumerate(feed['items'][:limit], 1):
+    for i, item in enumerate(feed["items"][:limit], 1):
         content = Text()
         content.append(f"{i}. ", style="cyan")
-        content.append(item['title'], style="bold")
+        content.append(item["title"], style="bold")
         content.append(f"\n   🔗 {item['link']}", style="blue")
 
-        if verbose and item.get('description'):
-            desc = item['description'][:100] + "..." if len(item['description']) > 100 else item['description']
+        if verbose and item.get("description"):
+            desc = (
+                item["description"][:100] + "..."
+                if len(item["description"]) > 100
+                else item["description"]
+            )
             content.append(f"\n   📄 {desc}", style="dim")
 
-        if verbose and item.get('pub_date'):
+        if verbose and item.get("pub_date"):
             content.append(f"\n   📅 {item['pub_date']}", style="yellow")
 
         console.print(Panel(content, box=box.SIMPLE, border_style="green"))
         console.print()
 
 
-@rss.command('ranking')
-@click.argument('keywords')
-@click.option('-u', '--urls', help='RSS URL列表，用逗号分隔')
-@click.option('-l', '--limit', default=20, help='显示项目数 (默认: 20)')
-@click.option('-s', '--min-score', default=3.0, help='最小评分 (默认: 3.0)')
-@click.option('-v', '--verbose', is_flag=True, help='详细输出')
+@rss.command("ranking")
+@click.argument("keywords")
+@click.option("-u", "--urls", help="RSS URL列表，用逗号分隔")
+@click.option("-l", "--limit", default=20, help="显示项目数 (默认: 20)")
+@click.option("-s", "--min-score", default=3.0, help="最小评分 (默认: 3.0)")
+@click.option("-v", "--verbose", is_flag=True, help="详细输出")
 def rss_ranking(keywords, urls, limit, min_score, verbose):
     """创建RSS榜单"""
     with Progress(
@@ -359,9 +365,9 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
 
             # 解析关键词和权重
             keyword_list = []
-            for kw_pair in keywords.split(','):
-                if ':' in kw_pair:
-                    keyword, weight = kw_pair.split(':', 1)
+            for kw_pair in keywords.split(","):
+                if ":" in kw_pair:
+                    keyword, weight = kw_pair.split(":", 1)
                     try:
                         weight = float(weight.strip())
                     except:
@@ -371,13 +377,10 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
                     keyword_list.append((kw_pair.strip(), 5.0))
 
             # 解析RSS URLs
-            feed_urls = urls.split(',') if urls else []
+            feed_urls = urls.split(",") if urls else []
 
             ranking = client.create_ranking(
-                feed_urls=feed_urls,
-                keywords=keyword_list,
-                min_score=min_score,
-                max_results=limit
+                feed_urls=feed_urls, keywords=keyword_list, min_score=min_score, max_results=limit
             )
 
             progress.update(task, description="榜单创建完成")
@@ -391,14 +394,14 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
     ranking_info = Table(show_header=False, box=box.ROUNDED)
     ranking_info.add_column("属性", style="bold yellow")
     ranking_info.add_column("值")
-    ranking_info.add_row("总项目数", str(ranking.get('total_items', 0)))
+    ranking_info.add_row("总项目数", str(ranking.get("total_items", 0)))
     ranking_info.add_row("评分阈值", str(min_score))
     ranking_info.add_row("关键词", ", ".join([kw for kw, w in keyword_list]))
 
     console.print(Panel(ranking_info, title="RSS 榜单概要", border_style="yellow"))
 
     # 显示榜单项目
-    items = ranking.get('items', [])
+    items = ranking.get("items", [])
     if items:
         console.print(f"\n热门文章榜单 (显示前{min(limit, len(items))}个):\n")
 
@@ -411,15 +414,21 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
             ranking_table.add_column("匹配关键词", style="green")
 
         for i, item in enumerate(items[:limit], 1):
-            score = item.get('score', 0)
-            title = item.get('title', 'N/A')[:50] + "..." if len(item.get('title', '')) > 50 else item.get('title', 'N/A')
+            score = item.get("score", 0)
+            title = (
+                item.get("title", "N/A")[:50] + "..."
+                if len(item.get("title", "")) > 50
+                else item.get("title", "N/A")
+            )
 
             row = [str(i), f"{score:.1f}", title]
             if verbose:
-                row.extend([
-                    item.get('link', 'N/A')[:40] + "...",
-                    ", ".join(item.get('matched_keywords', []))
-                ])
+                row.extend(
+                    [
+                        item.get("link", "N/A")[:40] + "...",
+                        ", ".join(item.get("matched_keywords", [])),
+                    ]
+                )
 
             ranking_table.add_row(*row)
 
@@ -429,15 +438,15 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
 
 
 @cli.command()
-@click.option('--host', default=None, help='监听地址 (默认: 配置文件中的地址)')
-@click.option('--port', default=None, help='监听端口 (默认: 配置文件中的端口)')
-@click.option('-c', '--config', default=None, help='配置文件路径')
+@click.option("--host", default=None, help="监听地址 (默认: 配置文件中的地址)")
+@click.option("--port", default=None, help="监听端口 (默认: 配置文件中的端口)")
+@click.option("-c", "--config", default=None, help="配置文件路径")
 def server(host, port, config):
     """启动 API 服务器"""
     # 使用默认值或配置文件中的值
-    default_host = host if host is not None else '127.0.0.1'
+    default_host = host if host is not None else "127.0.0.1"
     default_port = port if port is not None else 8080
-    
+
     server_info = Table(box=box.ROUNDED)
     server_info.add_column("属性", style="bold green")
     server_info.add_column("值")
@@ -469,7 +478,7 @@ def server(host, port, config):
 
 
 @cli.command()
-@click.option('-j', '--json', is_flag=True, help='JSON 格式输出')
+@click.option("-j", "--json", is_flag=True, help="JSON 格式输出")
 def stats(json):
     """显示统计信息"""
     with Progress(
@@ -497,24 +506,24 @@ def stats(json):
         stats_table.add_column("统计项", style="bold blue")
         stats_table.add_column("数值", style="bold green")
 
-        stats_table.add_row("总搜索次数", str(stats_data['total_searches']))
-        stats_table.add_row("缓存命中", str(stats_data['cache_hits']))
-        stats_table.add_row("缓存未命中", str(stats_data['cache_misses']))
+        stats_table.add_row("总搜索次数", str(stats_data["total_searches"]))
+        stats_table.add_row("缓存命中", str(stats_data["cache_hits"]))
+        stats_table.add_row("缓存未命中", str(stats_data["cache_misses"]))
 
-        if stats_data['total_searches'] > 0:
-            total_cache = stats_data['cache_hits'] + stats_data['cache_misses']
+        if stats_data["total_searches"] > 0:
+            total_cache = stats_data["cache_hits"] + stats_data["cache_misses"]
             if total_cache > 0:
-                hit_rate = stats_data['cache_hits'] / total_cache * 100
+                hit_rate = stats_data["cache_hits"] / total_cache * 100
                 stats_table.add_row("缓存命中率", f"{hit_rate:.1f}%")
 
-        stats_table.add_row("引擎失败", str(stats_data['engine_failures']))
-        stats_table.add_row("超时次数", str(stats_data['timeouts']))
+        stats_table.add_row("引擎失败", str(stats_data["engine_failures"]))
+        stats_table.add_row("超时次数", str(stats_data["timeouts"]))
 
         console.print(stats_table)
 
 
 @cli.command()
-@click.option('-c', '--count', type=int, help='使用的引擎数量（按延迟排序，选择低延迟引擎）')
+@click.option("-c", "--count", type=int, help="使用的引擎数量（按延迟排序，选择低延迟引擎）")
 def interactive(count):
     """交互式搜索模式"""
     console.print("SeeSea 交互式搜索")
@@ -534,6 +543,7 @@ def interactive(count):
     while True:
         try:
             from rich.prompt import Prompt
+
             prompt = "🔍 > "
             if engine_count:
                 prompt = f"🔍 [green]引擎数量:{engine_count}[/green] > "
@@ -543,19 +553,19 @@ def interactive(count):
             if not query:
                 continue
 
-            if query.lower() in ['quit', 'exit']:
+            if query.lower() in ["quit", "exit"]:
                 console.print("[green]再见！[/green]")
                 break
 
-            if query.lower() == 'engines':
+            if query.lower() == "engines":
                 engines({})
                 continue
 
-            if query.lower() == 'stats':
+            if query.lower() == "stats":
                 stats({})
                 continue
 
-            if query.lower().startswith('count'):
+            if query.lower().startswith("count"):
                 parts = query.split()
                 if len(parts) == 2 and parts[1].isdigit():
                     engine_count = int(parts[1])
@@ -582,14 +592,11 @@ def interactive(count):
                     engines_list = None
                     if engine_count:
                         all_engines = client.list_engines()
-                        engines_list = all_engines[:engine_count] if engine_count < len(all_engines) else None
-                    
-                    results = client.search(
-                        query=query,
-                        page=1,
-                        page_size=10,
-                        engines=engines_list
-                    )
+                        engines_list = (
+                            all_engines[:engine_count] if engine_count < len(all_engines) else None
+                        )
+
+                    results = client.search(query=query, page=1, page_size=10, engines=engines_list)
                     progress.update(task, description="搜索完成")
 
                 except Exception as e:
@@ -608,10 +615,14 @@ def interactive(count):
             for i, item in enumerate(formatted[:10], 1):
                 content = Text()
                 content.append(f"{i}. ", style="cyan")
-                content.append(item['title'], style="bold")
+                content.append(item["title"], style="bold")
 
-                if item['description']:
-                    desc = item['description'][:120] + "..." if len(item['description']) > 120 else item['description']
+                if item["description"]:
+                    desc = (
+                        item["description"][:120] + "..."
+                        if len(item["description"]) > 120
+                        else item["description"]
+                    )
                     content.append(f"\n   {desc}", style="dim")
 
                 console.print(Panel(content, box=box.SIMPLE, border_style="green"))
@@ -631,5 +642,5 @@ def interactive(count):
 cli.add_command(rss)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     cli()

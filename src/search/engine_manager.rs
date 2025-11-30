@@ -78,13 +78,11 @@ impl EngineState {
             return false;
         }
         
-        if self.temporarily_disabled {
-            if let Some(until) = self.disabled_until {
-                if Instant::now() < until {
-                    return false;
-                }
+        if self.temporarily_disabled
+            && let Some(until) = self.disabled_until
+            && Instant::now() < until {
+                return false;
             }
-        }
         
         true
     }

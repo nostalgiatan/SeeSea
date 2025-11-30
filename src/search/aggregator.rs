@@ -213,11 +213,10 @@ impl SearchAggregator {
                 let max_len = results.iter().map(|r| r.items.len()).max().unwrap_or(0);
                 for i in 0..max_len {
                     for result in &results {
-                        if let Some(item) = result.items.get(i) {
-                            if seen_urls.insert(item.url.clone()) {
+                        if let Some(item) = result.items.get(i)
+                            && seen_urls.insert(item.url.clone()) {
                                 merged_items.push(item.clone());
                             }
-                        }
                     }
                 }
             }

@@ -127,8 +127,8 @@ impl RssParser {
         };
 
         // 查找channel内容
-        if let Some(channel_start) = content.find("<channel>") {
-            if let Some(channel_end) = content.find("</channel>") {
+        if let Some(channel_start) = content.find("<channel>")
+            && let Some(channel_end) = content.find("</channel>") {
                 let channel_content = &content[channel_start..channel_end + 10];
 
                 // 解析各个字段
@@ -148,7 +148,6 @@ impl RssParser {
                     meta.language = Some(lang);
                 }
             }
-        }
 
         meta
     }
@@ -236,20 +235,18 @@ impl RssParser {
                     current_item.pub_date = Some(updated);
                 } else if let Some(content) = Self::extract_tag_content(trimmed, "content") {
                     current_item.content = Some(content);
-                } else if trimmed.contains("<link") && trimmed.contains("href=") {
-                    if let Some(href) = Self::extract_attribute(trimmed, "href") {
+                } else if trimmed.contains("<link") && trimmed.contains("href=")
+                    && let Some(href) = Self::extract_attribute(trimmed, "href") {
                         current_item.link = href;
                     }
-                }
             } else if let Some(title) = Self::extract_tag_content(trimmed, "title") {
                 if meta.title.is_empty() {
                     meta.title = title;
                 }
             } else if trimmed.contains("<link") && trimmed.contains("href=")
-                && meta.link.is_empty() {
-                    if let Some(href) = Self::extract_attribute(trimmed, "href") {
-                        meta.link = href;
-                    }
+                && meta.link.is_empty()
+                && let Some(href) = Self::extract_attribute(trimmed, "href") {
+                    meta.link = href;
                 }
         }
 
@@ -273,8 +270,8 @@ impl RssParser {
         let start_tag = format!("<{tag}>");
         let end_tag = format!("</{tag}>");
 
-        if let Some(start_pos) = line.find(&start_tag) {
-            if let Some(end_pos) = line.find(&end_tag) {
+        if let Some(start_pos) = line.find(&start_tag)
+            && let Some(end_pos) = line.find(&end_tag) {
                 let content_start = start_pos + start_tag.len();
                 if content_start < end_pos {
                     let mut content = line[content_start..end_pos].to_string();
@@ -285,7 +282,6 @@ impl RssParser {
                     return Some(content);
                 }
             }
-        }
         None
     }
 

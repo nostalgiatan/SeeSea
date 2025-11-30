@@ -25,27 +25,27 @@ from seesea_core import PyRssClient
 class RssClient:
     """
     SeeSea RSS 客户端
-    
+
     提供 RSS feed 获取、解析和模板管理功能。
     支持持久化 RSS 订阅和自动更新。
-    
+
     示例:
         >>> client = RssClient()
         >>> # 获取 RSS feed
         >>> feed = client.fetch_feed("https://example.com/rss")
         >>> for item in feed['items']:
         ...     print(f"{item['title']}: {item['link']}")
-        >>> 
+        >>>
         >>> # 使用模板
         >>> templates = client.list_templates()
         >>> print(templates)
         >>> client.add_from_template("xinhua", ["politics", "tech"])
     """
-    
+
     def __init__(self):
         """初始化 RSS 客户端"""
         self._client = PyRssClient()
-    
+
     def fetch_feed(
         self,
         url: str,
@@ -74,12 +74,12 @@ class RssClient:
               - pub_date: 发布日期
               - content: 内容
               - categories: 分类列表
-        
+
         Raises:
             RuntimeError: 获取失败时抛出
         """
         return self._client.fetch_feed(url, max_items, filter_keywords)
-    
+
     def parse_feed(self, content: str) -> Dict[str, Any]:
         """
         解析 RSS feed 内容
@@ -89,19 +89,19 @@ class RssClient:
 
         Returns:
             RSS feed 字典（格式同 fetch_feed）
-        
+
         Raises:
             RuntimeError: 解析失败时抛出
         """
         return self._client.parse_feed(content)
-    
+
     def list_templates(self) -> List[str]:
         """
         列出所有可用的 RSS 模板
 
         Returns:
             模板名称列表
-        
+
         Examples:
             >>> client = RssClient()
             >>> templates = client.list_templates()
@@ -109,7 +109,7 @@ class RssClient:
             ['xinhua']
         """
         return self._client.list_templates()
-    
+
     def add_from_template(
         self,
         template_name: str,
@@ -124,24 +124,24 @@ class RssClient:
 
         Returns:
             添加的 feed 数量
-        
+
         Raises:
             RuntimeError: 添加失败时抛出
-        
+
         Examples:
             >>> client = RssClient()
             >>> # 添加新华网的政治和科技分类
             >>> count = client.add_from_template("xinhua", ["politics", "tech"])
             >>> print(f"Added {count} feeds")
             Added 2 feeds
-            >>> 
+            >>>
             >>> # 添加所有分类
             >>> count = client.add_from_template("xinhua")
             >>> print(f"Added {count} feeds")
             Added 30 feeds
         """
         return self._client.add_from_template(template_name, categories)
-    
+
     def create_ranking(
         self,
         feed_urls: List[str],
@@ -151,14 +151,14 @@ class RssClient:
     ) -> Dict[str, Any]:
         """
         创建 RSS 榜单 - 基于关键词对 RSS 项目进行评分和排名
-        
+
         Args:
             feed_urls: RSS Feed URL 列表
             keywords: 关键词及权重列表，格式为 [(keyword, weight), ...]
                      权重范围: 1.0 - 10.0
             min_score: 最小评分阈值（默认 0.0）
             max_results: 最大结果数（默认 100）
-        
+
         Returns:
             榜单字典，包含：
             - name: 榜单名称
@@ -171,7 +171,7 @@ class RssClient:
               - pub_date: 发布日期
               - score: 相关性评分
               - matched_keywords: 匹配的关键词列表
-        
+
         Examples:
             >>> client = RssClient()
             >>> # 定义关键词和权重
@@ -202,6 +202,6 @@ class RssClient:
             min_score,
             max_results,
         )
-    
+
     def __repr__(self) -> str:
         return f"<RssClient>"
