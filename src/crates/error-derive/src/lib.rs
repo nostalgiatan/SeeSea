@@ -89,7 +89,7 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
     };
     
     // 为每个变体生成 Display 实现的匹配分支
-    let display_arms = variants.iter().enumerate().map(|(_idx, variant)| {
+    let display_arms = variants.iter().map(|variant| {
         let variant_name = &variant.ident;
         
         // 获取 #[error("...")] 属性中的错误消息
@@ -97,15 +97,13 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
             .find_map(|attr| {
                 if attr.path().is_ident("error") {
                     // 尝试解析为 #[error("...")] 格式
-                    if let Ok(lit) = attr.parse_args::<Lit>() {
-                        if let Lit::Str(lit_str) = lit {
-                            return Some(lit_str.value());
-                        }
+                    if let Ok(Lit::Str(lit_str)) = attr.parse_args::<Lit>() {
+                        return Some(lit_str.value());
                     }
                 }
                 None
             })
-            .unwrap_or_else(|| format!("错误: {}", variant_name));
+            .unwrap_or_else(|| format!("错误: {variant_name}"));
         
         // 根据字段类型生成不同的匹配模式和格式化字符串
         match &variant.fields {
@@ -119,7 +117,7 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
                 let mut format_args = Vec::new();
                 
                 for field_name in &field_names {
-                    let pattern = format!("{{{}}}", field_name);
+                    let pattern = format!("{{{field_name}}}");
                     if format_str.contains(&pattern) {
                         format_str = format_str.replace(&pattern, "{}");
                         format_args.push(quote! { #field_name });
@@ -141,7 +139,7 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
             Fields::Unnamed(fields) => {
                 let field_count = fields.unnamed.len();
                 let field_names: Vec<_> = (0..field_count)
-                    .map(|i| syn::Ident::new(&format!("_field{}", i), proc_macro2::Span::call_site()))
+                    .map(|i| syn::Ident::new(&format!("_field{i}"), proc_macro2::Span::call_site()))
                     .collect();
                 
                 // 替换格式化字符串中的位置参数
@@ -149,7 +147,7 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
                 let mut format_args = Vec::new();
                 
                 for (i, field_name) in field_names.iter().enumerate() {
-                    let pattern = format!("{{{}}}", i);
+                    let pattern = format!("{{{i}}}");
                     if format_str.contains(&pattern) {
                         format_str = format_str.replace(&pattern, "{}");
                         format_args.push(quote! { #field_name });
