@@ -99,6 +99,7 @@ jobs:
         pip install maturin setuptools wheel build
 
     - name: Build seesea-core with maturin
+      shell: bash
       run: |
         # 直接在主目录构建，不使用工作区
         maturin build --release --strip
@@ -107,34 +108,29 @@ jobs:
 
     - name: Build seesea Python package
       working-directory: ./seesea
+      shell: bash
       run: |
         python -m pip install -e .
         python -m build --wheel
         cp dist/*.whl ../building/
 
     - name: Copy install.toml to building directory
+      shell: bash
       run: |
         cp install.toml building/
 
     - name: Build installer with cargo packager
       working-directory: ./installer
+      shell: bash
       run: |
         # 安装cargo-packager
         cargo install cargo-packager
         # 确保两个whl文件就位后再构建installer
-        if ($IsWindows) {
-          Get-ChildItem -Path ../building/
-        } else {
-          ls -la ../building/
-        }
+        ls -la ../building/
         # 先构建installer可执行文件
         cargo build --release
         # 检查可执行文件是否生成
-        if ($IsWindows) {
-          Get-ChildItem -Path target/release/
-        } else {
-          ls -la target/release/
-        }
+        ls -la target/release/
         # 然后使用cargo packager打包installer
         cargo packager --release --manifest-path Cargo.toml
 
