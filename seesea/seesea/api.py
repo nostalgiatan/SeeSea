@@ -49,9 +49,10 @@ class ApiServer:
     
     def __init__(
         self, 
-        host: str = "127.0.0.1", 
-        port: int = 8080,
-        network_mode: str = "internal"
+        host: Optional[str] = None, 
+        port: Optional[int] = None,
+        network_mode: str = "internal",
+        config_file: Optional[str] = None
     ):
         """
         初始化 API 服务器
@@ -60,6 +61,7 @@ class ApiServer:
             host: 监听地址
             port: 监听端口
             network_mode: 网络模式 - "internal"（内网）, "external"（外网）, 或 "dual"（双模式）
+            config_file: 配置文件路径
         
         Raises:
             ValueError: 当 network_mode 不是有效值时
@@ -67,10 +69,12 @@ class ApiServer:
         if network_mode not in ["internal", "external", "dual"]:
             raise ValueError("network_mode must be 'internal', 'external', or 'dual'")
             
-        self._server = PyApiServer(host, port, network_mode)
-        self.host = host
-        self.port = port
+        # 如果提供了配置文件，不传递host和port，让PyApiServer自己从配置文件中获取
+        self._server = PyApiServer(host, port, network_mode, config_file=config_file)
+        self.host = host if host is not None else "127.0.0.1"
+        self.port = port if port is not None else 8080
         self.network_mode = network_mode
+        self.config_file = config_file
     
     def start(self):
         """
