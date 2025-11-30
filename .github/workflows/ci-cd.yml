@@ -136,7 +136,20 @@ jobs:
       run: |
         # Remove dot from Python version (e.g., py3.9 -> py39)
         $PYTHON_VERSION_NO_DOT = "${{ matrix.python-version }}".Replace(".", "")
-        mv ../target/release/seesea-installer_1.0.0_x64-setup.exe ../building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}-setup.exe
+        # Check if target/release directory exists
+        if (Test-Path -Path "./installer/target/release/") {
+          # List available files for debugging
+          Get-ChildItem -Path "./installer/target/release/"
+          
+          # Rename NSIS installer if it exists
+          if (Test-Path -Path "./installer/target/release/seesea-installer_1.0.0_x64-setup.exe") {
+            Move-Item -Path "./installer/target/release/seesea-installer_1.0.0_x64-setup.exe" -Destination "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}-setup.exe"
+          }
+        } else {
+          Write-Host "target/release directory not found, skipping rename"
+          # List available directories for debugging
+          Get-ChildItem -Path "./installer/"
+        }
 
     # Rename Linux installer
     - name: Rename Linux installer
@@ -144,16 +157,31 @@ jobs:
       run: |
         # Remove dot from Python version (e.g., py3.9 -> py39)
         PYTHON_VERSION_NO_DOT=$(echo "${{ matrix.python-version }}" | tr -d '.')
-        # Check if AppImage file exists with x86_64 architecture
-        if [ -f "../target/release/seesea-installer_1.0.0_x86_64.AppImage" ]; then
-          mv ../target/release/seesea-installer_1.0.0_x86_64.AppImage ../building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.AppImage
-        # Check if AppImage file exists with x64 architecture
-        elif [ -f "../target/release/seesea-installer_1.0.0_x64.AppImage" ]; then
-          mv ../target/release/seesea-installer_1.0.0_x64.AppImage ../building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.AppImage
-        else
-          echo "AppImage file not found, skipping rename"
+        # Check if target/release directory exists
+        if [ -d "./installer/target/release/" ]; then
           # List available files for debugging
-          ls -la ../target/release/
+          ls -la ./installer/target/release/
+          
+          # Rename AppImage file if it exists
+          if [ -f "./installer/target/release/seesea-installer_1.0.0_x86_64.AppImage" ]; then
+            mv ./installer/target/release/seesea-installer_1.0.0_x86_64.AppImage ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.AppImage
+          elif [ -f "./installer/target/release/seesea-installer_1.0.0_x64.AppImage" ]; then
+            mv ./installer/target/release/seesea-installer_1.0.0_x64.AppImage ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.AppImage
+          fi
+          
+          # Rename deb file if it exists
+          if [ -f "./installer/target/release/seesea-installer_1.0.0_amd64.deb" ]; then
+            mv ./installer/target/release/seesea-installer_1.0.0_amd64.deb ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.deb
+          fi
+          
+          # Rename tar.gz file if it exists
+          if [ -f "./installer/target/release/seesea-installer_1.0.0_x86_64.tar.gz" ]; then
+            mv ./installer/target/release/seesea-installer_1.0.0_x86_64.tar.gz ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.tar.gz
+          fi
+        else
+          echo "target/release directory not found, skipping rename"
+          # List available directories for debugging
+          ls -la ./installer/
         fi
 
     # Rename macOS installer
@@ -162,7 +190,26 @@ jobs:
       run: |
         # Remove dot from Python version (e.g., py3.9 -> py39)
         PYTHON_VERSION_NO_DOT=$(echo "${{ matrix.python-version }}" | tr -d '.')
-        mv ../target/release/seesea-installer_1.0.0_${{ matrix.arch }}.dmg ../building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.dmg
+        # Check if target/release directory exists
+        if [ -d "./installer/target/release/" ]; then
+          # List available files for debugging
+          ls -la ./installer/target/release/
+          
+          # Rename DMG file if it exists
+          if [ -f "./installer/target/release/seesea-installer_1.0.0_${{ matrix.arch }}.dmg" ]; then
+            mv ./installer/target/release/seesea-installer_1.0.0_${{ matrix.arch }}.dmg ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.dmg
+          # Check for x86_64 architecture
+          elif [ -f "./installer/target/release/seesea-installer_1.0.0_x86_64.dmg" ]; then
+            mv ./installer/target/release/seesea-installer_1.0.0_x86_64.dmg ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.dmg
+          # Check for arm64 architecture
+          elif [ -f "./installer/target/release/seesea-installer_1.0.0_arm64.dmg" ]; then
+            mv ./installer/target/release/seesea-installer_1.0.0_arm64.dmg ./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.dmg
+          fi
+        else
+          echo "target/release directory not found, skipping rename"
+          # List available directories for debugging
+          ls -la ./installer/
+        fi
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
