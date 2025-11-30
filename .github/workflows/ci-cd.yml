@@ -144,7 +144,17 @@ jobs:
       run: |
         # Remove dot from Python version (e.g., py3.9 -> py39)
         PYTHON_VERSION_NO_DOT=$(echo "${{ matrix.python-version }}" | tr -d '.')
-        mv ../target/release/seesea-installer_1.0.0_x64.AppImage ../building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.AppImage
+        # Check if AppImage file exists with x86_64 architecture
+        if [ -f "../target/release/seesea-installer_1.0.0_x86_64.AppImage" ]; then
+          mv ../target/release/seesea-installer_1.0.0_x86_64.AppImage ../building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.AppImage
+        # Check if AppImage file exists with x64 architecture
+        elif [ -f "../target/release/seesea-installer_1.0.0_x64.AppImage" ]; then
+          mv ../target/release/seesea-installer_1.0.0_x64.AppImage ../building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.AppImage
+        else
+          echo "AppImage file not found, skipping rename"
+          # List available files for debugging
+          ls -la ../target/release/
+        fi
 
     # Rename macOS installer
     - name: Rename macOS installer
