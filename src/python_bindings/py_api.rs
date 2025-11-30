@@ -21,6 +21,7 @@ use tokio::signal;
 use crate::api::ApiInterface;
 use crate::search::SearchConfig;
 use crate::api::network::{NetworkConfig as ApiNetworkConfig, NetworkMode};
+use crate::config::ConfigManager;
 
 /// Python bindings for API server
 ///
@@ -43,16 +44,18 @@ impl PyApiServer {
     /// * `host` - Server host address (default: "127.0.0.1")
     /// * `port` - Server port (default: 8080)
     /// * `network_mode` - Network mode: "internal", "external", or "dual" (default: "internal")
+    /// * `config_file` - Path to configuration file (optional)
     ///
     /// # Returns
     ///
     /// PyApiServer instance
     #[new]
-    #[pyo3(signature = (host=None, port=None, network_mode=None))]
+    #[pyo3(signature = (host=None, port=None, network_mode=None, config_file=None))]
     pub fn new(
         host: Option<String>, 
         port: Option<u16>,
         network_mode: Option<String>,
+        config_file: Option<String>,
     ) -> PyResult<Self> {
         let runtime = tokio::runtime::Runtime::new()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
@@ -71,7 +74,20 @@ impl PyApiServer {
             }
         };
         
-        let api = runtime.block_on(async {
+        let (api, actual_host, actual_port) = runtime.block_on(async {
+            // Load configuration if provided
+            let config_path = config_file.map(std::path::PathBuf::from);
+            println!("Loading config from: {:?}", config_path);
+            let config_manager = ConfigManager::with_environment(config_path, "development").await
+                .map_err(|e| format!("Failed to load config: {}", e))?;
+            let config = config_manager.get_config().await;
+            
+            // Print config values for debugging
+            println!("Config loaded successfully:");
+            println!("  Server port: {}", config.server.port);
+            println!("  Server bind address: {}", config.server.bind_address);
+            println!("  Environment: {:?}", config.general.environment);
+            
             // Create API interface with network configuration
             // Note: network and cache are created by the ApiInterface internally
             let search_config = SearchConfig::default();
@@ -81,17 +97,25 @@ impl PyApiServer {
             let mut api_network_config = ApiNetworkConfig::default();
             api_network_config.mode = network_mode_enum;
             
-            Ok::<_, String>(ApiInterface::with_network_config(
+            // Use config values if available
+            api_network_config.internal.port = config.server.port;
+            api_network_config.external.port = config.server.port + 1;
+            api_network_config.external.host = config.server.bind_address.clone();
+            
+            let api = ApiInterface::with_network_config(
                 search,
                 env!("CARGO_PKG_VERSION").to_string(),
                 api_network_config,
-            ))
+            );
+            
+            // Calculate actual host and port to use for binding
+            let actual_host = host.unwrap_or_else(|| config.server.bind_address.clone());
+            let actual_port = port.unwrap_or(config.server.port);
+            
+            Ok::<_, String>((api, actual_host, actual_port))
         }).map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
         
-        let address = format!("{}:{}", 
-            host.unwrap_or_else(|| "127.0.0.1".to_string()),
-            port.unwrap_or(8080)
-        );
+        let address = format!("{}:{}", actual_host, actual_port);
         
         Ok(Self {
             runtime,

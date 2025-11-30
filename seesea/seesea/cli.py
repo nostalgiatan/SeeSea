@@ -429,24 +429,37 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
 
 
 @cli.command()
-@click.option('--host', default='127.0.0.1', help='监听地址 (默认: 127.0.0.1)')
-@click.option('--port', default=8080, help='监听端口 (默认: 8080)')
-def server(host, port):
+@click.option('--host', default=None, help='监听地址 (默认: 配置文件中的地址)')
+@click.option('--port', default=None, help='监听端口 (默认: 配置文件中的端口)')
+@click.option('-c', '--config', default=None, help='配置文件路径')
+def server(host, port, config):
     """启动 API 服务器"""
+    # 使用默认值或配置文件中的值
+    default_host = host if host is not None else '127.0.0.1'
+    default_port = port if port is not None else 8080
+    
     server_info = Table(box=box.ROUNDED)
     server_info.add_column("属性", style="bold green")
     server_info.add_column("值")
     server_info.add_row("服务", "SeeSea API 服务器")
-    server_info.add_row("地址", f"{host}:{port}")
-    server_info.add_row("搜索端点", f"GET/POST http://{host}:{port}/api/search")
-    server_info.add_row("健康检查", f"GET http://{host}:{port}/api/health")
-    server_info.add_row("统计信息", f"GET http://{host}:{port}/api/stats")
+    server_info.add_row("地址", f"{default_host}:{default_port}")
+    server_info.add_row("搜索端点", f"GET/POST http://{default_host}:{default_port}/api/search")
+    server_info.add_row("健康检查", f"GET http://{default_host}:{default_port}/api/health")
+    server_info.add_row("统计信息", f"GET http://{default_host}:{default_port}/api/stats")
+    if config:
+        server_info.add_row("配置文件", config)
 
     console.print(Panel(server_info, title="API服务器信息", border_style="green"))
     console.print(f"\n服务器启动中... 按Ctrl+C停止\n")
 
     try:
-        api_server = ApiServer(host=host, port=port)
+        # 如果提供了配置文件，传递给ApiServer
+        if config:
+            # 使用配置文件时，不传递host和port，让ApiServer自己从配置文件中获取
+            api_server = ApiServer(config_file=config)
+        else:
+            # 没有配置文件时，使用默认值
+            api_server = ApiServer(host=default_host, port=default_port)
         api_server.start()
     except KeyboardInterrupt:
         console.print("\n[green]服务器已停止[/green]")
