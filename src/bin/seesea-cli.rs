@@ -259,11 +259,10 @@ async fn execute_search(
                     }
 
                     // 显示显示URL（如果与URL不同）
-                    if let Some(display_url) = &item.display_url {
-                        if display_url != &item.url {
+                    if let Some(display_url) = &item.display_url
+                        && display_url != &item.url {
                             println!("   {}", format!("🔗 {display_url}").bright_black());
                         }
-                    }
 
                     // 显示来源引擎
                     println!("   📌 来源: {}", engine_name.bright_green());

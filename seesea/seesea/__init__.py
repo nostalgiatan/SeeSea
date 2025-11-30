@@ -179,7 +179,7 @@ def _auto_register_engines():
                         callback=callback,
                     )
                     registered_count += 1
-                except Exception as e:
+                except Exception:
                     import traceback
 
                     traceback.print_exc()
@@ -210,7 +210,7 @@ def _auto_register_engines():
                             registered_count += 1
                             break
 
-        except Exception as e:
+        except Exception:
             # 显示所有错误，不静默
             failed_count += 1
 

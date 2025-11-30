@@ -85,7 +85,6 @@ from .base import (
 from .xinhua import (
     XinhuaEngine,
     create_xinhua_callback,
-    create_xinhua_callback_sync,
     XINHUA_SELECTORS,
     DEFAULT_USER_AGENT,
 )
