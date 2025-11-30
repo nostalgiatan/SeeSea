@@ -18,7 +18,7 @@ SeeSea API Server - API 服务器
 提供 REST API 服务器功能
 """
 
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
 from seesea_core import PyApiServer
 
 
@@ -157,7 +157,7 @@ class ApiServer:
 
     def print_endpoints(self):
         """打印所有可用的 API 端点"""
-        endpoints = self.get_endpoints()
+        self.get_endpoints()
 
     def __repr__(self) -> str:
         return f"<ApiServer(address='{self.address}', mode='{self.network_mode}')>"

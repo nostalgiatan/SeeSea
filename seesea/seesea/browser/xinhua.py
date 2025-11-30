@@ -38,11 +38,6 @@ Example:
     ...     print(f"{item['title']}: {item['url']}")
 """
 
-# 引擎元数据（用于自动注册）
-ENGINE_TYPE = "news"
-ENGINE_DESCRIPTION = "新华网搜索引擎 - 基于JavaScript渲染的SPA应用"
-ENGINE_CATEGORIES = ["news", "china"]
-
 from typing import Dict, List, Any, Optional, Set
 import time
 
@@ -52,6 +47,11 @@ except ImportError:
     Page = Any
 
 from .base import BaseBrowserEngine, BrowserConfig, SearchResultItem, BrowserActionDict
+
+# 引擎元数据（用于自动注册）
+ENGINE_TYPE = "news"
+ENGINE_DESCRIPTION = "新华网搜索引擎 - 基于JavaScript渲染的SPA应用"
+ENGINE_CATEGORIES = ["news", "china"]
 
 
 # Validated selectors from get_xinhua_results.py (in priority order)
@@ -202,7 +202,6 @@ class XinhuaEngine(BaseBrowserEngine):
         Returns:
             List of extracted search result items with title, url, and snippet
         """
-        query_text = params.get("query", "")
         max_results = params.get("max_results", 50)
         wait_times = params.get("wait_times", DEFAULT_WAIT_TIMES)
 

@@ -22,7 +22,6 @@ from typing import Dict, List, Optional, Any
 from seesea_core import PySearchClient
 from .types import (
     SearchResponse,
-    SearchResultItem,
     EngineState,
     CacheInfo,
     SearchStats,
@@ -307,4 +306,4 @@ class SearchClient:
         return PrivacyStats.from_dict(stats_dict)
 
     def __repr__(self) -> str:
-        return f"<SearchClient>"
+        return "<SearchClient>"

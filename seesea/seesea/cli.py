@@ -22,7 +22,6 @@ SeeSea 命令行接口
 import click
 import json as json_module
 import sys
-from typing import Optional, List
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -370,7 +369,7 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
                     keyword, weight = kw_pair.split(":", 1)
                     try:
                         weight = float(weight.strip())
-                    except:
+                    except ValueError:
                         weight = 5.0
                     keyword_list.append((keyword.strip(), weight))
                 else:
@@ -459,7 +458,7 @@ def server(host, port, config):
         server_info.add_row("配置文件", config)
 
     console.print(Panel(server_info, title="API服务器信息", border_style="green"))
-    console.print(f"\n服务器启动中... 按Ctrl+C停止\n")
+    console.print("\n服务器启动中... 按Ctrl+C停止\n")
 
     try:
         # 如果提供了配置文件，传递给ApiServer
@@ -605,12 +604,12 @@ def interactive(count):
                     continue
 
             # 显示结果
-            console.print(f"\n搜索结果:")
+            console.print("\n搜索结果:")
             console.print(f"总结果: {results.total_count}, 耗时: {results.query_time_ms}ms")
             console.print(f"引擎: {', '.join(results.engines_used)}")
 
             formatted = format_results(results.results, max_description_length=120)
-            console.print(f"\n结果列表:\n")
+            console.print("\n结果列表:\n")
 
             for i, item in enumerate(formatted[:10], 1):
                 content = Text()

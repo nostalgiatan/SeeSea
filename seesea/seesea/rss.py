@@ -204,4 +204,4 @@ class RssClient:
         )
 
     def __repr__(self) -> str:
-        return f"<RssClient>"
+        return "<RssClient>"
