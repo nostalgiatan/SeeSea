@@ -64,6 +64,23 @@ impl ConfigManager {
         config_path: Option<PathBuf>,
         environment: &str,
     ) -> Result<Self, ConfigError> {
+        // 获取配置文件路径
+        let config_path = config_path.unwrap_or_else(|| {
+            std::env::var("SEEA_CONFIG_FILE")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| {
+                    // 根据环境加载对应的配置文件
+                    match environment {
+                        "development" | "dev" => PathBuf::from("config/development.toml"),
+                        "testing" | "test" => PathBuf::from("config/testing.toml"),
+                        "staging" | "stage" => PathBuf::from("config/staging.toml"),
+                        "production" | "prod" => PathBuf::from("config/production.toml"),
+                        _ => PathBuf::from("config/default.toml"),
+                    }
+                })
+        });
+
+        // 创建环境特定的默认配置
         let mut config = match environment {
             "development" | "dev" => SeeSeaConfig::development(),
             "testing" | "test" => SeeSeaConfig::testing(),
@@ -75,12 +92,22 @@ impl ConfigManager {
             }
         };
 
+        // 如果配置文件存在，从文件加载配置并覆盖默认配置
+        if config_path.exists() {
+            let file_config = Self::load_from_file(&config_path).await?;
+            
+            // 合并配置：文件配置覆盖默认配置
+            config = file_config;
+        } else {
+            tracing::warn!("配置文件不存在: {:?}, 使用默认配置", config_path);
+        }
+
         // 应用环境特定的覆盖
         Self::apply_environment_overrides(&mut config, environment);
 
         let manager = Self {
             config: Arc::new(RwLock::new(config)),
-            config_path: config_path.unwrap_or_else(|| PathBuf::from("config/default.toml")),
+            config_path,
             hot_reload: false,
         };
 
