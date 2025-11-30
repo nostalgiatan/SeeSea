@@ -19,7 +19,7 @@ SeeSea RSS Client - RSS 订阅客户端
 """
 
 from typing import Dict, List, Optional, Any
-from seesea_core import PyRssClient
+from seesea_core import PyRssClient  # type: ignore[import-untyped]
 
 
 class RssClient:
@@ -78,7 +78,7 @@ class RssClient:
         Raises:
             RuntimeError: 获取失败时抛出
         """
-        return self._client.fetch_feed(url, max_items, filter_keywords)
+        return self._client.fetch_feed(url, max_items, filter_keywords)  # type: ignore[no-any-return]
 
     def parse_feed(self, content: str) -> Dict[str, Any]:
         """
@@ -93,7 +93,7 @@ class RssClient:
         Raises:
             RuntimeError: 解析失败时抛出
         """
-        return self._client.parse_feed(content)
+        return self._client.parse_feed(content)  # type: ignore[no-any-return]
 
     def list_templates(self) -> List[str]:
         """
@@ -108,7 +108,7 @@ class RssClient:
             >>> print(templates)
             ['xinhua']
         """
-        return self._client.list_templates()
+        return self._client.list_templates()  # type: ignore[no-any-return]
 
     def add_from_template(
         self,
@@ -140,7 +140,7 @@ class RssClient:
             >>> print(f"Added {count} feeds")
             Added 30 feeds
         """
-        return self._client.add_from_template(template_name, categories)
+        return self._client.add_from_template(template_name, categories)  # type: ignore[no-any-return]
 
     def create_ranking(
         self,
@@ -201,7 +201,7 @@ class RssClient:
             keywords,
             min_score,
             max_results,
-        )
+        )  # type: ignore[no-any-return]
 
     def __repr__(self) -> str:
         return "<RssClient>"

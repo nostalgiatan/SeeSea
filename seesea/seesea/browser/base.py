@@ -30,20 +30,39 @@ Performance Optimizations:
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, TypedDict
+from typing import Dict, List, Optional, Any, TypedDict, Callable, Type, TYPE_CHECKING
 import asyncio
 from contextlib import asynccontextmanager
 
 try:
-    from playwright.async_api import async_playwright, Browser, Page, Playwright
+    from playwright.async_api import (
+        async_playwright,
+        Browser,
+        Page,
+        Playwright,
+        PlaywrightContextManager,
+    )
 
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
-    async_playwright = None
-    Browser = None
-    Page = None
-    Playwright = None
+    # Define fallback types when Playwright is not available
+    if TYPE_CHECKING:
+        # For type checking purposes only
+        from typing import Callable, ContextManager
+
+        PlaywrightContextManager = ContextManager[Any]
+        async_playwright = Callable[[], PlaywrightContextManager]
+        Browser = Type[Any]
+        Page = Type[Any]
+        Playwright = Type[Any]
+    else:
+        # At runtime, these are just None
+        PlaywrightContextManager = Any
+        async_playwright = None
+        Browser = None
+        Page = None
+        Playwright = None
 
 
 class SearchResultItem(TypedDict, total=False):
@@ -255,13 +274,16 @@ class BaseBrowserEngine(ABC):
             await self.start()
 
         # Create context with viewport
-        context = await self._browser.new_context(
-            viewport={
-                "width": self.config.viewport_width,
-                "height": self.config.viewport_height,
-            },
-            user_agent=self.config.user_agent,
-        )
+        if self._browser:
+            context = await self._browser.new_context(
+                viewport={
+                    "width": self.config.viewport_width,
+                    "height": self.config.viewport_height,
+                },
+                user_agent=self.config.user_agent,
+            )
+        else:
+            raise RuntimeError("Browser is not initialized")
 
         # Apply stealth if enabled
         if self.config.stealth:

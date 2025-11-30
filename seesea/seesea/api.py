@@ -19,7 +19,7 @@ SeeSea API Server - API 服务器
 """
 
 from typing import Optional, Dict, List
-from seesea_core import PyApiServer
+from seesea_core import PyApiServer  # type: ignore[import-untyped]
 
 
 class ApiServer:
@@ -138,12 +138,12 @@ class ApiServer:
     @property
     def address(self) -> str:
         """获取服务器地址 (host:port)"""
-        return self._server.get_address()
+        return self._server.get_address()  # type: ignore[no-any-return]
 
     @property
     def url(self) -> str:
         """获取服务器完整 URL"""
-        return self._server.get_url()
+        return self._server.get_url()  # type: ignore[no-any-return]
 
     def get_endpoints(self) -> Dict[str, List[str]]:
         """

@@ -641,5 +641,10 @@ def interactive(count):
 cli.add_command(rss)
 
 
-if __name__ == "__main__":
+def main():
+    """主入口函数，供 __main__.py 调用"""
     cli()
+
+
+if __name__ == "__main__":
+    main()
