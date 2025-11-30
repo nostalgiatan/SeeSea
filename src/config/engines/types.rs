@@ -636,23 +636,19 @@ impl EnginesConfig {
                 result.add_error(format!("引擎 {engine_name} 的权重不能为负数"));
             }
 
-            if let Some(timeout) = engine_config.base.timeout {
-                if timeout == 0 {
-                    result.add_error(format!("引擎 {engine_name} 的超时时间必须大于 0"));
-                }
+            if let Some(timeout) = engine_config.base.timeout && timeout == 0 {
+                result.add_error(format!("引擎 {engine_name} 的超时时间必须大于 0"));
             }
         }
 
         // 验证健康检查配置
-        if let Some(health_check) = Some(&self.health_check) {
-            if health_check.enabled {
-                if health_check.check_interval == 0 {
-                    result.add_error("健康检查间隔必须大于 0".to_string());
-                }
+        if self.health_check.enabled {
+            if self.health_check.check_interval == 0 {
+                result.add_error("健康检查间隔必须大于 0".to_string());
+            }
 
-                if health_check.check_timeout == 0 {
-                    result.add_error("健康检查超时时间必须大于 0".to_string());
-                }
+            if self.health_check.check_timeout == 0 {
+                result.add_error("健康检查超时时间必须大于 0".to_string());
             }
         }
 

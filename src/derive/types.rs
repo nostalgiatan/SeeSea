@@ -18,10 +18,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// 搜索引擎类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum EngineType {
     /// 通用搜索引擎
+    #[default]
     General,
     /// 图片搜索引擎
     Image,
@@ -39,12 +40,6 @@ pub enum EngineType {
     Music,
     /// 自定义搜索引擎
     Custom,
-}
-
-impl Default for EngineType {
-    fn default() -> Self {
-        Self::General
-    }
 }
 
 /// 搜索查询
@@ -151,10 +146,11 @@ impl RequestParams {
 }
 
 /// 时间范围
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TimeRange {
     /// 任何时间
+    #[default]
     Any,
     /// 过去一小时
     Hour,
@@ -168,17 +164,12 @@ pub enum TimeRange {
     Year,
 }
 
-impl Default for TimeRange {
-    fn default() -> Self {
-        Self::Any
-    }
-}
-
 /// 结果类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ResultType {
     /// 网页
+    #[default]
     Web,
     /// 图片
     Image,
@@ -202,12 +193,6 @@ pub enum ResultType {
     Map,
     /// 其他
     Other,
-}
-
-impl Default for ResultType {
-    fn default() -> Self {
-        Self::Web
-    }
 }
 
 /// 搜索结果项
@@ -295,10 +280,11 @@ pub struct EngineCapabilities {
 }
 
 /// 搜索引擎状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum EngineStatus {
     /// 正常运行
+    #[default]
     Active,
     /// 维护中
     Maintenance,
@@ -306,12 +292,6 @@ pub enum EngineStatus {
     Disabled,
     /// 错误状态
     Error,
-}
-
-impl Default for EngineStatus {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 /// 引擎关于信息（类似 searxng 的 about 字段）

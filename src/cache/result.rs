@@ -226,11 +226,10 @@ impl ResultCache {
             if !include_stale {
                 // 获取元数据
                 let key_str = String::from_utf8_lossy(&key);
-                if let Some(metadata) = self.manager.get_metadata(&key_str)? {
-                    if metadata.is_expired() {
+                if let Some(metadata) = self.manager.get_metadata(&key_str)?
+                    && metadata.is_expired() {
                         continue;
                     }
-                }
             }
 
             // 反序列化搜索结果
@@ -301,13 +300,11 @@ impl ResultCache {
             }
 
             // 检查是否过期（如果不包含过期结果）
-            if !include_stale {
-                if let Some(metadata) = self.manager.get_metadata(&key_str)? {
-                    if metadata.is_expired() {
-                        continue;
-                    }
+            if !include_stale
+                && let Some(metadata) = self.manager.get_metadata(&key_str)?
+                && metadata.is_expired() {
+                    continue;
                 }
-            }
 
             // 反序列化搜索结果
             let result: SearchResult = match bincode::serde::decode_from_slice(&value, bincode::config::standard()) {

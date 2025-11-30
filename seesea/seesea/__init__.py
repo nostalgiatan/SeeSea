@@ -30,20 +30,20 @@ SeeSea 是一个基于 Rust 的高性能隐私保护型元搜索引擎，通过 
 
 快速开始：
     >>> from seesea import SearchClient, RssClient
-    >>> 
+    >>>
     >>> # 搜索 - 返回类型安全的对象
     >>> client = SearchClient()
     >>> response = client.search("python programming")
     >>> print(f"找到 {response.total_count} 个结果")
     >>> for item in response.results:
     ...     print(f"{item.title}: {item.url} (score: {item.score})")
-    >>> 
+    >>>
     >>> # 全文搜索 - 整合网络、缓存和RSS
     >>> response = client.search_fulltext("rust async")
     >>> print(f"来源: {response.engines_used}")
     >>> for item in response:  # 可以直接迭代
     ...     print(f"{item.title} - {item.score:.2f}")
-    >>> 
+    >>>
     >>> # RSS feed
     >>> rss_client = RssClient()
     >>> feed = rss_client.fetch_feed("https://example.com/rss")
@@ -78,7 +78,10 @@ try:
     )
 except ImportError as e:
     import warnings
-    warnings.warn(f"Failed to import Rust core module: {e}. Please install seesea_core with 'pip install seesea_core'")
+
+    warnings.warn(
+        f"Failed to import Rust core module: {e}. Please install seesea_core with 'pip install seesea_core'"
+    )
     PySearchClient = None
     PyApiServer = None
     PyConfig = None
@@ -122,47 +125,49 @@ from .types import (
 def _auto_register_engines():
     """
     自动注册所有可用的Python引擎
-    
+
     自动发现browser目录下的所有模块（除了base.py），并注册它们。
     引擎名称就是模块名称。
     """
     if register_engine is None:
         return
-    
+
     import os
     import importlib
     import inspect
-    
+
     registered_count = 0
     failed_count = 0
-    
+
     # 获取browser目录路径
-    browser_dir = os.path.join(os.path.dirname(__file__), 'browser')
-    
+    browser_dir = os.path.join(os.path.dirname(__file__), "browser")
+
     # 遍历browser目录下的所有.py文件
     for filename in os.listdir(browser_dir):
-        if not filename.endswith('.py'):
+        if not filename.endswith(".py"):
             continue
-        if filename.startswith('_'):  # 跳过__init__.py等
+        if filename.startswith("_"):  # 跳过__init__.py等
             continue
-        if filename == 'base.py':  # 跳过base.py
+        if filename == "base.py":  # 跳过base.py
             continue
-            
+
         module_name = filename[:-3]  # 移除.py后缀
-        
+
         try:
             # 动态导入模块
-            module = importlib.import_module(f'.browser.{module_name}', package='seesea')
-    
+            module = importlib.import_module(f".browser.{module_name}", package="seesea")
+
             # 查找回调函数（通常命名为create_<module>_callback_sync）
-            callback_name = f'create_{module_name}_callback_sync'
+            callback_name = f"create_{module_name}_callback_sync"
             if hasattr(module, callback_name):
                 callback = getattr(module, callback_name)
 
                 # 尝试从模块获取engine_type，如果没有则默认为"general"
-                engine_type = getattr(module, 'ENGINE_TYPE', 'general')
-                description = getattr(module, 'ENGINE_DESCRIPTION', f'{module_name.title()} Search Engine')
-                categories = getattr(module, 'ENGINE_CATEGORIES', ['general'])
+                engine_type = getattr(module, "ENGINE_TYPE", "general")
+                description = getattr(
+                    module, "ENGINE_DESCRIPTION", f"{module_name.title()} Search Engine"
+                )
+                categories = getattr(module, "ENGINE_CATEGORIES", ["general"])
 
                 # 注册引擎
                 try:
@@ -171,50 +176,55 @@ def _auto_register_engines():
                         engine_type=engine_type,
                         description=description,
                         categories=categories,
-                        callback=callback
+                        callback=callback,
                     )
                     registered_count += 1
                 except Exception as e:
                     import traceback
+
                     traceback.print_exc()
             else:
                 # 如果没有找到标准回调函数，尝试其他可能的名称
                 # 例如：create_callback_sync, search_callback等
                 for attr_name in dir(module):
-                    if 'callback' in attr_name.lower() and callable(getattr(module, attr_name)):
+                    if "callback" in attr_name.lower() and callable(getattr(module, attr_name)):
                         # 找到了一个可能的回调函数
                         callback = getattr(module, attr_name)
-                        
+
                         # 检查函数签名是否合适（应该接受一个参数）
                         sig = inspect.signature(callback)
                         if len(sig.parameters) == 1:
-                            engine_type = getattr(module, 'ENGINE_TYPE', 'general')
-                            description = getattr(module, 'ENGINE_DESCRIPTION', f'{module_name.title()} Search Engine')
-                            categories = getattr(module, 'ENGINE_CATEGORIES', ['general'])
-                            
+                            engine_type = getattr(module, "ENGINE_TYPE", "general")
+                            description = getattr(
+                                module, "ENGINE_DESCRIPTION", f"{module_name.title()} Search Engine"
+                            )
+                            categories = getattr(module, "ENGINE_CATEGORIES", ["general"])
+
                             register_engine(
                                 name=module_name,
                                 engine_type=engine_type,
                                 description=description,
                                 categories=categories,
-                                callback=callback
+                                callback=callback,
                             )
                             registered_count += 1
                             break
-                        
+
         except Exception as e:
             # 显示所有错误，不静默
-              failed_count += 1
-    
+            failed_count += 1
+
     # 只在成功注册时显示消息
     if registered_count > 0:
         import sys
-        if hasattr(sys, 'ps1'):  # 仅在交互式模式下打印
+
+        if hasattr(sys, "ps1"):  # 仅在交互式模式下打印
             pass
-    
+
     if failed_count > 0:
         import sys
-        if hasattr(sys, 'ps1'):
+
+        if hasattr(sys, "ps1"):
             print(f"⚠️ SeeSea: {failed_count} 引擎注册失败")
 
 
@@ -224,54 +234,48 @@ try:
 except Exception as e:
     # 显示错误，帮助调试
     import warnings
+
     warnings.warn(f"Failed to auto-register engines: {e}")
 
 __all__ = [
     # 主要类
-    'SearchClient',
-    'RssClient',
-    'BrowserEngineClient',
-    'BrowserConfig',
-    'BrowserEngine',
-    'BaseBrowserEngine',
-    'XinhuaEngine',
-    'ApiServer',
-    'Config',
-    
+    "SearchClient",
+    "RssClient",
+    "BrowserEngineClient",
+    "BrowserConfig",
+    "BrowserEngine",
+    "BaseBrowserEngine",
+    "XinhuaEngine",
+    "ApiServer",
+    "Config",
     # 类型定义（类型安全）
-    'SearchResponse',
-    'SearchResultItem',
-    'EngineState',
-    'CacheInfo',
-    'SearchStats',
-    'PrivacyStats',
-    
+    "SearchResponse",
+    "SearchResultItem",
+    "EngineState",
+    "CacheInfo",
+    "SearchStats",
+    "PrivacyStats",
     # Rust 核心类（高级用户）
-    'PySearchClient',
-    'PyRssClient',
-    'PyBrowserConfig',
-    'PyBrowserEngineClient',
-    'PyApiServer',
-    'PyConfig',
-    'PyCacheStats',
-    'PyCacheInterface',
-    
+    "PySearchClient",
+    "PyRssClient",
+    "PyBrowserConfig",
+    "PyBrowserEngineClient",
+    "PyApiServer",
+    "PyConfig",
+    "PyCacheStats",
+    "PyCacheInterface",
     # 引擎注册函数
-    'register_engine',
-    'unregister_engine',
-    'list_engines',
-    'has_engine',
-    
+    "register_engine",
+    "unregister_engine",
+    "list_engines",
+    "has_engine",
     # 工具函数
-    'format_results',
-    'parse_query',
-    
+    "format_results",
+    "parse_query",
     # CLI
-    'cli_main',
-    
+    "cli_main",
     # 浏览器回调
-    'create_xinhua_callback',
-    
+    "create_xinhua_callback",
     # 版本信息
-    '__version__',
+    "__version__",
 ]

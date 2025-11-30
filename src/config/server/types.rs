@@ -119,14 +119,12 @@ impl ServerConfig {
         }
 
         // 检查 TLS 配置
-        if let Some(tls) = &self.tls {
-            if tls.enabled {
-                if tls.cert_path.is_none() {
-                    result.add_error("启用 TLS 时必须指定证书文件路径".to_string());
-                }
-                if tls.key_path.is_none() {
-                    result.add_error("启用 TLS 时必须指定私钥文件路径".to_string());
-                }
+        if let Some(tls) = &self.tls && tls.enabled {
+            if tls.cert_path.is_none() {
+                result.add_error("启用 TLS 时必须指定证书文件路径".to_string());
+            }
+            if tls.key_path.is_none() {
+                result.add_error("启用 TLS 时必须指定私钥文件路径".to_string());
             }
         }
 

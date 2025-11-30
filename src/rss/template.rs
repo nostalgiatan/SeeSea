@@ -66,14 +66,13 @@ impl RssTemplateManager {
             let entry = entry?;
             let path = entry.path();
 
-            if path.extension().and_then(|s| s.to_str()) == Some("see") {
-                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+            if path.extension().and_then(|s| s.to_str()) == Some("see")
+                && let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                     // 移除 .rss 部分
                     if let Some(name) = stem.strip_suffix(".rss") {
                         templates.push(name.to_string());
                     }
                 }
-            }
         }
 
         Ok(templates)

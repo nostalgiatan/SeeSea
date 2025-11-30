@@ -184,11 +184,10 @@ impl RssInterface {
 
         for (category, url) in template.feeds {
             // 如果指定了分类，只添加指定的分类
-            if let Some(ref cats) = categories {
-                if !cats.contains(&category) {
+            if let Some(ref cats) = categories
+                && !cats.contains(&category) {
                     continue;
                 }
-            }
 
             // 获取并缓存
             let _ = self.fetch_persistent(&url, template.meta.update_interval).await;

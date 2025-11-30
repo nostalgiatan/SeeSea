@@ -202,11 +202,10 @@ impl RequestResponseEngine for BingImagesEngine {
         ];
 
         // Add time range filter if specified
-        if let Some(ref tr) = params.time_range {
-            if let Some(minutes) = time_map.get(tr.as_str()) {
+        if let Some(ref tr) = params.time_range
+            && let Some(minutes) = time_map.get(tr.as_str()) {
                 query_params.push(("qft", format!("filterui:age-lt{minutes}")));
             }
-        }
 
         // Build URL with optimized query string
         let query_string = build_query_string_owned(query_params);

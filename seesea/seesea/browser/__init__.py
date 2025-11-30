@@ -33,7 +33,7 @@ Usage Patterns:
 
 1. Using the high-level client (recommended):
     >>> from seesea.browser import BrowserEngineClient, XinhuaEngine
-    >>> 
+    >>>
     >>> client = BrowserEngineClient()
     >>> results = await client.execute_search(
     ...     XinhuaEngine,
@@ -44,14 +44,14 @@ Usage Patterns:
 
 2. Using engine directly with context manager:
     >>> from seesea.browser import XinhuaEngine, BrowserConfig
-    >>> 
+    >>>
     >>> config = BrowserConfig(headless=True, stealth=True)
     >>> async with XinhuaEngine(config) as engine:
     ...     results = await engine.search_xinhua("科技", page=1)
 
 3. Creating custom engines:
     >>> from seesea.browser import BaseBrowserEngine, BrowserConfig
-    >>> 
+    >>>
     >>> class MyEngine(BaseBrowserEngine):
     ...     async def extract_data(self, page, params):
     ...         # Custom extraction logic
@@ -91,8 +91,6 @@ from .xinhua import (
 )
 
 
-
-
 # Convenience aliases for backward compatibility
 BrowserEngine = BaseBrowserEngine
 xinhua_search_callback = create_xinhua_callback
@@ -100,28 +98,24 @@ xinhua_search_callback = create_xinhua_callback
 
 __all__ = [
     # Base classes and types
-    'BrowserConfig',
-    'BaseBrowserEngine',
-    'BrowserEngineClient',
-    'SearchResultItem',
-    'BrowserActionDict',
-
+    "BrowserConfig",
+    "BaseBrowserEngine",
+    "BrowserEngineClient",
+    "SearchResultItem",
+    "BrowserActionDict",
     # Convenience aliases
-    'BrowserEngine',
-
+    "BrowserEngine",
     # Xinhua engine
-    'XinhuaEngine',
-    'create_xinhua_callback',
-    'xinhua_search_callback',
-
+    "XinhuaEngine",
+    "create_xinhua_callback",
+    "xinhua_search_callback",
     # Constants
-    'PLAYWRIGHT_AVAILABLE',
-
+    "PLAYWRIGHT_AVAILABLE",
     # Xinhua constants
-    'XINHUA_SELECTORS',
-    'DEFAULT_USER_AGENT',
+    "XINHUA_SELECTORS",
+    "DEFAULT_USER_AGENT",
 ]
 
 
-__version__ = '0.1.0'
-__author__ = 'SeeSea Team'
+__version__ = "0.1.0"
+__author__ = "SeeSea Team"

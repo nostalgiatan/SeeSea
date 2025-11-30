@@ -175,8 +175,8 @@ pub async fn magic_link_middleware(
     let uri = req.uri();
     let query_str = uri.query().unwrap_or("");
     
-    if let Ok(query) = serde_urlencoded::from_str::<MagicLinkQuery>(query_str) {
-        if let Some(token) = query.token {
+    if let Ok(query) = serde_urlencoded::from_str::<MagicLinkQuery>(query_str)
+        && let Some(token) = query.token {
             match state.verify_token(&token) {
                 Ok(_purpose) => {
                     // 魔法链接验证成功，添加标记到请求扩展
@@ -195,7 +195,6 @@ pub async fn magic_link_middleware(
                 }
             }
         }
-    }
 
     // 没有魔法链接，继续正常流程
     next.run(req).await

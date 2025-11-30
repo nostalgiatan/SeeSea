@@ -290,11 +290,10 @@ impl SearchInterface {
             // 检查引擎是否被临时禁用
             {
                 let states = self.engine_states.read().await;
-                if let Some(state) = states.get(engine_name) {
-                    if !state.is_available() {
+                if let Some(state) = states.get(engine_name)
+                    && !state.is_available() {
                         continue;
                     }
-                }
             }
             match self.get_or_create_engine(engine_name).await {
                 Ok(engine) => {
@@ -680,11 +679,10 @@ impl SearchInterface {
             // 检查引擎是否被临时禁用
             {
                 let states = self.engine_states.read().await;
-                if let Some(state) = states.get(engine_name) {
-                    if !state.is_available() {
+                if let Some(state) = states.get(engine_name)
+                    && !state.is_available() {
                         continue;
                     }
-                }
             }
 
             // 检查缓存
@@ -946,7 +944,7 @@ impl SearchInterface {
                 // 根据失败次数决定是否临时禁用引擎
                 if state.consecutive_failures >= 3 {
                     use std::time::Duration;
-                    let backoff_seconds = (2u64).pow(state.consecutive_failures.min(10) as u32);
+                    let backoff_seconds = (2u64).pow(state.consecutive_failures.min(10));
                     let backoff_duration = Duration::from_secs(backoff_seconds.min(3600));
                     state.temporarily_disabled = true;
                     state.disabled_until = Some(std::time::Instant::now() + backoff_duration);

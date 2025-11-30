@@ -262,13 +262,11 @@ impl RssCache {
             let feed_url = key_str.strip_prefix(RSS_KEY_PREFIX).unwrap_or(&key_str).to_string();
 
             // 检查是否过期（如果不包含过期结果）
-            if !include_stale {
-                if let Some(metadata) = self.manager.get_metadata(&key_str)? {
-                    if metadata.is_expired() {
-                        continue;
-                    }
+            if !include_stale
+                && let Some(metadata) = self.manager.get_metadata(&key_str)?
+                && metadata.is_expired() {
+                    continue;
                 }
-            }
 
             // 反序列化 RSS feed
             let feed: RssFeed = match bincode::serde::decode_from_slice(&value, bincode::config::standard()) {

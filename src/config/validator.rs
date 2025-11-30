@@ -174,14 +174,12 @@ impl ConfigValidator {
         }
 
         // TLS 验证
-        if let Some(tls) = &config.server.tls {
-            if tls.enabled {
-                if tls.cert_path.is_none() {
-                    result.add_error("启用 TLS 时必须指定证书文件路径".to_string());
-                }
-                if tls.key_path.is_none() {
-                    result.add_error("启用 TLS 时必须指定私钥文件路径".to_string());
-                }
+        if let Some(tls) = &config.server.tls && tls.enabled {
+            if tls.cert_path.is_none() {
+                result.add_error("启用 TLS 时必须指定证书文件路径".to_string());
+            }
+            if tls.key_path.is_none() {
+                result.add_error("启用 TLS 时必须指定私钥文件路径".to_string());
             }
         }
 
@@ -355,11 +353,10 @@ impl ConfigValidator {
 
                 if config.cache.enable_result_cache {
                     let cache_path = &config.cache.database_path;
-                    if let Some(parent) = cache_path.parent() {
-                        if parent.as_os_str().is_empty() {
+                    if let Some(parent) = cache_path.parent()
+                        && parent.as_os_str().is_empty() {
                             result.add_error("缓存路径的父目录不能为空".to_string());
                         }
-                    }
                 }
 
                 result

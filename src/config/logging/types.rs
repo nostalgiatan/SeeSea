@@ -405,47 +405,41 @@ impl LoggingConfig {
             }
 
         // 检查轮转配置
-        if let Some(rotation) = Some(&self.rotation) {
-            if rotation.enabled {
-                if rotation.max_file_size == 0 {
-                    result.add_error("启用轮转时最大文件大小必须大于 0".to_string());
-                }
+        if self.rotation.enabled {
+            if self.rotation.max_file_size == 0 {
+                result.add_error("启用轮转时最大文件大小必须大于 0".to_string());
+            }
 
-                if rotation.max_files == 0 {
-                    result.add_error("启用轮转时最大文件数量必须大于 0".to_string());
-                }
+            if self.rotation.max_files == 0 {
+                result.add_error("启用轮转时最大文件数量必须大于 0".to_string());
+            }
 
-                if rotation.rotation_interval == 0 {
-                    result.add_error("启用轮转时轮转间隔必须大于 0".to_string());
-                }
+            if self.rotation.rotation_interval == 0 {
+                result.add_error("启用轮转时轮转间隔必须大于 0".to_string());
             }
         }
 
         // 检查性能配置
-        if let Some(performance) = Some(&self.performance) {
-            if performance.buffer_size == 0 {
-                result.add_error("缓冲区大小必须大于 0".to_string());
-            }
+        if self.performance.buffer_size == 0 {
+            result.add_error("缓冲区大小必须大于 0".to_string());
+        }
 
-            if performance.flush_interval == 0 {
-                result.add_error("刷新间隔必须大于 0".to_string());
-            }
+        if self.performance.flush_interval == 0 {
+            result.add_error("刷新间隔必须大于 0".to_string());
+        }
 
-            if performance.batch_size == 0 {
-                result.add_error("批量大小必须大于 0".to_string());
-            }
+        if self.performance.batch_size == 0 {
+            result.add_error("批量大小必须大于 0".to_string());
         }
 
         // 检查遥测配置
-        if let Some(telemetry) = Some(&self.telemetry) {
-            if telemetry.enabled {
-                if telemetry.export_interval == 0 {
-                    result.add_error("遥测导出间隔必须大于 0".to_string());
-                }
+        if self.telemetry.enabled {
+            if self.telemetry.export_interval == 0 {
+                result.add_error("遥测导出间隔必须大于 0".to_string());
+            }
 
-                if telemetry.sampling_rate < 0.0 || telemetry.sampling_rate > 1.0 {
-                    result.add_error("采样率必须在 0.0-1.0 之间".to_string());
-                }
+            if self.telemetry.sampling_rate < 0.0 || self.telemetry.sampling_rate > 1.0 {
+                result.add_error("采样率必须在 0.0-1.0 之间".to_string());
             }
         }
 

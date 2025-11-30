@@ -159,23 +159,18 @@ pub struct RateLimitConfig {
 }
 
 /// 速率限制策略
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum RateLimitStrategy {
     /// 固定窗口
     FixedWindow,
     /// 滑动窗口
+    #[default]
     SlidingWindow,
     /// 令牌桶
     TokenBucket,
     /// 漏桶
     LeakyBucket,
-}
-
-impl Default for RateLimitStrategy {
-    fn default() -> Self {
-        Self::SlidingWindow
-    }
 }
 
 /// 基于用户的限制
@@ -794,43 +789,39 @@ impl ApiConfig {
         }
 
         // 验证速率限制
-        if let Some(rate_limit) = Some(&self.rate_limit) {
-            if rate_limit.enabled {
-                if rate_limit.requests_per_second == 0
-                    && rate_limit.requests_per_minute == 0
-                    && rate_limit.requests_per_hour == 0
-                    && rate_limit.requests_per_day == 0
-                {
-                    result.add_error("启用速率限制时必须指定至少一个时间段的限制".to_string());
-                }
+        if self.rate_limit.enabled {
+            if self.rate_limit.requests_per_second == 0
+                && self.rate_limit.requests_per_minute == 0
+                && self.rate_limit.requests_per_hour == 0
+                && self.rate_limit.requests_per_day == 0
+            {
+                result.add_error("启用速率限制时必须指定至少一个时间段的限制".to_string());
+            }
 
-                if rate_limit.burst_size == 0 {
-                    result.add_error("突发请求大小必须大于 0".to_string());
-                }
+            if self.rate_limit.burst_size == 0 {
+                result.add_error("突发请求大小必须大于 0".to_string());
             }
         }
 
         // 验证认证配置
-        if let Some(auth) = Some(&self.auth) {
-            if auth.enabled {
-                match auth.auth_type {
-                    AuthType::ApiKey => {
-                        if auth.api_key.api_keys.is_empty() {
-                            result.add_error("启用 API 密钥认证时必须指定至少一个密钥".to_string());
-                        }
+        if self.auth.enabled {
+            match self.auth.auth_type {
+                AuthType::ApiKey => {
+                    if self.auth.api_key.api_keys.is_empty() {
+                        result.add_error("启用 API 密钥认证时必须指定至少一个密钥".to_string());
                     }
-                    AuthType::Jwt => {
-                        if auth.jwt.secret.is_empty() {
-                            result.add_error("启用 JWT 认证时必须指定密钥".to_string());
-                        }
-                    }
-                    AuthType::Basic => {
-                        if auth.basic_auth.users.is_empty() {
-                            result.add_error("启用基础认证时必须指定至少一个用户".to_string());
-                        }
-                    }
-                    AuthType::None => {}
                 }
+                AuthType::Jwt => {
+                    if self.auth.jwt.secret.is_empty() {
+                        result.add_error("启用 JWT 认证时必须指定密钥".to_string());
+                    }
+                }
+                AuthType::Basic => {
+                    if self.auth.basic_auth.users.is_empty() {
+                        result.add_error("启用基础认证时必须指定至少一个用户".to_string());
+                    }
+                }
+                AuthType::None => {}
             }
         }
 

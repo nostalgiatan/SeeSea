@@ -17,10 +17,11 @@
 use serde::{Deserialize, Serialize};
 
 /// 运行环境
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Environment {
     /// 开发环境
+    #[default]
     Development,
     /// 测试环境
     Testing,
@@ -28,12 +29,6 @@ pub enum Environment {
     Staging,
     /// 生产环境
     Production,
-}
-
-impl Default for Environment {
-    fn default() -> Self {
-        Self::Development
-    }
 }
 
 impl std::fmt::Display for Environment {
@@ -81,21 +76,16 @@ impl Default for ApplicationMeta {
 }
 
 /// 配置文件格式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigFormat {
     /// TOML 格式
+    #[default]
     Toml,
     /// JSON 格式
     Json,
     /// YAML 格式
     Yaml,
-}
-
-impl Default for ConfigFormat {
-    fn default() -> Self {
-        Self::Toml
-    }
 }
 
 /// 配置文件元数据

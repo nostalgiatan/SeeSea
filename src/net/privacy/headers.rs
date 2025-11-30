@@ -65,11 +65,10 @@ pub fn generate_fake_headers(url: &str, config: &PrivacyConfig) -> Vec<(String, 
     ];
 
     // 伪造 Referer
-    if config.fake_referer {
-        if let Some(referer) = generate_fake_referer(url) {
+    if config.fake_referer
+        && let Some(referer) = generate_fake_referer(url) {
             headers.push(("Referer".to_string(), referer));
         }
-    }
 
     // 添加 Sec-Fetch 头（现代浏览器特征）
     if config.fake_headers {
@@ -93,11 +92,10 @@ pub fn generate_fake_headers(url: &str, config: &PrivacyConfig) -> Vec<(String, 
 /// 伪造的 Referer URL
 fn generate_fake_referer(url: &str) -> Option<String> {
     // 从 URL 中提取域名作为 Referer
-    if let Ok(parsed_url) = url::Url::parse(url) {
-        if let Some(host) = parsed_url.host_str() {
+    if let Ok(parsed_url) = url::Url::parse(url)
+        && let Some(host) = parsed_url.host_str() {
             return Some(format!("https://{host}/"));
         }
-    }
     None
 }
 
