@@ -13,13 +13,13 @@
 // limitations under the License.
 
 //! IO相关错误定义
-//! 
+//!
 //! 包含文件、目录、流等IO操作相关错误的定义和创建函数。
 
-use crate::errors::{ErrorInfo, ErrorCategory, ErrorSeverity};
+use crate::errors::{ErrorCategory, ErrorInfo, ErrorSeverity};
 
 /// IO错误码常量
-/// 
+///
 /// IO错误码范围：5000-5999
 pub const IO_ERROR_BASE: u32 = 5000;
 pub const FILE_NOT_FOUND: u32 = IO_ERROR_BASE + 1;
@@ -34,10 +34,10 @@ pub const FILE_TOO_LARGE: u32 = IO_ERROR_BASE + 9;
 pub const DISK_FULL: u32 = IO_ERROR_BASE + 10;
 
 /// 创建文件不存在错误
-/// 
+///
 /// # 参数
 /// - `path`: 文件路径
-/// 
+///
 /// # 返回
 /// 包含文件不存在信息的错误对象
 pub fn file_not_found(path: &str) -> ErrorInfo {
@@ -47,11 +47,11 @@ pub fn file_not_found(path: &str) -> ErrorInfo {
 }
 
 /// 创建文件打开失败错误
-/// 
+///
 /// # 参数
 /// - `path`: 文件路径
 /// - `reason`: 打开失败的原因
-/// 
+///
 /// # 返回
 /// 包含文件打开失败信息的错误对象
 pub fn file_open_failed(path: &str, reason: &str) -> ErrorInfo {
@@ -61,11 +61,11 @@ pub fn file_open_failed(path: &str, reason: &str) -> ErrorInfo {
 }
 
 /// 创建文件读取失败错误
-/// 
+///
 /// # 参数
 /// - `path`: 文件路径
 /// - `reason`: 读取失败的原因
-/// 
+///
 /// # 返回
 /// 包含文件读取失败信息的错误对象
 pub fn file_read_failed(path: &str, reason: &str) -> ErrorInfo {
@@ -75,38 +75,44 @@ pub fn file_read_failed(path: &str, reason: &str) -> ErrorInfo {
 }
 
 /// 创建文件写入失败错误
-/// 
+///
 /// # 参数
 /// - `path`: 文件路径
 /// - `reason`: 写入失败的原因
-/// 
+///
 /// # 返回
 /// 包含文件写入失败信息的错误对象
 pub fn file_write_failed(path: &str, reason: &str) -> ErrorInfo {
-    ErrorInfo::new(FILE_WRITE_FAILED, format!("无法写入文件 '{path}': {reason}"))
-        .with_category(ErrorCategory::Io)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        FILE_WRITE_FAILED,
+        format!("无法写入文件 '{path}': {reason}"),
+    )
+    .with_category(ErrorCategory::Io)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 创建文件权限被拒绝错误
-/// 
+///
 /// # 参数
 /// - `path`: 文件路径
 /// - `operation`: 操作类型（如"读取"、"写入"、"执行"）
-/// 
+///
 /// # 返回
 /// 包含文件权限被拒绝信息的错误对象
 pub fn file_permission_denied(path: &str, operation: &str) -> ErrorInfo {
-    ErrorInfo::new(FILE_PERMISSION_DENIED, format!("{operation} 文件 '{path}' 权限被拒绝"))
-        .with_category(ErrorCategory::Io)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        FILE_PERMISSION_DENIED,
+        format!("{operation} 文件 '{path}' 权限被拒绝"),
+    )
+    .with_category(ErrorCategory::Io)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 创建目录不存在错误
-/// 
+///
 /// # 参数
 /// - `path`: 目录路径
-/// 
+///
 /// # 返回
 /// 包含目录不存在信息的错误对象
 pub fn directory_not_found(path: &str) -> ErrorInfo {
@@ -116,24 +122,27 @@ pub fn directory_not_found(path: &str) -> ErrorInfo {
 }
 
 /// 创建目录创建失败错误
-/// 
+///
 /// # 参数
 /// - `path`: 目录路径
 /// - `reason`: 创建失败的原因
-/// 
+///
 /// # 返回
 /// 包含目录创建失败信息的错误对象
 pub fn directory_create_failed(path: &str, reason: &str) -> ErrorInfo {
-    ErrorInfo::new(DIRECTORY_CREATE_FAILED, format!("无法创建目录 '{path}': {reason}"))
-        .with_category(ErrorCategory::Io)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        DIRECTORY_CREATE_FAILED,
+        format!("无法创建目录 '{path}': {reason}"),
+    )
+    .with_category(ErrorCategory::Io)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 创建无效路径错误
-/// 
+///
 /// # 参数
 /// - `path`: 无效的路径
-/// 
+///
 /// # 返回
 /// 包含无效路径信息的错误对象
 pub fn invalid_path(path: &str) -> ErrorInfo {
@@ -143,40 +152,46 @@ pub fn invalid_path(path: &str) -> ErrorInfo {
 }
 
 /// 创建文件过大错误
-/// 
+///
 /// # 参数
 /// - `path`: 文件路径
 /// - `size`: 文件大小（字节）
 /// - `max_size`: 最大允许大小（字节）
-/// 
+///
 /// # 返回
 /// 包含文件过大信息的错误对象
 pub fn file_too_large(path: &str, size: u64, max_size: u64) -> ErrorInfo {
-    ErrorInfo::new(FILE_TOO_LARGE, format!("文件 '{path}' 过大: {size} 字节, 最大允许 {max_size} 字节"))
-        .with_category(ErrorCategory::Io)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        FILE_TOO_LARGE,
+        format!("文件 '{path}' 过大: {size} 字节, 最大允许 {max_size} 字节"),
+    )
+    .with_category(ErrorCategory::Io)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 创建磁盘空间不足错误
-/// 
+///
 /// # 参数
 /// - `path`: 操作路径
 /// - `required`: 需要的磁盘空间（字节）
 /// - `available`: 可用磁盘空间（字节）
-/// 
+///
 /// # 返回
 /// 包含磁盘空间不足信息的错误对象
 pub fn disk_full(path: &str, required: u64, available: u64) -> ErrorInfo {
-    ErrorInfo::new(DISK_FULL, format!("磁盘空间不足: 路径 '{path}' 需要 {required} 字节, 可用 {available} 字节"))
-        .with_category(ErrorCategory::Io)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        DISK_FULL,
+        format!("磁盘空间不足: 路径 '{path}' 需要 {required} 字节, 可用 {available} 字节"),
+    )
+    .with_category(ErrorCategory::Io)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 通用IO错误创建函数
-/// 
+///
 /// # 参数
 /// - `message`: IO错误的详细信息
-/// 
+///
 /// # 返回
 /// 包含IO错误信息的错误对象
 pub fn io_error(message: impl Into<String>) -> ErrorInfo {

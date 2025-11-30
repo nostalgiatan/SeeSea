@@ -119,11 +119,11 @@ mod tests {
     fn test_pool_manager_stats() {
         let config = PoolConfig::default();
         let manager = PoolManager::new(config);
-        
+
         manager.record_connection_use(false);
         manager.record_connection_use(true);
         manager.record_connection_use(true);
-        
+
         let stats = manager.stats();
         assert_eq!(stats.total_connections, 1);
         assert_eq!(stats.hit_rate, 2.0 / 3.0);
@@ -133,10 +133,10 @@ mod tests {
     fn test_pool_manager_release() {
         let config = PoolConfig::default();
         let manager = PoolManager::new(config);
-        
+
         manager.record_connection_use(false);
         manager.record_connection_release();
-        
+
         let stats = manager.stats();
         assert_eq!(stats.active_connections, 0);
     }

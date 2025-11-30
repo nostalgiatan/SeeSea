@@ -57,20 +57,21 @@ pub enum CacheError {
 pub type Result<T> = std::result::Result<T, CacheError>;
 
 /// 全局单例实例（使用Lazy和Mutex确保线程安全）
-/// 
+///
 /// ## 单例模式实现
-/// 
+///
 /// 使用`Lazy`和`Mutex`实现线程安全的单例模式：
 /// - `Lazy`: 提供线程安全的延迟初始化
 /// - `Mutex`: 允许独占访问，提供内部可变性
-/// 
+///
 /// 这种实现确保：
 /// 1. 全局只有一个CacheManager实例
 /// 2. 线程安全的访问
 /// 3. 延迟初始化（首次调用时创建）
 /// 4. 避免重复初始化
 /// 5. 无需手动管理内存（没有unsafe代码）
-static GLOBAL_CACHE_MANAGER: Lazy<Mutex<Option<Arc<CacheManager>>>> = Lazy::new(|| Mutex::new(None));
+static GLOBAL_CACHE_MANAGER: Lazy<Mutex<Option<Arc<CacheManager>>>> =
+    Lazy::new(|| Mutex::new(None));
 
 /// 缓存管理器
 ///
@@ -194,9 +195,10 @@ impl CacheManager {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn instance(config: CacheImplConfig) -> Result<Arc<Self>> {
-        let mut guard = GLOBAL_CACHE_MANAGER.lock()
+        let mut guard = GLOBAL_CACHE_MANAGER
+            .lock()
             .map_err(|e| CacheError::DatabaseError(format!("Lock poisoned: {e}")))?;
-        
+
         if let Some(manager) = guard.as_ref() {
             // Already initialized, return clone
             Ok(Arc::clone(manager))
@@ -213,9 +215,8 @@ impl CacheManager {
     fn create_internal(config: CacheImplConfig) -> Result<Self> {
         // 创建数据库目录
         if let Some(parent) = Path::new(&config.db_path).parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                CacheError::DatabaseError(format!("创建缓存目录失败: {e}"))
-            })?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| CacheError::DatabaseError(format!("创建缓存目录失败: {e}")))?;
         }
 
         // 根据缓存模式配置 sled
@@ -234,13 +235,16 @@ impl CacheManager {
                 .flush_every_ms(Some(10000)), // 10秒刷新
         };
 
-        let db = Arc::new(db_config.open().map_err(|e| {
-            CacheError::DatabaseError(format!("打开数据库失败: {e}"))
-        })?);
+        let db = Arc::new(
+            db_config
+                .open()
+                .map_err(|e| CacheError::DatabaseError(format!("打开数据库失败: {e}")))?,
+        );
 
-        let metadata_tree = Arc::new(db.open_tree("cache_metadata").map_err(|e| {
-            CacheError::DatabaseError(format!("打开元数据树失败: {e}"))
-        })?);
+        let metadata_tree = Arc::new(
+            db.open_tree("cache_metadata")
+                .map_err(|e| CacheError::DatabaseError(format!("打开元数据树失败: {e}")))?,
+        );
 
         // 初始化布隆过滤器
         let bloom_filter = if config.enable_bloom_filter {
@@ -304,14 +308,14 @@ impl CacheManager {
     /// 返回缓存值，如果不存在或已过期则返回 None
     pub fn get(&self, scope: &str, key: &str) -> Result<Option<CacheValue>> {
         let start_time = std::time::Instant::now();
-        
+
         if !self.config.enabled {
             return Err(CacheError::CacheDisabled);
         }
 
         // 解析作用域
         let (top_scope, full_key) = self.parse_scope(scope, key);
-        
+
         // 记录热点键访问
         let hot_key = format!("{scope}:{key}");
         if let Ok(map) = self.hot_keys.write() {
@@ -320,17 +324,17 @@ impl CacheManager {
 
         // 检查布隆过滤器，如果启用了布隆过滤器且键不在过滤器中，直接返回 None
         if let Some(bloom_filter) = &self.bloom_filter {
-            let filter = bloom_filter.read().map_err(|e| {
-                CacheError::DatabaseError(format!("获取布隆过滤器读锁失败: {e}"))
-            })?;
-            
+            let filter = bloom_filter
+                .read()
+                .map_err(|e| CacheError::DatabaseError(format!("获取布隆过滤器读锁失败: {e}")))?;
+
             if !filter.contains(&full_key) {
                 self.misses.fetch_add(1, Ordering::Relaxed);
-                
+
                 // 更新延迟统计
                 let elapsed = start_time.elapsed().as_nanos() as u64;
                 self.update_latency_stats(elapsed, true);
-                
+
                 return Ok(None);
             }
         }
@@ -340,11 +344,11 @@ impl CacheManager {
             Some(meta) => meta,
             None => {
                 self.misses.fetch_add(1, Ordering::Relaxed);
-                
+
                 // 更新延迟统计
                 let elapsed = start_time.elapsed().as_nanos() as u64;
                 self.update_latency_stats(elapsed, true);
-                
+
                 return Ok(None);
             }
         };
@@ -352,11 +356,11 @@ impl CacheManager {
         // 检查是否过期
         if metadata.is_expired() {
             self.misses.fetch_add(1, Ordering::Relaxed);
-            
+
             // 更新延迟统计
             let elapsed = start_time.elapsed().as_nanos() as u64;
             self.update_latency_stats(elapsed, true);
-            
+
             return Ok(None);
         }
 
@@ -366,7 +370,7 @@ impl CacheManager {
             // 更新延迟统计
             let elapsed = start_time.elapsed().as_nanos() as u64;
             self.update_latency_stats(elapsed, true);
-            
+
             CacheError::DatabaseError(format!("读取缓存失败: {e}"))
         })?;
 
@@ -382,11 +386,11 @@ impl CacheManager {
                 Ok(None)
             }
         };
-        
+
         // 更新延迟统计
         let elapsed = start_time.elapsed().as_nanos() as u64;
         self.update_latency_stats(elapsed, true);
-        
+
         result
     }
 
@@ -404,13 +408,11 @@ impl CacheManager {
         let manager = self.clone();
         let scope = scope.to_string();
         let key = key.to_string();
-        
+
         // 使用 tokio::spawn_blocking 在异步上下文中运行同步代码
-        tokio::task::spawn_blocking(move || {
-            manager.get(&scope, &key)
-        }).await.map_err(|e| {
-            CacheError::DatabaseError(format!("异步操作失败: {e}"))
-        })?
+        tokio::task::spawn_blocking(move || manager.get(&scope, &key))
+            .await
+            .map_err(|e| CacheError::DatabaseError(format!("异步操作失败: {e}")))?
     }
 
     /// 获取缓存值（包括过期的）
@@ -442,12 +444,12 @@ impl CacheManager {
 
         // 检查是否过期
         let is_stale = metadata.is_expired();
-        
+
         // 获取数据
         let tree = self.get_or_create_tree(&top_scope)?;
-        let value = tree.get(full_key.as_bytes()).map_err(|e| {
-            CacheError::DatabaseError(format!("读取缓存失败: {e}"))
-        })?;
+        let value = tree
+            .get(full_key.as_bytes())
+            .map_err(|e| CacheError::DatabaseError(format!("读取缓存失败: {e}")))?;
 
         match value {
             Some(v) => {
@@ -477,17 +479,19 @@ impl CacheManager {
     /// # 返回值
     ///
     /// 返回缓存值和是否过期的标志，如果不存在则返回 None
-    pub async fn get_include_stale_async(&self, scope: &str, key: &str) -> Result<Option<(CacheValue, bool)>> {
+    pub async fn get_include_stale_async(
+        &self,
+        scope: &str,
+        key: &str,
+    ) -> Result<Option<(CacheValue, bool)>> {
         let manager = self.clone();
         let scope = scope.to_string();
         let key = key.to_string();
-        
+
         // 使用 tokio::spawn_blocking 在异步上下文中运行同步代码
-        tokio::task::spawn_blocking(move || {
-            manager.get_include_stale(&scope, &key)
-        }).await.map_err(|e| {
-            CacheError::DatabaseError(format!("异步操作失败: {e}"))
-        })?
+        tokio::task::spawn_blocking(move || manager.get_include_stale(&scope, &key))
+            .await
+            .map_err(|e| CacheError::DatabaseError(format!("异步操作失败: {e}")))?
     }
 
     /// 批量获取缓存值
@@ -506,12 +510,12 @@ impl CacheManager {
         }
 
         let mut results = Vec::with_capacity(keys.len());
-        
+
         for key in keys {
             let result = self.get(scope, key)?;
             results.push(result);
         }
-        
+
         Ok(results)
     }
 
@@ -525,24 +529,28 @@ impl CacheManager {
     /// # 返回值
     ///
     /// 返回缓存值列表，与输入键列表顺序一致，不存在或已过期则返回 None
-    pub async fn get_batch_async(&self, scope: &str, keys: &[&str]) -> Result<Vec<Option<CacheValue>>> {
+    pub async fn get_batch_async(
+        &self,
+        scope: &str,
+        keys: &[&str],
+    ) -> Result<Vec<Option<CacheValue>>> {
         let manager = self.clone();
         let scope = scope.to_string();
         let keys: Vec<String> = keys.iter().map(|k| k.to_string()).collect();
-        
+
         // 使用 tokio::spawn_blocking 在异步上下文中运行同步代码
         tokio::task::spawn_blocking(move || {
             let mut results = Vec::with_capacity(keys.len());
-            
+
             for key in keys {
                 let result = manager.get(&scope, &key)?;
                 results.push(result);
             }
-            
+
             Ok(results)
-        }).await.map_err(|e| {
-            CacheError::DatabaseError(format!("异步操作失败: {e}"))
-        })?
+        })
+        .await
+        .map_err(|e| CacheError::DatabaseError(format!("异步操作失败: {e}")))?
     }
 
     /// 批量设置缓存值
@@ -556,7 +564,12 @@ impl CacheManager {
     /// # 返回值
     ///
     /// 成功返回 Ok(())，失败返回错误
-    pub fn set_batch(&self, scope: &str, items: &[(String, CacheValue)], ttl: Option<Duration>) -> Result<()> {
+    pub fn set_batch(
+        &self,
+        scope: &str,
+        items: &[(String, CacheValue)],
+        ttl: Option<Duration>,
+    ) -> Result<()> {
         if !self.config.enabled {
             return Err(CacheError::CacheDisabled);
         }
@@ -564,7 +577,7 @@ impl CacheManager {
         for (key, value) in items {
             self.set(scope, key.clone(), value.clone(), ttl)?;
         }
-        
+
         Ok(())
     }
 
@@ -579,21 +592,26 @@ impl CacheManager {
     /// # 返回值
     ///
     /// 成功返回 Ok(())，失败返回错误
-    pub async fn set_batch_async(&self, scope: &str, items: &[(String, CacheValue)], ttl: Option<Duration>) -> Result<()> {
+    pub async fn set_batch_async(
+        &self,
+        scope: &str,
+        items: &[(String, CacheValue)],
+        ttl: Option<Duration>,
+    ) -> Result<()> {
         let manager = self.clone();
         let scope = scope.to_string();
         let items: Vec<(String, CacheValue)> = items.to_vec();
-        
+
         // 使用 tokio::spawn_blocking 在异步上下文中运行同步代码
         tokio::task::spawn_blocking(move || {
             for (key, value) in items {
                 manager.set(&scope, key, value, ttl)?;
             }
-            
+
             Ok(())
-        }).await.map_err(|e| {
-            CacheError::DatabaseError(format!("异步操作失败: {e}"))
-        })?
+        })
+        .await
+        .map_err(|e| CacheError::DatabaseError(format!("异步操作失败: {e}")))?
     }
 
     /// 批量删除缓存项
@@ -612,13 +630,13 @@ impl CacheManager {
         }
 
         let mut deleted = 0;
-        
+
         for key in keys {
             if self.delete(scope, key)? {
                 deleted += 1;
             }
         }
-        
+
         Ok(deleted)
     }
 
@@ -636,25 +654,23 @@ impl CacheManager {
         let manager = self.clone();
         let scope = scope.to_string();
         let keys: Vec<String> = keys.iter().map(|k| k.to_string()).collect();
-        
+
         // 使用 tokio::spawn_blocking 在异步上下文中运行同步代码
         tokio::task::spawn_blocking(move || {
             let mut deleted = 0;
-            
+
             for key in keys {
                 if manager.delete(&scope, &key)? {
                     deleted += 1;
                 }
             }
-            
+
             Ok(deleted)
-        }).await.map_err(|e| {
-            CacheError::DatabaseError(format!("异步操作失败: {e}"))
-        })?
+        })
+        .await
+        .map_err(|e| CacheError::DatabaseError(format!("异步操作失败: {e}")))?
     }
 
-    
-    
     /// 设置缓存值
     ///
     /// # 参数
@@ -667,10 +683,16 @@ impl CacheManager {
     /// # 返回值
     ///
     /// 成功返回 Ok(())，失败返回错误
-    pub fn set(&self, scope: &str, key: String, value: CacheValue, ttl: Option<Duration>) -> Result<()> {
+    pub fn set(
+        &self,
+        scope: &str,
+        key: String,
+        value: CacheValue,
+        ttl: Option<Duration>,
+    ) -> Result<()> {
         self.set_with_condition(scope, key, value, ttl, |_, _| true)
     }
-    
+
     /// 基于条件设置缓存值
     ///
     /// # 参数
@@ -685,22 +707,25 @@ impl CacheManager {
     ///
     /// 成功返回 Ok(())，失败返回错误
     pub fn set_with_condition(
-        &self, 
-        scope: &str, 
-        key: String, 
-        value: CacheValue, 
+        &self,
+        scope: &str,
+        key: String,
+        value: CacheValue,
         ttl: Option<Duration>,
-        condition: impl Fn(&Option<CacheValue>, &Option<CacheEntryMetadata>) -> bool + Send + Sync + 'static
+        condition: impl Fn(&Option<CacheValue>, &Option<CacheEntryMetadata>) -> bool
+        + Send
+        + Sync
+        + 'static,
     ) -> Result<()> {
         let start_time = std::time::Instant::now();
-        
+
         if !self.config.enabled {
             return Err(CacheError::CacheDisabled);
         }
 
         // 解析作用域，获取顶级作用域和完整键
         let (top_scope, full_key) = self.parse_scope(scope, &key);
-        
+
         // 记录热点键访问
         let hot_key = format!("{scope}:{key}");
         if let Ok(map) = self.hot_keys.write() {
@@ -710,7 +735,7 @@ impl CacheManager {
         // 获取当前值和元数据，用于条件判断
         let current_value = self.get(scope, &key)?;
         let current_metadata = self.get_metadata(&full_key)?;
-        
+
         // 检查条件
         if !condition(&current_value, &current_metadata) {
             return Ok(());
@@ -735,27 +760,26 @@ impl CacheManager {
         let metadata = CacheEntryMetadata::new(ttl_duration, value_size, scope.to_string());
 
         // 写入数据
-        tree.insert(full_key.as_bytes(), value.as_slice()).map_err(|e| {
-            CacheError::DatabaseError(format!("写入缓存失败: {e}"))
-        })?;
+        tree.insert(full_key.as_bytes(), value.as_slice())
+            .map_err(|e| CacheError::DatabaseError(format!("写入缓存失败: {e}")))?;
 
         // 写入元数据
         self.set_metadata(&full_key, &metadata)?;
 
         // 将键添加到布隆过滤器
         if let Some(bloom_filter) = &self.bloom_filter {
-            let mut filter = bloom_filter.write().map_err(|e| {
-                CacheError::DatabaseError(format!("获取布隆过滤器写锁失败: {e}"))
-            })?;
+            let mut filter = bloom_filter
+                .write()
+                .map_err(|e| CacheError::DatabaseError(format!("获取布隆过滤器写锁失败: {e}")))?;
             filter.add(&full_key);
         }
 
         self.writes.fetch_add(1, Ordering::Relaxed);
-        
+
         // 更新延迟统计
         let elapsed = start_time.elapsed().as_nanos() as u64;
         self.update_latency_stats(elapsed, false);
-        
+
         Ok(())
     }
 
@@ -771,10 +795,17 @@ impl CacheManager {
     /// # 返回值
     ///
     /// 成功返回 Ok(())，失败返回错误
-    pub async fn set_async(&self, scope: &str, key: String, value: CacheValue, ttl: Option<Duration>) -> Result<()> {
-        self.set_with_condition_async(scope, key, value, ttl, |_, _| true).await
+    pub async fn set_async(
+        &self,
+        scope: &str,
+        key: String,
+        value: CacheValue,
+        ttl: Option<Duration>,
+    ) -> Result<()> {
+        self.set_with_condition_async(scope, key, value, ttl, |_, _| true)
+            .await
     }
-    
+
     /// 异步基于条件设置缓存值
     ///
     /// # 参数
@@ -789,22 +820,25 @@ impl CacheManager {
     ///
     /// 成功返回 Ok(())，失败返回错误
     pub async fn set_with_condition_async(
-        &self, 
-        scope: &str, 
-        key: String, 
-        value: CacheValue, 
+        &self,
+        scope: &str,
+        key: String,
+        value: CacheValue,
         ttl: Option<Duration>,
-        condition: impl Fn(&Option<CacheValue>, &Option<CacheEntryMetadata>) -> bool + Send + Sync + 'static
+        condition: impl Fn(&Option<CacheValue>, &Option<CacheEntryMetadata>) -> bool
+        + Send
+        + Sync
+        + 'static,
     ) -> Result<()> {
         let manager = self.clone();
         let scope = scope.to_string();
-        
+
         // 使用 tokio::spawn_blocking 在异步上下文中运行同步代码
         tokio::task::spawn_blocking(move || {
             manager.set_with_condition(&scope, key, value, ttl, condition)
-        }).await.map_err(|e| {
-            CacheError::DatabaseError(format!("异步操作失败: {e}"))
-        })?
+        })
+        .await
+        .map_err(|e| CacheError::DatabaseError(format!("异步操作失败: {e}")))?
     }
 
     /// 解析作用域，返回顶级作用域和完整键
@@ -821,14 +855,14 @@ impl CacheManager {
         // 分割作用域，获取顶级作用域
         let parts: Vec<&str> = scope.split('.').collect();
         let top_scope = parts[0].to_string();
-        
+
         // 构建完整键：二级作用域.三级作用域.原始键
         let full_key = if parts.len() > 1 {
             format!("{}.{}", parts[1..].join("."), key)
         } else {
             key.to_string()
         };
-        
+
         (top_scope, full_key)
     }
 
@@ -843,10 +877,11 @@ impl CacheManager {
     /// 返回对应的 sled tree
     pub fn get_or_create_tree(&self, top_scope: &str) -> Result<sled::Tree> {
         // 尝试获取现有 tree
-        let tree = self.db.open_tree(top_scope).map_err(|e| {
-            CacheError::DatabaseError(format!("打开 tree 失败: {e}"))
-        })?;
-        
+        let tree = self
+            .db
+            .open_tree(top_scope)
+            .map_err(|e| CacheError::DatabaseError(format!("打开 tree 失败: {e}")))?;
+
         Ok(tree)
     }
 
@@ -858,32 +893,33 @@ impl CacheManager {
     /// * `key` - 缓存键
     pub fn delete(&self, scope: &str, key: &str) -> Result<bool> {
         let start_time = std::time::Instant::now();
-        
+
         if !self.config.enabled {
             return Err(CacheError::CacheDisabled);
         }
 
         // 解析作用域
         let (top_scope, full_key) = self.parse_scope(scope, key);
-        
+
         // 获取对应的 tree
         let tree = self.get_or_create_tree(&top_scope)?;
 
-        let existed = tree.remove(full_key.as_bytes()).map_err(|e| {
-            CacheError::DatabaseError(format!("删除缓存失败: {e}"))
-        })?.is_some();
+        let existed = tree
+            .remove(full_key.as_bytes())
+            .map_err(|e| CacheError::DatabaseError(format!("删除缓存失败: {e}")))?
+            .is_some();
 
         if existed {
             let _ = self.metadata_tree.remove(full_key.as_bytes());
             self.deletes.fetch_add(1, Ordering::Relaxed);
-            
+
             // 从热点键列表中移除
             let hot_key = format!("{scope}:{key}");
             if let Ok(map) = self.hot_keys.write() {
                 map.remove(&hot_key);
             }
         }
-        
+
         // 更新删除操作延迟统计
         let elapsed = start_time.elapsed().as_nanos() as u64;
         self.update_delete_latency_stats(elapsed);
@@ -901,13 +937,11 @@ impl CacheManager {
         let manager = self.clone();
         let scope = scope.to_string();
         let key = key.to_string();
-        
+
         // 使用 tokio::spawn_blocking 在异步上下文中运行同步代码
-        tokio::task::spawn_blocking(move || {
-            manager.delete(&scope, &key)
-        }).await.map_err(|e| {
-            CacheError::DatabaseError(format!("异步操作失败: {e}"))
-        })?
+        tokio::task::spawn_blocking(move || manager.delete(&scope, &key))
+            .await
+            .map_err(|e| CacheError::DatabaseError(format!("异步操作失败: {e}")))?
     }
 
     /// 删除整个作用域的缓存项
@@ -931,26 +965,28 @@ impl CacheManager {
             };
             (top_scope, prefix)
         };
-        
+
         // 获取对应的 tree
         let tree = self.get_or_create_tree(&top_scope)?;
-        
+
         // 删除前缀匹配的所有键
         let mut count = 0;
         let prefix_bytes = prefix.as_bytes();
-        
+
         // 使用范围删除
         let mut iter = tree.range(prefix_bytes.to_vec()..);
-        
+
         while let Some(Ok((key, _))) = iter.next() {
             if !key.starts_with(prefix_bytes) {
                 break;
             }
-            
+
             // 删除数据
-            if tree.remove(&key).map_err(|e| {
-                CacheError::DatabaseError(format!("删除缓存失败: {e}"))
-            })?.is_some() {
+            if tree
+                .remove(&key)
+                .map_err(|e| CacheError::DatabaseError(format!("删除缓存失败: {e}")))?
+                .is_some()
+            {
                 // 删除元数据
                 let _ = self.metadata_tree.remove(&key);
                 count += 1;
@@ -969,13 +1005,11 @@ impl CacheManager {
     pub async fn delete_scope_async(&self, scope: &str) -> Result<usize> {
         let manager = self.clone();
         let scope = scope.to_string();
-        
+
         // 使用 tokio::spawn_blocking 在异步上下文中运行同步代码
-        tokio::task::spawn_blocking(move || {
-            manager.delete_scope(&scope)
-        }).await.map_err(|e| {
-            CacheError::DatabaseError(format!("异步操作失败: {e}"))
-        })?
+        tokio::task::spawn_blocking(move || manager.delete_scope(&scope))
+            .await
+            .map_err(|e| CacheError::DatabaseError(format!("异步操作失败: {e}")))?
     }
 
     /// 清空所有缓存
@@ -985,9 +1019,9 @@ impl CacheManager {
         }
 
         // 清空元数据
-        self.metadata_tree.clear().map_err(|e| {
-            CacheError::DatabaseError(format!("清空元数据失败: {e}"))
-        })?;
+        self.metadata_tree
+            .clear()
+            .map_err(|e| CacheError::DatabaseError(format!("清空元数据失败: {e}")))?;
 
         // 注意：sled 不支持直接获取所有 tree 名称，我们需要手动管理或使用其他方法
         // 这里简化实现，只清空已知的主要 tree
@@ -997,13 +1031,11 @@ impl CacheManager {
     /// 异步清空所有缓存
     pub async fn clear_async(&self) -> Result<()> {
         let manager = self.clone();
-        
+
         // 使用 tokio::spawn_blocking 在异步上下文中运行同步代码
-        tokio::task::spawn_blocking(move || {
-            manager.clear()
-        }).await.map_err(|e| {
-            CacheError::DatabaseError(format!("异步操作失败: {e}"))
-        })?
+        tokio::task::spawn_blocking(move || manager.clear())
+            .await
+            .map_err(|e| CacheError::DatabaseError(format!("异步操作失败: {e}")))?
     }
 
     /// 清空指定作用域的缓存
@@ -1027,26 +1059,25 @@ impl CacheManager {
             };
             (top_scope, prefix)
         };
-        
+
         // 获取对应的 tree
         let tree = self.get_or_create_tree(&top_scope)?;
-        
+
         // 清空前缀匹配的所有键
         let prefix_bytes = prefix.as_bytes();
-        
+
         // 使用范围删除
         let mut iter = tree.range(prefix_bytes.to_vec()..);
-        
+
         while let Some(Ok((key, _))) = iter.next() {
             if !key.starts_with(prefix_bytes) {
                 break;
             }
-            
+
             // 删除数据
-            tree.remove(&key).map_err(|e| {
-                CacheError::DatabaseError(format!("清空作用域失败: {e}"))
-            })?;
-            
+            tree.remove(&key)
+                .map_err(|e| CacheError::DatabaseError(format!("清空作用域失败: {e}")))?;
+
             // 删除元数据
             let _ = self.metadata_tree.remove(&key);
         }
@@ -1062,13 +1093,11 @@ impl CacheManager {
     pub async fn clear_scope_async(&self, scope: &str) -> Result<()> {
         let manager = self.clone();
         let scope = scope.to_string();
-        
+
         // 使用 tokio::spawn_blocking 在异步上下文中运行同步代码
-        tokio::task::spawn_blocking(move || {
-            manager.clear_scope(&scope)
-        }).await.map_err(|e| {
-            CacheError::DatabaseError(format!("异步操作失败: {e}"))
-        })?
+        tokio::task::spawn_blocking(move || manager.clear_scope(&scope))
+            .await
+            .map_err(|e| CacheError::DatabaseError(format!("异步操作失败: {e}")))?
     }
 
     /// 清理过期条目
@@ -1081,40 +1110,42 @@ impl CacheManager {
     pub fn cleanup_expired(&self, max_items: Option<usize>) -> Result<usize> {
         let mut count = 0;
         let max_items = max_items.unwrap_or(usize::MAX);
-        
+
         // 遍历所有元数据
         for item in self.metadata_tree.iter() {
             if count >= max_items {
                 break;
             }
-            
-            let (key, value) = item.map_err(|e| {
-                CacheError::DatabaseError(format!("遍历元数据失败: {e}"))
-            })?;
 
-            let metadata: CacheEntryMetadata = bincode::serde::decode_from_slice(&value, bincode::config::standard())
-                .map(|(meta, _)| meta)
-                .map_err(|e| {
-                    CacheError::SerializationError(format!("反序列化元数据失败: {e}"))
-                })?;
+            let (key, value) =
+                item.map_err(|e| CacheError::DatabaseError(format!("遍历元数据失败: {e}")))?;
+
+            let metadata: CacheEntryMetadata =
+                bincode::serde::decode_from_slice(&value, bincode::config::standard())
+                    .map(|(meta, _)| meta)
+                    .map_err(|e| {
+                        CacheError::SerializationError(format!("反序列化元数据失败: {e}"))
+                    })?;
 
             if metadata.is_expired() {
                 // 从元数据中获取作用域
                 let scope = &metadata.scope;
-                
+
                 // 解析完整键，获取顶级作用域
                 let top_scope = {
                     let parts: Vec<&str> = scope.split('.').collect();
                     parts[0].to_string()
                 };
-                
+
                 // 获取对应的 tree
                 let tree = self.get_or_create_tree(&top_scope)?;
-                
+
                 // 删除过期条目
-                if tree.remove(&key).map_err(|e| {
-                    CacheError::DatabaseError(format!("删除过期条目失败: {e}"))
-                })?.is_some() {
+                if tree
+                    .remove(&key)
+                    .map_err(|e| CacheError::DatabaseError(format!("删除过期条目失败: {e}")))?
+                    .is_some()
+                {
                     // 删除元数据
                     let _ = self.metadata_tree.remove(&key);
                     count += 1;
@@ -1142,13 +1173,11 @@ impl CacheManager {
     /// * `max_items` - 最大清理条目数量，None 表示清理所有过期条目
     pub async fn cleanup_expired_async(&self, max_items: Option<usize>) -> Result<usize> {
         let manager = self.clone();
-        
+
         // 使用 tokio::spawn_blocking 在异步上下文中运行同步代码
-        tokio::task::spawn_blocking(move || {
-            manager.cleanup_expired(max_items)
-        }).await.map_err(|e| {
-            CacheError::DatabaseError(format!("异步操作失败: {e}"))
-        })?
+        tokio::task::spawn_blocking(move || manager.cleanup_expired(max_items))
+            .await
+            .map_err(|e| CacheError::DatabaseError(format!("异步操作失败: {e}")))?
     }
 
     /// 异步清理过期条目（默认实现，兼容旧版本）
@@ -1165,32 +1194,34 @@ impl CacheManager {
     /// * `scope` - 缓存作用域
     pub fn cleanup_expired_by_scope(&self, scope: &str) -> Result<usize> {
         let mut count = 0;
-        
+
         // 遍历所有元数据，查找指定作用域的过期条目
         for item in self.metadata_tree.iter() {
-            let (key, value) = item.map_err(|e| {
-                CacheError::DatabaseError(format!("遍历元数据失败: {e}"))
-            })?;
+            let (key, value) =
+                item.map_err(|e| CacheError::DatabaseError(format!("遍历元数据失败: {e}")))?;
 
-            let metadata: CacheEntryMetadata = bincode::serde::decode_from_slice(&value, bincode::config::standard())
-                .map(|(meta, _)| meta)
-                .map_err(|e| {
-                    CacheError::SerializationError(format!("反序列化元数据失败: {e}"))
-                })?;
+            let metadata: CacheEntryMetadata =
+                bincode::serde::decode_from_slice(&value, bincode::config::standard())
+                    .map(|(meta, _)| meta)
+                    .map_err(|e| {
+                        CacheError::SerializationError(format!("反序列化元数据失败: {e}"))
+                    })?;
 
             // 检查是否是指定作用域的条目
             if metadata.scope == scope && metadata.is_expired() {
                 // 解析完整键，获取顶级作用域
                 let parts: Vec<&str> = scope.split('.').collect();
                 let top_scope = parts[0].to_string();
-                
+
                 // 获取对应的 tree
                 let tree = self.get_or_create_tree(&top_scope)?;
-                
+
                 // 删除过期条目
-                if tree.remove(&key).map_err(|e| {
-                    CacheError::DatabaseError(format!("删除过期条目失败: {e}"))
-                })?.is_some() {
+                if tree
+                    .remove(&key)
+                    .map_err(|e| CacheError::DatabaseError(format!("删除过期条目失败: {e}")))?
+                    .is_some()
+                {
                     // 删除元数据
                     let _ = self.metadata_tree.remove(&key);
                     count += 1;
@@ -1210,13 +1241,11 @@ impl CacheManager {
     pub async fn cleanup_expired_by_scope_async(&self, scope: &str) -> Result<usize> {
         let manager = self.clone();
         let scope = scope.to_string();
-        
+
         // 使用 tokio::spawn_blocking 在异步上下文中运行同步代码
-        tokio::task::spawn_blocking(move || {
-            manager.cleanup_expired_by_scope(&scope)
-        }).await.map_err(|e| {
-            CacheError::DatabaseError(format!("异步操作失败: {e}"))
-        })?
+        tokio::task::spawn_blocking(move || manager.cleanup_expired_by_scope(&scope))
+            .await
+            .map_err(|e| CacheError::DatabaseError(format!("异步操作失败: {e}")))?
     }
 
     /// 获取缓存统计信息
@@ -1229,7 +1258,7 @@ impl CacheManager {
         } else {
             0
         };
-        
+
         let get_latency = LatencyStats {
             count: get_count,
             total_ns: get_total_latency,
@@ -1237,7 +1266,7 @@ impl CacheManager {
             max_ns: self.get_max_latency.load(Ordering::Relaxed),
             avg_ns: get_avg_latency,
         };
-        
+
         // 计算写入操作延迟统计
         let set_count = self.set_count.load(Ordering::Relaxed);
         let set_total_latency = self.set_total_latency.load(Ordering::Relaxed);
@@ -1246,7 +1275,7 @@ impl CacheManager {
         } else {
             0
         };
-        
+
         let set_latency = LatencyStats {
             count: set_count,
             total_ns: set_total_latency,
@@ -1254,7 +1283,7 @@ impl CacheManager {
             max_ns: self.set_max_latency.load(Ordering::Relaxed),
             avg_ns: set_avg_latency,
         };
-        
+
         // 计算删除操作延迟统计
         let delete_count = self.delete_count.load(Ordering::Relaxed);
         let delete_total_latency = self.delete_total_latency.load(Ordering::Relaxed);
@@ -1263,7 +1292,7 @@ impl CacheManager {
         } else {
             0
         };
-        
+
         let delete_latency = LatencyStats {
             count: delete_count,
             total_ns: delete_total_latency,
@@ -1271,7 +1300,7 @@ impl CacheManager {
             max_ns: self.delete_max_latency.load(Ordering::Relaxed),
             avg_ns: delete_avg_latency,
         };
-        
+
         // 计算批量读取操作延迟统计
         let get_batch_count = self.get_batch_count.load(Ordering::Relaxed);
         let get_batch_total_latency = self.get_batch_total_latency.load(Ordering::Relaxed);
@@ -1280,7 +1309,7 @@ impl CacheManager {
         } else {
             0
         };
-        
+
         let get_batch_latency = LatencyStats {
             count: get_batch_count,
             total_ns: get_batch_total_latency,
@@ -1288,7 +1317,7 @@ impl CacheManager {
             max_ns: 0, // 暂时不统计批量操作的最大延迟
             avg_ns: get_batch_avg_latency,
         };
-        
+
         // 计算批量写入操作延迟统计
         let set_batch_count = self.set_batch_count.load(Ordering::Relaxed);
         let set_batch_total_latency = self.set_batch_total_latency.load(Ordering::Relaxed);
@@ -1297,7 +1326,7 @@ impl CacheManager {
         } else {
             0
         };
-        
+
         let set_batch_latency = LatencyStats {
             count: set_batch_count,
             total_ns: set_batch_total_latency,
@@ -1305,7 +1334,7 @@ impl CacheManager {
             max_ns: 0, // 暂时不统计批量操作的最大延迟
             avg_ns: set_batch_avg_latency,
         };
-        
+
         // 计算批量删除操作延迟统计
         let delete_batch_count = self.delete_batch_count.load(Ordering::Relaxed);
         let delete_batch_total_latency = self.delete_batch_total_latency.load(Ordering::Relaxed);
@@ -1314,7 +1343,7 @@ impl CacheManager {
         } else {
             0
         };
-        
+
         let delete_batch_latency = LatencyStats {
             count: delete_batch_count,
             total_ns: delete_batch_total_latency,
@@ -1322,32 +1351,39 @@ impl CacheManager {
             max_ns: 0, // 暂时不统计批量操作的最大延迟
             avg_ns: delete_batch_avg_latency,
         };
-        
+
         // 收集热点键信息
-        let hot_keys = self.hot_keys.read().map(|map| {
-            let mut keys: Vec<_> = map.iter().collect();
-            // 按访问次数排序
-            keys.sort_by(|a, b| b.value().cmp(a.value()));
-            // 取前20个热点键
-            keys.into_iter().take(20).map(|entry| {
-                let key = entry.key();
-                let count = *entry.value();
-                // 解析键，获取作用域和实际键名
-                let parts: Vec<&str> = key.splitn(2, ':').collect();
-                let (scope, actual_key) = if parts.len() == 2 {
-                    (parts[0].to_string(), parts[1].to_string())
-                } else {
-                    ("unknown".to_string(), key.to_string())
-                };
-                
-                HotKeyInfo {
-                    key: actual_key,
-                    access_count: count,
-                    scope,
-                }
-            }).collect()
-        }).unwrap_or_default();
-        
+        let hot_keys = self
+            .hot_keys
+            .read()
+            .map(|map| {
+                let mut keys: Vec<_> = map.iter().collect();
+                // 按访问次数排序
+                keys.sort_by(|a, b| b.value().cmp(a.value()));
+                // 取前20个热点键
+                keys.into_iter()
+                    .take(20)
+                    .map(|entry| {
+                        let key = entry.key();
+                        let count = *entry.value();
+                        // 解析键，获取作用域和实际键名
+                        let parts: Vec<&str> = key.splitn(2, ':').collect();
+                        let (scope, actual_key) = if parts.len() == 2 {
+                            (parts[0].to_string(), parts[1].to_string())
+                        } else {
+                            ("unknown".to_string(), key.to_string())
+                        };
+
+                        HotKeyInfo {
+                            key: actual_key,
+                            access_count: count,
+                            scope,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         CacheStats {
             hits: self.hits.load(Ordering::Relaxed),
             misses: self.misses.load(Ordering::Relaxed),
@@ -1368,9 +1404,9 @@ impl CacheManager {
 
     /// 刷新到磁盘
     pub fn flush(&self) -> Result<()> {
-        self.db.flush().map_err(|e| {
-            CacheError::DatabaseError(format!("刷新缓存失败: {e}"))
-        })?;
+        self.db
+            .flush()
+            .map_err(|e| CacheError::DatabaseError(format!("刷新缓存失败: {e}")))?;
         Ok(())
     }
 
@@ -1390,11 +1426,12 @@ impl CacheManager {
     pub fn get_metadata(&self, key: &str) -> Result<Option<CacheEntryMetadata>> {
         match self.metadata_tree.get(key.as_bytes()) {
             Ok(Some(data)) => {
-                let metadata: CacheEntryMetadata = bincode::serde::decode_from_slice(&data, bincode::config::standard())
-                    .map(|(meta, _)| meta)
-                    .map_err(|e| {
-                        CacheError::SerializationError(format!("反序列化元数据失败: {e}"))
-                    })?;
+                let metadata: CacheEntryMetadata =
+                    bincode::serde::decode_from_slice(&data, bincode::config::standard())
+                        .map(|(meta, _)| meta)
+                        .map_err(|e| {
+                            CacheError::SerializationError(format!("反序列化元数据失败: {e}"))
+                        })?;
                 Ok(Some(metadata))
             }
             Ok(None) => Ok(None),
@@ -1403,13 +1440,12 @@ impl CacheManager {
     }
 
     fn set_metadata(&self, key: &str, metadata: &CacheEntryMetadata) -> Result<()> {
-        let data = bincode::serde::encode_to_vec(metadata, bincode::config::standard()).map_err(|e| {
-            CacheError::SerializationError(format!("序列化元数据失败: {e}"))
-        })?;
+        let data = bincode::serde::encode_to_vec(metadata, bincode::config::standard())
+            .map_err(|e| CacheError::SerializationError(format!("序列化元数据失败: {e}")))?;
 
-        self.metadata_tree.insert(key.as_bytes(), data.as_slice()).map_err(|e| {
-            CacheError::DatabaseError(format!("写入元数据失败: {e}"))
-        })?;
+        self.metadata_tree
+            .insert(key.as_bytes(), data.as_slice())
+            .map_err(|e| CacheError::DatabaseError(format!("写入元数据失败: {e}")))?;
 
         Ok(())
     }
@@ -1426,7 +1462,7 @@ impl CacheManager {
         let current_size = self.db.size_on_disk().unwrap_or(0);
         Ok(current_size + new_size as u64 > self.config.max_size_bytes)
     }
-    
+
     /// 更新延迟统计信息
     ///
     /// # 参数
@@ -1436,71 +1472,89 @@ impl CacheManager {
     fn update_latency_stats(&self, elapsed_ns: u64, is_get: bool) {
         if is_get {
             // 更新读取操作延迟统计
-            self.get_total_latency.fetch_add(elapsed_ns, Ordering::Relaxed);
+            self.get_total_latency
+                .fetch_add(elapsed_ns, Ordering::Relaxed);
             self.get_count.fetch_add(1, Ordering::Relaxed);
-            
+
             // 更新最小延迟
             let mut current_min = self.get_min_latency.load(Ordering::Relaxed);
             while elapsed_ns < current_min {
-                if self.get_min_latency.compare_exchange_weak(
-                    current_min, 
-                    elapsed_ns, 
-                    Ordering::Relaxed, 
-                    Ordering::Relaxed
-                ).is_ok() {
+                if self
+                    .get_min_latency
+                    .compare_exchange_weak(
+                        current_min,
+                        elapsed_ns,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
                     break;
                 }
                 current_min = self.get_min_latency.load(Ordering::Relaxed);
             }
-            
+
             // 更新最大延迟
             let mut current_max = self.get_max_latency.load(Ordering::Relaxed);
             while elapsed_ns > current_max {
-                if self.get_max_latency.compare_exchange_weak(
-                    current_max, 
-                    elapsed_ns, 
-                    Ordering::Relaxed, 
-                    Ordering::Relaxed
-                ).is_ok() {
+                if self
+                    .get_max_latency
+                    .compare_exchange_weak(
+                        current_max,
+                        elapsed_ns,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
                     break;
                 }
                 current_max = self.get_max_latency.load(Ordering::Relaxed);
             }
         } else {
             // 更新写入操作延迟统计
-            self.set_total_latency.fetch_add(elapsed_ns, Ordering::Relaxed);
+            self.set_total_latency
+                .fetch_add(elapsed_ns, Ordering::Relaxed);
             self.set_count.fetch_add(1, Ordering::Relaxed);
-            
+
             // 更新最小延迟
             let mut current_min = self.set_min_latency.load(Ordering::Relaxed);
             while elapsed_ns < current_min {
-                if self.set_min_latency.compare_exchange_weak(
-                    current_min, 
-                    elapsed_ns, 
-                    Ordering::Relaxed, 
-                    Ordering::Relaxed
-                ).is_ok() {
+                if self
+                    .set_min_latency
+                    .compare_exchange_weak(
+                        current_min,
+                        elapsed_ns,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
                     break;
                 }
                 current_min = self.set_min_latency.load(Ordering::Relaxed);
             }
-            
+
             // 更新最大延迟
             let mut current_max = self.set_max_latency.load(Ordering::Relaxed);
             while elapsed_ns > current_max {
-                if self.set_max_latency.compare_exchange_weak(
-                    current_max, 
-                    elapsed_ns, 
-                    Ordering::Relaxed, 
-                    Ordering::Relaxed
-                ).is_ok() {
+                if self
+                    .set_max_latency
+                    .compare_exchange_weak(
+                        current_max,
+                        elapsed_ns,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
                     break;
                 }
                 current_max = self.set_max_latency.load(Ordering::Relaxed);
             }
         }
     }
-    
+
     /// 更新删除操作延迟统计
     ///
     /// # 参数
@@ -1508,32 +1562,41 @@ impl CacheManager {
     /// * `elapsed_ns` - 操作耗时（纳秒）
     fn update_delete_latency_stats(&self, elapsed_ns: u64) {
         // 更新删除操作延迟统计
-        self.delete_total_latency.fetch_add(elapsed_ns, Ordering::Relaxed);
+        self.delete_total_latency
+            .fetch_add(elapsed_ns, Ordering::Relaxed);
         self.delete_count.fetch_add(1, Ordering::Relaxed);
-        
+
         // 更新最小延迟
         let mut current_min = self.delete_min_latency.load(Ordering::Relaxed);
         while elapsed_ns < current_min {
-            if self.delete_min_latency.compare_exchange_weak(
-                current_min, 
-                elapsed_ns, 
-                Ordering::Relaxed, 
-                Ordering::Relaxed
-            ).is_ok() {
+            if self
+                .delete_min_latency
+                .compare_exchange_weak(
+                    current_min,
+                    elapsed_ns,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 break;
             }
             current_min = self.delete_min_latency.load(Ordering::Relaxed);
         }
-        
+
         // 更新最大延迟
         let mut current_max = self.delete_max_latency.load(Ordering::Relaxed);
         while elapsed_ns > current_max {
-            if self.delete_max_latency.compare_exchange_weak(
-                current_max, 
-                elapsed_ns, 
-                Ordering::Relaxed, 
-                Ordering::Relaxed
-            ).is_ok() {
+            if self
+                .delete_max_latency
+                .compare_exchange_weak(
+                    current_max,
+                    elapsed_ns,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 break;
             }
             current_max = self.delete_max_latency.load(Ordering::Relaxed);
@@ -1549,15 +1612,11 @@ mod tests {
     fn temp_cache_config() -> CacheImplConfig {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
-        
+
         let temp_dir = std::env::temp_dir();
         let unique_id = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let db_path = temp_dir.join(format!(
-            "test_cache_{}_{}",
-            std::process::id(),
-            unique_id
-        ));
-        
+        let db_path = temp_dir.join(format!("test_cache_{}_{}", std::process::id(), unique_id));
+
         CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
             default_ttl_secs: 10,
@@ -1702,7 +1761,10 @@ mod tests {
 
         // 验证不同作用域的键是隔离的
         assert_eq!(manager.get(scope1, key).unwrap_or(None), Some(value1));
-        assert_eq!(manager.get(scope2, key).unwrap_or(None), Some(value2.clone()));
+        assert_eq!(
+            manager.get(scope2, key).unwrap_or(None),
+            Some(value2.clone())
+        );
 
         // 测试删除作用域
         let deleted = manager.delete_scope(scope1).unwrap_or(0);
@@ -1727,49 +1789,57 @@ mod tests {
         let value3 = b"value3".to_vec();
 
         // 设置初始值
-        manager.set(scope, key.to_string(), value1.clone(), None).unwrap();
+        manager
+            .set(scope, key.to_string(), value1.clone(), None)
+            .unwrap();
         assert_eq!(manager.get(scope, key).unwrap(), Some(value1.clone()));
 
         // 条件更新：只有当当前值存在时才更新
-        manager.set_with_condition(
-            scope, 
-            key.to_string(), 
-            value2.clone(), 
-            None,
-            |current_value, _| current_value.is_some()
-        ).unwrap();
+        manager
+            .set_with_condition(
+                scope,
+                key.to_string(),
+                value2.clone(),
+                None,
+                |current_value, _| current_value.is_some(),
+            )
+            .unwrap();
         assert_eq!(manager.get(scope, key).unwrap(), Some(value2.clone()));
 
         // 条件更新：只有当当前值等于特定值时才更新
-        manager.set_with_condition(
-            scope, 
-            key.to_string(), 
-            value3.clone(), 
-            None,
-            move |current_value, _| {
-                if let Some(v) = current_value {
-                    *v == value2
-                } else {
-                    false
-                }
-            }
-        ).unwrap();
+        manager
+            .set_with_condition(
+                scope,
+                key.to_string(),
+                value3.clone(),
+                None,
+                move |current_value, _| {
+                    if let Some(v) = current_value {
+                        *v == value2
+                    } else {
+                        false
+                    }
+                },
+            )
+            .unwrap();
         assert_eq!(manager.get(scope, key).unwrap(), Some(value3.clone()));
 
         // 条件更新：当条件不满足时不更新
-        manager.set_with_condition(
-            scope, 
-            key.to_string(), 
-            value1.clone(), 
-            None,
-            move |current_value, _| {
-                if let Some(v) = current_value {
-                    *v == value1 // 这个条件不满足，因为当前值是 value3
-                } else {
-                    false
-                }
-            }
-        ).unwrap();
+        manager
+            .set_with_condition(
+                scope,
+                key.to_string(),
+                value1.clone(),
+                None,
+                move |current_value, _| {
+                    if let Some(v) = current_value {
+                        *v == value1 // 这个条件不满足，因为当前值是 value3
+                    } else {
+                        false
+                    }
+                },
+            )
+            .unwrap();
         assert_eq!(manager.get(scope, key).unwrap(), Some(value3.clone()));
     }
 
@@ -1778,7 +1848,7 @@ mod tests {
     fn test_bloom_filter() {
         let mut config = temp_cache_config();
         config.enable_bloom_filter = true;
-        
+
         let manager = match CacheManager::instance(config) {
             Ok(m) => m,
             Err(_) => return,
@@ -1789,11 +1859,13 @@ mod tests {
         let value = b"bloom_value".to_vec();
 
         // 设置缓存，这会将键添加到布隆过滤器
-        manager.set(scope, key.to_string(), value.clone(), None).unwrap();
-        
+        manager
+            .set(scope, key.to_string(), value.clone(), None)
+            .unwrap();
+
         // 检查存在的键，应该能获取到
         assert_eq!(manager.get(scope, key).unwrap(), Some(value.clone()));
-        
+
         // 检查不存在的键，布隆过滤器应该能快速返回 None
         let non_existent_key = "non_existent_key";
         assert_eq!(manager.get(scope, non_existent_key).unwrap(), None);
@@ -1814,21 +1886,25 @@ mod tests {
         let value = b"test_value".to_vec();
 
         // 设置初始值
-        manager.set(scope, hot_key.to_string(), value.clone(), None).unwrap();
-        manager.set(scope, cold_key.to_string(), value.clone(), None).unwrap();
+        manager
+            .set(scope, hot_key.to_string(), value.clone(), None)
+            .unwrap();
+        manager
+            .set(scope, cold_key.to_string(), value.clone(), None)
+            .unwrap();
 
         // 多次访问热键
         for _ in 0..100 {
             manager.get(scope, hot_key).unwrap();
         }
-        
+
         // 只访问一次冷键
         manager.get(scope, cold_key).unwrap();
 
         // 获取统计信息，检查热点键
         let stats = manager.stats();
         assert!(!stats.hot_keys.is_empty());
-        
+
         // 热键应该在热点键列表中
         let hot_key_found = stats.hot_keys.iter().any(|hk| hk.key == hot_key);
         assert!(hot_key_found);
@@ -1845,14 +1921,11 @@ mod tests {
 
         let scope = "test.scope";
         let keys = ["key1", "key2", "key3"];
-        let values = [
-            b"value1".to_vec(), 
-            b"value2".to_vec(), 
-            b"value3".to_vec()
-        ];
+        let values = [b"value1".to_vec(), b"value2".to_vec(), b"value3".to_vec()];
 
         // 批量设置
-        let items: Vec<(String, CacheValue)> = keys.iter()
+        let items: Vec<(String, CacheValue)> = keys
+            .iter()
             .zip(values.iter())
             .map(|(k, v)| (k.to_string(), v.clone()))
             .collect();

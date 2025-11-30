@@ -13,13 +13,13 @@
 // limitations under the License.
 
 //! 搜索相关错误定义
-//! 
+//!
 //! 包含搜索引擎、搜索请求、搜索结果等相关错误的定义和创建函数。
 
-use crate::errors::{ErrorInfo, ErrorCategory, ErrorSeverity};
+use crate::errors::{ErrorCategory, ErrorInfo, ErrorSeverity};
 
 /// 搜索错误码常量
-/// 
+///
 /// 搜索错误码范围：2000-2999
 pub const SEARCH_ERROR_BASE: u32 = 2000;
 pub const ENGINE_UNAVAILABLE: u32 = SEARCH_ERROR_BASE + 1;
@@ -34,23 +34,26 @@ pub const SEARCH_DEPTH_TOO_LARGE: u32 = SEARCH_ERROR_BASE + 9;
 pub const INVALID_SEARCH_SCOPE: u32 = SEARCH_ERROR_BASE + 10;
 
 /// 创建引擎不可用错误
-/// 
+///
 /// # 参数
 /// - `engine_name`: 不可用的引擎名称
-/// 
+///
 /// # 返回
 /// 包含引擎不可用信息的错误对象
 pub fn engine_unavailable(engine_name: &str) -> ErrorInfo {
-    ErrorInfo::new(ENGINE_UNAVAILABLE, format!("搜索引擎 '{engine_name}' 不可用"))
-        .with_category(ErrorCategory::Search)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        ENGINE_UNAVAILABLE,
+        format!("搜索引擎 '{engine_name}' 不可用"),
+    )
+    .with_category(ErrorCategory::Search)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 创建搜索超时错误
-/// 
+///
 /// # 参数
 /// - `engine_name`: 超时的引擎名称
-/// 
+///
 /// # 返回
 /// 包含搜索超时信息的错误对象
 pub fn search_timeout(engine_name: &str) -> ErrorInfo {
@@ -60,10 +63,10 @@ pub fn search_timeout(engine_name: &str) -> ErrorInfo {
 }
 
 /// 创建零结果错误
-/// 
+///
 /// # 参数
 /// - `engine_name`: 返回零结果的引擎名称
-/// 
+///
 /// # 返回
 /// 包含零结果信息的错误对象
 pub fn zero_results(engine_name: &str) -> ErrorInfo {
@@ -73,11 +76,11 @@ pub fn zero_results(engine_name: &str) -> ErrorInfo {
 }
 
 /// 创建无效查询错误
-/// 
+///
 /// # 参数
 /// - `query`: 无效的查询内容
 /// - `reason`: 无效的原因
-/// 
+///
 /// # 返回
 /// 包含无效查询信息的错误对象
 pub fn invalid_query(query: &str, reason: &str) -> ErrorInfo {
@@ -87,79 +90,94 @@ pub fn invalid_query(query: &str, reason: &str) -> ErrorInfo {
 }
 
 /// 创建不支持的搜索类型错误
-/// 
+///
 /// # 参数
 /// - `search_type`: 不支持的搜索类型
 /// - `engine_name`: 搜索引擎名称
-/// 
+///
 /// # 返回
 /// 包含不支持的搜索类型信息的错误对象
 pub fn unsupported_search_type(search_type: &str, engine_name: &str) -> ErrorInfo {
-    ErrorInfo::new(UNSUPPORTED_SEARCH_TYPE, format!("搜索引擎 '{engine_name}' 不支持 '{search_type}' 搜索类型"))
-        .with_category(ErrorCategory::Search)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        UNSUPPORTED_SEARCH_TYPE,
+        format!("搜索引擎 '{engine_name}' 不支持 '{search_type}' 搜索类型"),
+    )
+    .with_category(ErrorCategory::Search)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 创建引擎错误
-/// 
+///
 /// # 参数
 /// - `engine_name`: 出错的引擎名称
 /// - `message`: 错误详细信息
-/// 
+///
 /// # 返回
 /// 包含引擎错误信息的错误对象
 pub fn engine_error(engine_name: &str, message: &str) -> ErrorInfo {
-    ErrorInfo::new(ENGINE_ERROR, format!("搜索引擎 '{engine_name}' 错误: {message}"))
-        .with_category(ErrorCategory::Search)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        ENGINE_ERROR,
+        format!("搜索引擎 '{engine_name}' 错误: {message}"),
+    )
+    .with_category(ErrorCategory::Search)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 创建结果解析失败错误
-/// 
+///
 /// # 参数
 /// - `engine_name`: 结果解析失败的引擎名称
 /// - `reason`: 解析失败的原因
-/// 
+///
 /// # 返回
 /// 包含结果解析失败信息的错误对象
 pub fn result_parse_failed(engine_name: &str, reason: &str) -> ErrorInfo {
-    ErrorInfo::new(RESULT_PARSE_FAILED, format!("搜索引擎 '{engine_name}' 结果解析失败: {reason}"))
-        .with_category(ErrorCategory::Search)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        RESULT_PARSE_FAILED,
+        format!("搜索引擎 '{engine_name}' 结果解析失败: {reason}"),
+    )
+    .with_category(ErrorCategory::Search)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 创建搜索速率限制错误
-/// 
+///
 /// # 参数
 /// - `engine_name`: 触发速率限制的引擎名称
-/// 
+///
 /// # 返回
 /// 包含搜索速率限制信息的错误对象
 pub fn search_rate_limited(engine_name: &str) -> ErrorInfo {
-    ErrorInfo::new(SEARCH_RATE_LIMITED, format!("搜索引擎 '{engine_name}' 搜索速率受限"))
-        .with_category(ErrorCategory::Search)
-        .with_severity(ErrorSeverity::Warning)
+    ErrorInfo::new(
+        SEARCH_RATE_LIMITED,
+        format!("搜索引擎 '{engine_name}' 搜索速率受限"),
+    )
+    .with_category(ErrorCategory::Search)
+    .with_severity(ErrorSeverity::Warning)
 }
 
 /// 创建搜索深度过大错误
-/// 
+///
 /// # 参数
 /// - `depth`: 请求的搜索深度
 /// - `max_depth`: 允许的最大搜索深度
-/// 
+///
 /// # 返回
 /// 包含搜索深度过大信息的错误对象
 pub fn search_depth_too_large(depth: u32, max_depth: u32) -> ErrorInfo {
-    ErrorInfo::new(SEARCH_DEPTH_TOO_LARGE, format!("搜索深度 {depth} 超过最大限制 {max_depth}"))
-        .with_category(ErrorCategory::Search)
-        .with_severity(ErrorSeverity::Error)
+    ErrorInfo::new(
+        SEARCH_DEPTH_TOO_LARGE,
+        format!("搜索深度 {depth} 超过最大限制 {max_depth}"),
+    )
+    .with_category(ErrorCategory::Search)
+    .with_severity(ErrorSeverity::Error)
 }
 
 /// 创建无效搜索范围错误
-/// 
+///
 /// # 参数
 /// - `scope`: 无效的搜索范围
-/// 
+///
 /// # 返回
 /// 包含无效搜索范围信息的错误对象
 pub fn invalid_search_scope(scope: &str) -> ErrorInfo {
@@ -169,15 +187,14 @@ pub fn invalid_search_scope(scope: &str) -> ErrorInfo {
 }
 
 /// 向后兼容的搜索错误创建函数
-/// 
+///
 /// 此函数保持与现有代码的兼容性，新代码建议使用更具体的错误创建函数。
-/// 
+///
 /// # 参数
 /// - `message`: 错误消息
-/// 
+///
 /// # 返回
 /// 包含指定消息的搜索错误对象
 pub fn search_error(message: impl Into<String>) -> ErrorInfo {
-    ErrorInfo::new(SEARCH_ERROR_BASE, message.into())
-        .with_category(ErrorCategory::Search)
+    ErrorInfo::new(SEARCH_ERROR_BASE, message.into()).with_category(ErrorCategory::Search)
 }

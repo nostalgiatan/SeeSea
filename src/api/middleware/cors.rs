@@ -16,8 +16,8 @@
 //!
 //! 处理跨域资源共享 (CORS)
 
-use axum::http::{header, Method};
-use tower_http::cors::{CorsLayer, Any};
+use axum::http::{Method, header};
+use tower_http::cors::{Any, CorsLayer};
 
 /// 创建 CORS 中间件
 ///

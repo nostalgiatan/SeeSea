@@ -136,7 +136,7 @@ impl TorManager {
             let age = SystemTime::now()
                 .duration_since(circuit_info.created_at)
                 .unwrap_or_else(|_| Duration::from_secs(0)); // If time goes backwards, treat as age 0
-            
+
             if age > self.circuit_max_age {
                 return true;
             }
@@ -162,75 +162,83 @@ impl TorManager {
     pub async fn new_circuit(&self) -> Result<()> {
         // Tor 的新电路请求需要通过控制端口（默认 9051）
         // 发送 SIGNAL NEWNYM 命令
-        
+
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpStream;
         use tokio::time::timeout;
-        
+
         // 提取控制端口地址（假设格式为 host:port）
         let control_addr = self.config.address.replace(":9050", ":9051");
-        
+
         // 设置超时时间为10秒
         let connect_timeout = Duration::from_secs(10);
-        
+
         // 连接到 Tor 控制端口（带超时）
-        let mut stream = timeout(
-            connect_timeout,
-            TcpStream::connect(&control_addr)
-        )
+        let mut stream = timeout(connect_timeout, TcpStream::connect(&control_addr))
             .await
             .map_err(|_| crate::errors::network_error("Connection to Tor control port timed out"))?
-            .map_err(|e| crate::errors::network_error(format!("Failed to connect to Tor control port: {e}")))?;
-        
+            .map_err(|e| {
+                crate::errors::network_error(format!("Failed to connect to Tor control port: {e}"))
+            })?;
+
         // 发送 AUTHENTICATE 命令（空密码）
-        stream.write_all(b"AUTHENTICATE \"\"\r\n")
+        stream
+            .write_all(b"AUTHENTICATE \"\"\r\n")
             .await
             .map_err(|e| crate::errors::network_error(format!("Failed to authenticate: {e}")))?;
-        
+
         // 读取认证响应（带超时）
         let mut auth_response = vec![0u8; 1024];
-        let n = timeout(
-            Duration::from_secs(5),
-            stream.read(&mut auth_response)
-        )
+        let n = timeout(Duration::from_secs(5), stream.read(&mut auth_response))
             .await
             .map_err(|_| crate::errors::network_error("Reading auth response timed out"))?
-            .map_err(|e| crate::errors::network_error(format!("Failed to read auth response: {e}")))?;
-        
+            .map_err(|e| {
+                crate::errors::network_error(format!("Failed to read auth response: {e}"))
+            })?;
+
         let response = String::from_utf8_lossy(&auth_response[..n]);
         if !response.starts_with("250") {
-            return Err(crate::errors::network_error(format!("Authentication failed: {response}")));
+            return Err(crate::errors::network_error(format!(
+                "Authentication failed: {response}"
+            )));
         }
-        
+
         // 发送 SIGNAL NEWNYM 命令请求新电路
-        stream.write_all(b"SIGNAL NEWNYM\r\n")
-            .await
-            .map_err(|e| crate::errors::network_error(format!("Failed to send NEWNYM signal: {e}")))?;
-        
+        stream.write_all(b"SIGNAL NEWNYM\r\n").await.map_err(|e| {
+            crate::errors::network_error(format!("Failed to send NEWNYM signal: {e}"))
+        })?;
+
         // 读取响应（带超时）
         let mut signal_response = vec![0u8; 1024];
-        let n = timeout(
-            Duration::from_secs(5),
-            stream.read(&mut signal_response)
-        )
+        let n = timeout(Duration::from_secs(5), stream.read(&mut signal_response))
             .await
             .map_err(|_| crate::errors::network_error("Reading signal response timed out"))?
-            .map_err(|e| crate::errors::network_error(format!("Failed to read signal response: {e}")))?;
-        
+            .map_err(|e| {
+                crate::errors::network_error(format!("Failed to read signal response: {e}"))
+            })?;
+
         let response = String::from_utf8_lossy(&signal_response[..n]);
         if !response.starts_with("250") {
-            return Err(crate::errors::network_error(format!("NEWNYM signal failed: {response}")));
+            return Err(crate::errors::network_error(format!(
+                "NEWNYM signal failed: {response}"
+            )));
         }
 
         // 重置电路信息
         *self.current_circuit.write().await = Some(TorCircuit {
-            circuit_id: format!("circuit_{}", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()),
+            circuit_id: format!(
+                "circuit_{}",
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+            ),
             path: vec![],
             created_at: SystemTime::now(),
             last_used: Instant::now(),
         });
         *self.circuit_request_count.write().await = 0;
-        
+
         Ok(())
     }
 
@@ -269,30 +277,31 @@ impl TorManager {
     pub async fn get_current_ip(&self) -> Result<String> {
         use reqwest::Client;
         use tokio::time::timeout;
-        
+
         // 创建使用 Tor 代理的 HTTP 客户端
         let proxy_url = format!("socks5://{}", self.config.address);
         let proxy = reqwest::Proxy::all(&proxy_url)
             .map_err(|e| crate::errors::network_error(format!("Failed to create proxy: {e}")))?;
-        
+
         let client = Client::builder()
             .proxy(proxy)
             .timeout(Duration::from_secs(30))
             .build()
             .map_err(|e| crate::errors::network_error(format!("Failed to build client: {e}")))?;
-        
+
         // 通过 IP 查询服务获取当前 IP（带重试机制）
         let mut last_error = None;
         for _ in 0..3 {
             match timeout(
                 Duration::from_secs(30),
-                client.get("https://api.ipify.org").send()
-            ).await {
+                client.get("https://api.ipify.org").send(),
+            )
+            .await
+            {
                 Ok(Ok(response)) => {
-                    let ip = response
-                        .text()
-                        .await
-                        .map_err(|e| crate::errors::network_error(format!("Failed to read response: {e}")))?;
+                    let ip = response.text().await.map_err(|e| {
+                        crate::errors::network_error(format!("Failed to read response: {e}"))
+                    })?;
                     return Ok(ip.trim().to_string());
                 }
                 Ok(Err(e)) => {
@@ -363,7 +372,10 @@ mod tests {
     fn test_tor_manager_default() {
         let manager = TorManager::default();
         assert_eq!(manager.config.address, "127.0.0.1:9050");
-        assert_eq!(manager.config.proxy_type, crate::net::config::ProxyType::Tor);
+        assert_eq!(
+            manager.config.proxy_type,
+            crate::net::config::ProxyType::Tor
+        );
     }
 
     #[tokio::test]

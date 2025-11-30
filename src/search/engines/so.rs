@@ -1,13 +1,13 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::error::Error;
+use std::sync::Arc;
 
-use crate::derive::{
-    EngineCapabilities, EngineInfo, EngineStatus, EngineType,
-    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
-};
 use super::utils::build_query_string_owned;
+use crate::derive::{
+    AboutInfo, EngineCapabilities, EngineInfo, EngineStatus, EngineType, RequestParams,
+    RequestResponseEngine, ResultType, SearchResultItem,
+};
 
 // 使用宏定义引擎结构体和基本方法
 define_engine! {
@@ -51,8 +51,9 @@ define_engine! {
 }
 
 impl SoEngine {
-
-    fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn parse_html_results(
+        html: &str,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use scraper::{Html, Selector};
 
         if html.is_empty() {
@@ -83,33 +84,47 @@ impl SoEngine {
                 continue;
             }
 
-            let url = title_elem.value().attr("href")
+            let url = title_elem.value().attr("href").unwrap_or("").to_string();
+
+            let real_url = title_elem
+                .value()
+                .attr("data-mdurl")
                 .unwrap_or("")
                 .to_string();
 
-            let real_url = title_elem.value().attr("data-mdurl")
-                .unwrap_or("")
-                .to_string();
-
-            let final_url = if !real_url.is_empty() { real_url } else { url.clone() };
+            let final_url = if !real_url.is_empty() {
+                real_url
+            } else {
+                url.clone()
+            };
 
             if final_url.is_empty() {
                 continue;
             }
 
-            let content = result.select(&Selector::parse("p").expect("valid selector")).next()
+            let content = result
+                .select(&Selector::parse("p").expect("valid selector"))
+                .next()
                 .map(|c| c.text().collect::<String>().trim().to_string())
                 .or_else(|| {
-                    result.select(&Selector::parse("div[class*=\"desc\"]").expect("valid selector")).next()
+                    result
+                        .select(&Selector::parse("div[class*=\"desc\"]").expect("valid selector"))
+                        .next()
                         .map(|c| c.text().collect::<String>().trim().to_string())
                 })
                 .or_else(|| {
-                    result.select(&Selector::parse("div[class*=\"content\"]").expect("valid selector")).next()
+                    result
+                        .select(
+                            &Selector::parse("div[class*=\"content\"]").expect("valid selector"),
+                        )
+                        .next()
                         .map(|c| c.text().collect::<String>().trim().to_string())
                 })
                 .unwrap_or_default();
 
-            let display_url = result.select(&Selector::parse("cite").expect("valid selector")).next()
+            let display_url = result
+                .select(&Selector::parse("cite").expect("valid selector"))
+                .next()
                 .map(|c| c.text().collect::<String>().trim().to_string())
                 .or_else(|| Some(final_url.clone()));
 
@@ -144,15 +159,15 @@ impl SoEngine {
                         continue;
                     }
 
-                    let url = link.value().attr("href")
-                        .unwrap_or("")
-                        .to_string();
+                    let url = link.value().attr("href").unwrap_or("").to_string();
 
-                    let real_url = link.value().attr("data-mdurl")
-                        .unwrap_or("")
-                        .to_string();
+                    let real_url = link.value().attr("data-mdurl").unwrap_or("").to_string();
 
-                    let final_url = if !real_url.is_empty() { real_url } else { url.clone() };
+                    let final_url = if !real_url.is_empty() {
+                        real_url
+                    } else {
+                        url.clone()
+                    };
 
                     if final_url.is_empty() {
                         continue;
@@ -191,13 +206,15 @@ impl SoEngine {
     }
 }
 
-
-
 #[async_trait]
 impl RequestResponseEngine for SoEngine {
     type Response = String;
 
-    fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn request(
+        &self,
+        query: &str,
+        params: &mut RequestParams,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut query_params = vec![
             ("q", query.to_string()),
             ("ie", "utf-8".to_string()),
@@ -229,12 +246,18 @@ impl RequestResponseEngine for SoEngine {
         Ok(())
     }
 
-    async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
+    async fn fetch(
+        &self,
+        params: &RequestParams,
+    ) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         // 使用通用引擎的fetch方法
         self.generic.fetch(params).await
     }
 
-    fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn response(
+        &self,
+        resp: Self::Response,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         Self::parse_html_results(&resp)
     }
 }

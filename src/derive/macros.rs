@@ -58,7 +58,7 @@ macro_rules! engine_metadata {
         pub const PAGING: bool = $paging;
         pub const TIME_RANGE_SUPPORT: bool = $time_range;
         pub const SAFESEARCH: bool = $safesearch;
-        
+
         $(
             pub fn about_info() -> $crate::derive::AboutInfo {
                 $crate::derive::AboutInfo {
@@ -81,7 +81,8 @@ macro_rules! query_processor_impl {
         impl $struct_name {
             /// 清理查询字符串
             pub fn clean_query(&self, query: &str) -> String {
-                query.trim()
+                query
+                    .trim()
                     .chars()
                     .filter(|c| c.is_alphanumeric() || c.is_whitespace() || "-+\"".contains(*c))
                     .collect::<String>()
@@ -91,7 +92,11 @@ macro_rules! query_processor_impl {
             }
 
             /// 优化页面大小
-            pub fn optimize_page_size(&self, query: &mut $crate::derive::SearchQuery, default_size: usize) {
+            pub fn optimize_page_size(
+                &self,
+                query: &mut $crate::derive::SearchQuery,
+                default_size: usize,
+            ) {
                 if query.page_size == 0 {
                     query.page_size = default_size;
                 } else if query.page_size > 100 {
@@ -100,14 +105,22 @@ macro_rules! query_processor_impl {
             }
 
             /// 设置默认语言
-            pub fn set_default_language(&self, query: &mut $crate::derive::SearchQuery, lang: &str) {
+            pub fn set_default_language(
+                &self,
+                query: &mut $crate::derive::SearchQuery,
+                lang: &str,
+            ) {
                 if query.language.is_none() {
                     query.language = Some(lang.to_string());
                 }
             }
 
             /// 设置默认地区
-            pub fn set_default_region(&self, query: &mut $crate::derive::SearchQuery, region: &str) {
+            pub fn set_default_region(
+                &self,
+                query: &mut $crate::derive::SearchQuery,
+                region: &str,
+            ) {
                 if query.region.is_none() {
                     query.region = Some(region.to_string());
                 }
@@ -128,22 +141,37 @@ macro_rules! result_processor_impl {
             }
 
             /// 过滤低质量结果
-            pub fn filter_low_quality(&self, results: &mut Vec<$crate::derive::SearchResultItem>, min_score: f64) {
+            pub fn filter_low_quality(
+                &self,
+                results: &mut Vec<$crate::derive::SearchResultItem>,
+                min_score: f64,
+            ) {
                 results.retain(|item| item.score >= min_score);
             }
 
             /// 按评分排序
             pub fn sort_by_score(&self, results: &mut Vec<$crate::derive::SearchResultItem>) {
-                results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+                results.sort_by(|a, b| {
+                    b.score
+                        .partial_cmp(&a.score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
             }
 
             /// 限制结果数量
-            pub fn limit_results(&self, results: &mut Vec<$crate::derive::SearchResultItem>, limit: usize) {
+            pub fn limit_results(
+                &self,
+                results: &mut Vec<$crate::derive::SearchResultItem>,
+                limit: usize,
+            ) {
                 results.truncate(limit);
             }
 
             /// 格式化为 JSON
-            pub fn to_json(&self, results: &[$crate::derive::SearchResultItem]) -> Result<String, Box<dyn std::error::Error>> {
+            pub fn to_json(
+                &self,
+                results: &[$crate::derive::SearchResultItem],
+            ) -> Result<String, Box<dyn std::error::Error>> {
                 Ok(serde_json::to_string_pretty(results)?)
             }
 

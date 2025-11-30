@@ -98,22 +98,22 @@ fn apply_full_fingerprint_protection(builder: ClientBuilder) -> ClientBuilder {
 pub fn randomize_tls_extensions() -> Vec<u16> {
     // 常见的 TLS 扩展
     let mut extensions = vec![
-        0,    // server_name
-        10,   // supported_groups
-        11,   // ec_point_formats
-        13,   // signature_algorithms
-        16,   // application_layer_protocol_negotiation
-        23,   // extended_master_secret
-        35,   // session_ticket
-        43,   // supported_versions
-        45,   // psk_key_exchange_modes
-        51,   // key_share
+        0,  // server_name
+        10, // supported_groups
+        11, // ec_point_formats
+        13, // signature_algorithms
+        16, // application_layer_protocol_negotiation
+        23, // extended_master_secret
+        35, // session_ticket
+        43, // supported_versions
+        45, // psk_key_exchange_modes
+        51, // key_share
     ];
 
     // 使用 rand crate 的 shuffle 方法（基于 Fisher-Yates 算法）
     let mut rng = rand::rng();
     extensions.shuffle(&mut rng);
-    
+
     extensions
 }
 
@@ -125,7 +125,7 @@ mod tests {
     fn test_configure_tls_with_verification() {
         let mut config = TlsConfig::default();
         config.verify_certificates = true;
-        
+
         let builder = ClientBuilder::new();
         let result = configure_tls(builder, &config);
         assert!(result.is_ok());
@@ -135,7 +135,7 @@ mod tests {
     fn test_configure_tls_without_verification() {
         let mut config = TlsConfig::default();
         config.verify_certificates = false;
-        
+
         let builder = ClientBuilder::new();
         let result = configure_tls(builder, &config);
         assert!(result.is_ok());
@@ -145,7 +145,7 @@ mod tests {
     fn test_configure_tls_basic_fingerprint() {
         let mut config = TlsConfig::default();
         config.fingerprint_level = TlsFingerprintLevel::Basic;
-        
+
         let builder = ClientBuilder::new();
         let result = configure_tls(builder, &config);
         assert!(result.is_ok());
@@ -155,7 +155,7 @@ mod tests {
     fn test_configure_tls_advanced_fingerprint() {
         let mut config = TlsConfig::default();
         config.fingerprint_level = TlsFingerprintLevel::Advanced;
-        
+
         let builder = ClientBuilder::new();
         let result = configure_tls(builder, &config);
         assert!(result.is_ok());

@@ -132,14 +132,14 @@ impl RequestParams {
         params.page = query.page;
         params.language = query.language.clone();
         params.time_range = query.time_range.map(|tr| format!("{tr:?}").to_lowercase());
-        
+
         // 将 SafeSearchLevel 转换为数字
         params.safe_search = match query.safe_search {
             crate::config::common::SafeSearchLevel::None => 0,
             crate::config::common::SafeSearchLevel::Moderate => 1,
             crate::config::common::SafeSearchLevel::Strict => 2,
         };
-        
+
         params.custom = query.params.clone();
         params
     }

@@ -16,18 +16,18 @@
 //!
 //! 提供各种 HTTP 中间件功能
 
-pub mod cors;
-pub mod ratelimit;
-pub mod logging;
 pub mod auth;
 pub mod circuitbreaker;
+pub mod cors;
 pub mod ipfilter;
+pub mod logging;
 pub mod magiclink;
+pub mod ratelimit;
 
-pub use cors::*;
-pub use ratelimit::*;
-pub use logging::*;
 pub use auth::*;
 pub use circuitbreaker::*;
+pub use cors::*;
 pub use ipfilter::*;
+pub use logging::*;
 pub use magiclink::*;
+pub use ratelimit::*;

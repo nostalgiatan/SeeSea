@@ -16,14 +16,14 @@
 //!
 //! 处理缓存管理相关的 API 请求
 
+use crate::api::on::ApiState;
 use axum::{
-    extract::State,
-    response::{IntoResponse, Response},
-    http::StatusCode,
     Json,
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
 };
 use serde::Serialize;
-use crate::api::on::ApiState;
 
 /// 缓存统计响应
 #[derive(Debug, Serialize)]
@@ -54,9 +54,7 @@ pub struct CacheClearResponse {
 }
 
 /// 处理获取缓存统计请求
-pub async fn handle_cache_stats(
-    State(_state): State<ApiState>,
-) -> Response {
+pub async fn handle_cache_stats(State(_state): State<ApiState>) -> Response {
     // TODO: 实现缓存统计
     let stats = CacheStatsResponse {
         total_entries: 0,
@@ -66,34 +64,30 @@ pub async fn handle_cache_stats(
         rss_entries: 0,
         semantic_entries: 0,
     };
-    
+
     (StatusCode::OK, Json(stats)).into_response()
 }
 
 /// 处理清除所有缓存请求
-pub async fn handle_cache_clear(
-    State(_state): State<ApiState>,
-) -> Response {
+pub async fn handle_cache_clear(State(_state): State<ApiState>) -> Response {
     // TODO: 实现缓存清理
     let response = CacheClearResponse {
         success: true,
         cleared_entries: 0,
         message: "Cache cleared successfully".to_string(),
     };
-    
+
     (StatusCode::OK, Json(response)).into_response()
 }
 
 /// 处理清理过期缓存请求
-pub async fn handle_cache_cleanup(
-    State(_state): State<ApiState>,
-) -> Response {
+pub async fn handle_cache_cleanup(State(_state): State<ApiState>) -> Response {
     // TODO: 实现过期缓存清理
     let response = CacheClearResponse {
         success: true,
         cleared_entries: 0,
         message: "Expired cache entries cleaned up".to_string(),
     };
-    
+
     (StatusCode::OK, Json(response)).into_response()
 }

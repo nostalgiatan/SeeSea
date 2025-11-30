@@ -34,10 +34,10 @@ pub enum NetworkMode {
 pub struct InternalNetworkConfig {
     /// 是否启用
     pub enabled: bool,
-    
+
     /// 监听地址（仅localhost）
     pub host: String,
-    
+
     /// 监听端口
     pub port: u16,
 }
@@ -57,28 +57,28 @@ impl Default for InternalNetworkConfig {
 pub struct ExternalNetworkConfig {
     /// 是否启用
     pub enabled: bool,
-    
+
     /// 监听地址
     pub host: String,
-    
+
     /// 监听端口
     pub port: u16,
-    
+
     /// CORS允许的源
     pub cors_origins: Vec<String>,
-    
+
     /// 是否启用限流
     pub enable_rate_limit: bool,
-    
+
     /// 是否启用熔断
     pub enable_circuit_breaker: bool,
-    
+
     /// 是否启用IP过滤
     pub enable_ip_filter: bool,
-    
+
     /// 是否启用JWT认证
     pub enable_jwt_auth: bool,
-    
+
     /// 是否启用魔法链接
     pub enable_magic_link: bool,
 }
@@ -104,10 +104,10 @@ impl Default for ExternalNetworkConfig {
 pub struct NetworkConfig {
     /// 网络模式
     pub mode: NetworkMode,
-    
+
     /// 内网配置
     pub internal: InternalNetworkConfig,
-    
+
     /// 外网配置
     pub external: ExternalNetworkConfig,
 }
@@ -128,7 +128,9 @@ impl NetworkConfig {
         match self.mode {
             NetworkMode::Internal => {
                 if !self.internal.enabled {
-                    return Err("Internal mode selected but internal network is disabled".to_string());
+                    return Err(
+                        "Internal mode selected but internal network is disabled".to_string()
+                    );
                 }
                 // 验证内网地址必须是localhost
                 if self.internal.host != "127.0.0.1" && self.internal.host != "localhost" {
@@ -137,7 +139,9 @@ impl NetworkConfig {
             }
             NetworkMode::External => {
                 if !self.external.enabled {
-                    return Err("External mode selected but external network is disabled".to_string());
+                    return Err(
+                        "External mode selected but external network is disabled".to_string()
+                    );
                 }
             }
             NetworkMode::Dual => {
@@ -146,12 +150,14 @@ impl NetworkConfig {
                 }
                 // 验证内网地址必须是localhost
                 if self.internal.enabled
-                    && self.internal.host != "127.0.0.1" && self.internal.host != "localhost" {
-                        return Err("Internal network must bind to localhost only".to_string());
-                    }
+                    && self.internal.host != "127.0.0.1"
+                    && self.internal.host != "localhost"
+                {
+                    return Err("Internal network must bind to localhost only".to_string());
+                }
             }
         }
-        
+
         Ok(())
     }
 }
@@ -173,7 +179,7 @@ mod tests {
         let mut config = NetworkConfig::default();
         config.mode = NetworkMode::Internal;
         assert!(config.validate().is_ok());
-        
+
         // 内网绑定到非localhost应该失败
         config.internal.host = "0.0.0.0".to_string();
         assert!(config.validate().is_err());
@@ -184,7 +190,7 @@ mod tests {
         let mut config = NetworkConfig::default();
         config.mode = NetworkMode::Dual;
         assert!(config.validate().is_ok());
-        
+
         // 禁用所有网络应该失败
         config.internal.enabled = false;
         config.external.enabled = false;

@@ -16,13 +16,12 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::common::LogLevel;
 use crate::config::common::*;
 use crate::config::types::*;
-use crate::config::common::LogLevel;
 
 /// SeeSea 主配置结构
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SeeSeaConfig {
     /// 通用配置
     #[serde(default)]
@@ -53,7 +52,6 @@ pub struct SeeSeaConfig {
     pub engines: crate::config::engines::EnginesConfig,
 }
 
-
 impl SeeSeaConfig {
     /// 创建开发环境配置
     #[allow(clippy::field_reassign_with_default)]
@@ -65,7 +63,7 @@ impl SeeSeaConfig {
         config.logging.level = LogLevel::Debug;
         config
     }
-    
+
     /// 创建测试环境配置
     #[allow(clippy::field_reassign_with_default)]
     pub fn testing() -> Self {
@@ -76,7 +74,7 @@ impl SeeSeaConfig {
         config.logging.level = LogLevel::Info;
         config
     }
-    
+
     /// 创建生产环境配置
     #[allow(clippy::field_reassign_with_default)]
     pub fn production() -> Self {
@@ -85,12 +83,12 @@ impl SeeSeaConfig {
         config.general.environment = Environment::Production;
         config.general.debug = false;
         config.logging.level = LogLevel::Warn;
-        
+
         // 确保至少有一种输出格式
         if config.search.formats.is_empty() {
             config.search.formats.push("json".to_string());
         }
-        
+
         // 配置 TLS（使用默认证书路径）
         config.server.tls = Some(crate::config::server::TlsConfig {
             enabled: true,
@@ -99,23 +97,26 @@ impl SeeSeaConfig {
             ca_path: None,
             verify_client: false,
         });
-        
+
         // 配置 Tor
         config.privacy.enable_tor = true;
         config.privacy.tor_config.socks_port = 9050;
-        
-        config.privacy.fingerprint_protection.protection_level = crate::config::common::FingerprintLevel::Basic;
+
+        config.privacy.fingerprint_protection.protection_level =
+            crate::config::common::FingerprintLevel::Basic;
         config.logging.structured = true;
         config.general.enable_metrics = true;
-        config.server.secret_key = "a-very-strong-secret-key-for-production-use-only-123456789012345678901234567890".to_string();
+        config.server.secret_key =
+            "a-very-strong-secret-key-for-production-use-only-123456789012345678901234567890"
+                .to_string();
         config
     }
-    
+
     /// 验证配置
     pub fn validate(&self) -> ConfigValidationResult {
         crate::config::validator::validate_config(self)
     }
-    
+
     /// 获取配置摘要
     pub fn get_summary(&self) -> ConfigSummary {
         ConfigSummary {
@@ -128,13 +129,13 @@ impl SeeSeaConfig {
             validation: self.validate(),
         }
     }
-    
+
     /// 检查是否为生产就绪状态
     pub fn is_production_ready(&self) -> bool {
         let validation = self.validate();
         validation.is_valid && validation.errors.is_empty()
     }
-    
+
     /// 获取配置建议
     pub fn get_config_recommendations(&self) -> Vec<String> {
         let validation = self.validate();
@@ -203,13 +204,13 @@ impl ConfigError {
     pub fn IoError(msg: String) -> Self {
         Self::Io(msg)
     }
-    
+
     /// ParseError 别名（兼容性）
     #[allow(non_snake_case)]
     pub fn ParseError(msg: String) -> Self {
         Self::Parse(msg)
     }
-    
+
     /// ValidationFailed 别名（兼容性）
     #[allow(non_snake_case)]
     pub fn ValidationFailed(errors: Vec<String>) -> Self {
@@ -219,13 +220,13 @@ impl ConfigError {
         }
         Self::Validation(result)
     }
-    
+
     /// FileNotFound 别名（兼容性）
     #[allow(non_snake_case)]
     pub fn FileNotFound(path: String) -> Self {
         Self::NotFound(path)
     }
-    
+
     /// EnvironmentError 别名（兼容性）
     #[allow(non_snake_case)]
     pub fn EnvironmentError(msg: String) -> Self {
@@ -388,7 +389,11 @@ impl ConfigLoader {
         *target = source;
     }
 
-    fn create_summary(&self, config: &SeeSeaConfig, validation: ConfigValidationResult) -> ConfigSummary {
+    fn create_summary(
+        &self,
+        config: &SeeSeaConfig,
+        validation: ConfigValidationResult,
+    ) -> ConfigSummary {
         ConfigSummary {
             config_path: "config".to_string(),
             environment: format!("{:?}", config.environment),

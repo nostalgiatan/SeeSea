@@ -14,12 +14,12 @@
 
 //! Python bindings for cache
 
+use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use pyo3::IntoPyObjectExt;
 use std::sync::Arc;
 
-use crate::cache::{CacheInterface, CacheImplConfig, CacheMode};
+use crate::cache::{CacheImplConfig, CacheInterface, CacheMode};
 
 #[pyclass]
 #[derive(Clone)]
@@ -42,7 +42,7 @@ impl PyCacheStats {
             size: 0,
         }
     }
-    
+
     pub fn hit_rate(&self) -> f64 {
         let total = self.hits + self.misses;
         if total > 0 {
@@ -79,10 +79,12 @@ impl PyCacheInterface {
             bloom_filter_false_positive_rate: 0.01,
         };
 
-        let cache = CacheInterface::new(config)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                format!("Failed to create cache: {}", e)
-            ))?;
+        let cache = CacheInterface::new(config).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to create cache: {}",
+                e
+            ))
+        })?;
 
         Ok(Self {
             cache: Arc::new(cache),
@@ -109,25 +111,31 @@ impl PyCacheInterface {
 
     /// 清空所有缓存
     pub fn clear_all(&self) -> PyResult<()> {
-        self.cache.clear_all()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                format!("Failed to clear cache: {}", e)
+        self.cache.clear_all().map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to clear cache: {}",
+                e
             ))
+        })
     }
 
     /// 刷新缓存到磁盘
     pub fn flush(&self) -> PyResult<()> {
-        self.cache.flush()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                format!("Failed to flush cache: {}", e)
+        self.cache.flush().map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to flush cache: {}",
+                e
             ))
+        })
     }
 
     /// 清理过期条目
     pub fn cleanup(&self) -> PyResult<usize> {
-        self.cache.cleanup()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                format!("Failed to cleanup cache: {}", e)
+        self.cache.cleanup().map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to cleanup cache: {}",
+                e
             ))
+        })
     }
 }

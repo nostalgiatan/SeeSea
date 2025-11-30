@@ -55,15 +55,15 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::error::Error;
+use std::sync::Arc;
 
+use super::utils::build_query_string_owned;
 use crate::derive::{
-    EngineCapabilities, EngineInfo, EngineStatus, EngineType,
-    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
+    AboutInfo, EngineCapabilities, EngineInfo, EngineStatus, EngineType, RequestParams,
+    RequestResponseEngine, ResultType, SearchResultItem,
 };
 use crate::net::config::RequestOptions;
-use super::utils::build_query_string_owned;
 
 // 使用宏定义引擎结构体和基本方法
 define_engine! {
@@ -107,7 +107,6 @@ define_engine! {
 }
 
 impl YandexEngine {
-
     /// 检测是否遇到 Yandex CAPTCHA
     ///
     /// # 参数
@@ -134,44 +133,46 @@ impl YandexEngine {
     /// # 错误
     ///
     /// 如果 HTML 解析失败返回错误
-    fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn parse_html_results(
+        html: &str,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use scraper::{Html, Selector};
-        
+
         // 检查是否有结果
         if html.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let document = Html::parse_document(html);
         let mut items = Vec::new();
-        
+
         // Yandex 的搜索结果通常在特定的 li 或 div 元素中
-        let result_selectors = vec![
-            "li.serp-item",
-            "div.serp-item",
-            "div[class*='serp-item']",
-        ];
-        
+        let result_selectors = vec!["li.serp-item", "div.serp-item", "div[class*='serp-item']"];
+
         let mut results_found = false;
         for selector_str in result_selectors {
             let selector = match Selector::parse(selector_str) {
                 Ok(sel) => sel,
                 Err(_) => continue,
             };
-            
+
             for result in document.select(&selector) {
                 results_found = true;
-                
+
                 // 提取标题和 URL
-                let title_selectors = [Selector::parse("h2").ok(),
+                let title_selectors = [
+                    Selector::parse("h2").ok(),
                     Selector::parse("h3").ok(),
-                    Selector::parse("a.link").ok()];
+                    Selector::parse("a.link").ok(),
+                ];
                 let link_selector = Selector::parse("a").expect("Expected valid value");
-                let snippet_selectors = [Selector::parse("div.text-container").ok(),
+                let snippet_selectors = [
+                    Selector::parse("div.text-container").ok(),
                     Selector::parse("div.OrganicTextContentSpan").ok(),
                     Selector::parse("div.text").ok(),
-                    Selector::parse("div[class*='snippet']").ok()];
-                
+                    Selector::parse("div[class*='snippet']").ok(),
+                ];
+
                 let mut title = String::new();
                 for selector in title_selectors.iter().flatten() {
                     if let Some(t) = result.select(selector).next() {
@@ -181,11 +182,13 @@ impl YandexEngine {
                         }
                     }
                 }
-                
-                let url = result.select(&link_selector).next()
+
+                let url = result
+                    .select(&link_selector)
+                    .next()
                     .and_then(|a| a.value().attr("href"))
                     .unwrap_or_default();
-                
+
                 let mut content = String::new();
                 for selector in snippet_selectors.iter().flatten() {
                     if let Some(snippet) = result.select(selector).next() {
@@ -195,7 +198,7 @@ impl YandexEngine {
                         }
                     }
                 }
-                
+
                 // 过滤有效结果
                 if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
                     items.push(SearchResultItem {
@@ -213,24 +216,26 @@ impl YandexEngine {
                     });
                 }
             }
-            
+
             if results_found {
                 break;
             }
         }
-        
+
         Ok(items)
     }
 }
-
-
 
 #[async_trait]
 impl RequestResponseEngine for YandexEngine {
     type Response = (String, Option<String>); // (HTML 字符串, captcha 头)
 
     /// 准备请求参数
-    fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn request(
+        &self,
+        query: &str,
+        params: &mut RequestParams,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // 构建查询参数
         let mut query_params = vec![
             ("tmpl_version", "releases".to_string()),
@@ -239,32 +244,34 @@ impl RequestResponseEngine for YandexEngine {
             ("frame", "1".to_string()),
             ("searchid", "3131712".to_string()),
         ];
-        
+
         // 添加分页参数
         if params.page > 1 {
             query_params.push(("p", (params.page - 1).to_string()));
         }
-        
+
         // Build URL with optimized query string
         let query_string = build_query_string_owned(query_params);
-        
+
         params.url = Some(format!("https://yandex.com/search/site/?{query_string}"));
         params.method = "GET".to_string();
-        
+
         // Set cookies
         params.cookies.insert(
             "yp".to_string(),
-            "1716337604.sp.family%3A0#1685406411.szm.1:1920x1080:1920x999".to_string()
+            "1716337604.sp.family%3A0#1685406411.szm.1:1920x1080:1920x999".to_string(),
         );
-        
+
         Ok(())
     }
 
     /// 发送请求并获取响应
-    async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
+    async fn fetch(
+        &self,
+        params: &RequestParams,
+    ) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         // Yandex 的 fetch 方法返回特殊类型，需要保留自定义实现
-        let url = params.url.as_ref()
-            .ok_or("请求 URL 未设置")?;
+        let url = params.url.as_ref().ok_or("请求 URL 未设置")?;
 
         // 创建请求选项
         let mut options = RequestOptions::default();
@@ -276,7 +283,11 @@ impl RequestResponseEngine for YandexEngine {
         }
 
         // 发送请求
-        let response = self.generic.client.get(url, Some(options)).await
+        let response = self
+            .generic
+            .client
+            .get(url, Some(options))
+            .await
             .map_err(|e| format!("Request failed: {e}"))?;
 
         // 检查状态码
@@ -290,21 +301,26 @@ impl RequestResponseEngine for YandexEngine {
         }
 
         // 获取响应文本
-        let text = response.text().await
+        let text = response
+            .text()
+            .await
             .map_err(|e| format!("Failed to read response: {e}"))?;
 
         Ok((text, None))
     }
 
     /// 解析响应为结果列表
-    fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn response(
+        &self,
+        resp: Self::Response,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         let (html, captcha_header) = resp;
-        
+
         // 检查是否遇到 CAPTCHA
         if Self::detect_captcha(captcha_header.as_deref()) {
             return Err("检测到 Yandex CAPTCHA，请稍后重试".into());
         }
-        
+
         Self::parse_html_results(&html)
     }
 }
@@ -332,7 +348,7 @@ mod tests {
     fn test_engine_info() {
         let engine = YandexEngine::new();
         let info = engine.info();
-        
+
         assert!(info.capabilities.supports_pagination);
         assert!(!info.capabilities.supports_time_range);
         assert_eq!(info.capabilities.max_page_size, 10);
@@ -342,11 +358,11 @@ mod tests {
     fn test_request_preparation() {
         let engine = YandexEngine::new();
         let mut params = RequestParams::default();
-        
+
         let result = engine.request("test query", &mut params);
         assert!(result.is_ok());
         assert!(params.url.is_some());
-        
+
         let url = params.url.expect("Expected valid value");
         assert!(url.contains("yandex.com"));
         assert!(url.contains("text=test%20query"));
@@ -358,10 +374,10 @@ mod tests {
         let engine = YandexEngine::new();
         let mut params = RequestParams::default();
         params.page = 3;
-        
+
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
-        
+
         let url = params.url.expect("Expected valid value");
         assert!(url.contains("p=2")); // page 3 -> p=2 (0-indexed)
     }

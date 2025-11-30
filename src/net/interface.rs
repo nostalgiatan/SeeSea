@@ -13,13 +13,13 @@
 // limitations under the License.
 
 //! 网络层统一接口模块
-//! 
+//!
 //! 提供对 HTTP 客户端、DNS 解析器等网络功能的统一访问
 
 use crate::errors::Result;
 use crate::net::client::HttpClient;
-use crate::net::resolver::DnsResolver;
 use crate::net::config::NetworkConfig;
+use crate::net::resolver::DnsResolver;
 use std::sync::Arc;
 
 /// 网络层统一接口
@@ -146,14 +146,12 @@ impl NetworkInterface {
 
 impl Default for NetworkInterface {
     fn default() -> Self {
-        Self::new(NetworkConfig::default())
-            .expect("Failed to create default NetworkInterface")
+        Self::new(NetworkConfig::default()).expect("Failed to create default NetworkInterface")
     }
 }
 
 /// 健康状态
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct HealthStatus {
     /// HTTP 客户端状态
     pub http_client: bool,
@@ -164,7 +162,6 @@ pub struct HealthStatus {
     /// 总体状态
     pub overall: bool,
 }
-
 
 impl HealthStatus {
     /// 是否健康
@@ -183,7 +180,11 @@ impl HealthStatus {
             if self.http_client { "✓" } else { "✗" },
             if self.dns_resolver { "✓" } else { "✗" },
             if self.proxy { "✓" } else { "✗" },
-            if self.overall { "✓ Healthy" } else { "✗ Unhealthy" }
+            if self.overall {
+                "✓ Healthy"
+            } else {
+                "✗ Unhealthy"
+            }
         )
     }
 }

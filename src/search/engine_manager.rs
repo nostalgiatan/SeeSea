@@ -77,13 +77,14 @@ impl EngineState {
         if !self.enabled {
             return false;
         }
-        
+
         if self.temporarily_disabled
             && let Some(until) = self.disabled_until
-            && Instant::now() < until {
-                return false;
-            }
-        
+            && Instant::now() < until
+        {
+            return false;
+        }
+
         true
     }
 
@@ -105,18 +106,18 @@ impl EngineState {
         self.total_requests += 1;
         self.successful_requests += 1;
         self.consecutive_failures = 0;
-        
+
         // 重新启用引擎（如果之前被禁用）
         if self.temporarily_disabled {
             self.re_enable();
         }
-        
+
         // 更新平均响应时间
         if self.total_requests == 1 {
             self.avg_response_time_ms = response_time_ms;
         } else {
-            self.avg_response_time_ms = 
-                (self.avg_response_time_ms * (self.total_requests - 1) + response_time_ms) 
+            self.avg_response_time_ms = (self.avg_response_time_ms * (self.total_requests - 1)
+                + response_time_ms)
                 / self.total_requests;
         }
     }
@@ -127,7 +128,7 @@ impl EngineState {
         self.failed_requests += 1;
         self.consecutive_failures += 1;
     }
-    
+
     /// 记录零结果请求并应用指数退避禁用
     ///
     /// 当引擎返回零结果时，说明可能有问题（如访问量过大），需要临时禁用。
@@ -138,19 +139,21 @@ impl EngineState {
     /// - ...
     pub fn record_zero_results(&mut self) {
         self.consecutive_failures += 1;
-        
+
         // 计算禁用时长：5 * 5^(n-1) 分钟
         let base_minutes = 5u64;
         let exponent = (self.consecutive_failures - 1).min(5); // 限制最大指数为5，防止过长
         let disable_minutes = base_minutes * 5u64.pow(exponent);
         let disable_duration = Duration::from_secs(disable_minutes * 60);
-        
+
         self.disable_temporarily(disable_duration);
-        
+
         // 记录日志
         tracing::warn!(
             "Engine '{}' returned zero results. Temporarily disabled for {} minutes (failure #{})",
-            self.name, disable_minutes, self.consecutive_failures
+            self.name,
+            disable_minutes,
+            self.consecutive_failures
         );
     }
 }
@@ -187,13 +190,13 @@ impl EngineManager {
     pub fn new(mode: EngineMode, configured_engines: Vec<String>) -> Self {
         // 创建网络配置
         let network_config = crate::net::config::NetworkConfig::default();
-        
+
         // 创建共享客户端
         let shared_client = Arc::new(
             crate::net::client::HttpClient::new(network_config)
-                .expect("Failed to create shared HTTP client")
+                .expect("Failed to create shared HTTP client"),
         );
-        
+
         Self::with_shared_client(mode, configured_engines, shared_client)
     }
 
@@ -228,7 +231,7 @@ impl EngineManager {
             failure_threshold: 3,
             shared_client: Some(shared_client),
         };
-        
+
         manager.initialize_engines();
         manager
     }
@@ -236,27 +239,54 @@ impl EngineManager {
     /// 初始化所有引擎
     fn initialize_engines(&mut self) {
         // 总是使用共享客户端创建引擎（性能最优）
-        let client = Arc::clone(self.shared_client.as_ref()
-            .expect("Shared client must be initialized"));
+        let client = Arc::clone(
+            self.shared_client
+                .as_ref()
+                .expect("Shared client must be initialized"),
+        );
 
         // 基础搜索引擎 (保留 Yandex, Bing, Baidu, 360 Search)
-        self.register_engine("bing", Box::new(BingEngine::with_client(Arc::clone(&client))));
-        self.register_engine("baidu", Box::new(BaiduEngine::with_client(Arc::clone(&client))));
-        self.register_engine("yandex", Box::new(YandexEngine::with_client(Arc::clone(&client))));
+        self.register_engine(
+            "bing",
+            Box::new(BingEngine::with_client(Arc::clone(&client))),
+        );
+        self.register_engine(
+            "baidu",
+            Box::new(BaiduEngine::with_client(Arc::clone(&client))),
+        );
+        self.register_engine(
+            "yandex",
+            Box::new(YandexEngine::with_client(Arc::clone(&client))),
+        );
         self.register_engine("so", Box::new(SoEngine::with_client(Arc::clone(&client))));
 
         // Bing变体
-        self.register_engine("bing images", Box::new(BingImagesEngine::with_client(Arc::clone(&client))));
+        self.register_engine(
+            "bing images",
+            Box::new(BingImagesEngine::with_client(Arc::clone(&client))),
+        );
 
         // 搜狗变体
-        self.register_engine("sogou", Box::new(SogouEngine::with_client(Arc::clone(&client))));
-        self.register_engine("sogou videos", Box::new(SogouVideosEngine::with_client(Arc::clone(&client))));
+        self.register_engine(
+            "sogou",
+            Box::new(SogouEngine::with_client(Arc::clone(&client))),
+        );
+        self.register_engine(
+            "sogou videos",
+            Box::new(SogouVideosEngine::with_client(Arc::clone(&client))),
+        );
 
         // Bilibili 引擎
-        self.register_engine("bilibili", Box::new(BilibiliEngine::with_client(Arc::clone(&client))));
+        self.register_engine(
+            "bilibili",
+            Box::new(BilibiliEngine::with_client(Arc::clone(&client))),
+        );
 
         // 图片引擎 (Unsplash)
-        self.register_engine("unsplash", Box::new(UnsplashEngine::with_client(Arc::clone(&client))));
+        self.register_engine(
+            "unsplash",
+            Box::new(UnsplashEngine::with_client(Arc::clone(&client))),
+        );
     }
 
     /// 注册引擎
@@ -271,27 +301,47 @@ impl EngineManager {
     /// * `name` - 引擎名称
     /// * `engine` - Python引擎包装器（Arc）
     #[cfg(feature = "python")]
-    pub fn register_python_engine(&mut self, name: String, engine: Arc<crate::python_bindings::py_engine_registry::PythonEngineWrapper>) {
+    pub fn register_python_engine(
+        &mut self,
+        name: String,
+        engine: Arc<crate::python_bindings::py_engine_registry::PythonEngineWrapper>,
+    ) {
         // Arc<PythonEngineWrapper> can be cast to Arc<dyn SearchEngine + Send + Sync>
         // Then we wrap it in Box and Arc again to match the HashMap type
-        let engine_trait: Arc<dyn SearchEngine + Send + Sync> = engine as Arc<dyn SearchEngine + Send + Sync>;
+        let engine_trait: Arc<dyn SearchEngine + Send + Sync> =
+            engine as Arc<dyn SearchEngine + Send + Sync>;
         // Create a struct that wraps the Arc to allow boxing
         struct EngineWrapper(Arc<dyn SearchEngine + Send + Sync>);
         #[async_trait::async_trait]
         impl SearchEngine for EngineWrapper {
-            fn info(&self) -> &crate::derive::EngineInfo { self.0.info() }
-            async fn search(&self, query: &crate::derive::SearchQuery) -> Result<crate::derive::SearchResult, Box<dyn std::error::Error + Send + Sync>> {
+            fn info(&self) -> &crate::derive::EngineInfo {
+                self.0.info()
+            }
+            async fn search(
+                &self,
+                query: &crate::derive::SearchQuery,
+            ) -> Result<crate::derive::SearchResult, Box<dyn std::error::Error + Send + Sync>>
+            {
                 self.0.search(query).await
             }
-            async fn is_available(&self) -> bool { self.0.is_available().await }
-            async fn health_check(&self) -> Result<crate::derive::engine::EngineHealth, Box<dyn std::error::Error + Send + Sync>> {
+            async fn is_available(&self) -> bool {
+                self.0.is_available().await
+            }
+            async fn health_check(
+                &self,
+            ) -> Result<crate::derive::engine::EngineHealth, Box<dyn std::error::Error + Send + Sync>>
+            {
                 self.0.health_check().await
             }
-            fn validate_query(&self, query: &crate::derive::SearchQuery) -> Result<(), crate::derive::types::ValidationError> {
+            fn validate_query(
+                &self,
+                query: &crate::derive::SearchQuery,
+            ) -> Result<(), crate::derive::types::ValidationError> {
                 self.0.validate_query(query)
             }
         }
-        self.engines.insert(name, Arc::new(Box::new(EngineWrapper(engine_trait))));
+        self.engines
+            .insert(name, Arc::new(Box::new(EngineWrapper(engine_trait))));
     }
 
     /// 获取活跃的引擎列表
@@ -301,7 +351,7 @@ impl EngineManager {
     /// 活跃的引擎名称列表
     pub async fn get_active_engines(&self) -> Vec<String> {
         let states = self.states.read().await;
-        
+
         match self.mode {
             EngineMode::Configured => {
                 // 配置模式：只返回配置的且可用的引擎
@@ -349,7 +399,7 @@ impl EngineManager {
     ) -> HashMap<String, Result<SearchResult, String>> {
         let active_engines = self.get_active_engines().await;
         let mut tasks = Vec::new();
-        
+
         for engine_name in active_engines {
             if let Some(engine) = self.engines.get(&engine_name) {
                 let engine_clone = Arc::clone(engine);
@@ -358,19 +408,19 @@ impl EngineManager {
                 let states = Arc::clone(&self.states);
                 let temp_disable_duration = self.temporary_disable_duration;
                 let failure_threshold = self.failure_threshold;
-                
+
                 // 创建异步任务
                 let task = tokio::spawn(async move {
                     let start_time = Instant::now();
                     let result = engine_clone.search(&query_clone).await;
                     let response_time_ms = start_time.elapsed().as_millis() as u64;
-                    
+
                     // 更新引擎状态
                     let mut states_lock = states.write().await;
                     let state = states_lock
                         .entry(engine_name_clone.clone())
                         .or_insert_with(|| EngineState::new(engine_name_clone.clone()));
-                    
+
                     match &result {
                         Ok(_) => {
                             state.record_success(response_time_ms);
@@ -378,29 +428,30 @@ impl EngineManager {
                         Err(e) => {
                             let error_msg = e.to_string();
                             state.record_failure();
-                            
+
                             // 检查是否为网络错误（非200响应）
-                            if error_msg.contains("HTTP 错误") || 
-                               error_msg.contains("status") ||
-                               error_msg.contains("连接") ||
-                               error_msg.contains("超时") {
+                            if error_msg.contains("HTTP 错误")
+                                || error_msg.contains("status")
+                                || error_msg.contains("连接")
+                                || error_msg.contains("超时")
+                            {
                                 // 网络错误：临时禁用引擎
                                 if state.consecutive_failures >= failure_threshold {
-                                    state.disable_temporarily(
-                                        Duration::from_secs(temp_disable_duration)
-                                    );
+                                    state.disable_temporarily(Duration::from_secs(
+                                        temp_disable_duration,
+                                    ));
                                 }
                             }
                         }
                     }
-                    
+
                     (engine_name_clone, result.map_err(|e| e.to_string()))
                 });
-                
+
                 tasks.push(task);
             }
         }
-        
+
         // 等待所有任务完成
         let mut results = HashMap::new();
         for task in tasks {
@@ -408,7 +459,7 @@ impl EngineManager {
                 results.insert(name, result);
             }
         }
-        
+
         results
     }
 
@@ -483,10 +534,10 @@ mod tests {
     fn test_engine_state_availability() {
         let mut state = EngineState::new("test".to_string());
         assert!(state.is_available());
-        
+
         state.enabled = false;
         assert!(!state.is_available());
-        
+
         state.enabled = true;
         state.disable_temporarily(Duration::from_secs(60));
         assert!(!state.is_available());
@@ -496,7 +547,7 @@ mod tests {
     fn test_engine_state_success_recording() {
         let mut state = EngineState::new("test".to_string());
         state.record_success(100);
-        
+
         assert_eq!(state.total_requests, 1);
         assert_eq!(state.successful_requests, 1);
         assert_eq!(state.consecutive_failures, 0);
@@ -506,7 +557,7 @@ mod tests {
     fn test_engine_state_failure_recording() {
         let mut state = EngineState::new("test".to_string());
         state.record_failure();
-        
+
         assert_eq!(state.total_requests, 1);
         assert_eq!(state.failed_requests, 1);
         assert_eq!(state.consecutive_failures, 1);
@@ -514,10 +565,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_engine_manager_creation() {
-        let manager = EngineManager::new(
-            EngineMode::Global,
-            vec![],
-        );
+        let manager = EngineManager::new(EngineMode::Global, vec![]);
 
         assert_eq!(manager.get_mode(), EngineMode::Global);
         assert_eq!(manager.engines.len(), 9); // 所有9个引擎都应该注册 (Yandex, Bing*2, Baidu, Sogou*2, Bilibili, Unsplash, 360 Search)
@@ -526,11 +574,8 @@ mod tests {
     #[tokio::test]
     async fn test_engine_manager_configured_mode() {
         let configured = vec!["yandex".to_string(), "bing".to_string()];
-        let manager = EngineManager::new(
-            EngineMode::Configured,
-            configured.clone(),
-        );
-        
+        let manager = EngineManager::new(EngineMode::Configured, configured.clone());
+
         let active = manager.get_active_engines().await;
         assert_eq!(active.len(), 2);
         assert!(active.contains(&"yandex".to_string()));
@@ -539,11 +584,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_engine_manager_global_mode() {
-        let manager = EngineManager::new(
-            EngineMode::Global,
-            vec![],
-        );
-        
+        let manager = EngineManager::new(EngineMode::Global, vec![]);
+
         let active = manager.get_active_engines().await;
         assert_eq!(active.len(), 9); // 所有9个引擎都应该可用
     }

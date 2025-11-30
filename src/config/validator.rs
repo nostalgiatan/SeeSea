@@ -17,7 +17,7 @@
 //! 提供详细的配置验证功能
 
 use crate::config::{
-    SeeSeaConfig, ConfigValidationResult, Environment, LogLevel, EngineLoadingMode,
+    ConfigValidationResult, EngineLoadingMode, Environment, LogLevel, SeeSeaConfig,
 };
 
 /// 配置验证器
@@ -174,7 +174,9 @@ impl ConfigValidator {
         }
 
         // TLS 验证
-        if let Some(tls) = &config.server.tls && tls.enabled {
+        if let Some(tls) = &config.server.tls
+            && tls.enabled
+        {
             if tls.cert_path.is_none() {
                 result.add_error("启用 TLS 时必须指定证书文件路径".to_string());
             }
@@ -184,10 +186,9 @@ impl ConfigValidator {
         }
 
         // 隐私配置验证
-        if config.privacy.enable_tor
-            && config.privacy.tor_config.socks_port == 0 {
-                result.add_error("启用 Tor 时必须指定有效的 SOCKS 端口".to_string());
-            }
+        if config.privacy.enable_tor && config.privacy.tor_config.socks_port == 0 {
+            result.add_error("启用 Tor 时必须指定有效的 SOCKS 端口".to_string());
+        }
 
         if !config.privacy.proxy_chain.is_empty() {
             for (i, proxy) in config.privacy.proxy_chain.iter().enumerate() {
@@ -233,7 +234,8 @@ impl ConfigValidator {
                 result.add_error("启用缓存时 TTL 必须大于 0".to_string());
             }
 
-            if config.cache.max_size > 10 * 1024 * 1024 * 1024 { // 10GB
+            if config.cache.max_size > 10 * 1024 * 1024 * 1024 {
+                // 10GB
                 result.add_warning("缓存大小过大可能影响内存使用".to_string());
             }
         }
@@ -251,7 +253,8 @@ impl ConfigValidator {
 
         // 隐私与性能权衡验证
         match config.privacy.fingerprint_protection.protection_level {
-            crate::config::FingerprintLevel::Advanced | crate::config::FingerprintLevel::Maximum => {
+            crate::config::FingerprintLevel::Advanced
+            | crate::config::FingerprintLevel::Maximum => {
                 if config.search.max_concurrent_engines > 20 {
                     result.add_warning("高级指纹保护与高并发可能影响性能".to_string());
                 }
@@ -280,10 +283,7 @@ impl ConfigValidator {
         }
 
         // 端口冲突检查
-        let used_ports = vec![
-            config.server.port,
-            config.api.metrics.port,
-        ];
+        let used_ports = vec![config.server.port, config.api.metrics.port];
         let mut port_set = std::collections::HashSet::new();
         for port in &used_ports {
             if port_set.contains(port) {
@@ -354,9 +354,10 @@ impl ConfigValidator {
                 if config.cache.enable_result_cache {
                     let cache_path = &config.cache.database_path;
                     if let Some(parent) = cache_path.parent()
-                        && parent.as_os_str().is_empty() {
-                            result.add_error("缓存路径的父目录不能为空".to_string());
-                        }
+                        && parent.as_os_str().is_empty()
+                    {
+                        result.add_error("缓存路径的父目录不能为空".to_string());
+                    }
                 }
 
                 result
@@ -377,7 +378,9 @@ impl ConfigValidator {
                     }
                     Environment::Development => {
                         if matches!(config.logging.level, LogLevel::Error) {
-                            result.add_warning("开发环境使用错误日志级别可能缺少调试信息".to_string());
+                            result.add_warning(
+                                "开发环境使用错误日志级别可能缺少调试信息".to_string(),
+                            );
                         }
                     }
                     _ => {}
@@ -458,24 +461,48 @@ impl ConfigValidator {
         let mut score = 0;
 
         // 基础安全检查 (40 分)
-        if config.api.auth.enabled { score += 10; }
-        if !config.server.secret_key.contains("change") { score += 10; }
-        if config.server.tls.as_ref().map(|t| t.enabled).unwrap_or(false) { score += 10; }
+        if config.api.auth.enabled {
+            score += 10;
+        }
+        if !config.server.secret_key.contains("change") {
+            score += 10;
+        }
+        if config
+            .server
+            .tls
+            .as_ref()
+            .map(|t| t.enabled)
+            .unwrap_or(false)
+        {
+            score += 10;
+        }
         if matches!(config.general.environment, Environment::Production) && !config.general.debug {
             score += 10;
         }
 
         // 高级安全检查 (40 分)
-        if config.privacy.enable_tor { score += 10; }
-        if !config.privacy.proxy_chain.is_empty() { score += 10; }
-        if config.privacy.fingerprint_protection.protection_level != crate::config::FingerprintLevel::None {
+        if config.privacy.enable_tor {
             score += 10;
         }
-        if config.api.rate_limit.enabled { score += 10; }
+        if !config.privacy.proxy_chain.is_empty() {
+            score += 10;
+        }
+        if config.privacy.fingerprint_protection.protection_level
+            != crate::config::FingerprintLevel::None
+        {
+            score += 10;
+        }
+        if config.api.rate_limit.enabled {
+            score += 10;
+        }
 
         // 其他安全检查 (20 分)
-        if config.logging.structured { score += 10; }
-        if config.general.enable_metrics { score += 10; }
+        if config.logging.structured {
+            score += 10;
+        }
+        if config.general.enable_metrics {
+            score += 10;
+        }
 
         score
     }
@@ -485,26 +512,42 @@ impl ConfigValidator {
         let mut score = 0;
 
         // 缓存优化 (30 分)
-        if config.cache.enable_result_cache { score += 15; }
-        if config.cache.enable_metadata_cache { score += 10; }
-        if config.cache.enable_dns_cache { score += 5; }
+        if config.cache.enable_result_cache {
+            score += 15;
+        }
+        if config.cache.enable_metadata_cache {
+            score += 10;
+        }
+        if config.cache.enable_dns_cache {
+            score += 5;
+        }
 
         // 并发优化 (30 分)
-        if config.search.max_concurrent_engines >= 5 { score += 10; }
-        if config.search.max_concurrent_engines <= 20 { score += 10; }
-        if config.logging.performance.enabled { score += 10; }
+        if config.search.max_concurrent_engines >= 5 {
+            score += 10;
+        }
+        if config.search.max_concurrent_engines <= 20 {
+            score += 10;
+        }
+        if config.logging.performance.enabled {
+            score += 10;
+        }
 
         // 网络优化 (20 分)
         if config.privacy.request_timing.max_delay > config.privacy.request_timing.min_delay {
             score += 10;
         }
-        if config.cache.compression.enabled { score += 10; }
+        if config.cache.compression.enabled {
+            score += 10;
+        }
 
         // 其他优化 (20 分)
         if !config.search.aggregation.enable_deduplication || config.cache.enable_result_cache {
             score += 10;
         }
-        if config.engines.global_settings.enable_monitoring { score += 10; }
+        if config.engines.global_settings.enable_monitoring {
+            score += 10;
+        }
 
         score
     }
@@ -619,8 +662,18 @@ mod tests {
 
         let result = validator.validate(&config);
         assert!(!result.is_valid);
-        assert!(result.errors.iter().any(|e| e.contains("生产环境不能启用调试模式")));
-        assert!(result.errors.iter().any(|e| e.contains("生产环境必须启用 HTTPS")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("生产环境不能启用调试模式"))
+        );
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("生产环境必须启用 HTTPS"))
+        );
     }
 
     #[test]

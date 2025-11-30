@@ -17,13 +17,15 @@
 //! 处理搜索相关的 API 请求
 
 use axum::{
-    extract::{State, Query, Json},
-    response::{IntoResponse, Response},
+    extract::{Json, Query, State},
     http::StatusCode,
+    response::{IntoResponse, Response},
 };
 
 use crate::api::on::ApiState;
-use crate::api::types::{ApiSearchRequest, ApiSearchResponse, ApiSearchResultItem, ApiErrorResponse};
+use crate::api::types::{
+    ApiErrorResponse, ApiSearchRequest, ApiSearchResponse, ApiSearchResultItem,
+};
 use crate::search::SearchRequest;
 
 /// 处理 GET 搜索请求
@@ -70,7 +72,8 @@ async fn execute_search(
     let start_time = std::time::Instant::now();
 
     // 转换为内部搜索查询
-    let search_query = params.to_search_query()
+    let search_query = params
+        .to_search_query()
         .map_err(|e| format!("参数错误: {e}"))?;
 
     // 获取引擎列表
@@ -89,7 +92,7 @@ async fn execute_search(
 
     // 执行搜索
     let response = state.search.search(&request).await?;
-    
+
     // 转换结果 - 收集所有结果
     let mut results = Vec::new();
     for search_result in &response.results {
@@ -103,19 +106,21 @@ async fn execute_search(
             });
         }
     }
-    
+
     // 按分数降序排序，确保最相关的结果在前面
     results.sort_by(|a, b| {
         let score_a = a.score.unwrap_or(0.0);
         let score_b = b.score.unwrap_or(0.0);
-        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
-    
+
     let elapsed = start_time.elapsed().as_millis() as u64;
 
     // 获取实际的查询字符串
     let query_text = params.get_query().unwrap_or_default();
-    
+
     // 返回所有结果，让前端进行分页
     let total_count = results.len();
 

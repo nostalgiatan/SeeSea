@@ -23,8 +23,8 @@ use std::io::{self, Write};
 use std::time::Duration;
 
 use seesea_core::derive::{SearchQuery, SearchResultItem};
-use seesea_core::search::{SearchInterface, SearchConfig, SearchRequest};
-use seesea_core::search::engine_config::{EngineMode, EngineListConfig};
+use seesea_core::search::engine_config::{EngineListConfig, EngineMode};
+use seesea_core::search::{SearchConfig, SearchInterface, SearchRequest};
 
 /// SeeSea 命令行应用
 #[derive(Parser)]
@@ -59,14 +59,14 @@ enum Commands {
         #[arg(long)]
         debug: bool,
     },
-    
+
     /// 列出所有可用的搜索引擎
     ListEngines {
         /// 显示引擎统计信息
         #[arg(short, long)]
         stats: bool,
     },
-    
+
     /// 交互式搜索模式
     Interactive {
         /// 使用全局模式
@@ -78,9 +78,15 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    
+
     match cli.command {
-        Some(Commands::Search { query, global, engines, verbose, debug }) => {
+        Some(Commands::Search {
+            query,
+            global,
+            engines,
+            verbose,
+            debug,
+        }) => {
             execute_search(query, global, engines, verbose, debug).await?;
         }
         Some(Commands::ListEngines { stats }) => {
@@ -94,7 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             interactive_mode(false).await?;
         }
     }
-    
+
     Ok(())
 }
 
@@ -113,10 +119,7 @@ async fn execute_search(
     let (mode, configured_engines) = if use_global {
         (EngineMode::Global, vec![])
     } else if let Some(engines) = engines_str {
-        let engine_list: Vec<String> = engines
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .collect();
+        let engine_list: Vec<String> = engines.split(',').map(|s| s.trim().to_string()).collect();
         (EngineMode::Custom(engine_list.clone()), engine_list)
     } else {
         // 默认使用全局模式
@@ -124,7 +127,8 @@ async fn execute_search(
     };
 
     println!("📌 查询: {}", query_str.bright_white().bold());
-    println!("⚙️  模式: {}",
+    println!(
+        "⚙️  模式: {}",
         match mode {
             EngineMode::Global => "全局模式（所有引擎）".bright_green(),
             EngineMode::Custom(_) => "配置模式".bright_yellow(),
@@ -137,11 +141,12 @@ async fn execute_search(
     let search_config = SearchConfig::default();
     let search_interface = std::sync::Arc::new(
         SearchInterface::new(search_config)
-            .map_err(|e| format!("Failed to create search interface: {e}"))?
+            .map_err(|e| format!("Failed to create search interface: {e}"))?,
     );
 
     // 显示要使用的引擎
-    println!("🔍 使用引擎: {}",
+    println!(
+        "🔍 使用引擎: {}",
         if configured_engines.is_empty() {
             match mode {
                 EngineMode::Global => search_interface.list_global_engines().join(", "),
@@ -149,7 +154,8 @@ async fn execute_search(
             }
         } else {
             configured_engines.join(", ")
-        }.bright_blue()
+        }
+        .bright_blue()
     );
 
     // 检查是否使用了缓存
@@ -182,7 +188,7 @@ async fn execute_search(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] {msg}")
             .unwrap()
-            .progress_chars("=>-")
+            .progress_chars("=>-"),
     );
     progress_bar.set_message("正在搜索...");
     progress_bar.enable_steady_tick(Duration::from_millis(120));
@@ -192,7 +198,9 @@ async fn execute_search(
         search_interface.search(&search_request).await
     } else {
         // 全局或中国模式，使用模式搜索
-        search_interface.search_with_mode(&search_request, mode).await
+        search_interface
+            .search_with_mode(&search_request, mode)
+            .await
     };
 
     // 完成进度条
@@ -212,9 +220,18 @@ async fn execute_search(
             }
 
             // 显示使用的引擎
-            println!("🔧 实际使用的引擎: {}", response.engines_used.join(", ").bright_blue());
-            println!("📊 总结果数: {}", response.total_count.to_string().bright_white().bold());
-            println!("⏱️  查询时间: {} ms", response.query_time_ms.to_string().bright_yellow());
+            println!(
+                "🔧 实际使用的引擎: {}",
+                response.engines_used.join(", ").bright_blue()
+            );
+            println!(
+                "📊 总结果数: {}",
+                response.total_count.to_string().bright_white().bold()
+            );
+            println!(
+                "⏱️  查询时间: {} ms",
+                response.query_time_ms.to_string().bright_yellow()
+            );
             println!();
 
             // 收集所有结果
@@ -239,7 +256,8 @@ async fn execute_search(
             if all_results.is_empty() {
                 println!("❌ {}", "没有找到结果".bright_red());
             } else {
-                for (i, (engine_name, item)) in all_results.iter().take(results_to_show).enumerate() {
+                for (i, (engine_name, item)) in all_results.iter().take(results_to_show).enumerate()
+                {
                     println!("{}. {}", i + 1, item.title.bright_white().bold());
                     println!("   {}", item.url.bright_blue());
 
@@ -260,45 +278,57 @@ async fn execute_search(
 
                     // 显示显示URL（如果与URL不同）
                     if let Some(display_url) = &item.display_url
-                        && display_url != &item.url {
-                            println!("   {}", format!("🔗 {display_url}").bright_black());
-                        }
+                        && display_url != &item.url
+                    {
+                        println!("   {}", format!("🔗 {display_url}").bright_black());
+                    }
 
                     // 显示来源引擎
                     println!("   📌 来源: {}", engine_name.bright_green());
 
                     // 显示发布时间（如果有）
                     if let Some(published_date) = &item.published_date {
-                        println!("   📅 {}", format!("{}", published_date.format("%Y-%m-%d")).bright_black());
+                        println!(
+                            "   📅 {}",
+                            format!("{}", published_date.format("%Y-%m-%d")).bright_black()
+                        );
                     }
 
                     // 显示评分（如果大于0）
                     if item.score > 0.0 {
-                        println!("   ⭐ 评分: {:.2}", format!("{:.2}", item.score).bright_black());
+                        println!(
+                            "   ⭐ 评分: {:.2}",
+                            format!("{:.2}", item.score).bright_black()
+                        );
                     }
 
                     println!();
                 }
 
                 if all_results.len() > results_to_show {
-                    println!("... 还有 {} 个结果（使用 --verbose 查看更多）",
-                        (all_results.len() - results_to_show).to_string().bright_yellow());
+                    println!(
+                        "... 还有 {} 个结果（使用 --verbose 查看更多）",
+                        (all_results.len() - results_to_show)
+                            .to_string()
+                            .bright_yellow()
+                    );
                 }
             }
 
             println!();
             println!("{}", "━".repeat(60).bright_black());
-            println!("📊 搜索完成: {} 个引擎, {} 个结果",
+            println!(
+                "📊 搜索完成: {} 个引擎, {} 个结果",
                 response.engines_used.len().to_string().bright_green(),
                 response.total_count.to_string().bright_white().bold()
             );
         }
         Err(e) => {
-                println!("❌ 搜索失败: {}", e.to_string().bright_red());
-                if debug {
-                    println!("🔍 详细错误: {e:?}");
-                }
+            println!("❌ 搜索失败: {}", e.to_string().bright_red());
+            if debug {
+                println!("🔍 详细错误: {e:?}");
             }
+        }
     }
 
     // 显示统计信息
@@ -317,23 +347,28 @@ async fn print_search_stats(search_interface: &SearchInterface) {
 
     let stats = search_interface.get_stats().await;
 
-    println!("  {} {}",
+    println!(
+        "  {} {}",
         format!("{:20}", "总搜索次数").bright_white().bold(),
         stats.total_searches.to_string().bright_white()
     );
-    println!("  {} {}",
+    println!(
+        "  {} {}",
         format!("{:20}", "缓存命中").bright_white().bold(),
         stats.cache_hits.to_string().bright_green()
     );
-    println!("  {} {}",
+    println!(
+        "  {} {}",
         format!("{:20}", "缓存未命中").bright_white().bold(),
         stats.cache_misses.to_string().bright_yellow()
     );
-    println!("  {} {}",
+    println!(
+        "  {} {}",
         format!("{:20}", "引擎失败").bright_white().bold(),
         stats.engine_failures.to_string().bright_red()
     );
-    println!("  {} {}",
+    println!(
+        "  {} {}",
         format!("{:20}", "超时次数").bright_white().bold(),
         stats.timeouts.to_string().bright_red()
     );
@@ -341,7 +376,8 @@ async fn print_search_stats(search_interface: &SearchInterface) {
     let total_requests = stats.cache_hits + stats.cache_misses;
     if total_requests > 0 {
         let cache_hit_rate = (stats.cache_hits as f64 / total_requests as f64 * 100.0) as u32;
-        println!("  {} {}",
+        println!(
+            "  {} {}",
             format!("{:20}", "缓存命中率").bright_white().bold(),
             format!("{cache_hit_rate}%").bright_green()
         );
@@ -362,7 +398,11 @@ async fn list_engines(show_stats: bool) -> Result<(), Box<dyn std::error::Error>
     println!("\n🌍 {} 可用引擎", "━━━━━━━━━━━━━━━━━━".bright_green());
     let global_engines = search_interface.list_global_engines();
     for (i, engine) in global_engines.iter().enumerate() {
-        println!("  {}. {}", (i + 1).to_string().bright_white().bold(), engine.bright_blue());
+        println!(
+            "  {}. {}",
+            (i + 1).to_string().bright_white().bold(),
+            engine.bright_blue()
+        );
     }
 
     // 显示统计信息
@@ -389,7 +429,7 @@ async fn interactive_mode(_use_global: bool) -> Result<(), Box<dyn std::error::E
     let search_config = SearchConfig::default();
     let search_interface = std::sync::Arc::new(
         SearchInterface::new(search_config)
-            .map_err(|e| format!("Failed to create search interface: {e}"))?
+            .map_err(|e| format!("Failed to create search interface: {e}"))?,
     );
 
     let mut mode = EngineMode::Global;
@@ -450,19 +490,40 @@ async fn interactive_mode(_use_global: bool) -> Result<(), Box<dyn std::error::E
                         execute_search(input.to_string(), true, None, false, false).await?;
                     }
                     EngineMode::Custom(ref engines) => {
-                        execute_search(input.to_string(), false, Some(engines.join(",")), false, false).await?;
+                        execute_search(
+                            input.to_string(),
+                            false,
+                            Some(engines.join(",")),
+                            false,
+                            false,
+                        )
+                        .await?;
                     }
                     EngineMode::Fast => {
                         // 快速模式：使用快速引擎列表
                         let config = EngineListConfig::default();
                         let fast_engines = config.fast_engines;
-                        execute_search(input.to_string(), false, Some(fast_engines.join(",")), false, false).await?;
+                        execute_search(
+                            input.to_string(),
+                            false,
+                            Some(fast_engines.join(",")),
+                            false,
+                            false,
+                        )
+                        .await?;
                     }
                     EngineMode::DeepWeb => {
                         // 深网模式：使用深网引擎列表
                         let config = EngineListConfig::default();
                         let deepweb_engines = config.deepweb_engines;
-                        execute_search(input.to_string(), false, Some(deepweb_engines.join(",")), false, false).await?;
+                        execute_search(
+                            input.to_string(),
+                            false,
+                            Some(deepweb_engines.join(",")),
+                            false,
+                            false,
+                        )
+                        .await?;
                     }
                 }
             }
@@ -473,4 +534,3 @@ async fn interactive_mode(_use_global: bool) -> Result<(), Box<dyn std::error::E
 
     Ok(())
 }
-

@@ -16,7 +16,7 @@
 //!
 //! 提供搜索结果的专门缓存功能
 
-use crate::cache::manager::{CacheManager, CacheError};
+use crate::cache::manager::{CacheError, CacheManager};
 use crate::derive::types::{SearchQuery, SearchResult};
 use std::sync::Arc;
 use std::time::Duration;
@@ -84,15 +84,16 @@ impl ResultCache {
     /// 返回缓存的搜索结果，如果不存在或已过期则返回 None
     pub fn get(&self, query: &SearchQuery, engine_name: &str) -> Result<Option<SearchResult>> {
         let key = Self::generate_key(query, engine_name);
-        
+
         match self.manager.get(RESULT_SCOPE, &key)? {
             Some(data) => {
                 // 反序列化搜索结果
-                let result: SearchResult = bincode::serde::decode_from_slice(&data, bincode::config::standard())
-                    .map(|(res, _)| res)
-                    .map_err(|e| {
-                        CacheError::SerializationError(format!("反序列化搜索结果失败: {e}"))
-                    })?;
+                let result: SearchResult =
+                    bincode::serde::decode_from_slice(&data, bincode::config::standard())
+                        .map(|(res, _)| res)
+                        .map_err(|e| {
+                            CacheError::SerializationError(format!("反序列化搜索结果失败: {e}"))
+                        })?;
                 Ok(Some(result))
             }
             None => Ok(None),
@@ -112,9 +113,14 @@ impl ResultCache {
     /// 如果缓存存在但已超过时间线，返回 Some(true)
     /// 如果缓存存在且未过期，返回 Some(false)
     /// 如果缓存不存在，返回 None
-    pub fn is_stale(&self, query: &SearchQuery, engine_name: &str, timeline: u64) -> Result<Option<bool>> {
+    pub fn is_stale(
+        &self,
+        query: &SearchQuery,
+        engine_name: &str,
+        timeline: u64,
+    ) -> Result<Option<bool>> {
         let key = Self::generate_key(query, engine_name);
-        
+
         // 获取缓存元数据
         if let Some(metadata) = self.manager.get_metadata(&key)? {
             use std::time::{SystemTime, UNIX_EPOCH};
@@ -122,7 +128,7 @@ impl ResultCache {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            
+
             let age = now.saturating_sub(metadata.created_at);
             Ok(Some(age >= timeline))
         } else {
@@ -146,11 +152,10 @@ impl ResultCache {
         ttl: Option<Duration>,
     ) -> Result<()> {
         let key = Self::generate_key(query, engine_name);
-        
+
         // 序列化搜索结果
-        let data = bincode::serde::encode_to_vec(result, bincode::config::standard()).map_err(|e| {
-            CacheError::SerializationError(format!("序列化搜索结果失败: {e}"))
-        })?;
+        let data = bincode::serde::encode_to_vec(result, bincode::config::standard())
+            .map_err(|e| CacheError::SerializationError(format!("序列化搜索结果失败: {e}")))?;
 
         self.manager.set(RESULT_SCOPE, key, data, ttl)
     }
@@ -208,7 +213,7 @@ impl ResultCache {
             let parts: Vec<&str> = RESULT_SCOPE.split('.').collect();
             (parts[0].to_string(), "".to_string())
         };
-        
+
         // 获取搜索结果对应的 tree
         let tree = self.manager.get_or_create_tree(&top_scope)?;
 
@@ -218,25 +223,26 @@ impl ResultCache {
                 break;
             }
 
-            let (key, value) = item.map_err(|e| {
-                CacheError::DatabaseError(format!("遍历缓存失败: {e}"))
-            })?;
+            let (key, value) =
+                item.map_err(|e| CacheError::DatabaseError(format!("遍历缓存失败: {e}")))?;
 
             // 检查是否过期（如果不包含过期结果）
             if !include_stale {
                 // 获取元数据
                 let key_str = String::from_utf8_lossy(&key);
                 if let Some(metadata) = self.manager.get_metadata(&key_str)?
-                    && metadata.is_expired() {
-                        continue;
-                    }
+                    && metadata.is_expired()
+                {
+                    continue;
+                }
             }
 
             // 反序列化搜索结果
-            let result: SearchResult = match bincode::serde::decode_from_slice(&value, bincode::config::standard()) {
-                Ok((res, _)) => res,
-                Err(_) => continue, // 跳过损坏的数据
-            };
+            let result: SearchResult =
+                match bincode::serde::decode_from_slice(&value, bincode::config::standard()) {
+                    Ok((res, _)) => res,
+                    Err(_) => continue, // 跳过损坏的数据
+                };
 
             // 在结果项中搜索关键词
             for item in result.items {
@@ -288,12 +294,11 @@ impl ResultCache {
                 break;
             }
 
-            let (key, value) = item.map_err(|e| {
-                CacheError::DatabaseError(format!("遍历缓存失败: {e}"))
-            })?;
+            let (key, value) =
+                item.map_err(|e| CacheError::DatabaseError(format!("遍历缓存失败: {e}")))?;
 
             let key_str = String::from_utf8_lossy(&key);
-            
+
             // 只处理搜索结果缓存
             if !key_str.starts_with(RESULT_KEY_PREFIX) {
                 continue;
@@ -302,15 +307,17 @@ impl ResultCache {
             // 检查是否过期（如果不包含过期结果）
             if !include_stale
                 && let Some(metadata) = self.manager.get_metadata(&key_str)?
-                && metadata.is_expired() {
-                    continue;
-                }
+                && metadata.is_expired()
+            {
+                continue;
+            }
 
             // 反序列化搜索结果
-            let result: SearchResult = match bincode::serde::decode_from_slice(&value, bincode::config::standard()) {
-                Ok((res, _)) => res,
-                Err(_) => continue, // 跳过损坏的数据
-            };
+            let result: SearchResult =
+                match bincode::serde::decode_from_slice(&value, bincode::config::standard()) {
+                    Ok((res, _)) => res,
+                    Err(_) => continue, // 跳过损坏的数据
+                };
 
             // 注意：由于使用哈希键，无法直接匹配原始查询
             // 我们需要在结果项中查找模式
@@ -332,15 +339,15 @@ impl ResultCache {
 mod tests {
     use super::*;
     use crate::cache::types::{CacheImplConfig, CacheMode};
-    use crate::derive::types::EngineType;
     use crate::config::common::SafeSearchLevel;
-    use std::collections::HashMap;
+    use crate::derive::types::EngineType;
     use serial_test::serial;
+    use std::collections::HashMap;
 
     fn temp_result_cache() -> ResultCache {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
-        
+
         let temp_dir = std::env::temp_dir();
         let unique_id = COUNTER.fetch_add(1, Ordering::SeqCst);
         let db_path = temp_dir.join(format!(
@@ -348,7 +355,7 @@ mod tests {
             std::process::id(),
             unique_id
         ));
-        
+
         let config = CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
             default_ttl_secs: 10,
@@ -380,27 +387,25 @@ mod tests {
     }
 
     fn sample_result() -> SearchResult {
-        use crate::derive::types::{SearchResultItem, ResultType};
-        
+        use crate::derive::types::{ResultType, SearchResultItem};
+
         SearchResult {
             engine_name: "TestEngine".to_string(),
             total_results: Some(1000),
             elapsed_ms: 150,
-            items: vec![
-                SearchResultItem {
-                    title: "Test Result".to_string(),
-                    url: "https://example.com".to_string(),
-                    content: "Test content".to_string(),
-                    display_url: Some("example.com".to_string()),
-                    site_name: None,
-                    score: 0.95,
-                    result_type: ResultType::Web,
-                    thumbnail: None,
-                    published_date: None,
-                    template: None,
-                    metadata: HashMap::new(),
-                },
-            ],
+            items: vec![SearchResultItem {
+                title: "Test Result".to_string(),
+                url: "https://example.com".to_string(),
+                content: "Test content".to_string(),
+                display_url: Some("example.com".to_string()),
+                site_name: None,
+                score: 0.95,
+                result_type: ResultType::Web,
+                thumbnail: None,
+                published_date: None,
+                template: None,
+                metadata: HashMap::new(),
+            }],
             pagination: None,
             suggestions: Vec::new(),
             metadata: HashMap::new(),
@@ -416,12 +421,14 @@ mod tests {
         let engine_name = "TestEngine";
 
         // 缓存结果
-        cache.set(&query, engine_name, &result, None).expect("缓存搜索结果失败");
+        cache
+            .set(&query, engine_name, &result, None)
+            .expect("缓存搜索结果失败");
 
         // 获取缓存
         let cached = cache.get(&query, engine_name).unwrap_or(None);
         assert!(cached.is_some());
-        
+
         let cached_result = cached.unwrap();
         assert_eq!(cached_result.engine_name, result.engine_name);
         assert_eq!(cached_result.items.len(), result.items.len());
@@ -448,7 +455,9 @@ mod tests {
         let engine_name = "TestEngine";
 
         // 缓存结果
-        cache.set(&query, engine_name, &result, None).expect("缓存搜索结果失败");
+        cache
+            .set(&query, engine_name, &result, None)
+            .expect("缓存搜索结果失败");
         assert!(cache.get(&query, engine_name).unwrap_or(None).is_some());
 
         // 删除缓存
@@ -487,7 +496,8 @@ mod tests {
         let engine_name = "TestEngine";
 
         // 设置1秒过期
-        cache.set(&query, engine_name, &result, Some(Duration::from_secs(1)))
+        cache
+            .set(&query, engine_name, &result, Some(Duration::from_secs(1)))
             .expect("缓存搜索结果失败");
 
         // 立即获取应该存在

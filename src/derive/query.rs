@@ -121,16 +121,16 @@ pub trait QueryOptimizer {
     fn optimize(&self, query: &mut SearchQuery) -> Result<(), Box<dyn Error>> {
         // 调整页面大小
         self.optimize_page_size(query, 100);
-        
+
         // 设置默认语言（可选）
         self.set_default_language(query, "en");
-        
+
         // 设置默认地区（可选）
         self.set_default_region(query, "us");
-        
+
         // 移除无效参数
         self.remove_invalid_params(query);
-        
+
         Ok(())
     }
 
@@ -156,12 +156,12 @@ pub trait QueryOptimizer {
             query.region = Some(default.to_string());
         }
     }
-    
+
     /// 移除无效参数
     fn remove_invalid_params(&self, query: &mut SearchQuery) {
         query.params.retain(|_, value| !value.is_empty());
     }
-    
+
     /// 限制最大页码
     fn limit_max_page(&self, query: &mut SearchQuery, max_page: usize) {
         if query.page > max_page {
@@ -202,7 +202,9 @@ pub trait QueryValidator {
         }
 
         if !(1..=100).contains(&page_size) {
-            return Err(crate::errors::validation_error("页面大小无效，必须在1-100之间"));
+            return Err(crate::errors::validation_error(
+                "页面大小无效，必须在1-100之间",
+            ));
         }
 
         Ok(())
@@ -211,19 +213,29 @@ pub trait QueryValidator {
     /// 检查恶意内容
     fn contains_malicious_content(&self, query: &str) -> bool {
         let malicious_patterns = [
-            "<script", "</script>", "javascript:", "data:", "vbscript:",
-            "onload=", "onerror=", "onclick=", "onmouseover=",
+            "<script",
+            "</script>",
+            "javascript:",
+            "data:",
+            "vbscript:",
+            "onload=",
+            "onerror=",
+            "onclick=",
+            "onmouseover=",
         ];
 
         let lower_query = query.to_lowercase();
-        malicious_patterns.iter().any(|&pattern| lower_query.contains(pattern))
+        malicious_patterns
+            .iter()
+            .any(|&pattern| lower_query.contains(pattern))
     }
 }
 
 /// 查询转换 trait
 pub trait QueryTransformer {
     /// 转换查询格式
-    fn transform(&self, query: &SearchQuery, target_format: &str) -> Result<String, Box<dyn Error>>;
+    fn transform(&self, query: &SearchQuery, target_format: &str)
+    -> Result<String, Box<dyn Error>>;
 
     /// 转换为URL参数
     fn to_url_params(&self, query: &SearchQuery) -> String {
@@ -247,7 +259,11 @@ pub trait QueryTransformer {
         }
 
         for (key, value) in &query.params {
-            params.push(format!("{}={}", urlencoding::encode(key), urlencoding::encode(value)));
+            params.push(format!(
+                "{}={}",
+                urlencoding::encode(key),
+                urlencoding::encode(value)
+            ));
         }
 
         params.join("&")
@@ -263,4 +279,3 @@ pub trait QueryTransformer {
         serde_json::from_str(json).map_err(Into::into)
     }
 }
-

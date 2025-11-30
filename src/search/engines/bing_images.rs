@@ -14,14 +14,14 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::error::Error;
+use std::sync::Arc;
 
-use crate::derive::{
-    EngineCapabilities, EngineInfo, EngineStatus, EngineType,
-    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
-};
 use super::utils::build_query_string_owned;
+use crate::derive::{
+    AboutInfo, EngineCapabilities, EngineInfo, EngineStatus, EngineType, RequestParams,
+    RequestResponseEngine, ResultType, SearchResultItem,
+};
 
 // 使用宏定义引擎结构体和基本方法
 define_engine! {
@@ -65,8 +65,9 @@ define_engine! {
 }
 
 impl BingImagesEngine {
-
-    fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn parse_html_results(
+        html: &str,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use scraper::{Html, Selector};
         use serde_json;
 
@@ -82,7 +83,9 @@ impl BingImagesEngine {
             .expect("valid selector");
 
         for result in document.select(&result_selector) {
-            let metadata_elem = result.select(&Selector::parse("a.iusc").expect("valid selector")).next();
+            let metadata_elem = result
+                .select(&Selector::parse("a.iusc").expect("valid selector"))
+                .next();
 
             if metadata_elem.is_none() {
                 continue;
@@ -96,46 +99,53 @@ impl BingImagesEngine {
             }
 
             // Parse metadata JSON
-            let metadata: HashMap<String, serde_json::Value> = serde_json::from_str(metadata_str)
-                .unwrap_or_else(|_| HashMap::new());
+            let metadata: HashMap<String, serde_json::Value> =
+                serde_json::from_str(metadata_str).unwrap_or_else(|_| HashMap::new());
 
-            let title = result.select(&Selector::parse("div.infnmpt a").expect("valid selector"))
+            let title = result
+                .select(&Selector::parse("div.infnmpt a").expect("valid selector"))
                 .map(|a| a.text().collect::<String>().trim().to_string())
                 .collect::<Vec<_>>()
                 .join(" ")
                 .trim()
                 .to_string();
 
-            let img_format = result.select(&Selector::parse("div.imgpt div span").expect("valid selector"))
+            let img_format = result
+                .select(&Selector::parse("div.imgpt div span").expect("valid selector"))
                 .map(|span| span.text().collect::<String>().trim().to_string())
                 .collect::<Vec<_>>()
                 .join(" ")
                 .trim()
                 .to_string();
 
-            let source = result.select(&Selector::parse("div.imgpt div.lnkw a").expect("valid selector"))
+            let source = result
+                .select(&Selector::parse("div.imgpt div.lnkw a").expect("valid selector"))
                 .map(|a| a.text().collect::<String>().trim().to_string())
                 .collect::<Vec<_>>()
                 .join(" ")
                 .trim()
                 .to_string();
 
-            let img_src = metadata.get("murl")
+            let img_src = metadata
+                .get("murl")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
 
-            let thumbnail_src = metadata.get("turl")
+            let thumbnail_src = metadata
+                .get("turl")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
 
-            let page_url = metadata.get("purl")
+            let page_url = metadata
+                .get("purl")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
 
-            let content = metadata.get("desc")
+            let content = metadata
+                .get("desc")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
@@ -161,11 +171,19 @@ impl BingImagesEngine {
                 title,
                 url: page_url.clone(),
                 content,
-                display_url: if !page_url.is_empty() { Some(page_url) } else { Some(img_src.clone()) },
+                display_url: if !page_url.is_empty() {
+                    Some(page_url)
+                } else {
+                    Some(img_src.clone())
+                },
                 site_name: None,
                 score: 1.0,
                 result_type: ResultType::Image,
-                thumbnail: if !thumbnail_src.is_empty() { Some(thumbnail_src) } else { Some(img_src.clone()) },
+                thumbnail: if !thumbnail_src.is_empty() {
+                    Some(thumbnail_src)
+                } else {
+                    Some(img_src.clone())
+                },
                 published_date: None,
                 template: Some("images.html".to_string()),
                 metadata: {
@@ -184,7 +202,11 @@ impl BingImagesEngine {
 impl RequestResponseEngine for BingImagesEngine {
     type Response = String;
 
-    fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn request(
+        &self,
+        query: &str,
+        params: &mut RequestParams,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let base_url = "https://www.bing.com/images/async";
 
         let time_map = HashMap::from([
@@ -203,9 +225,10 @@ impl RequestResponseEngine for BingImagesEngine {
 
         // Add time range filter if specified
         if let Some(ref tr) = params.time_range
-            && let Some(minutes) = time_map.get(tr.as_str()) {
-                query_params.push(("qft", format!("filterui:age-lt{minutes}")));
-            }
+            && let Some(minutes) = time_map.get(tr.as_str())
+        {
+            query_params.push(("qft", format!("filterui:age-lt{minutes}")));
+        }
 
         // Build URL with optimized query string
         let query_string = build_query_string_owned(query_params);
@@ -216,12 +239,18 @@ impl RequestResponseEngine for BingImagesEngine {
         Ok(())
     }
 
-    async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
+    async fn fetch(
+        &self,
+        params: &RequestParams,
+    ) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         // 使用通用引擎的fetch方法
         self.generic.fetch(params).await
     }
 
-    fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn response(
+        &self,
+        resp: Self::Response,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         Self::parse_html_results(&resp)
     }
 }

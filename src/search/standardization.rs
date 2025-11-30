@@ -16,7 +16,7 @@
 //!
 //! 对搜索结果进行基本的清理和标准化
 
-use crate::derive::{SearchResultItem, SearchResult};
+use crate::derive::{SearchResult, SearchResultItem};
 use std::collections::HashSet;
 
 /// 清理文本
@@ -24,25 +24,22 @@ pub fn clean_text(text: &str, max_length: usize) -> String {
     // 1. 移除HTML标签
     let mut cleaned = String::with_capacity(text.len());
     let mut in_tag = false;
-    
+
     for c in text.chars() {
         match c {
             '<' => in_tag = true,
             '>' => in_tag = false,
             _ if !in_tag => cleaned.push(c),
-            _ => {},
+            _ => {}
         }
     }
-    
+
     // 2. 移除多余空白
-    cleaned = cleaned
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    
+    cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+
     // 3. HTML 实体解码
     cleaned = html_escape::decode_html_entities(&cleaned).to_string();
-    
+
     // 4. 截断
     if cleaned.len() > max_length {
         let truncated: String = cleaned.chars().take(max_length - 3).collect();
@@ -56,10 +53,10 @@ pub fn clean_text(text: &str, max_length: usize) -> String {
 pub fn standardize_item(item: &mut SearchResultItem) {
     // 清理标题（最多200字符）
     item.title = clean_text(&item.title, 200);
-    
+
     // 清理内容（最多500字符）
     item.content = clean_text(&item.content, 500);
-    
+
     // 确保 URL 不为空
     if item.url.trim().is_empty() {
         item.url = "#".to_string();
@@ -81,7 +78,7 @@ pub fn standardize_results(result: &mut SearchResult) {
     for item in &mut result.items {
         standardize_item(item);
     }
-    
+
     // 2. 去重
     deduplicate_by_url(&mut result.items);
 }
@@ -93,7 +90,7 @@ mod tests {
     #[test]
     fn test_clean_text() {
         assert_eq!(clean_text("  hello   world  ", 100), "hello world");
-        
+
         let long = "a".repeat(300);
         let cleaned = clean_text(&long, 100);
         assert!(cleaned.len() <= 103); // 100 + "..."

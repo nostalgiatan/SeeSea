@@ -73,7 +73,7 @@ pub async fn check_proxy(config: &ProxyConfig) -> Result<bool> {
     // 创建临时客户端测试代理
     let builder = ClientBuilder::new();
     let builder = configure_proxy(builder, config)?;
-    
+
     let client = builder
         .timeout(std::time::Duration::from_secs(10))
         .build()
@@ -94,7 +94,7 @@ mod tests {
     fn test_configure_proxy_disabled() {
         let mut config = ProxyConfig::default();
         config.enabled = false;
-        
+
         let builder = ClientBuilder::new();
         let result = configure_proxy(builder, &config);
         assert!(result.is_ok());
@@ -106,7 +106,7 @@ mod tests {
         config.enabled = true;
         config.proxy_type = ProxyType::Http;
         config.address = "127.0.0.1:8080".to_string();
-        
+
         let builder = ClientBuilder::new();
         let result = configure_proxy(builder, &config);
         assert!(result.is_ok());
@@ -118,7 +118,7 @@ mod tests {
         config.enabled = true;
         config.username = Some("user".to_string());
         config.password = Some("pass".to_string());
-        
+
         let builder = ClientBuilder::new();
         let result = configure_proxy(builder, &config);
         assert!(result.is_ok());
@@ -130,7 +130,7 @@ mod tests {
         config.enabled = true;
         config.proxy_type = ProxyType::Tor;
         config.address = "127.0.0.1:9050".to_string();
-        
+
         let builder = ClientBuilder::new();
         let result = configure_proxy(builder, &config);
         assert!(result.is_ok());

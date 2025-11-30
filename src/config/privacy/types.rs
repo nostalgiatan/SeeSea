@@ -18,8 +18,7 @@ use crate::config::common::{ConfigValidationResult, FingerprintLevel, ProxyType,
 use serde::{Deserialize, Serialize};
 
 /// 隐私保护配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PrivacyConfig {
     /// User-Agent 轮换
     #[serde(default)]
@@ -307,7 +306,6 @@ pub enum CookieFilterPolicy {
     Disabled,
 }
 
-
 /// 第三方 Cookie 策略
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -323,7 +321,6 @@ pub enum ThirdPartyCookiePolicy {
     /// 基于隐私级别
     PrivacyBased,
 }
-
 
 /// Cookie 处理配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -344,7 +341,6 @@ pub struct CookieConfig {
     #[serde(default)]
     pub third_party_policy: ThirdPartyCookiePolicy,
 }
-
 
 impl PrivacyConfig {
     /// 验证隐私配置
@@ -447,7 +443,7 @@ impl Default for TimingConfig {
     fn default() -> Self {
         Self {
             timing_strategy: TimingStrategy::Light,
-            min_delay: 100, // 100ms
+            min_delay: 100,  // 100ms
             max_delay: 2000, // 2s
             size_based_delay: true,
             engine_based_delay: true,
@@ -483,7 +479,6 @@ impl Default for DnsConfig {
                         DnsRecordType::CNAME,
                     ],
                 },
-
                 // 国内 DNS 服务商
                 DnsServer {
                     name: "阿里云".to_string(),

@@ -16,12 +16,7 @@
 //!
 //! 记录 API 请求和响应日志
 
-use axum::{
-    body::Body,
-    http::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{body::Body, http::Request, middleware::Next, response::Response};
 use std::time::Instant;
 
 /// 日志中间件处理器
@@ -34,20 +29,17 @@ use std::time::Instant;
 /// # Returns
 ///
 /// 返回 HTTP 响应
-pub async fn logging_middleware(
-    req: Request<Body>,
-    next: Next,
-) -> Response {
+pub async fn logging_middleware(req: Request<Body>, next: Next) -> Response {
     let start = Instant::now();
     let method = req.method().clone();
     let uri = req.uri().clone();
-    
+
     // 处理请求
     let response = next.run(req).await;
-    
+
     let elapsed = start.elapsed();
     let status = response.status();
-    
+
     // 记录日志
     tracing::info!(
         method = %method,
@@ -56,13 +48,12 @@ pub async fn logging_middleware(
         elapsed_ms = elapsed.as_millis(),
         "API request processed"
     );
-    
+
     response
 }
 
 #[cfg(test)]
 mod tests {
-
 
     #[test]
     fn test_logging_middleware_exists() {

@@ -13,15 +13,15 @@
 // limitations under the License.
 
 //! 请求重试机制模块
-//! 
+//!
 //! 提供请求重试功能，支持多种重试策略，提高网络请求的可靠性。
 
 pub mod strategy;
 
 use crate::errors::Result;
-use strategy::RetryStrategy;
 use std::future::Future;
 use std::time::Duration;
+use strategy::RetryStrategy;
 
 /// 重试配置
 #[derive(Debug, Clone)]
@@ -65,9 +65,7 @@ pub struct RetryExecutor {
 impl RetryExecutor {
     /// 创建新的重试执行器
     pub fn new(config: RetryConfig) -> Self {
-        Self {
-            config,
-        }
+        Self { config }
     }
 
     /// 执行带重试的异步操作
@@ -92,12 +90,18 @@ impl RetryExecutor {
                 Err(error) => {
                     attempt += 1;
                     if attempt > self.config.max_retries {
-                        return Err(crate::errors::http_error(0, &format!("Operation failed after {attempt} attempts: {error}")));
+                        return Err(crate::errors::http_error(
+                            0,
+                            &format!("Operation failed after {attempt} attempts: {error}"),
+                        ));
                     }
 
                     // 检查是否应该重试
                     if !self.should_retry(&error) {
-                        return Err(crate::errors::http_error(0, &format!("Operation failed and should not be retried: {error}")));
+                        return Err(crate::errors::http_error(
+                            0,
+                            &format!("Operation failed and should not be retried: {error}"),
+                        ));
                     }
 
                     // 计算延迟
@@ -116,7 +120,9 @@ impl RetryExecutor {
         // 目前简单实现为总是重试，后续可以根据错误类型和内容进行更智能的判断
         // 由于泛型错误类型 E 无法直接转换为 reqwest::Error，我们需要使用不同的方式来检查错误类型
         // 这里我们暂时使用配置中的重试开关来决定是否重试
-        self.config.retry_on_timeout || self.config.retry_on_connection_error || self.config.retry_on_http_error
+        self.config.retry_on_timeout
+            || self.config.retry_on_connection_error
+            || self.config.retry_on_http_error
     }
 }
 
@@ -131,7 +137,8 @@ pub trait RetryExt<T, E> {
 }
 
 #[allow(async_fn_in_trait)]
-impl<T, E> RetryExt<T, E> for fn() -> std::pin::Pin<Box<dyn Future<Output = std::result::Result<T, E>>>>
+impl<T, E> RetryExt<T, E>
+    for fn() -> std::pin::Pin<Box<dyn Future<Output = std::result::Result<T, E>>>>
 where
     E: std::error::Error + Send + Sync + 'static,
 {
@@ -148,8 +155,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use strategy::RetryStrategy;
     use std::time::Duration;
+    use strategy::RetryStrategy;
 
     #[tokio::test]
     async fn test_retry_execute_success() {
@@ -160,9 +167,7 @@ mod tests {
         let result = executor
             .execute(|| {
                 attempts += 1;
-                Box::pin(async move {
-                    Ok::<&str, std::io::Error>("success")
-                })
+                Box::pin(async move { Ok::<&str, std::io::Error>("success") })
             })
             .await;
 

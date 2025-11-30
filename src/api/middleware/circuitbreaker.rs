@@ -23,7 +23,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
@@ -54,13 +54,13 @@ impl From<u8> for CircuitState {
 pub struct CircuitBreakerConfig {
     /// 失败阈值
     pub failure_threshold: u64,
-    
+
     /// 成功阈值（半开状态）
     pub success_threshold: u64,
-    
+
     /// 超时时间（秒）
     pub timeout: u64,
-    
+
     /// 是否启用
     pub enabled: bool,
 }
@@ -161,7 +161,8 @@ impl CircuitBreakerState {
 
     /// 转换到关闭状态
     async fn transition_to_closed(&self) {
-        self.state.store(CircuitState::Closed as u8, Ordering::SeqCst);
+        self.state
+            .store(CircuitState::Closed as u8, Ordering::SeqCst);
         self.failure_count.store(0, Ordering::SeqCst);
         self.success_count.store(0, Ordering::SeqCst);
         *self.last_state_change.write().await = Instant::now();
@@ -179,7 +180,8 @@ impl CircuitBreakerState {
 
     /// 转换到半开状态
     async fn transition_to_half_open(&self) {
-        self.state.store(CircuitState::HalfOpen as u8, Ordering::SeqCst);
+        self.state
+            .store(CircuitState::HalfOpen as u8, Ordering::SeqCst);
         self.success_count.store(0, Ordering::SeqCst);
         *self.last_state_change.write().await = Instant::now();
         tracing::info!("Circuit breaker transitioned to HALF-OPEN state");
@@ -203,8 +205,10 @@ pub async fn circuit_breaker_middleware(
             serde_json::json!({
                 "code": "CIRCUIT_BREAKER_OPEN",
                 "message": "服务暂时不可用，请稍后再试"
-            }).to_string()
-        ).into_response();
+            })
+            .to_string(),
+        )
+            .into_response();
     }
 
     // 执行请求

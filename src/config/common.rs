@@ -136,7 +136,6 @@ pub enum LogLevel {
     Trace,
 }
 
-
 /// 日志格式
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -153,7 +152,6 @@ pub enum LogFormat {
     Compact,
 }
 
-
 /// 日志输出
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -169,7 +167,6 @@ pub enum LogOutput {
     /// 同时输出到标准输出和文件
     Both,
 }
-
 
 /// 基础的引擎配置结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,7 +209,7 @@ impl ConfigValidationResult {
             warnings: Vec::new(),
         }
     }
-    
+
     /// 创建有效的验证结果（别名，兼容性）
     pub fn valid() -> Self {
         Self::success()

@@ -13,33 +13,33 @@
 // limitations under the License.
 
 //! # 搜索引擎模块
-//! 
+//!
 //! 搜索引擎模块包含 SeeSea 支持的所有搜索引擎实现，以及用于简化引擎开发的工具和宏。
-//! 
+//!
 //! ## 模块架构
-//! 
+//!
 //! 搜索引擎模块采用模块化设计，主要包含以下组件：
-//! 
+//!
 //! - **utils**：引擎工具函数和通用引擎实现
 //! - **define_engine!**：引擎生成宏，用于简化引擎开发
 //! - 各种搜索引擎实现：包括 Bing、Baidu、Yandex 等 12+ 专业搜索引擎
-//! 
+//!
 //! ## 引擎生成宏
-//! 
+//!
 //! `define_engine!` 宏是本模块的核心，它用于自动生成搜索引擎的基本结构体和 trait 实现，
 //! 大大减少了重复代码，提高了开发效率。
-//! 
+//!
 //! ## 搜索引擎类型
-//! 
+//!
 //! SeeSea 支持多种类型的搜索引擎，包括：
-//! 
+//!
 //! - **通用搜索**：Bing、Yandex、百度、搜狗、360 搜索
 //! - **图片搜索**：Unsplash、Bing Images
 //! - **视频搜索**：Bilibili、Bing Videos、搜狗视频
 //! - **新闻搜索**：Bing News
-//! 
+//!
 //! ## 引擎开发指南
-//! 
+//!
 //! 要添加新的搜索引擎，只需：
 //! 1. 创建新的模块文件
 //! 2. 使用 `define_engine!` 宏定义引擎结构体
@@ -50,29 +50,29 @@
 pub mod utils;
 
 /// 引擎生成宏，用于自动生成搜索引擎的基本结构体和 trait 实现
-/// 
+///
 /// 这个宏是搜索引擎开发的核心工具，它自动生成：
 /// - 引擎结构体定义
 /// - `new()` 和 `with_client()` 构造方法
 /// - `Default` trait 实现
 /// - `SearchEngine` trait 基本实现
 /// - 引擎信息管理
-/// 
+///
 /// # 参数
-/// 
+///
 /// * `$engine_name` - 引擎结构体名称，如 `BingEngine`
 /// * `$info_builder` - 引擎信息构建表达式，用于初始化引擎的基本信息
-/// 
+///
 /// # 生成的功能
-/// 
+///
 /// 宏生成的引擎结构体包含：
 /// - 通用引擎实例，处理HTTP请求和响应
 /// - 引擎信息管理
 /// - 基本的搜索方法实现
 /// - 可用性检查
-/// 
+///
 /// # 示例
-/// 
+///
 /// ```ignore
 /// define_engine! {
 ///     MyCustomEngine,
@@ -87,7 +87,7 @@ pub mod utils;
 ///         ..Default::default()
 ///     }
 /// }
-/// 
+///
 /// // 实现具体的搜索逻辑
 /// #[async_trait]
 /// impl RequestResponseEngine for MyCustomEngine {
@@ -103,12 +103,12 @@ macro_rules! define_engine {
             /// 通用引擎实例，处理HTTP请求和响应
             generic: crate::search::engines::utils::GenericEngine,
         }
-        
+
         impl $engine_name {
             /// 创建新的引擎实例
-            /// 
+            ///
             /// # 返回值
-            /// 
+            ///
             /// 返回一个新的引擎实例，使用默认的HTTP客户端
             pub fn new() -> Self {
                 let info = $info_builder;
@@ -116,59 +116,64 @@ macro_rules! define_engine {
                     generic: crate::search::engines::utils::GenericEngine::new(info),
                 }
             }
-            
+
             /// 使用共享的HTTP客户端创建引擎实例
-            /// 
+            ///
             /// # 参数
-            /// 
+            ///
             /// * `client` - 共享的HTTP客户端实例
-            /// 
+            ///
             /// # 返回值
-            /// 
+            ///
             /// 返回一个使用共享HTTP客户端的引擎实例
             pub fn with_client(client: Arc<crate::net::client::HttpClient>) -> Self {
                 let info = $info_builder;
                 Self {
-                    generic: crate::search::engines::utils::GenericEngine::with_client(info, client),
+                    generic: crate::search::engines::utils::GenericEngine::with_client(
+                        info, client,
+                    ),
                 }
             }
         }
-        
+
         impl Default for $engine_name {
             /// 默认实现，创建新的引擎实例
             fn default() -> Self {
                 Self::new()
             }
         }
-        
+
         #[async_trait]
         impl crate::derive::SearchEngine for $engine_name {
             /// 获取引擎信息
-            /// 
+            ///
             /// # 返回值
-            /// 
+            ///
             /// 返回引擎的基本信息，包括名称、类型、描述等
             fn info(&self) -> &crate::derive::EngineInfo {
                 &self.generic.info
             }
-            
+
             /// 执行搜索
-            /// 
+            ///
             /// # 参数
-            /// 
+            ///
             /// * `query` - 搜索查询
-            /// 
+            ///
             /// # 返回值
-            /// 
+            ///
             /// 返回搜索结果，或错误信息
-            async fn search(&self, query: &crate::derive::SearchQuery) -> Result<crate::derive::SearchResult, Box<dyn Error + Send + Sync>> {
+            async fn search(
+                &self,
+                query: &crate::derive::SearchQuery,
+            ) -> Result<crate::derive::SearchResult, Box<dyn Error + Send + Sync>> {
                 <Self as crate::derive::RequestResponseEngine>::search(self, query).await
             }
-            
+
             /// 检查引擎是否可用
-            /// 
+            ///
             /// # 返回值
-            /// 
+            ///
             /// 如果引擎可用返回true，否则返回false
             async fn is_available(&self) -> bool {
                 // 默认实现：尝试访问引擎的主页
@@ -240,4 +245,3 @@ pub use bilibili::BilibiliEngine;
 
 /// 360 搜索引擎
 pub use so::SoEngine;
-

@@ -16,10 +16,10 @@
 //!
 //! 负责合并、去重、排序多个搜索引擎的结果
 
+use super::scoring::{ScoringWeights, score_and_sort_results};
+use super::standardization::{deduplicate_by_url, standardize_results};
+use crate::derive::{SearchQuery, SearchResult, SearchResultItem};
 use std::collections::HashSet;
-use crate::derive::{SearchResult, SearchResultItem, SearchQuery};
-use super::scoring::{score_and_sort_results, ScoringWeights};
-use super::standardization::{standardize_results, deduplicate_by_url};
 
 /// 聚合策略
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,8 +58,8 @@ pub struct SearchAggregator {
 impl SearchAggregator {
     /// 创建新的聚合器
     pub fn new(strategy: AggregationStrategy, sort_by: SortBy) -> Self {
-        Self { 
-            strategy, 
+        Self {
+            strategy,
             sort_by,
             scoring_weights: None,
         }
@@ -73,12 +73,12 @@ impl SearchAggregator {
 
     /// 聚合多个搜索结果（使用智能评分）
     pub fn aggregate_with_scoring(
-        &self, 
+        &self,
         mut results: Vec<SearchResult>,
         query: &SearchQuery,
     ) -> SearchResult {
         use std::collections::HashMap;
-        
+
         if results.is_empty() {
             return SearchResult {
                 engine_name: "aggregated".to_string(),
@@ -106,7 +106,12 @@ impl SearchAggregator {
         deduplicate_by_url(&mut all_items);
 
         // 4. 重新评分（基于查询）
-        score_and_sort_results(&mut all_items, query, "aggregated", self.scoring_weights.clone());
+        score_and_sort_results(
+            &mut all_items,
+            query,
+            "aggregated",
+            self.scoring_weights.clone(),
+        );
 
         let total_results = all_items.len();
 
@@ -120,25 +125,25 @@ impl SearchAggregator {
             metadata: HashMap::new(),
         }
     }
-    
+
     /// 流式聚合搜索结果（使用智能评分）
     ///
     /// 支持边接收结果边聚合，提高响应速度
     pub async fn aggregate_stream_with_scoring(
-        &self, 
+        &self,
         mut results_stream: tokio::sync::mpsc::Receiver<SearchResult>,
         query: &SearchQuery,
     ) -> SearchResult {
         use std::collections::{HashMap, HashSet};
-        
+
         let mut all_items: Vec<SearchResultItem> = Vec::new();
         let mut processed_urls: HashSet<String> = HashSet::new();
-        
+
         // 接收并处理流中的结果
         while let Some(mut result) = results_stream.recv().await {
             // 1. 标准化结果
             standardize_results(&mut result);
-            
+
             // 2. 合并结果并去重
             for item in result.items {
                 if processed_urls.insert(item.url.clone()) {
@@ -146,9 +151,14 @@ impl SearchAggregator {
                 }
             }
         }
-        
+
         // 3. 重新评分（基于查询）
-        score_and_sort_results(&mut all_items, query, "aggregated", self.scoring_weights.clone());
+        score_and_sort_results(
+            &mut all_items,
+            query,
+            "aggregated",
+            self.scoring_weights.clone(),
+        );
 
         let total_results = all_items.len();
 
@@ -166,7 +176,7 @@ impl SearchAggregator {
     /// 聚合多个搜索结果
     pub fn aggregate(&self, results: Vec<SearchResult>) -> SearchResult {
         use std::collections::HashMap;
-        
+
         if results.is_empty() {
             return SearchResult {
                 engine_name: "aggregated".to_string(),
@@ -214,9 +224,10 @@ impl SearchAggregator {
                 for i in 0..max_len {
                     for result in &results {
                         if let Some(item) = result.items.get(i)
-                            && seen_urls.insert(item.url.clone()) {
-                                merged_items.push(item.clone());
-                            }
+                            && seen_urls.insert(item.url.clone())
+                        {
+                            merged_items.push(item.clone());
+                        }
                     }
                 }
             }
@@ -269,7 +280,7 @@ impl Default for SearchAggregator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::derive::{SearchResultItem, ResultType};
+    use crate::derive::{ResultType, SearchResultItem};
 
     fn create_test_item(url: &str, title: &str) -> SearchResultItem {
         SearchResultItem {
@@ -304,9 +315,9 @@ mod tests {
     #[test]
     fn test_deduplication() {
         use std::collections::HashMap;
-        
+
         let agg = SearchAggregator::default();
-        
+
         let result1 = SearchResult {
             engine_name: "engine1".to_string(),
             total_results: Some(2),
@@ -340,9 +351,9 @@ mod tests {
     #[test]
     fn test_round_robin_strategy() {
         use std::collections::HashMap;
-        
+
         let agg = SearchAggregator::new(AggregationStrategy::RoundRobin, SortBy::Relevance);
-        
+
         let result1 = SearchResult {
             engine_name: "engine1".to_string(),
             total_results: Some(2),

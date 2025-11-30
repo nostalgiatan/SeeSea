@@ -16,10 +16,10 @@
 //!
 //! 统一管理所有隐私保护功能的协调器
 
-use crate::net::config::{PrivacyConfig, TlsConfig, DnsConfig};
 use super::fingerprint::FingerprintProtector;
-use super::user_agent::UserAgentGenerator;
 use super::headers::generate_fake_headers;
+use super::user_agent::UserAgentGenerator;
+use crate::net::config::{DnsConfig, PrivacyConfig, TlsConfig};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -52,9 +52,8 @@ impl PrivacyManager {
         tls_config: TlsConfig,
         doh_config: DnsConfig,
     ) -> Self {
-        let fingerprint_protector = Arc::new(
-            FingerprintProtector::new(tls_config.fingerprint_level)
-        );
+        let fingerprint_protector =
+            Arc::new(FingerprintProtector::new(tls_config.fingerprint_level));
         let ua_generator = Arc::new(UserAgentGenerator::new());
 
         Self {
@@ -116,9 +115,15 @@ impl PrivacyManager {
         let mut score = 0;
 
         // 基础隐私功能 (20分)
-        if privacy_config.fake_headers { score += 5; }
-        if privacy_config.fake_referer { score += 5; }
-        if privacy_config.remove_fingerprints { score += 10; }
+        if privacy_config.fake_headers {
+            score += 5;
+        }
+        if privacy_config.fake_referer {
+            score += 5;
+        }
+        if privacy_config.remove_fingerprints {
+            score += 10;
+        }
 
         // User-Agent 策略 (20分)
         score += match privacy_config.user_agent_strategy {
@@ -210,7 +215,7 @@ pub struct PrivacyStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::net::config::{UserAgentStrategy, TlsFingerprintLevel};
+    use crate::net::config::{TlsFingerprintLevel, UserAgentStrategy};
 
     #[tokio::test]
     async fn test_privacy_manager_creation() {
@@ -219,7 +224,7 @@ mod tests {
         let doh_config = DnsConfig::default();
 
         let manager = PrivacyManager::new(privacy_config, tls_config, doh_config);
-        
+
         let ua = manager.get_user_agent().await;
         assert!(!ua.is_empty());
     }
@@ -239,7 +244,7 @@ mod tests {
         doh_config.doh_enabled = true;
 
         let manager = PrivacyManager::new(privacy_config, tls_config, doh_config);
-        
+
         let level = manager.get_privacy_level().await;
         assert!(matches!(level, PrivacyLevel::High | PrivacyLevel::Maximum));
     }

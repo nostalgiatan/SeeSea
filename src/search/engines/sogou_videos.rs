@@ -14,14 +14,14 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::error::Error;
+use std::sync::Arc;
 
-use crate::derive::{
-    EngineCapabilities, EngineInfo, EngineStatus, EngineType,
-    ResultType, SearchResultItem, AboutInfo, RequestResponseEngine, RequestParams,
-};
 use super::utils::build_query_string_owned;
+use crate::derive::{
+    AboutInfo, EngineCapabilities, EngineInfo, EngineStatus, EngineType, RequestParams,
+    RequestResponseEngine, ResultType, SearchResultItem,
+};
 
 // 使用宏定义引擎结构体和基本方法
 define_engine! {
@@ -65,8 +65,9 @@ define_engine! {
 }
 
 impl SogouVideosEngine {
-
-    fn parse_html_results(html: &str) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn parse_html_results(
+        html: &str,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         use scraper::{Html, Selector};
 
         if html.is_empty() {
@@ -103,20 +104,20 @@ impl SogouVideosEngine {
             }
 
             // Extract video URL
-            let video_url = title_elem.value().attr("href")
-                .unwrap_or("")
-                .to_string();
+            let video_url = title_elem.value().attr("href").unwrap_or("").to_string();
 
             if video_url.is_empty() {
                 continue;
             }
 
             // Extract thumbnail image
-            let img_selector = Selector::parse("img")
-                .expect("valid selector");
-            let thumbnail_url = result.select(&img_selector).next()
+            let img_selector = Selector::parse("img").expect("valid selector");
+            let thumbnail_url = result
+                .select(&img_selector)
+                .next()
                 .and_then(|img| {
-                    img.value().attr("src")
+                    img.value()
+                        .attr("src")
                         .or_else(|| img.value().attr("data-src"))
                         .or_else(|| img.value().attr("data-original"))
                 })
@@ -135,7 +136,9 @@ impl SogouVideosEngine {
                 .or_else(|_| Selector::parse("p.video-desc"))
                 .or_else(|_| Selector::parse("span.txt"))
                 .expect("valid selector");
-            let content = result.select(&content_selector).next()
+            let content = result
+                .select(&content_selector)
+                .next()
                 .map(|c| c.text().collect::<String>().trim().to_string())
                 .unwrap_or_default();
 
@@ -143,7 +146,9 @@ impl SogouVideosEngine {
             let duration_selector = Selector::parse("span.duration")
                 .or_else(|_| Selector::parse("span.time"))
                 .expect("valid selector");
-            let duration = result.select(&duration_selector).next()
+            let duration = result
+                .select(&duration_selector)
+                .next()
                 .map(|d| d.text().collect::<String>().trim().to_string())
                 .filter(|d| !d.is_empty());
 
@@ -175,7 +180,11 @@ impl SogouVideosEngine {
 impl RequestResponseEngine for SogouVideosEngine {
     type Response = String;
 
-    fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>> {
+    fn request(
+        &self,
+        query: &str,
+        params: &mut RequestParams,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Sogou video search URL
         let query_params = vec![
             ("query", query.to_string()),
@@ -191,12 +200,18 @@ impl RequestResponseEngine for SogouVideosEngine {
         Ok(())
     }
 
-    async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
+    async fn fetch(
+        &self,
+        params: &RequestParams,
+    ) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
         // 使用通用引擎的fetch方法
         self.generic.fetch(params).await
     }
 
-    fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+    fn response(
+        &self,
+        resp: Self::Response,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
         Self::parse_html_results(&resp)
     }
 }

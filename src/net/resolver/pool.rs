@@ -75,12 +75,13 @@ impl DnsPool {
     /// 如果缓存存在且未过期，返回 IP 列表
     pub async fn get(&self, hostname: &str) -> Option<Vec<IpAddr>> {
         let cache = self.cache.read().await;
-        
+
         if let Some(entry) = cache.get(hostname)
-            && !entry.is_expired() {
-                return Some(entry.ips.clone());
-            }
-        
+            && !entry.is_expired()
+        {
+            return Some(entry.ips.clone());
+        }
+
         None
     }
 
@@ -161,9 +162,9 @@ mod tests {
     async fn test_dns_pool_set_and_get() {
         let pool = DnsPool::default();
         let ips = vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))];
-        
+
         pool.set("example.com".to_string(), ips.clone(), None).await;
-        
+
         let cached = pool.get("example.com").await;
         assert!(cached.is_some());
         assert_eq!(cached.unwrap(), ips);
@@ -173,12 +174,12 @@ mod tests {
     async fn test_dns_pool_expiration() {
         let pool = DnsPool::new(Duration::from_millis(100));
         let ips = vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))];
-        
+
         pool.set("example.com".to_string(), ips, None).await;
-        
+
         // 等待过期
         tokio::time::sleep(Duration::from_millis(150)).await;
-        
+
         let cached = pool.get("example.com").await;
         assert!(cached.is_none());
     }
@@ -187,10 +188,10 @@ mod tests {
     async fn test_dns_pool_clear() {
         let pool = DnsPool::default();
         let ips = vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))];
-        
+
         pool.set("example.com".to_string(), ips, None).await;
         pool.clear().await;
-        
+
         let stats = pool.stats().await;
         assert_eq!(stats.total_entries, 0);
     }
@@ -199,15 +200,16 @@ mod tests {
     async fn test_dns_pool_cleanup_expired() {
         let pool = DnsPool::new(Duration::from_millis(100));
         let ips = vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))];
-        
+
         pool.set("example.com".to_string(), ips.clone(), None).await;
-        pool.set("test.com".to_string(), ips, Some(Duration::from_secs(300))).await;
-        
+        pool.set("test.com".to_string(), ips, Some(Duration::from_secs(300)))
+            .await;
+
         // 等待第一个条目过期
         tokio::time::sleep(Duration::from_millis(150)).await;
-        
+
         pool.cleanup_expired().await;
-        
+
         let stats = pool.stats().await;
         assert_eq!(stats.total_entries, 1); // 只剩下未过期的
     }
@@ -216,10 +218,10 @@ mod tests {
     async fn test_dns_pool_stats() {
         let pool = DnsPool::default();
         let ips = vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))];
-        
+
         pool.set("example.com".to_string(), ips.clone(), None).await;
         pool.set("test.com".to_string(), ips, None).await;
-        
+
         let stats = pool.stats().await;
         assert_eq!(stats.total_entries, 2);
         assert_eq!(stats.active_entries, 2);

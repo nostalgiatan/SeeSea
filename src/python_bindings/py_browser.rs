@@ -63,8 +63,11 @@ impl PyBrowserConfig {
     fn __repr__(&self) -> String {
         format!(
             "PyBrowserConfig(headless={}, stealth={}, browser={}, viewport={}x{})",
-            self.headless, self.stealth, self.browser_type, 
-            self.viewport_width, self.viewport_height
+            self.headless,
+            self.stealth,
+            self.browser_type,
+            self.viewport_width,
+            self.viewport_height
         )
     }
 }
@@ -86,23 +89,23 @@ impl PyBrowserEngineClient {
     }
 
     /// 注册Playwright回调函数
-    /// 
+    ///
     /// 这个函数将从Python端调用，传入一个async函数来执行浏览器操作
     pub fn register_playwright(&mut self, callback: Py<PyAny>) {
         self.playwright_callback = Some(callback);
     }
 
     /// 执行浏览器操作
-    /// 
+    ///
     /// # 参数
-    /// 
+    ///
     /// * `url` - 目标URL
     /// * `actions` - 操作列表（字典列表）
     /// * `selectors` - 选择器映射
     /// * `config` - 浏览器配置
-    /// 
+    ///
     /// # 返回值
-    /// 
+    ///
     /// 返回提取的数据字典
     pub fn execute<'py>(
         &self,
@@ -125,7 +128,7 @@ impl PyBrowserEngineClient {
             Ok(result.extract(py)?)
         } else {
             Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                "Playwright callback not registered. Call register_playwright() first."
+                "Playwright callback not registered. Call register_playwright() first.",
             ))
         }
     }
@@ -149,14 +152,7 @@ mod tests {
 
     #[test]
     fn test_browser_config_creation() {
-        let config = PyBrowserConfig::new(
-            true,
-            true,
-            "chromium".to_string(),
-            None,
-            1920,
-            1080,
-        );
+        let config = PyBrowserConfig::new(true, true, "chromium".to_string(), None, 1920, 1080);
         assert!(config.headless);
         assert!(config.stealth);
         assert_eq!(config.browser_type, "chromium");

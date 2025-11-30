@@ -33,20 +33,31 @@ impl RssFetcher {
     }
 
     /// 获取 RSS feed 内容
-    pub async fn fetch(&self, url: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn fetch(
+        &self,
+        url: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         // 使用 HTTP 客户端获取内容
-        let response = self.client.get(url, None).await
+        let response = self
+            .client
+            .get(url, None)
+            .await
             .map_err(|e| format!("Failed to fetch RSS feed: {e}"))?;
 
         // 提取响应文本
-        let text = response.text().await
+        let text = response
+            .text()
+            .await
             .map_err(|e| format!("Failed to read response text: {e}"))?;
 
         Ok(text)
     }
 
     /// 获取并解析 RSS feed
-    pub async fn fetch_and_parse(&self, query: &RssFeedQuery) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn fetch_and_parse(
+        &self,
+        query: &RssFeedQuery,
+    ) -> Result<RssFeed, Box<dyn std::error::Error + Send + Sync>> {
         use crate::rss::parser::RssParser;
 
         // 获取内容
@@ -65,8 +76,10 @@ impl RssFetcher {
         if !query.filter_keywords.is_empty() {
             feed.items.retain(|item| {
                 query.filter_keywords.iter().any(|keyword| {
-                    item.title.to_lowercase().contains(&keyword.to_lowercase()) ||
-                    item.description.as_ref().is_some_and(|desc| desc.to_lowercase().contains(&keyword.to_lowercase()))
+                    item.title.to_lowercase().contains(&keyword.to_lowercase())
+                        || item.description.as_ref().is_some_and(|desc| {
+                            desc.to_lowercase().contains(&keyword.to_lowercase())
+                        })
                 })
             });
         }

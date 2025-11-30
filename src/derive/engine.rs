@@ -14,17 +14,17 @@
 
 //! 搜索引擎核心 trait 定义
 
-use async_trait::async_trait;
 use crate::derive::types::*;
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::error::Error;
 
 /// 搜索引擎核心 trait
-/// 
+///
 /// 所有搜索引擎都必须实现这个 trait，它定义了搜索引擎的核心功能和接口。
-/// 
+///
 /// # 示例
-/// 
+///
 /// ```ignore
 /// #[async_trait]
 /// impl SearchEngine for MyEngine {
@@ -44,28 +44,31 @@ use std::error::Error;
 #[async_trait]
 pub trait SearchEngine: Send + Sync {
     /// 获取引擎信息
-    /// 
+    ///
     /// 返回引擎的元数据和能力信息，包括名称、类型、支持的功能等。
     fn info(&self) -> &EngineInfo;
 
     /// 执行搜索
-    /// 
+    ///
     /// # 参数
     /// - `query`: 搜索查询对象，包含查询关键词、分页信息、过滤条件等
-    /// 
+    ///
     /// # 返回
     /// 包含搜索结果的 `SearchResult` 对象，或搜索过程中发生的错误
-    async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
+    async fn search(
+        &self,
+        query: &SearchQuery,
+    ) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
 
     /// 检查引擎是否可用
-    /// 
+    ///
     /// 默认实现总是返回 `true`，具体实现可以重写此方法来检查引擎的实际可用性。
     async fn is_available(&self) -> bool {
         true
     }
 
     /// 获取引擎健康状态
-    /// 
+    ///
     /// 返回引擎的健康状态，包括响应时间、错误信息等。
     async fn health_check(&self) -> Result<EngineHealth, Box<dyn Error + Send + Sync>> {
         Ok(EngineHealth {
@@ -76,17 +79,17 @@ pub trait SearchEngine: Send + Sync {
     }
 
     /// 验证查询参数
-    /// 
+    ///
     /// 检查查询参数是否有效，包括：
     /// - 查询字符串是否为空
     /// - 查询字符串长度是否超过限制
     /// - 页面大小是否超过引擎支持的最大值
     /// - 是否使用了引擎不支持的时间范围
     /// - 是否包含了引擎不支持的自定义参数
-    /// 
+    ///
     /// # 参数
     /// - `query`: 要验证的搜索查询对象
-    /// 
+    ///
     /// # 返回
     /// 如果验证通过，返回 `Ok(())`，否则返回包含错误信息的 `ValidationError`
     fn validate_query(&self, query: &SearchQuery) -> Result<(), ValidationError> {
@@ -96,14 +99,19 @@ pub trait SearchEngine: Send + Sync {
         }
 
         if query.query.len() > 1000 {
-            return Err(crate::errors::field_too_long("query", 1000, query.query.len()));
+            return Err(crate::errors::field_too_long(
+                "query",
+                1000,
+                query.query.len(),
+            ));
         }
 
         // 页面大小验证
         if query.page_size > self.info().capabilities.max_page_size {
-            return Err(crate::errors::validation_error(
-                format!("页面大小超出限制，最大{}个结果", self.info().capabilities.max_page_size)
-            ));
+            return Err(crate::errors::validation_error(format!(
+                "页面大小超出限制，最大{}个结果",
+                self.info().capabilities.max_page_size
+            )));
         }
 
         // 时间范围验证
@@ -133,7 +141,6 @@ pub struct EngineHealth {
     pub error_message: Option<String>,
 }
 
-
 /// 基础搜索引擎实现模板
 ///
 /// 这个 trait 提供了基于 HTTP 请求的搜索引擎的抽象模板。
@@ -143,18 +150,18 @@ pub struct EngineHealth {
 ///
 /// - `HttpClient`: 关联类型，表示 HTTP 客户端的抽象
 /// - `HttpResponse`: 关联类型，表示 HTTP 响应的抽象
-/// 
+///
 /// 这种设计允许不同的 HTTP 客户端实现（如 reqwest, hyper 等）
 /// 都可以通过实现这些关联类型来使用此模板。
 #[async_trait]
 pub trait BaseEngine: SearchEngine {
     /// HTTP 客户端类型（抽象）
-    /// 
+    ///
     /// 具体实现应由 net/client 模块提供
     type HttpClient;
-    
+
     /// HTTP 响应类型（抽象）
-    /// 
+    ///
     /// 具体实现应由 net/client 模块提供
     type HttpResponse;
 
@@ -162,31 +169,39 @@ pub trait BaseEngine: SearchEngine {
     fn http_client(&self) -> &Self::HttpClient;
 
     /// 构建请求 URL
-    /// 
+    ///
     /// 根据查询参数构建完整的搜索引擎 API URL
     fn build_url(&self, query: &SearchQuery) -> Result<String, ValidationError>;
 
     /// 发送 HTTP GET 请求
-    /// 
+    ///
     /// 这是一个抽象方法，具体的 HTTP 请求逻辑由实现者提供。
     /// 通常会调用 net/client 模块的功能。
-    async fn http_get(&self, url: &str) -> Result<Self::HttpResponse, Box<dyn Error + Send + Sync>>;
+    async fn http_get(&self, url: &str)
+    -> Result<Self::HttpResponse, Box<dyn Error + Send + Sync>>;
 
     /// 解析 HTTP 响应为搜索结果
-    /// 
+    ///
     /// 将搜索引擎返回的原始响应解析为标准化的 SearchResult
-    async fn parse_response(&self, response: Self::HttpResponse, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
+    async fn parse_response(
+        &self,
+        response: Self::HttpResponse,
+        query: &SearchQuery,
+    ) -> Result<SearchResult, Box<dyn Error + Send + Sync>>;
 
     /// 默认搜索实现（使用模板方法模式）
-    /// 
+    ///
     /// 这个方法提供了标准的搜索流程：
     /// 1. 验证查询参数
     /// 2. 构建请求 URL
     /// 3. 发送 HTTP 请求
     /// 4. 解析响应
-    /// 
+    ///
     /// 实现者只需要实现抽象方法即可复用这个流程。
-    async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
+    async fn search(
+        &self,
+        query: &SearchQuery,
+    ) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
         // 1. 验证查询参数
         self.validate_query(query)?;
 
@@ -228,24 +243,37 @@ pub trait RequestResponseEngine: SearchEngine {
     type Response;
 
     /// 准备请求参数（类似 searxng 的 request() 函数）
-    /// 
+    ///
     /// 接收查询字符串和请求参数，修改参数以设置 URL、headers 等
-    fn request(&self, query: &str, params: &mut RequestParams) -> Result<(), Box<dyn Error + Send + Sync>>;
+    fn request(
+        &self,
+        query: &str,
+        params: &mut RequestParams,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>;
 
     /// 发送请求并获取响应
-    /// 
+    ///
     /// 由实现者提供具体的 HTTP 请求逻辑
-    async fn fetch(&self, params: &RequestParams) -> Result<Self::Response, Box<dyn Error + Send + Sync>>;
+    async fn fetch(
+        &self,
+        params: &RequestParams,
+    ) -> Result<Self::Response, Box<dyn Error + Send + Sync>>;
 
     /// 解析响应为结果列表（类似 searxng 的 response() 函数）
-    /// 
+    ///
     /// 接收响应对象，返回搜索结果项列表
-    fn response(&self, resp: Self::Response) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>>;
+    fn response(
+        &self,
+        resp: Self::Response,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>>;
 
     /// 默认搜索实现（使用 request/response 模式）
-    async fn search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
+    async fn search(
+        &self,
+        query: &SearchQuery,
+    ) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
         let start_time = std::time::Instant::now();
-        
+
         // 1. 准备请求参数
         let mut params = RequestParams::from_query(query);
         self.request(&query.query, &mut params)?;
@@ -279,10 +307,19 @@ pub trait CacheableEngine: SearchEngine {
     async fn get_from_cache(&self, key: &str) -> Option<SearchResult>;
 
     /// 存储到缓存
-    async fn store_to_cache(&self, key: &str, result: &SearchResult, ttl: Option<std::time::Duration>) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn store_to_cache(
+        &self,
+        key: &str,
+        result: &SearchResult,
+        ttl: Option<std::time::Duration>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>;
 
     /// 带缓存的搜索
-    async fn cached_search(&self, query: &SearchQuery, ttl: Option<std::time::Duration>) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
+    async fn cached_search(
+        &self,
+        query: &SearchQuery,
+        ttl: Option<std::time::Duration>,
+    ) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
         let cache_key = self.cache_key(query);
 
         // 尝试从缓存获取
@@ -306,7 +343,9 @@ pub trait CacheableEngine: SearchEngine {
 #[async_trait]
 pub trait RetryableEngine: SearchEngine {
     /// 最大重试次数
-    fn max_retries(&self) -> usize { 3 }
+    fn max_retries(&self) -> usize {
+        3
+    }
 
     /// 重试延迟
     fn retry_delay(&self, attempt: usize) -> std::time::Duration {
@@ -322,13 +361,16 @@ pub trait RetryableEngine: SearchEngine {
     /// 判断错误是否可重试
     fn is_retryable_error(&self, error: &dyn Error) -> bool {
         // 网络错误、超时等可以重试
-        error.to_string().contains("timeout") ||
-        error.to_string().contains("network") ||
-        error.to_string().contains("connection")
+        error.to_string().contains("timeout")
+            || error.to_string().contains("network")
+            || error.to_string().contains("connection")
     }
 
     /// 带重试的搜索
-    async fn retryable_search(&self, query: &SearchQuery) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
+    async fn retryable_search(
+        &self,
+        query: &SearchQuery,
+    ) -> Result<SearchResult, Box<dyn Error + Send + Sync>> {
         let mut last_error = None;
 
         for attempt in 0..=self.max_retries() {
@@ -336,10 +378,12 @@ pub trait RetryableEngine: SearchEngine {
                 Ok(result) => return Ok(result),
                 Err(error) => {
                     if self.should_retry(&error, attempt) {
-                        tracing::warn!("搜索失败，{}ms后重试 (尝试 {}/{})",
-                                     self.retry_delay(attempt).as_millis(),
-                                     attempt + 1,
-                                     self.max_retries());
+                        tracing::warn!(
+                            "搜索失败，{}ms后重试 (尝试 {}/{})",
+                            self.retry_delay(attempt).as_millis(),
+                            attempt + 1,
+                            self.max_retries()
+                        );
                         tokio::time::sleep(self.retry_delay(attempt)).await;
                         last_error = Some(error);
                     } else {

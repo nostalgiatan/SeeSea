@@ -16,8 +16,8 @@
 //!
 //! 提供基于向量的语义相似度计算功能
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// 简单的TF-IDF向量化器
 #[derive(Debug, Clone)]
@@ -52,7 +52,7 @@ impl SimpleVectorizer {
     pub fn vectorize(&self, text: &str) -> Vec<f64> {
         let tokens = self.tokenize(text);
         let mut term_freq: HashMap<String, usize> = HashMap::new();
-        
+
         // 计算词频
         for token in &tokens {
             *term_freq.entry(token.clone()).or_insert(0) += 1;
@@ -60,7 +60,7 @@ impl SimpleVectorizer {
 
         // 创建固定大小的向量
         let mut vector = vec![0.0; 100]; // 使用简单的hash映射到100维
-        
+
         for (term, freq) in term_freq {
             let hash = self.hash_term(&term);
             let index = hash % 100;
@@ -78,7 +78,7 @@ impl SimpleVectorizer {
     fn hash_term(&self, term: &str) -> usize {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         term.hash(&mut hasher);
         hasher.finish() as usize
@@ -162,10 +162,10 @@ mod tests {
         let vec1 = vectorizer.vectorize("rust programming");
         let vec2 = vectorizer.vectorize("rust programming language");
         let vec3 = vectorizer.vectorize("python data science");
-        
+
         let sim1 = vectorizer.cosine_similarity(&vec1, &vec2);
         let sim2 = vectorizer.cosine_similarity(&vec1, &vec3);
-        
+
         // Similar queries should have higher similarity
         assert!(sim1 > sim2);
     }
@@ -175,7 +175,7 @@ mod tests {
         let vectorizer = SimpleVectorizer::new();
         let vec1 = vectorizer.vectorize("test query");
         let vec2 = vectorizer.vectorize("test query");
-        
+
         let sim = vectorizer.cosine_similarity(&vec1, &vec2);
         assert!((sim - 1.0).abs() < 0.01); // Should be very close to 1.0
     }

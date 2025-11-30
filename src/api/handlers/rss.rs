@@ -16,14 +16,14 @@
 //!
 //! 处理 RSS feed 相关的 API 请求
 
-use axum::{
-    extract::{State, Json},
-    response::{IntoResponse, Response},
-    http::StatusCode,
-};
-use serde::{Deserialize, Serialize};
 use crate::api::on::ApiState;
 use crate::api::types::ApiErrorResponse;
+use axum::{
+    extract::{Json, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use serde::{Deserialize, Serialize};
 
 /// RSS Feed 请求
 #[derive(Debug, Deserialize)]
@@ -86,15 +86,13 @@ pub struct TemplateAddResponse {
 }
 
 /// 处理获取RSS feeds列表请求
-pub async fn handle_rss_feeds_list(
-    State(_state): State<ApiState>,
-) -> Response {
+pub async fn handle_rss_feeds_list(State(_state): State<ApiState>) -> Response {
     // TODO: 实现获取所有RSS feeds列表
     let response = serde_json::json!({
         "feeds": [],
         "total": 0
     });
-    
+
     (StatusCode::OK, Json(response)).into_response()
 }
 
@@ -109,17 +107,15 @@ pub async fn handle_rss_fetch(
         message: "RSS fetch not yet implemented".to_string(),
         details: None,
     };
-    
+
     (StatusCode::NOT_IMPLEMENTED, Json(error)).into_response()
 }
 
 /// 处理获取RSS模板列表请求
-pub async fn handle_rss_templates_list(
-    State(_state): State<ApiState>,
-) -> Response {
+pub async fn handle_rss_templates_list(State(_state): State<ApiState>) -> Response {
     // TODO: 实现RSS模板列表
     let templates = vec!["xinhua"];
-    
+
     (StatusCode::OK, Json(templates)).into_response()
 }
 
@@ -134,6 +130,6 @@ pub async fn handle_rss_template_add(
         message: "Template add not yet implemented".to_string(),
         details: None,
     };
-    
+
     (StatusCode::NOT_IMPLEMENTED, Json(error)).into_response()
 }

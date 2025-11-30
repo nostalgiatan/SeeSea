@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod rss_tests {
-    use seesea_core::derive::rss::{RssFeedItem, RssFeedMeta, RssFeed, RssFeedQuery};
+    use seesea_core::derive::rss::{RssFeed, RssFeedItem, RssFeedMeta, RssFeedQuery};
 
     #[test]
     fn test_rss_feed_item_creation() {
@@ -18,7 +18,7 @@ mod rss_tests {
             enclosures: vec![],
             custom_fields: std::collections::HashMap::new(),
         };
-        
+
         assert_eq!(item.title, "Test Article");
         assert_eq!(item.link, "https://example.com/article");
         assert_eq!(item.categories.len(), 2);
@@ -36,7 +36,7 @@ mod rss_tests {
             pub_date: None,
             last_build_date: None,
         };
-        
+
         assert_eq!(meta.title, "Test Feed");
         assert_eq!(meta.link, "https://example.com");
     }
@@ -53,12 +53,12 @@ mod rss_tests {
             pub_date: None,
             last_build_date: None,
         };
-        
+
         let feed = RssFeed {
             meta,
             items: vec![],
         };
-        
+
         assert_eq!(feed.meta.title, "Test Feed");
         assert_eq!(feed.items.len(), 0);
     }
@@ -71,7 +71,7 @@ mod rss_tests {
             filter_keywords: vec![],
             after_date: None,
         };
-        
+
         assert_eq!(query.url, "https://example.com/rss");
         assert!(query.max_items.is_none());
         assert!(query.filter_keywords.is_empty());
@@ -85,7 +85,7 @@ mod rss_tests {
             filter_keywords: vec!["rust".to_string(), "programming".to_string()],
             after_date: None,
         };
-        
+
         assert_eq!(query.max_items, Some(10));
         assert_eq!(query.filter_keywords.len(), 2);
     }

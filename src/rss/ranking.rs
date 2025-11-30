@@ -16,8 +16,8 @@
 //!
 //! 基于持久化关键词对 RSS 项目进行相关性评分和排名
 
+use crate::derive::rss::{RssFeed, RssFeedItem};
 use serde::{Deserialize, Serialize};
-use crate::derive::rss::{RssFeedItem, RssFeed};
 
 /// 关键词配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,17 +121,17 @@ impl RssRankingEngine {
 
         for kw_config in &self.config.keywords {
             let keyword_lower = kw_config.keyword.to_lowercase();
-            
+
             // 检查关键词是否在文本中
             if text.contains(&keyword_lower) {
                 // 计算出现次数
                 let count = text.matches(&keyword_lower).count();
-                
+
                 // 基于权重和出现次数计算分数
                 // 使用对数缩放避免过多重复关键词导致分数过高
                 let keyword_score = kw_config.weight * (1.0 + (count as f64).ln());
                 score += keyword_score;
-                
+
                 matched_keywords.push(kw_config.keyword.clone());
             } else if kw_config.required {
                 // 必需关键词未匹配，直接返回0分
@@ -153,9 +153,10 @@ impl RssRankingEngine {
     /// 对 RSS Feed 进行评分和排名
     pub fn rank_feed(&self, feed: &RssFeed) -> RssRanking {
         let total_items = feed.items.len();
-        
+
         // 对所有项目评分
-        let mut scored_items: Vec<ScoredRssItem> = feed.items
+        let mut scored_items: Vec<ScoredRssItem> = feed
+            .items
             .iter()
             .map(|item| self.score_item(item))
             .filter(|scored| scored.score >= self.config.min_score)
@@ -163,7 +164,9 @@ impl RssRankingEngine {
 
         // 按评分降序排序
         scored_items.sort_by(|a, b| {
-            b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // 限制结果数量
@@ -180,7 +183,7 @@ impl RssRankingEngine {
     /// 对多个 RSS Feed 进行评分和排名
     pub fn rank_feeds(&self, feeds: &[RssFeed]) -> RssRanking {
         let total_items: usize = feeds.iter().map(|f| f.items.len()).sum();
-        
+
         // 对所有 feed 的所有项目评分
         let mut scored_items: Vec<ScoredRssItem> = feeds
             .iter()
@@ -191,7 +194,9 @@ impl RssRankingEngine {
 
         // 按评分降序排序
         scored_items.sort_by(|a, b| {
-            b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // 去重（基于链接）
@@ -254,7 +259,7 @@ mod tests {
 
         let engine = RssRankingEngine::new(config);
         let item = create_test_item("Rust Programming Guide", "Learn Rust programming language");
-        
+
         let scored = engine.score_item(&item);
         assert!(scored.score > 0.0);
         assert_eq!(scored.matched_keywords.len(), 2);
@@ -264,20 +269,18 @@ mod tests {
     fn test_required_keyword() {
         let config = RankingConfig {
             name: "test".to_string(),
-            keywords: vec![
-                RankingKeyword::required("rust", 5.0),
-            ],
+            keywords: vec![RankingKeyword::required("rust", 5.0)],
             min_score: 0.0,
             max_results: 10,
         };
 
         let engine = RssRankingEngine::new(config);
-        
+
         // 包含必需关键词
         let item1 = create_test_item("Rust Guide", "Learn Rust");
         let scored1 = engine.score_item(&item1);
         assert!(scored1.score > 0.0);
-        
+
         // 不包含必需关键词
         let item2 = create_test_item("Python Guide", "Learn Python");
         let scored2 = engine.score_item(&item2);
@@ -297,7 +300,7 @@ mod tests {
         };
 
         let engine = RssRankingEngine::new(config);
-        
+
         let feed = RssFeed {
             meta: RssFeedMeta {
                 title: "Tech News".to_string(),
@@ -320,7 +323,7 @@ mod tests {
         let ranking = engine.rank_feed(&feed);
         assert!(ranking.items.len() <= 3);
         assert!(ranking.total_items == 4);
-        
+
         // 第一个应该是包含 rust 和 ai 的项目
         if !ranking.items.is_empty() {
             assert!(ranking.items[0].score > 0.0);
@@ -331,9 +334,7 @@ mod tests {
     fn test_multi_feed_ranking() {
         let config = RankingConfig {
             name: "multi".to_string(),
-            keywords: vec![
-                RankingKeyword::new("tech", 5.0),
-            ],
+            keywords: vec![RankingKeyword::new("tech", 5.0)],
             min_score: 1.0,
             max_results: 10,
         };
@@ -351,9 +352,7 @@ mod tests {
                 pub_date: None,
                 image: None,
             },
-            items: vec![
-                create_test_item("Tech News 1", "Latest tech developments"),
-            ],
+            items: vec![create_test_item("Tech News 1", "Latest tech developments")],
         };
 
         let feed2 = RssFeed {
@@ -367,9 +366,7 @@ mod tests {
                 pub_date: None,
                 image: None,
             },
-            items: vec![
-                create_test_item("Tech News 2", "More tech news"),
-            ],
+            items: vec![create_test_item("Tech News 2", "More tech news")],
         };
 
         let ranking = engine.rank_feeds(&[feed1, feed2]);
@@ -381,9 +378,7 @@ mod tests {
     fn test_deduplication() {
         let config = RankingConfig {
             name: "dedup".to_string(),
-            keywords: vec![
-                RankingKeyword::new("test", 5.0),
-            ],
+            keywords: vec![RankingKeyword::new("test", 5.0)],
             min_score: 0.0,
             max_results: 10,
         };
@@ -401,9 +396,7 @@ mod tests {
                 pub_date: None,
                 image: None,
             },
-            items: vec![
-                create_test_item("Test Article", "Test content"),
-            ],
+            items: vec![create_test_item("Test Article", "Test content")],
         };
 
         let feed2 = RssFeed {
@@ -431,9 +424,7 @@ mod tests {
     fn test_min_score_filtering() {
         let config = RankingConfig {
             name: "filter".to_string(),
-            keywords: vec![
-                RankingKeyword::new("specific", 2.0),
-            ],
+            keywords: vec![RankingKeyword::new("specific", 2.0)],
             min_score: 5.0, // High threshold
             max_results: 10,
         };
@@ -462,4 +453,3 @@ mod tests {
         assert!(ranking.items.len() <= 1);
     }
 }
-

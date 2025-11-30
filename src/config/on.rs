@@ -16,10 +16,8 @@
 //!
 //! 提供配置加载、验证、管理的外部接口
 
-use crate::config::{
-    common::ConfigValidationResult, ConfigError, ConfigLoadResult, SeeSeaConfig,
-};
 use crate::config::config::ConfigSummary;
+use crate::config::{ConfigError, ConfigLoadResult, SeeSeaConfig, common::ConfigValidationResult};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -95,7 +93,7 @@ impl ConfigManager {
         // 如果配置文件存在，从文件加载配置并覆盖默认配置
         if config_path.exists() {
             let file_config = Self::load_from_file(&config_path).await?;
-            
+
             // 合并配置：文件配置覆盖默认配置
             config = file_config;
         } else {
@@ -211,8 +209,8 @@ impl ConfigManager {
             .map_err(|e| ConfigError::IoError(e.to_string()))?;
 
         // 尝试解析为 TOML
-        let config: SeeSeaConfig = toml::from_str(&config_str)
-            .map_err(|e| ConfigError::ParseError(e.to_string()))?;
+        let config: SeeSeaConfig =
+            toml::from_str(&config_str).map_err(|e| ConfigError::ParseError(e.to_string()))?;
 
         Ok(config)
     }
@@ -221,9 +219,10 @@ impl ConfigManager {
     fn apply_environment_overrides(config: &mut SeeSeaConfig, environment: &str) {
         // 从环境变量读取配置覆盖
         if let Ok(port) = std::env::var("SEEA_PORT")
-            && let Ok(port) = port.parse::<u16>() {
-                config.server.port = port;
-            }
+            && let Ok(port) = port.parse::<u16>()
+        {
+            config.server.port = port;
+        }
 
         if let Ok(debug) = std::env::var("SEEA_DEBUG") {
             config.general.debug = debug.parse().unwrap_or(false);
@@ -256,20 +255,18 @@ pub async fn init_config() -> Result<Arc<ConfigManager>, ConfigError> {
     if let Some(config) = GLOBAL_CONFIG.get() {
         return Ok(config.clone());
     }
-    
+
     let manager = Arc::new(ConfigManager::new(None).await?);
     let _ = GLOBAL_CONFIG.set(manager.clone());
     Ok(manager)
 }
 
 /// 初始化带环境的全局配置管理器
-pub async fn init_config_with_env(
-    environment: &str,
-) -> Result<Arc<ConfigManager>, ConfigError> {
+pub async fn init_config_with_env(environment: &str) -> Result<Arc<ConfigManager>, ConfigError> {
     if let Some(config) = GLOBAL_CONFIG.get() {
         return Ok(config.clone());
     }
-    
+
     let manager = Arc::new(ConfigManager::with_environment(None, environment).await?);
     let _ = GLOBAL_CONFIG.set(manager.clone());
     Ok(manager)
@@ -304,11 +301,9 @@ pub async fn is_production_ready() -> Option<bool> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[tokio::test]
     async fn test_config_manager_creation() {
@@ -335,7 +330,9 @@ mod tests {
     #[tokio::test]
     async fn test_config_validation() {
         // 使用开发环境配置，避免生产环境的严格验证
-        let manager = ConfigManager::with_environment(None, "development").await.unwrap();
+        let manager = ConfigManager::with_environment(None, "development")
+            .await
+            .unwrap();
         let result = manager.validate().await;
         // 验证结果应该是有效的，或者至少不应该包含致命错误
         assert!(result.is_valid || result.errors.is_empty());
@@ -358,13 +355,13 @@ mod tests {
     async fn test_production_ready_check() {
         // 直接使用SeeSeaConfig实例进行测试
         let mut config = SeeSeaConfig::production();
-        
+
         // 生产配置应该是就绪的
         assert!(config.is_production_ready());
-        
+
         // 修改为不就绪的配置
         config.server.secret_key = "change-me-in-production".to_string();
-        
+
         assert!(!config.is_production_ready());
     }
 }

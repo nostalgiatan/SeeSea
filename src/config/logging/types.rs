@@ -105,8 +105,7 @@ pub enum RotationStrategy {
 }
 
 /// 日志过滤器配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LogFilterConfig {
     /// 是否启用过滤器
     pub enabled: bool,
@@ -399,10 +398,9 @@ impl LoggingConfig {
         let mut result = ConfigValidationResult::success();
 
         // 检查文件路径
-        if matches!(self.output, LogOutput::File | LogOutput::Both)
-            && self.file_path.is_none() {
-                result.add_error("文件输出时必须指定文件路径".to_string());
-            }
+        if matches!(self.output, LogOutput::File | LogOutput::Both) && self.file_path.is_none() {
+            result.add_error("文件输出时必须指定文件路径".to_string());
+        }
 
         // 检查轮转配置
         if self.rotation.enabled {
@@ -461,7 +459,9 @@ impl LoggingConfig {
 
     /// 是否应该忽略该模块
     pub fn should_ignore_module(&self, module: &str) -> bool {
-        self.module_levels.ignore_modules.contains(&module.to_string())
+        self.module_levels
+            .ignore_modules
+            .contains(&module.to_string())
     }
 
     /// 检查是否启用结构化日志
@@ -498,7 +498,6 @@ impl Default for LogRotationConfig {
         }
     }
 }
-
 
 impl Default for LogPerformanceConfig {
     fn default() -> Self {
@@ -542,7 +541,7 @@ impl Default for BatchProcessorConfig {
     fn default() -> Self {
         Self {
             max_batch_size: 512,
-            scheduled_delay: 5000, // 5 seconds
+            scheduled_delay: 5000,     // 5 seconds
             max_export_timeout: 30000, // 30 seconds
             max_export_batch_size: 512,
         }

@@ -16,13 +16,13 @@
 //!
 //! 基于向量相似度的智能缓存系统
 
-use crate::cache::manager::{CacheManager, CacheError};
-use crate::cache::semantic::{SimpleVectorizer, QueryVector};
+use crate::cache::manager::{CacheError, CacheManager};
+use crate::cache::semantic::{QueryVector, SimpleVectorizer};
 use crate::derive::types::{SearchQuery, SearchResult, SearchResultItem};
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
-use std::collections::HashSet;
-use serde::{Deserialize, Serialize};
 
 type Result<T> = std::result::Result<T, CacheError>;
 
@@ -98,7 +98,7 @@ impl SemanticCache {
     fn hash_query(&self, query: &str) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         query.to_lowercase().hash(&mut hasher);
         format!("{:x}", hasher.finish())
@@ -108,11 +108,13 @@ impl SemanticCache {
     fn store_query_vector(&self, query: &str, vector: &[f64]) -> Result<String> {
         let query_hash = self.hash_query(query);
         let key = self.generate_vector_key(&query_hash);
-        
+
         let qvec = QueryVector::new(query.to_string(), vector.to_vec());
-        let data = bincode::serde::encode_to_vec(&qvec, bincode::config::standard())
-            .map_err(|e| CacheError::SerializationError(format!("Failed to serialize query vector: {e}")))?;
-        
+        let data =
+            bincode::serde::encode_to_vec(&qvec, bincode::config::standard()).map_err(|e| {
+                CacheError::SerializationError(format!("Failed to serialize query vector: {e}"))
+            })?;
+
         self.manager.set("semantic", key, data, None)?;
         Ok(query_hash)
     }
@@ -133,7 +135,9 @@ impl SemanticCache {
         let cached_vectors = self.get_all_query_vectors()?;
 
         for (hash, qvec) in cached_vectors {
-            let similarity = self.vectorizer.cosine_similarity(&query_vector, &qvec.vector);
+            let similarity = self
+                .vectorizer
+                .cosine_similarity(&query_vector, &qvec.vector);
             if similarity >= self.config.similarity_threshold {
                 similar_queries.push((hash, similarity));
             }
@@ -147,15 +151,18 @@ impl SemanticCache {
     /// 获取缓存结果（支持语义搜索）
     pub fn get(&self, query: &SearchQuery, engine: &str) -> Result<Option<Vec<SearchResultItem>>> {
         let query_text = &query.query;
-        
+
         // 1. 首先尝试精确匹配
         let query_hash = self.hash_query(query_text);
         let exact_key = self.generate_cache_key(&query_hash, engine);
-        
+
         if let Some(data) = self.manager.get("semantic", &exact_key)? {
-            let cached: CachedQueryResult = bincode::serde::decode_from_slice(&data, bincode::config::standard())
-                .map(|(res, _)| res)
-                .map_err(|e| CacheError::SerializationError(format!("Failed to deserialize: {e}")))?;
+            let cached: CachedQueryResult =
+                bincode::serde::decode_from_slice(&data, bincode::config::standard())
+                    .map(|(res, _)| res)
+                    .map_err(|e| {
+                        CacheError::SerializationError(format!("Failed to deserialize: {e}"))
+                    })?;
             return Ok(Some(cached.result.items));
         }
 
@@ -172,9 +179,11 @@ impl SemanticCache {
         for (sim_hash, _similarity) in similar.iter().take(5) {
             let sim_key = self.generate_cache_key(sim_hash, engine);
             if let Some(data) = self.manager.get("semantic", &sim_key)? {
-                let (cached, _): (CachedQueryResult, _) = bincode::serde::decode_from_slice(&data, bincode::config::standard())
-                    .map_err(|e| CacheError::SerializationError(format!("Failed to decode: {e}")))?;
-                
+                let (cached, _): (CachedQueryResult, _) =
+                    bincode::serde::decode_from_slice(&data, bincode::config::standard()).map_err(
+                        |e| CacheError::SerializationError(format!("Failed to decode: {e}")),
+                    )?;
+
                 for item in cached.result.items {
                     // 去重
                     if self.config.enable_deduplication {
@@ -207,7 +216,11 @@ impl SemanticCache {
     ///
     /// 这个方法会同时从搜索结果缓存和RSS缓存中查询相关内容，
     /// 基于语义相似度匹配，然后合并去重返回
-    pub fn query_combined(&self, query: &SearchQuery, engine: &str) -> Result<Option<Vec<SearchResultItem>>> {
+    pub fn query_combined(
+        &self,
+        query: &SearchQuery,
+        engine: &str,
+    ) -> Result<Option<Vec<SearchResultItem>>> {
         let mut all_items = Vec::new();
         let mut seen_urls: HashSet<String> = HashSet::new();
 
@@ -270,14 +283,14 @@ impl SemanticCache {
         ttl: Option<Duration>,
     ) -> Result<()> {
         let query_text = &query.query;
-        
+
         // 1. 向量化查询并存储
         let query_vector = self.vectorizer.vectorize(query_text);
         let query_hash = self.store_query_vector(query_text, &query_vector)?;
 
         // 2. 存储搜索结果
         let cache_key = self.generate_cache_key(&query_hash, engine);
-        
+
         use std::time::{SystemTime, UNIX_EPOCH};
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -291,8 +304,10 @@ impl SemanticCache {
             timestamp,
         };
 
-        let data = bincode::serde::encode_to_vec(&cached, bincode::config::standard())
-            .map_err(|e| CacheError::SerializationError(format!("Failed to serialize result: {e}")))?;
+        let data =
+            bincode::serde::encode_to_vec(&cached, bincode::config::standard()).map_err(|e| {
+                CacheError::SerializationError(format!("Failed to serialize result: {e}"))
+            })?;
 
         self.manager.set("semantic", cache_key, data, ttl)?;
         Ok(())
@@ -327,7 +342,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         let mut config = CacheImplConfig::default();
         config.db_path = format!("./data/test_semantic_{}.db", timestamp);
         let manager = CacheManager::instance(config).unwrap();
