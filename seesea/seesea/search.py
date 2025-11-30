@@ -20,7 +20,7 @@ SeeSea Search Client - 搜索客户端
 
 from typing import Dict, List, Optional, Any
 from seesea_core import PySearchClient
-from .types import (
+from .search_types import (
     SearchResponse,
     EngineState,
     CacheInfo,
@@ -120,7 +120,7 @@ class SearchClient:
             引擎名称列表
         """
         engines = self._client.list_engines()
-        return engines
+        return engines  # type: ignore[no-any-return]
 
     def health_check(self) -> Dict[str, bool]:
         """
@@ -129,7 +129,7 @@ class SearchClient:
         Returns:
             字典，键为引擎名称，值为是否健康
         """
-        return self._client.health_check()
+        return self._client.health_check()  # type: ignore[no-any-return]
 
     def get_stats(self) -> SearchStats:
         """
@@ -187,7 +187,7 @@ class SearchClient:
             page_size,
             engines,
             include_deepweb,
-        )
+        )  # type: ignore[no-any-return]
 
     def search_fulltext(
         self,
@@ -280,7 +280,7 @@ class SearchClient:
         Returns:
             全局引擎列表
         """
-        return self._client.list_global_engines()
+        return self._client.list_global_engines()  # type: ignore[no-any-return]
 
     def get_privacy_stats(self) -> Optional[PrivacyStats]:
         """

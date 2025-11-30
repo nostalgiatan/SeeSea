@@ -44,6 +44,8 @@ import time
 try:
     from playwright.async_api import Page
 except ImportError:
+    from typing import Any
+
     Page = Any
 
 from .base import BaseBrowserEngine, BrowserConfig, SearchResultItem, BrowserActionDict
@@ -392,7 +394,7 @@ async def create_xinhua_callback(params: Dict[str, Any]) -> Dict[str, Any]:
                 await engine.set_user_agent(page_obj, DEFAULT_USER_AGENT)
 
                 # Build URL
-                url = engine._build_search_url(query, page, category)
+                url = engine._build_search_url(query, page, category)  # type: ignore[attr-defined]
 
                 # Navigate to URL
                 await page_obj.goto(url, wait_until="domcontentloaded", timeout=30000)

@@ -17,7 +17,7 @@ SeeSea Utilities - 工具函数
 """
 
 from typing import Dict, List, Any, Union
-from seesea.types import SearchResultItem
+from seesea.search_types import SearchResultItem
 
 
 def format_results(

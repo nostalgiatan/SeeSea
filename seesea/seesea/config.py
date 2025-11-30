@@ -16,7 +16,7 @@
 SeeSea Configuration - 配置管理
 """
 
-from seesea_core import PyConfig
+from seesea_core import PyConfig  # type: ignore[import-untyped]
 
 
 class Config:
@@ -38,7 +38,7 @@ class Config:
     @property
     def debug(self) -> bool:
         """是否启用调试模式"""
-        return self._config.debug
+        return self._config.debug  # type: ignore[no-any-return]
 
     @debug.setter
     def debug(self, value: bool):
@@ -47,7 +47,7 @@ class Config:
     @property
     def max_results(self) -> int:
         """最大结果数"""
-        return self._config.max_results
+        return self._config.max_results  # type: ignore[no-any-return]
 
     @max_results.setter
     def max_results(self, value: int):
@@ -56,7 +56,7 @@ class Config:
     @property
     def timeout_seconds(self) -> int:
         """超时时间（秒）"""
-        return self._config.timeout_seconds
+        return self._config.timeout_seconds  # type: ignore[no-any-return]
 
     @timeout_seconds.setter
     def timeout_seconds(self, value: int):

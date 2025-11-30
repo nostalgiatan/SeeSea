@@ -61,7 +61,7 @@ __author__ = "SeeSea Team"
 
 # 导入 Rust 核心模块
 try:
-    from seesea_core import (
+    from seesea_core import (  # type: ignore[import-untyped]
         PySearchClient,
         PyApiServer,
         PyConfig,
@@ -112,9 +112,9 @@ from .utils import format_results, parse_query
 from .cli import cli as cli_main
 
 # 类型定义（提供类型安全）
-from .types import (
-    SearchResponse,
+from .search_types import (
     SearchResultItem,
+    SearchResponse,
     EngineState,
     CacheInfo,
     SearchStats,
