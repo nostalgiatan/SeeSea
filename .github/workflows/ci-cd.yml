@@ -155,20 +155,22 @@ jobs:
         Write-Host "Listing installer/target directory structure:"
         Get-ChildItem -Path "./installer/target/" -Recurse | Select-Object -Property FullName
         
-        # 查找所有exe文件
-        Write-Host "Finding all exe files in installer/target:"
-        $ALL_EXE_FILES = Get-ChildItem -Path "./installer/target/" -Name "*.exe" -Recurse
-        Write-Host "Found exe files: $ALL_EXE_FILES"
-        
-        # 查找并重命名exe安装程序
-        $EXE_FILE = $ALL_EXE_FILES | Select-Object -First 1
-        if ($EXE_FILE) {
-          # 获取完整路径
-          $FULL_PATH = Get-ChildItem -Path "./installer/target/" -Name "$EXE_FILE" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-          Write-Host "Found exe file: $FULL_PATH"
-          Move-Item -Path "$FULL_PATH" -Destination "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}-setup.exe"
+        # 查找并重命名exe安装程序，优先匹配带有setup的exe文件
+        $SETUP_EXE_FILE = Get-ChildItem -Path "./installer/target/" -Filter "*setup.exe" -Recurse | Select-Object -First 1
+        if ($SETUP_EXE_FILE) {
+          Write-Host "Found setup exe file: $($SETUP_EXE_FILE.FullName)"
+          Move-Item -Path "$($SETUP_EXE_FILE.FullName)" -Destination "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}-setup.exe"
         } else {
-          Write-Host "No exe files found in installer/target directory"
+          # 如果没有找到setup.exe，查找其他exe文件
+          $ALL_EXE_FILES = Get-ChildItem -Path "./installer/target/" -Filter "*.exe" -Recurse
+          Write-Host "Found exe files: $($ALL_EXE_FILES.Count)"
+          $EXE_FILE = $ALL_EXE_FILES | Select-Object -First 1
+          if ($EXE_FILE) {
+            Write-Host "Found exe file: $($EXE_FILE.FullName)"
+            Move-Item -Path "$($EXE_FILE.FullName)" -Destination "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}-setup.exe"
+          } else {
+            Write-Host "No exe files found in installer/target directory"
+          }
         }
 
     # Rename Linux installer
