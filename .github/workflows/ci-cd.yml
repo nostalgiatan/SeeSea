@@ -191,7 +191,23 @@ jobs:
           cargo packager --release --manifest-path Cargo.toml --formats nsis
         elif [ "${{ matrix.platform }}" = "macos" ]; then
           # macOS生成DMG镜像
-          cargo packager --release --manifest-path Cargo.toml --formats dmg
+          # 清理之前的构建产物，避免资源占用
+          rm -rf ./target/release/seesea-installer*.dmg
+          rm -rf ./target/release/seesea-installer.app
+          # 使用重试机制，解决hdiutil资源占用问题
+          for i in {1..3}; do
+            echo "Attempt $i of 3: Creating DMG image..."
+            if cargo packager --release --manifest-path Cargo.toml --formats dmg; then
+              echo "DMG creation successful!"
+              break
+            else
+              echo "DMG creation failed, retrying in 5 seconds..."
+              sleep 5
+              # 再次清理，确保没有残留文件
+              rm -rf ./target/release/seesea-installer*.dmg
+              rm -rf ./target/release/seesea-installer.app
+            fi
+          done
         fi
 
     # Rename Windows installer
