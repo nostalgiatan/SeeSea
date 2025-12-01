@@ -159,7 +159,12 @@ jobs:
         $SETUP_EXE_FILE = Get-ChildItem -Path "./installer/target/" -Filter "*setup.exe" -Recurse | Select-Object -First 1
         if ($SETUP_EXE_FILE) {
           Write-Host "Found setup exe file: $($SETUP_EXE_FILE.FullName)"
-          Move-Item -Path "$($SETUP_EXE_FILE.FullName)" -Destination "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}-setup.exe"
+          # 获取原始文件名
+          $ORIGINAL_FILENAME = $SETUP_EXE_FILE.Name
+          # 替换文件名，在末尾添加_py$PYTHON_VERSION_NO_DOT
+          $NEW_FILENAME = $ORIGINAL_FILENAME -replace "\.exe$", "_py$PYTHON_VERSION_NO_DOT.exe"
+          Move-Item -Path "$($SETUP_EXE_FILE.FullName)" -Destination "./building/$NEW_FILENAME"
+          Write-Host "Renamed to: ./building/$NEW_FILENAME"
         } else {
           # 如果没有找到setup.exe，查找其他exe文件
           $ALL_EXE_FILES = Get-ChildItem -Path "./installer/target/" -Filter "*.exe" -Recurse
@@ -167,7 +172,12 @@ jobs:
           $EXE_FILE = $ALL_EXE_FILES | Select-Object -First 1
           if ($EXE_FILE) {
             Write-Host "Found exe file: $($EXE_FILE.FullName)"
-            Move-Item -Path "$($EXE_FILE.FullName)" -Destination "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}-setup.exe"
+            # 获取原始文件名
+            $ORIGINAL_FILENAME = $EXE_FILE.Name
+            # 替换文件名，在末尾添加_py$PYTHON_VERSION_NO_DOT
+            $NEW_FILENAME = $ORIGINAL_FILENAME -replace "\.exe$", "_py$PYTHON_VERSION_NO_DOT.exe"
+            Move-Item -Path "$($EXE_FILE.FullName)" -Destination "./building/$NEW_FILENAME"
+            Write-Host "Renamed to: ./building/$NEW_FILENAME"
           } else {
             Write-Host "No exe files found in installer/target directory"
           }
@@ -189,7 +199,12 @@ jobs:
         DEB_FILE=$(find ./installer/target/ -name "*.deb" | head -1)
         if [ -n "$DEB_FILE" ]; then
           echo "Found deb file: $DEB_FILE"
-          mv "$DEB_FILE" "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.deb"
+          # 获取原始文件名，提取版本号
+          ORIGINAL_FILENAME=$(basename "$DEB_FILE")
+          # 替换文件名，在末尾添加_py$PYTHON_VERSION_NO_DOT
+          NEW_FILENAME=$(echo "$ORIGINAL_FILENAME" | sed "s/\.deb$/_py$PYTHON_VERSION_NO_DOT.deb/")
+          mv "$DEB_FILE" "./building/$NEW_FILENAME"
+          echo "Renamed to: ./building/$NEW_FILENAME"
         else
           echo "No deb files found in installer/target directory"
         fi
@@ -210,7 +225,12 @@ jobs:
         DMG_FILE=$(find ./installer/target/ -name "*.dmg" | head -1)
         if [ -n "$DMG_FILE" ]; then
           echo "Found dmg file: $DMG_FILE"
-          mv "$DMG_FILE" "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.dmg"
+          # 获取原始文件名，提取版本号
+          ORIGINAL_FILENAME=$(basename "$DMG_FILE")
+          # 替换文件名，在末尾添加_py$PYTHON_VERSION_NO_DOT
+          NEW_FILENAME=$(echo "$ORIGINAL_FILENAME" | sed "s/\.dmg$/_py$PYTHON_VERSION_NO_DOT.dmg/")
+          mv "$DMG_FILE" "./building/$NEW_FILENAME"
+          echo "Renamed to: ./building/$NEW_FILENAME"
         else
           echo "No dmg files found in installer/target directory"
         fi
