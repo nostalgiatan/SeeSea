@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         include:
-          # Linux builds for Python 3.9-3.12
+          # Linux x64 builds for Python 3.9-3.12
           - os: ubuntu-latest
             platform: linux
             arch: x64
@@ -31,7 +31,41 @@ jobs:
             platform: linux
             arch: x64
             python-version: '3.12'
-          # Windows builds for Python 3.9-3.12
+          # Linux arm64 builds for Python 3.9-3.12
+          - os: ubuntu-latest
+            platform: linux
+            arch: arm64
+            python-version: '3.9'
+          - os: ubuntu-latest
+            platform: linux
+            arch: arm64
+            python-version: '3.10'
+          - os: ubuntu-latest
+            platform: linux
+            arch: arm64
+            python-version: '3.11'
+          - os: ubuntu-latest
+            platform: linux
+            arch: arm64
+            python-version: '3.12'
+          # Linux armv7 builds for Python 3.9-3.12
+          - os: ubuntu-latest
+            platform: linux
+            arch: armv7
+            python-version: '3.9'
+          - os: ubuntu-latest
+            platform: linux
+            arch: armv7
+            python-version: '3.10'
+          - os: ubuntu-latest
+            platform: linux
+            arch: armv7
+            python-version: '3.11'
+          - os: ubuntu-latest
+            platform: linux
+            arch: armv7
+            python-version: '3.12'
+          # Windows x64 builds for Python 3.9-3.12
           - os: windows-latest
             platform: windows
             arch: x64
@@ -47,6 +81,23 @@ jobs:
           - os: windows-latest
             platform: windows
             arch: x64
+            python-version: '3.12'
+          # Windows arm64 builds for Python 3.9-3.12
+          - os: windows-latest
+            platform: windows
+            arch: arm64
+            python-version: '3.9'
+          - os: windows-latest
+            platform: windows
+            arch: arm64
+            python-version: '3.10'
+          - os: windows-latest
+            platform: windows
+            arch: arm64
+            python-version: '3.11'
+          - os: windows-latest
+            platform: windows
+            arch: arm64
             python-version: '3.12'
           # macOS x64 builds for Python 3.9-3.12
           - os: macos-latest
