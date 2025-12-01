@@ -171,6 +171,19 @@ curl "http://localhost:8080/api/cache/stats"
 curl "http://localhost:8080/api/health"
 ```
 
+**注意事项**：
+- Python命令行默认启动的服务器为内网模式，**默认不启用认证**
+- 只有通过配置文件启动并设置 `mode = "external"` 或 `mode = "dual"` 时，才会启用外网模式
+- 外网模式可通过配置文件启用API密钥认证或JWT认证
+- 生产环境建议使用配置文件启用认证，确保服务安全
+- 配置文件示例：
+  ```toml
+  [api.auth]
+  enabled = true
+  auth_type = "api_key"
+  api_keys = ["your-secret-api-key"]
+  ```
+
 ### 3. Python 集成
 
 ```python
