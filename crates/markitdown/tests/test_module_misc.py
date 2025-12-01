@@ -19,9 +19,7 @@ from markitdown import (
 # This includes things like helper functions and runtime conversion options
 # (e.g., LLM clients, exiftool path, transcription services, etc.)
 
-skip_remote = (
-    True if os.environ.get("GITHUB_ACTIONS") else False
-)  # Don't run these tests in CI
+skip_remote = True if os.environ.get("GITHUB_ACTIONS") else False  # Don't run these tests in CI
 
 
 # Don't run the llm tests without a key and the client library
@@ -52,9 +50,7 @@ MP3_TEST_EXIFTOOL = {
 }
 
 PDF_TEST_URL = "https://arxiv.org/pdf/2308.08155v2.pdf"
-PDF_TEST_STRINGS = [
-    "While there is contemporaneous exploration of multi-agent approaches"
-]
+PDF_TEST_STRINGS = ["While there is contemporaneous exploration of multi-agent approaches"]
 
 YOUTUBE_TEST_URL = "https://www.youtube.com/watch?v=V2qZ_lgxTzg"
 YOUTUBE_TEST_STRINGS = [
@@ -122,9 +118,7 @@ def test_stream_info_operations() -> None:
     # Check updating all attributes by keyword
     keywords = ["mimetype", "extension", "charset", "filename", "local_path", "url"]
     for keyword in keywords:
-        updated_stream_info = stream_info_original.copy_and_update(
-            **{keyword: f"{keyword}.2"}
-        )
+        updated_stream_info = stream_info_original.copy_and_update(**{keyword: f"{keyword}.2"})
 
         # Make sure the targted attribute is updated
         assert getattr(updated_stream_info, keyword) == f"{keyword}.2"
@@ -132,9 +126,7 @@ def test_stream_info_operations() -> None:
         # Make sure the other attributes are unchanged
         for k in keywords:
             if k != keyword:
-                assert getattr(stream_info_original, k) == getattr(
-                    updated_stream_info, k
-                )
+                assert getattr(stream_info_original, k) == getattr(updated_stream_info, k)
 
     # Check updating all attributes by passing a new StreamInfo object
     keywords = ["mimetype", "extension", "charset", "filename", "local_path", "url"]
@@ -149,9 +141,7 @@ def test_stream_info_operations() -> None:
         # Make sure the other attributes are unchanged
         for k in keywords:
             if k != keyword:
-                assert getattr(stream_info_original, k) == getattr(
-                    updated_stream_info, k
-                )
+                assert getattr(stream_info_original, k) == getattr(updated_stream_info, k)
 
     # Check mixing and matching
     updated_stream_info = stream_info_original.copy_and_update(
@@ -305,9 +295,7 @@ def test_doc_rlink() -> None:
 
     rlink_file_path = os.path.join(rlink_tmp_dir, "test_rlink.txt")
     rlink_content = "de658225-569e-4e3d-9ed2-cfb6abf927fc"
-    b64_prefix = (
-        "ZGU2NTgyMjUtNTY5ZS00ZTNkLTllZDItY2ZiNmFiZjk"  # base64 prefix of rlink_content
-    )
+    b64_prefix = "ZGU2NTgyMjUtNTY5ZS00ZTNkLTllZDItY2ZiNmFiZjk"  # base64 prefix of rlink_content
 
     if os.path.exists(rlink_file_path):
         with open(rlink_file_path, "r", encoding="utf-8") as f:
@@ -322,9 +310,7 @@ def test_doc_rlink() -> None:
 
     try:
         result = markitdown.convert(docx_file, keep_data_uris=True).text_content
-        assert (
-            b64_prefix not in result
-        )  # Make sure the target file was NOT embedded in the output
+        assert b64_prefix not in result  # Make sure the target file was NOT embedded in the output
     finally:
         os.remove(rlink_file_path)
 
@@ -375,9 +361,7 @@ def test_exceptions() -> None:
 
     # Check that an exception is raised when trying to convert a file that is corrupted
     with pytest.raises(FileConversionException) as exc_info:
-        markitdown.convert(
-            os.path.join(TEST_FILES_DIR, "random.bin"), file_extension=".pptx"
-        )
+        markitdown.convert(os.path.join(TEST_FILES_DIR, "random.bin"), file_extension=".pptx")
     assert len(exc_info.value.attempts) == 1
     assert type(exc_info.value.attempts[0].converter).__name__ == "PptxConverter"
 
@@ -418,17 +402,13 @@ def test_markitdown_llm_parameters() -> None:
     mock_response = MagicMock()
     mock_response.choices = [
         MagicMock(
-            message=MagicMock(
-                content="Test caption with red circle and blue square 5bda1dd6"
-            )
+            message=MagicMock(content="Test caption with red circle and blue square 5bda1dd6")
         )
     ]
     mock_client.chat.completions.create.return_value = mock_response
 
     test_prompt = "You are a professional test prompt."
-    markitdown = MarkItDown(
-        llm_client=mock_client, llm_model="gpt-4o", llm_prompt=test_prompt
-    )
+    markitdown = MarkItDown(llm_client=mock_client, llm_model="gpt-4o", llm_prompt=test_prompt)
 
     # Test image file
     markitdown.convert(os.path.join(TEST_FILES_DIR, "test_llm.jpg"))

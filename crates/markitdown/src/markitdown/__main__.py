@@ -146,11 +146,7 @@ def main():
             charset_hint = None
 
     stream_info = None
-    if (
-        extension_hint is not None
-        or mime_type_hint is not None
-        or charset_hint is not None
-    ):
+    if extension_hint is not None or mime_type_hint is not None or charset_hint is not None:
         stream_info = StreamInfo(
             extension=extension_hint, mimetype=mime_type_hint, charset=charset_hint
         )
@@ -161,15 +157,11 @@ def main():
         plugin_entry_points = list(entry_points(group="markitdown.plugin"))
         if len(plugin_entry_points) == 0:
             print("  * No 3rd-party plugins installed.")
-            print(
-                "\nFind plugins by searching for the hashtag #markitdown-plugin on GitHub.\n"
-            )
+            print("\nFind plugins by searching for the hashtag #markitdown-plugin on GitHub.\n")
         else:
             for entry_point in plugin_entry_points:
                 print(f"  * {entry_point.name:<16}\t(package: {entry_point.value})")
-            print(
-                "\nUse the -p (or --use-plugins) option to enable 3rd-party plugins.\n"
-            )
+            print("\nUse the -p (or --use-plugins) option to enable 3rd-party plugins.\n")
         sys.exit(0)
 
     if args.use_docintel:
@@ -180,9 +172,7 @@ def main():
         elif args.filename is None:
             _exit_with_error("Filename is required when using Document Intelligence.")
 
-        markitdown = MarkItDown(
-            enable_plugins=args.use_plugins, docintel_endpoint=args.endpoint
-        )
+        markitdown = MarkItDown(enable_plugins=args.use_plugins, docintel_endpoint=args.endpoint)
     else:
         markitdown = MarkItDown(enable_plugins=args.use_plugins)
 

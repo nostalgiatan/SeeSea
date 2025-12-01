@@ -16,9 +16,7 @@ from markitdown import (
     StreamInfo,
 )
 
-skip_remote = (
-    True if os.environ.get("GITHUB_ACTIONS") else False
-)  # Don't run these tests in CI
+skip_remote = True if os.environ.get("GITHUB_ACTIONS") else False  # Don't run these tests in CI
 
 TEST_FILES_DIR = os.path.join(os.path.dirname(__file__), "test_files")
 TEST_FILES_URL = "https://raw.githubusercontent.com/microsoft/markitdown/refs/heads/main/packages/markitdown/tests/test_files"
@@ -80,9 +78,7 @@ def test_convert_stream_with_hints(test_vector):
     )
 
     with open(os.path.join(TEST_FILES_DIR, test_vector.filename), "rb") as stream:
-        result = markitdown.convert(
-            stream, stream_info=stream_info, url=test_vector.url
-        )
+        result = markitdown.convert(stream, stream_info=stream_info, url=test_vector.url)
         for string in test_vector.must_include:
             assert string in result.markdown
         for string in test_vector.must_not_include:
@@ -213,9 +209,7 @@ if __name__ == "__main__":
         test_convert_data_uri,
     ]:
         for test_vector in GENERAL_TEST_VECTORS:
-            print(
-                f"Running {test_function.__name__} on {test_vector.filename}...", end=""
-            )
+            print(f"Running {test_function.__name__} on {test_vector.filename}...", end="")
             test_function(test_vector)
             print("OK")
 
@@ -225,9 +219,7 @@ if __name__ == "__main__":
         test_convert_stream_keep_data_uris,
     ]:
         for test_vector in DATA_URI_TEST_VECTORS:
-            print(
-                f"Running {test_function.__name__} on {test_vector.filename}...", end=""
-            )
+            print(f"Running {test_function.__name__} on {test_vector.filename}...", end="")
             test_function(test_vector)
             print("OK")
 

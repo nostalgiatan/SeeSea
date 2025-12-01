@@ -438,7 +438,7 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
 
 @cli.command()
 @click.option("--host", default=None, help="监听地址 (默认: 配置文件中的地址)")
-@click.option("--port", default=None, help="监听端口 (默认: 配置文件中的端口)")
+@click.option("--port", type=int, default=None, help="监听端口 (默认: 配置文件中的端口)")
 @click.option("-c", "--config", default=None, help="配置文件路径")
 def server(host, port, config):
     """启动 API 服务器"""

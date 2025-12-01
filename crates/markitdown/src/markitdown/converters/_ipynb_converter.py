@@ -34,10 +34,7 @@ class IpynbConverter(DocumentConverter):
                 try:
                     encoding = stream_info.charset or "utf-8"
                     notebook_content = file_stream.read().decode(encoding)
-                    return (
-                        "nbformat" in notebook_content
-                        and "nbformat_minor" in notebook_content
-                    )
+                    return "nbformat" in notebook_content and "nbformat_minor" in notebook_content
                 finally:
                     file_stream.seek(cur_pos)
 
@@ -91,6 +88,4 @@ class IpynbConverter(DocumentConverter):
             )
 
         except Exception as e:
-            raise FileConversionException(
-                f"Error converting .ipynb file: {str(e)}"
-            ) from e
+            raise FileConversionException(f"Error converting .ipynb file: {str(e)}") from e

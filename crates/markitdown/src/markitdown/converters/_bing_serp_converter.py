@@ -92,9 +92,7 @@ class BingSerpConverter(DocumentConverter):
                 # The destination is contained in the u parameter,
                 # but appears to be base64 encoded, with some prefix
                 if "u" in qs:
-                    u = (
-                        qs["u"][0][2:].strip() + "=="
-                    )  # Python 3 doesn't care about extra padding
+                    u = qs["u"][0][2:].strip() + "=="  # Python 3 doesn't care about extra padding
 
                     try:
                         # RFC 4648 / Base64URL" variant, which uses "-" and "_"

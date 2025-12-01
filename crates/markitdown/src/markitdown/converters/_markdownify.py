@@ -76,11 +76,7 @@ class _CustomMarkdownify(markdownify.MarkdownConverter):
         if self.options["default_title"] and not title:
             title = href
         title_part = ' "%s"' % title.replace('"', r"\"") if title else ""
-        return (
-            "%s[%s](%s%s)%s" % (prefix, text, href, title_part, suffix)
-            if href
-            else text
-        )
+        return "%s[%s](%s%s)%s" % (prefix, text, href, title_part, suffix) if href else text
 
     def convert_img(
         self,
@@ -97,10 +93,7 @@ class _CustomMarkdownify(markdownify.MarkdownConverter):
         title_part = ' "%s"' % title.replace('"', r"\"") if title else ""
         # Remove all line breaks from alt
         alt = alt.replace("\n", " ")
-        if (
-            convert_as_inline
-            and el.parent.name not in self.options["keep_inline_images_in"]
-        ):
+        if convert_as_inline and el.parent.name not in self.options["keep_inline_images_in"]:
             return alt
 
         # Remove dataURIs

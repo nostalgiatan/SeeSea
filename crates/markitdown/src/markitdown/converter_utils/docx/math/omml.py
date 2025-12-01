@@ -202,9 +202,7 @@ class oMath2Latex(Tag2Method):
         the accent function
         """
         c_dict = self.process_children_dict(elm)
-        latex_s = get_val(
-            c_dict["accPr"].chr, default=CHR_DEFAULT.get("ACC_VAL"), store=CHR
-        )
+        latex_s = get_val(c_dict["accPr"].chr, default=CHR_DEFAULT.get("ACC_VAL"), store=CHR)
         return latex_s.format(c_dict["e"])
 
     def do_bar(self, elm):
@@ -304,9 +302,7 @@ class oMath2Latex(Tag2Method):
         the Array object
         """
         return ARR.format(
-            text=BRK.join(
-                [t for stag, t, e in self.process_children_list(elm, include=("e",))]
-            )
+            text=BRK.join([t for stag, t, e in self.process_children_list(elm, include=("e",))])
         )
 
     def do_limlow(self, elm):
@@ -349,9 +345,7 @@ class oMath2Latex(Tag2Method):
         """
         a single row of the matrix m
         """
-        return ALN.join(
-            [t for stag, t, e in self.process_children_list(elm, include=("e",))]
-        )
+        return ALN.join([t for stag, t, e in self.process_children_list(elm, include=("e",))])
 
     def do_nary(self, elm):
         """

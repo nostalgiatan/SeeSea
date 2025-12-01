@@ -92,9 +92,7 @@ GENERAL_TEST_VECTORS = [
         mimetype="application/pdf",
         charset=None,
         url=None,
-        must_include=[
-            "While there is contemporaneous exploration of multi-agent approaches"
-        ],
+        must_include=["While there is contemporaneous exploration of multi-agent approaches"],
         must_not_include=[],
     ),
     FileTestVector(

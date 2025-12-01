@@ -116,7 +116,6 @@ T = {
     # Relation symbols
     "\u2190": "\\leftarrow ",
     "\u2191": "\\uparrow ",
-    "\u2192": "\\rightarrow ",
     "\u2193": "\\downright ",
     "\u2194": "\\leftrightarrow ",
     "\u2195": "\\updownarrow ",

@@ -45,9 +45,7 @@ class ImageConverter(DocumentConverter):
         md_content = ""
 
         # Add metadata
-        metadata = exiftool_metadata(
-            file_stream, exiftool_path=kwargs.get("exiftool_path")
-        )
+        metadata = exiftool_metadata(file_stream, exiftool_path=kwargs.get("exiftool_path"))
 
         if metadata:
             for f in [
@@ -99,9 +97,7 @@ class ImageConverter(DocumentConverter):
         # Get the content type
         content_type = stream_info.mimetype
         if not content_type:
-            content_type, _ = mimetypes.guess_type(
-                "_dummy" + (stream_info.extension or "")
-            )
+            content_type, _ = mimetypes.guess_type("_dummy" + (stream_info.extension or ""))
         if not content_type:
             content_type = "application/octet-stream"
 
@@ -109,7 +105,7 @@ class ImageConverter(DocumentConverter):
         cur_pos = file_stream.tell()
         try:
             base64_image = base64.b64encode(file_stream.read()).decode("utf-8")
-        except Exception as e:
+        except Exception:
             return None
         finally:
             file_stream.seek(cur_pos)
