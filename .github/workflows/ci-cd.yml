@@ -2,7 +2,6 @@ name: CI/CD Pipeline
 
 permissions:
   contents: write
-  releases: write
 
 on:
   push:
@@ -446,7 +445,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install black ruff mypy
         # Install type stubs for better mypy checking
-        pip install types-requests types-numpy types-pandas types-openpyxl types-xlrd types-defusedxml
+        pip install types-requests types-pandas types-openpyxl types-xlrd types-defusedxml
         # Install numpy for vector operations
         pip install numpy
 
