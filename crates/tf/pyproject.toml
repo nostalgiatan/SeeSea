@@ -13,9 +13,8 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
-    "torch>=2.0.0",
-    "transformers>=4.30.0",
     "numpy>=1.24.0",
+    "mistralrs>=0.6.0",
 ]
 
 [tool.maturin]

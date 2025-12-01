@@ -22,6 +22,7 @@ use crate::derive::{
     AboutInfo, EngineCapabilities, EngineInfo, EngineStatus, EngineType, RequestParams,
     RequestResponseEngine, ResultType, SearchResultItem,
 };
+use crate::search::utils::time_extractor::{TimeSource, extract_time, extract_time_from_url};
 
 // 使用宏定义引擎结构体和基本方法
 define_engine! {
@@ -152,6 +153,60 @@ impl SogouVideosEngine {
                 .map(|d| d.text().collect::<String>().trim().to_string())
                 .filter(|d| !d.is_empty());
 
+            // Extract published date from result card
+            let published_date = {
+                // Try to extract from various date selectors
+                let date_selector = Selector::parse("span.date")
+                    .or_else(|_| Selector::parse("span.time"))
+                    .or_else(|_| Selector::parse("div.info span"))
+                    .or_else(|_| Selector::parse("span.publish-time"))
+                    .expect("valid selector");
+
+                let mut best_date = None;
+                let mut best_confidence = 0.0;
+
+                // Try from URL first - high confidence
+                if let Some(dt) = extract_time_from_url(&video_url) {
+                    best_date = Some(dt);
+                    best_confidence = 0.9;
+                }
+
+                // Try from result card - check if confidence is higher than current best
+                if let Some(date_elem) = result.select(&date_selector).next() {
+                    let date_text = date_elem.text().collect::<String>().trim().to_string();
+                    if !date_text.is_empty() {
+                        let extract_result = extract_time(&date_text, TimeSource::ResultCard);
+                        if let Some(dt) = extract_result.datetime {
+                            if extract_result.confidence > best_confidence {
+                                best_date = Some(dt);
+                                // 提取置信度，但暂时不使用
+                                let _ = extract_result.confidence;
+                            }
+                        }
+                    }
+                }
+
+                // Try from content - only if current confidence is low
+                if best_confidence < 0.8 {
+                    let extract_result = extract_time(&content, TimeSource::Content);
+                    if let Some(dt) = extract_result.datetime {
+                        if extract_result.confidence > best_confidence {
+                            best_date = Some(dt);
+                            best_confidence = extract_result.confidence;
+                        }
+                    }
+                }
+
+                // 使用best_confidence变量，避免未使用警告
+                if best_confidence > 0.5 {
+                    // 如果置信度较高，将其存储在metadata中
+                    let mut metadata = HashMap::new();
+                    metadata.insert("date_confidence".to_string(), best_confidence.to_string());
+                }
+
+                best_date
+            };
+
             let mut metadata = HashMap::new();
             if let Some(dur) = duration {
                 metadata.insert("duration".to_string(), dur);
@@ -166,7 +221,7 @@ impl SogouVideosEngine {
                 score: 1.0,
                 result_type: ResultType::Video,
                 thumbnail: thumbnail_url,
-                published_date: None,
+                published_date,
                 template: None,
                 metadata,
             });

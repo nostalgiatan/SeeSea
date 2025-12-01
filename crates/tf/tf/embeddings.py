@@ -1,48 +1,124 @@
 """
-Embeddings module for text vectorization using Qwen3-Embedding model.
+Embeddings module for text vectorization using Qwen3-Embedding model with mistral.rs.
 """
 
-import torch
-from transformers import AutoTokenizer, AutoModel
-from typing import List, Union
+from typing import List, Union, Optional
+import os
+
+# Import mistralrs module
+try:
+    import mistralrs
+except ImportError:
+    mistralrs = None
 
 
 class TextEmbedder:
     """
-    Text embedder using Qwen3/Qwen3-Embedding-0.6B model.
+    Text embedder using Qwen3-Embedding model with mistral.rs backend.
 
     This class handles the conversion of text to vector embeddings
-    that can be used with the Rust vector store.
+    that can be used with the Rust vector store, using mistral.rs
+    to load and run the Qwen3 embedding model.
     """
 
-    def __init__(self, model_name: str = "Qwen/Qwen3-Embedding-0.6B", device: str = None):
+    def __init__(self, model_path: Optional[str] = None, device: Optional[str] = None):
         """
-        Initialize the text embedder.
+        Initialize the text embedder with mistral.rs.
 
         Args:
-            model_name: HuggingFace model name (default: Qwen/Qwen3-Embedding-0.6B)
+            model_path: Path to the GGUF format Qwen3 embedding model
             device: Device to use ('cuda', 'cpu', or None for auto-detect)
         """
-        if device is None:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        else:
-            self.device = device
+        try:
+            # Import mistralrs module
+            import mistralrs
+            
+            # Set HF_ENDPOINT environment variable for faster model downloads
+            os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
-        print(f"Loading model {model_name} on {self.device}...")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        self.model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
-        self.model.to(self.device)
-        self.model.eval()
+            # Default Hugging Face model ID for Qwen3 embedding
+            default_hf_model_id = "Qwen/Qwen3-Embedding-0.6B-GGUF"
 
-        # Get embedding dimension from model
-        self.dimension = self.model.config.hidden_size
-        print(f"Model loaded. Embedding dimension: {self.dimension}")
+            # Set default model path if not provided
+            if model_path is None:
+                # Try to find Qwen3 embedding model in default locations
+                default_paths = [
+                    "./qwen3-embedding.gguf",
+                    "./models/qwen3-embedding.gguf",
+                    "/models/qwen3-embedding.gguf",
+                ]
+
+                for path in default_paths:
+                    if os.path.exists(path):
+                        model_path = path
+                        break
+
+                if model_path is None:
+                    # Model not found locally, use mistralrs to download from Hugging Face
+                    print("Model not found locally. Using mistralrs to load from Hugging Face...")
+
+                    # Create models directory if it doesn't exist for caching
+                    models_dir = "./models"
+                    os.makedirs(models_dir, exist_ok=True)
+
+                    # Configure embedding model using Hugging Face model ID
+                    embedding_config = mistralrs.Which.Embedding(
+                        model_id=default_hf_model_id,
+                        arch=mistralrs.EmbeddingArchitecture.Qwen3Embedding,
+                        dtype=mistralrs.ModelDType.Auto,
+                        hf_cache_path=models_dir,
+                    )
+
+                    # Initialize runner with HF model ID - this will automatically download and cache the model
+                    self.runner = mistralrs.Runner(which=embedding_config, max_seqs=16)
+
+                    # Test embedding to get dimension
+                    test_embedding = self.runner.send_embedding_request(
+                        mistralrs.EmbeddingRequest(input="test")
+                    )
+                    self.dimension = len(test_embedding[0])
+
+                    print(
+                        f"Model loaded successfully from Hugging Face. Embedding dimension: {self.dimension}"
+                    )
+                    return
+
+            print(f"Loading Qwen3 embedding model from {model_path}...")
+
+            # Configure embedding model using local file path
+            embedding_config = mistralrs.Which.Embedding(
+                model_id=model_path,
+                arch=mistralrs.EmbeddingArchitecture.Qwen3Embedding,
+                dtype=mistralrs.ModelDType.Auto,
+            )
+
+            # Initialize mistralrs Runner with embedding model
+            self.runner = mistralrs.Runner(which=embedding_config, max_seqs=16)
+
+            # Test embedding to get dimension
+            test_embedding = self.runner.send_embedding_request(
+                mistralrs.EmbeddingRequest(input="test")
+            )
+            self.dimension = len(test_embedding[0])
+
+            print(f"Model loaded successfully. Embedding dimension: {self.dimension}")
+
+        except ImportError as e:
+            raise ImportError(
+                "Failed to import mistralrs module. Please install it first using "
+                "'pip install mistralrs' or build from source: "
+                "https://github.com/EricLBuehler/mistral.rs"
+            ) from e
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to initialize Qwen3 embedding model with mistral.rs: {e}"
+            ) from e
 
     def encode(
         self, texts: Union[str, List[str]], batch_size: int = 32
     ) -> Union[List[float], List[List[float]]]:
         """
-        Encode text(s) into vector embeddings.
+        Encode text(s) into vector embeddings using mistral.rs.
 
         Args:
             texts: Single text string or list of text strings
@@ -52,6 +128,9 @@ class TextEmbedder:
             Single embedding (List[float]) if input is a string,
             or list of embeddings (List[List[float]]) if input is a list
         """
+        # Import mistralrs module again to ensure it's available
+        import mistralrs
+        
         # Handle single text input
         if isinstance(texts, str):
             texts = [texts]
@@ -65,21 +144,11 @@ class TextEmbedder:
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i : i + batch_size]
 
-            # Tokenize
-            inputs = self.tokenizer(
-                batch_texts, padding=True, truncation=True, max_length=512, return_tensors="pt"
-            ).to(self.device)
+            # Generate embeddings using mistralrs Runner
+            batch_embeddings = self.runner.send_embedding_request(
+                mistralrs.EmbeddingRequest(input=batch_texts)
+            )
 
-            # Generate embeddings
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                # Use mean pooling on the last hidden state
-                embeddings = self._mean_pooling(outputs.last_hidden_state, inputs["attention_mask"])
-                # Normalize embeddings
-                embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-
-            # Convert to list of floats
-            batch_embeddings = embeddings.cpu().numpy().tolist()
             all_embeddings.extend(batch_embeddings)
 
         # Return single embedding if single input
@@ -87,31 +156,6 @@ class TextEmbedder:
             return all_embeddings[0]
 
         return all_embeddings
-
-    def _mean_pooling(
-        self, hidden_states: torch.Tensor, attention_mask: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        Perform mean pooling on hidden states.
-
-        Args:
-            hidden_states: Model output hidden states
-            attention_mask: Attention mask from tokenizer
-
-        Returns:
-            Pooled embeddings
-        """
-        # Expand attention mask to match hidden states shape
-        input_mask_expanded = attention_mask.unsqueeze(-1).expand(hidden_states.size()).float()
-
-        # Sum hidden states with mask
-        sum_embeddings = torch.sum(hidden_states * input_mask_expanded, dim=1)
-
-        # Sum mask (to get proper denominator for mean)
-        sum_mask = torch.clamp(input_mask_expanded.sum(dim=1), min=1e-9)
-
-        # Calculate mean
-        return sum_embeddings / sum_mask
 
     def get_dimension(self) -> int:
         """

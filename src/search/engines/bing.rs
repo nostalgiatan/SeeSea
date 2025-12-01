@@ -297,6 +297,39 @@ impl BingEngine {
                 }
             }
 
+            // 提取时间
+            let mut published_date = None;
+
+            // 尝试从结果卡片中提取时间
+            let time_selectors = [
+                "span.newTimeSpan",
+                "div.tb_meta",
+                "span.b_snippetDate",
+                "div.b_attribution",
+            ];
+
+            for selector_str in time_selectors {
+                if let Ok(selector) = Selector::parse(selector_str) {
+                    for elem in result.select(&selector) {
+                        let text = elem.text().collect::<String>().trim().to_string();
+                        if !text.is_empty() {
+                            // 使用时间提取器提取时间
+                            let time_result = crate::search::utils::time_extractor::extract_time(
+                                &text,
+                                crate::search::utils::time_extractor::TimeSource::ResultCard,
+                            );
+                            if time_result.datetime.is_some() {
+                                published_date = time_result.datetime;
+                                break;
+                            }
+                        }
+                    }
+                    if published_date.is_some() {
+                        break;
+                    }
+                }
+            }
+
             // 只添加有效结果
             if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
                 items.push(SearchResultItem {
@@ -308,7 +341,7 @@ impl BingEngine {
                     score: 1.0,
                     result_type: ResultType::Web,
                     thumbnail: None,
-                    published_date: None,
+                    published_date,
                     template: None,
                     metadata: HashMap::new(),
                 });

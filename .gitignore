@@ -14,6 +14,8 @@ eggs/
 lib/
 .trae/
 .plan/
+.ruff_cache/
+.mypy_cache/
 lib64/
 vendor/
 parts/

@@ -71,7 +71,7 @@ class RssConverter(DocumentConverter):
             file_stream.seek(cur_pos)
         return False
 
-    def _feed_type(self, doc: Any) -> str | None:
+    def _feed_type(self, doc: Any) -> Union[str, None]:
         if doc.getElementsByTagName("rss"):
             return "rss"
         elif doc.getElementsByTagName("feed"):

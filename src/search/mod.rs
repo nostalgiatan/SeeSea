@@ -70,9 +70,6 @@
 //! let response = engine_manager.search(&request).await;
 //! ```
 
-/// 结果聚合组件，负责将多个引擎的结果合并和排序
-pub mod aggregator;
-
 /// 搜索引擎集合，包含各种搜索引擎的实现
 pub mod engines;
 
@@ -94,13 +91,16 @@ pub mod engine_manager;
 /// 引擎配置组件，负责管理引擎的配置信息
 pub mod engine_config;
 
+/// 搜索工具模块，提供搜索相关的工具函数和组件
+pub mod utils;
+
+/// 搜索结果可视化模块，负责将搜索结果以二维方式排列
+pub mod result_visualization;
+
 /// 主要接口定义，提供统一的搜索服务接口
 pub mod on;
 
 // 统一导出核心组件，方便外部使用
-
-/// 搜索聚合器，负责合并和排序多个搜索引擎的结果
-pub use aggregator::{AggregationStrategy, SearchAggregator, SortBy};
 
 /// 查询解析器，负责将原始查询转换为结构化查询
 pub use query::{ParsedQuery, QueryParser};
@@ -124,3 +124,6 @@ pub use engine_manager::{EngineManager, EngineState};
 
 /// 主要搜索接口，提供统一的搜索服务
 pub use on::{SearchInterface, SearchStats, SearchStatsResult};
+
+/// 搜索结果可视化相关组件，用于将结果以二维方式排列
+pub use result_visualization::{ResultVisualizer, TwoDimensionalConfig, TwoDimensionalResult};

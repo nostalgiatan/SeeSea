@@ -167,6 +167,39 @@ impl BingImagesEngine {
                 }
             }
 
+            // 提取时间
+            let mut published_date = None;
+
+            // 尝试从结果卡片中提取时间
+            let time_selectors = [
+                "div.imgpt div[class*=\"date\"]",
+                "div.imgpt span[class*=\"date\"]",
+                "div.imgpt div[class*=\"info\"]",
+                "div.imgpt span[class*=\"info\"]",
+            ];
+
+            for selector_str in time_selectors {
+                if let Ok(selector) = Selector::parse(selector_str) {
+                    for elem in result.select(&selector) {
+                        let text = elem.text().collect::<String>().trim().to_string();
+                        if !text.is_empty() {
+                            // 使用时间提取器提取时间
+                            let time_result = crate::search::utils::time_extractor::extract_time(
+                                &text,
+                                crate::search::utils::time_extractor::TimeSource::ResultCard,
+                            );
+                            if time_result.datetime.is_some() {
+                                published_date = time_result.datetime;
+                                break;
+                            }
+                        }
+                    }
+                    if published_date.is_some() {
+                        break;
+                    }
+                }
+            }
+
             items.push(SearchResultItem {
                 title,
                 url: page_url.clone(),
@@ -184,7 +217,7 @@ impl BingImagesEngine {
                 } else {
                     Some(img_src.clone())
                 },
-                published_date: None,
+                published_date,
                 template: Some("images.html".to_string()),
                 metadata: {
                     let mut final_meta = meta;

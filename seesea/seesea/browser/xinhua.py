@@ -46,7 +46,7 @@ try:
 except ImportError:
     from typing import Any
 
-    Page = Any
+    Page = Any  # type: ignore
 
 from .base import BaseBrowserEngine, BrowserConfig, SearchResultItem, BrowserActionDict
 

@@ -179,6 +179,48 @@ impl BaiduEngine {
         };
         let mut items = Vec::new();
 
+        // 辅助函数：从JSON对象中提取时间
+        let extract_time_from_json = |entry: &Value| -> Option<chrono::DateTime<chrono::Utc>> {
+            // 尝试从常见的时间字段提取
+            let time_fields = [
+                "date",
+                "datetime",
+                "time",
+                "pubdate",
+                "published",
+                "updated",
+                "last_modified",
+            ];
+
+            for field in time_fields {
+                if let Some(time_val) = entry.get(field) {
+                    match time_val {
+                        Value::String(time_str) => {
+                            let result = crate::search::utils::time_extractor::extract_time(
+                                time_str,
+                                crate::search::utils::time_extractor::TimeSource::ResultCard,
+                            );
+                            if result.datetime.is_some() {
+                                return result.datetime;
+                            }
+                        }
+                        Value::Number(time_num) => {
+                            if let Ok(time_str) = time_num.to_string().parse::<i64>() {
+                                // 尝试解析时间戳
+                                if let Some(datetime) =
+                                    chrono::DateTime::from_timestamp(time_str, 0)
+                                {
+                                    return Some(datetime.with_timezone(&chrono::Utc));
+                                }
+                            }
+                        }
+                        _ => continue,
+                    }
+                }
+            }
+            None
+        };
+
         if let Some(feed) = json.get("feed") {
             if let Some(entries) = feed.get("entry").and_then(|e| e.as_array()) {
                 for entry in entries {
@@ -203,6 +245,9 @@ impl BaiduEngine {
                         .unwrap_or("")
                         .to_string();
 
+                    // 提取时间
+                    let published_date = extract_time_from_json(entry);
+
                     if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
                         items.push(SearchResultItem {
                             title,
@@ -213,7 +258,7 @@ impl BaiduEngine {
                             score: 1.0,
                             result_type: ResultType::Web,
                             thumbnail: None,
-                            published_date: None,
+                            published_date,
                             template: None,
                             metadata: HashMap::new(),
                         });
@@ -243,6 +288,9 @@ impl BaiduEngine {
                     .unwrap_or("")
                     .to_string();
 
+                // 提取时间
+                let published_date = extract_time_from_json(result);
+
                 if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
                     items.push(SearchResultItem {
                         title,
@@ -253,7 +301,7 @@ impl BaiduEngine {
                         score: 1.0,
                         result_type: ResultType::Web,
                         thumbnail: None,
-                        published_date: None,
+                        published_date,
                         template: None,
                         metadata: HashMap::new(),
                     });

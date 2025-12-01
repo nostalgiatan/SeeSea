@@ -68,17 +68,29 @@ def _load_plugins() -> Union[None, List[Any]]:
 
     # Load plugins
     _plugins = []
-    for entry_point in entry_points(group="markitdown.plugin"):
-        try:
-            _plugins.append(entry_point.load())
-        except Exception:
-            tb = traceback.format_exc()
-            warn(f"Plugin '{entry_point.name}' failed to load ... skipping:\n{tb}")
+    try:
+        # Try the new API first (Python 3.10+)
+        from importlib.metadata import entry_points
+        for entry_point in entry_points().select(group="markitdown.plugin"):
+            try:
+                _plugins.append(entry_point.load())
+            except Exception:
+                tb = traceback.format_exc()
+                warn(f"Plugin '{entry_point.name}' failed to load ... skipping:\n{tb}")
+    except (ImportError, AttributeError):
+        # Fall back to the old API
+        from pkg_resources import iter_entry_points
+        for entry_point in iter_entry_points(group="markitdown.plugin"):
+            try:
+                _plugins.append(entry_point.load())
+            except Exception:
+                tb = traceback.format_exc()
+                warn(f"Plugin '{entry_point.name}' failed to load ... skipping:\n{tb}")
 
     return _plugins
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(frozen=True)
 class ConverterRegistration:
     """A registration of a converter with its priority and other metadata."""
 
@@ -110,10 +122,10 @@ class MarkItDown:
 
         # TODO - remove these (see enable_builtins)
         self._llm_client: Any = None
-        self._llm_model: Union[str | None] = None
-        self._llm_prompt: Union[str | None] = None
-        self._exiftool_path: Union[str | None] = None
-        self._style_map: Union[str | None] = None
+        self._llm_model: Union[str, None] = None
+        self._llm_prompt: Union[str, None] = None
+        self._exiftool_path: Union[str, None] = None
+        self._style_map: Union[str, None] = None
 
         # Register the converters
         self._converters: List[ConverterRegistration] = []
@@ -738,7 +750,7 @@ class MarkItDown:
 
         return guesses
 
-    def _normalize_charset(self, charset: str | None) -> str | None:
+    def _normalize_charset(self, charset: Union[str, None]) -> Union[str, None]:
         """
         Normalize a charset string to a canonical form.
         """

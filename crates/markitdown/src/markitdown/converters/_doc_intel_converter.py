@@ -1,7 +1,7 @@
 import sys
 import re
 import os
-from typing import BinaryIO, Any, List
+from typing import BinaryIO, Any, List, Union
 from enum import Enum
 
 from .._base_converter import DocumentConverter, DocumentConverterResult
@@ -131,7 +131,7 @@ class DocumentIntelligenceConverter(DocumentConverter):
         *,
         endpoint: str,
         api_version: str = "2024-07-31-preview",
-        credential: AzureKeyCredential | TokenCredential | None = None,
+        credential: Union[AzureKeyCredential, TokenCredential, None] = None,
         file_types: List[DocumentIntelligenceFileType] = [
             DocumentIntelligenceFileType.DOCX,
             DocumentIntelligenceFileType.PPTX,

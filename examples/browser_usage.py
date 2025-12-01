@@ -139,7 +139,13 @@ async def example_custom_engine():
                 url = await element.get_attribute("href")
 
                 if title and url:
-                    results.append({"title": title.strip(), "url": url, "snippet": ""})
+                    # 创建符合SearchResultItem类型的字典
+                    result_item: SearchResultItem = {
+                        "title": title.strip(),
+                        "url": url,
+                        "snippet": ""
+                    }
+                    results.append(result_item)
 
             return results
 

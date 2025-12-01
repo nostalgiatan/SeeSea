@@ -181,6 +181,13 @@ impl UnsplashEngine {
                     metadata.insert("color".to_string(), color.to_string());
                 }
 
+                // 提取时间
+                let published_date = result
+                    .get("created_at")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc));
+
                 items.push(SearchResultItem {
                     title,
                     url: url.clone(),
@@ -190,7 +197,7 @@ impl UnsplashEngine {
                     score: 1.0,
                     result_type: ResultType::Image,
                     thumbnail,
-                    published_date: None,
+                    published_date,
                     template: Some("images.html".to_string()), // Python: 'template': 'images.html'
                     metadata,
                 });

@@ -1,11 +1,11 @@
 import base64
 import os
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Union
 from urllib.request import url2pathname
 from urllib.parse import urlparse, unquote_to_bytes
 
 
-def file_uri_to_path(file_uri: str) -> Tuple[str | None, str]:
+def file_uri_to_path(file_uri: str) -> Tuple[Union[str, None], str]:
     """Convert a file URI to a local file path"""
     parsed = urlparse(file_uri)
     if parsed.scheme != "file":
@@ -16,7 +16,7 @@ def file_uri_to_path(file_uri: str) -> Tuple[str | None, str]:
     return netloc, path
 
 
-def parse_data_uri(uri: str) -> Tuple[str | None, Dict[str, str], bytes]:
+def parse_data_uri(uri: str) -> Tuple[Union[str, None], Dict[str, str], bytes]:
     if not uri.startswith("data:"):
         raise ValueError("Not a data URI")
 

@@ -17,6 +17,9 @@
 //! 对搜索结果进行基本的清理和标准化
 
 use crate::derive::{SearchResult, SearchResultItem};
+use crate::search::utils::time_extractor::{TimeSource, extract_time, extract_time_from_url};
+use chrono::{DateTime, Utc};
+use scraper::{Html, Selector};
 use std::collections::HashSet;
 
 /// 清理文本
@@ -49,6 +52,95 @@ pub fn clean_text(text: &str, max_length: usize) -> String {
     }
 }
 
+/// 从HTML中提取时间
+///
+/// 尝试从HTML中提取发布时间
+///
+/// # 参数
+///
+/// * `html` - 要提取时间的HTML文本
+///
+/// # 返回
+///
+/// 提取的时间，或None
+pub fn extract_time_from_html(html: &str) -> Option<DateTime<Utc>> {
+    let document = Html::parse_document(html);
+
+    // 尝试从meta标签提取时间
+    let meta_selectors = [
+        "meta[property='article:published_time']",
+        "meta[name='article:published_time']",
+        "meta[property='og:pubdate']",
+        "meta[name='pubdate']",
+        "meta[property='og:updated_time']",
+        "meta[name='updated_time']",
+        "meta[name='date']",
+        "meta[property='article:modified_time']",
+    ];
+
+    for selector_str in meta_selectors {
+        if let Ok(selector) = Selector::parse(selector_str) {
+            for elem in document.select(&selector) {
+                if let Some(content) = elem.value().attr("content") {
+                    let result = extract_time(content, TimeSource::MetaTag);
+                    if result.datetime.is_some() {
+                        return result.datetime;
+                    }
+                }
+            }
+        }
+    }
+
+    // 尝试从时间标签提取
+    let time_selectors = [
+        "time",
+        "span[class*='time']",
+        "span[class*='date']",
+        "div[class*='time']",
+        "div[class*='date']",
+    ];
+
+    for selector_str in time_selectors {
+        if let Ok(selector) = Selector::parse(selector_str) {
+            for elem in document.select(&selector) {
+                let text = elem.text().collect::<String>().trim().to_string();
+                if !text.is_empty() {
+                    let result = extract_time(&text, TimeSource::ResultCard);
+                    if result.datetime.is_some() {
+                        return result.datetime;
+                    }
+                }
+
+                // 尝试从datetime属性提取
+                if let Some(datetime) = elem.value().attr("datetime") {
+                    let result = extract_time(datetime, TimeSource::ResultCard);
+                    if result.datetime.is_some() {
+                        return result.datetime;
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// 从内容中提取时间
+///
+/// 尝试从文本内容中提取发布时间
+///
+/// # 参数
+///
+/// * `content` - 要提取时间的文本内容
+///
+/// # 返回
+///
+/// 提取的时间，或None
+pub fn extract_time_from_content(content: &str) -> Option<DateTime<Utc>> {
+    let result = extract_time(content, TimeSource::Content);
+    result.datetime
+}
+
 /// 标准化单个结果项
 pub fn standardize_item(item: &mut SearchResultItem) {
     // 清理标题（最多200字符）
@@ -61,6 +153,24 @@ pub fn standardize_item(item: &mut SearchResultItem) {
     if item.url.trim().is_empty() {
         item.url = "#".to_string();
     }
+
+    // 提取时间
+    let mut extracted_time = None;
+
+    // 1. 尝试从URL提取时间
+    if let Some(time) = extract_time_from_url(&item.url) {
+        extracted_time = Some(time);
+    }
+
+    // 2. 尝试从内容提取时间
+    if extracted_time.is_none() {
+        if let Some(time) = extract_time_from_content(&item.content) {
+            extracted_time = Some(time);
+        }
+    }
+
+    // 设置提取的时间
+    item.published_date = extracted_time;
 }
 
 /// 简单去重（基于 URL）

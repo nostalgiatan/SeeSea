@@ -35,17 +35,25 @@ class DocumentStore:
     - Batch operations: parallel processing for bulk operations
     """
 
-    def __init__(self, embedder: TextEmbedder = None, dimension: Optional[int] = None):
+    def __init__(
+        self,
+        embedder: Optional[TextEmbedder] = None,
+        dimension: Optional[int] = None,
+        model_path: Optional[str] = None,
+        device: Optional[str] = None,
+    ):
         """
         Initialize the document store.
 
         Args:
             embedder: TextEmbedder instance (created if None)
             dimension: Vector dimension (auto-detected from embedder if None)
+            model_path: Path to the GGUF format Qwen3 embedding model (used if embedder is None)
+            device: Device to use for embedding model (used if embedder is None)
         """
         # Initialize embedder
         if embedder is None:
-            self.embedder = TextEmbedder()
+            self.embedder = TextEmbedder(model_path=model_path, device=device)
         else:
             self.embedder = embedder
 
@@ -55,7 +63,7 @@ class DocumentStore:
 
         # Initialize Rust store
         try:
-            from tf_rust import VectorStore
+            from tf_rust import VectorStore  # type: ignore[import-not-found]
 
             self._store = VectorStore(dimension)
         except ImportError as e:
@@ -183,7 +191,7 @@ class DocumentStore:
             >>> metadata = store.get("doc1")
             >>> print(metadata['title'], metadata['summary'])
         """
-        return self._store.get(doc_id)
+        return self._store.get(doc_id)  # type: ignore[no-any-return]
 
     def update(
         self,
@@ -301,7 +309,7 @@ class DocumentStore:
             ]
         else:
             # Return as dictionaries (backward compatible)
-            return raw_results
+            return raw_results  # type: ignore[no-any-return]
 
     def search_streaming(self, query: str, k: int = 5) -> Iterator[SearchResult]:
         """
@@ -365,7 +373,7 @@ class DocumentStore:
             >>> vec = embedder.encode("some text")
             >>> results = store.search_by_vector(vec, k=5)
         """
-        return self._store.search(vector, k)
+        return self._store.search(vector, k)  # type: ignore[no-any-return]
 
     def count(self) -> int:
         """
@@ -377,7 +385,7 @@ class DocumentStore:
         Example:
             >>> print(f"Total documents: {store.count()}")
         """
-        return self._store.len()
+        return self._store.len()  # type: ignore[no-any-return]
 
     def is_empty(self) -> bool:
         """
@@ -386,7 +394,7 @@ class DocumentStore:
         Returns:
             True if empty, False otherwise
         """
-        return self._store.is_empty()
+        return self._store.is_empty()  # type: ignore[no-any-return]
 
     def __len__(self) -> int:
         """Get document count."""
