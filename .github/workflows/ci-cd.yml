@@ -325,6 +325,17 @@ jobs:
     - name: List Release Files
       run: ls -la building/**/*
 
+    - name: Move Files to Root of Building Directory
+      run: |
+        # 移动所有子目录中的文件到building根目录
+        for dir in building/*; do
+          if [ -d "$dir" ]; then
+            mv "$dir"/* building/
+            rmdir "$dir"
+          fi
+        done
+        ls -la building/
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
@@ -332,6 +343,8 @@ jobs:
           building/*.exe
           building/*.dmg
           building/*.deb
+          building/*.whl
+          building/*.toml
         draft: false
         prerelease: false
         body: |
