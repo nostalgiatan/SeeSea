@@ -94,27 +94,27 @@ async fn execute_search(
     let response = state.search.search(&request).await?;
 
     // 转换结果 - 收集所有结果
-    let mut results = Vec::new();
+    // 预分配容量减少内存分配
+    let total_items: usize = response.results.iter().map(|r| r.items.len()).sum();
+    let mut results = Vec::with_capacity(total_items);
+
     for search_result in &response.results {
         for item in &search_result.items {
+            // 将DateTime转换为ISO 8601字符串格式
+            let published_date = item.published_date.as_ref().map(|dt| dt.to_rfc3339());
+
             results.push(ApiSearchResultItem {
                 title: item.title.clone(),
                 url: item.url.clone(),
                 description: Some(item.content.clone()),
                 engine: search_result.engine_name.clone(),
                 score: Some(item.score),
+                published_date,
             });
         }
     }
 
-    // 按分数降序排序，确保最相关的结果在前面
-    results.sort_by(|a, b| {
-        let score_a = a.score.unwrap_or(0.0);
-        let score_b = b.score.unwrap_or(0.0);
-        score_b
-            .partial_cmp(&score_a)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    // 不需要重复排序，因为搜索结果已经在search方法中排序过了
 
     let elapsed = start_time.elapsed().as_millis() as u64;
 

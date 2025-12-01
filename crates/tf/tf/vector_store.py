@@ -22,7 +22,7 @@ class VectorStoreWrapper:
     KEY FEATURE: Content is NOT stored - only vectors and metadata!
     """
 
-    def __init__(self, embedder: TextEmbedder = None, rust_store=None):
+    def __init__(self, embedder: Optional[TextEmbedder] = None, rust_store=None):
         """
         Initialize the vector store wrapper.
 
@@ -39,16 +39,16 @@ class VectorStoreWrapper:
         # Initialize Rust store
         if rust_store is None:
             try:
-                from tf_rust import VectorStore
+                from tf_rust import VectorStore  # type: ignore[import-not-found]
 
-                self.store = VectorStore(self.embedder.get_dimension())
+                self.store = VectorStore(self.embedder.get_dimension())  # type: ignore[assignment]
             except ImportError as e:
                 raise ImportError(
                     "Failed to import tf_rust module. "
                     "Please build the Rust extension first using 'maturin develop' or 'maturin build'."
                 ) from e
         else:
-            self.store = rust_store
+            self.store = rust_store  # type: ignore[assignment]
 
     def add_document(
         self, doc_id: str, content: str, title: str = "", url: str = "", summary: str = ""
@@ -77,8 +77,8 @@ class VectorStoreWrapper:
                 and len(embedding) > 0
                 and isinstance(embedding[0], list)
             ):
-                embedding = embedding[0]
-            return embedding
+                return embedding[0]  # type: ignore[return-value]
+            return embedding  # type: ignore[return-value]
 
         # Call Rust's set method with the callback
         # Rust will:
@@ -158,7 +158,7 @@ class VectorStoreWrapper:
         # Search in Rust store
         results = self.store.search(query_embedding, k)
 
-        return results
+        return results  # type: ignore[no-any-return]
 
     def search_by_embedding(self, embedding: List[float], k: int = 5) -> List[Dict[str, Any]]:
         """
@@ -171,7 +171,7 @@ class VectorStoreWrapper:
         Returns:
             List of result dictionaries with keys: id, score, title, url
         """
-        return self.store.search(embedding, k)
+        return self.store.search(embedding, k)  # type: ignore[no-any-return]
 
     def remove_document(self, doc_id: str) -> None:
         """
@@ -192,12 +192,12 @@ class VectorStoreWrapper:
         Returns:
             Dictionary with title, url, and summary (no content!)
         """
-        return self.store.get_metadata(doc_id)
+        return self.store.get_metadata(doc_id)  # type: ignore[no-any-return]
 
     def __len__(self) -> int:
         """Get the number of documents in the store."""
-        return self.store.len()
+        return self.store.len()  # type: ignore[no-any-return]
 
     def is_empty(self) -> bool:
         """Check if the store is empty."""
-        return self.store.is_empty()
+        return self.store.is_empty()  # type: ignore[no-any-return]

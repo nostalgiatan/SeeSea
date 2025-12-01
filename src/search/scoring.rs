@@ -85,6 +85,38 @@ impl Default for ScoringContext {
     }
 }
 
+/// 预评分函数 - 轻量级评分，用于流式处理中的初步评分
+///
+/// 只计算快速评分指标，避免复杂的BM25计算
+pub fn pre_score_item(item: &mut SearchResultItem, query: &SearchQuery, engine_name: &str) {
+    // 快速评分，只考虑关键指标
+    let mut score = 0.0;
+
+    // 1. 标题匹配（快速检查）
+    let title_lower = item.title.to_lowercase();
+    let query_lower = query.query.to_lowercase();
+
+    if title_lower == query_lower {
+        score += 0.4; // 完全匹配
+    } else if title_lower.starts_with(&query_lower) {
+        score += 0.3; // 开头匹配
+    } else if title_lower.contains(&query_lower) {
+        score += 0.2; // 包含匹配
+    }
+
+    // 2. URL匹配（快速检查）
+    let url_lower = item.url.to_lowercase();
+    if url_lower.contains(&query_lower) {
+        score += 0.2; // URL包含查询词
+    }
+
+    // 3. 引擎权威度
+    score += get_engine_authority(engine_name) * 0.2;
+
+    // 4. 确保分数在合理范围内
+    item.score = score.clamp(0.0, 1.0);
+}
+
 /// 引擎权威度评分
 pub fn get_engine_authority(engine_name: &str) -> f64 {
     match engine_name.to_lowercase().as_str() {

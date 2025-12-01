@@ -67,6 +67,8 @@ impl ResultCache {
         query.page_size.hash(&mut hasher);
         query.language.hash(&mut hasher);
         query.region.hash(&mut hasher);
+        query.query_type.hash(&mut hasher); // 添加查询类型
+        query.filters.hash(&mut hasher); // 添加查询过滤器
         engine_name.hash(&mut hasher);
 
         format!("{}{:x}", RESULT_KEY_PREFIX, hasher.finish())
@@ -368,7 +370,7 @@ mod tests {
             bloom_filter_false_positive_rate: 0.01,
         };
 
-        let manager = Arc::new(CacheManager::new(config).expect("Failed to create cache manager"));
+        let manager = CacheManager::instance(config).expect("Failed to create cache manager");
         ResultCache::new(manager)
     }
 

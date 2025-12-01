@@ -30,7 +30,7 @@ Performance Optimizations:
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, TypedDict, Callable, Type, TYPE_CHECKING
+from typing import Dict, List, Optional, Any, TypedDict, Callable, Type, TYPE_CHECKING, AsyncGenerator
 import asyncio
 from contextlib import asynccontextmanager
 
@@ -51,18 +51,18 @@ except ImportError:
         # For type checking purposes only
         from typing import Callable, ContextManager
 
-        PlaywrightContextManager = ContextManager[Any]
-        async_playwright = Callable[[], PlaywrightContextManager]
-        Browser = Type[Any]
-        Page = Type[Any]
-        Playwright = Type[Any]
+        PlaywrightContextManager = ContextManager[Any]  # type: ignore
+        async_playwright = Callable[[], PlaywrightContextManager]  # type: ignore
+        Browser = Any  # type: ignore
+        Page = Any  # type: ignore
+        Playwright = Any  # type: ignore
     else:
         # At runtime, these are just None
-        PlaywrightContextManager = Any
-        async_playwright = None
-        Browser = None
-        Page = None
-        Playwright = None
+        PlaywrightContextManager = Any  # type: ignore
+        async_playwright = None  # type: ignore
+        Browser = None  # type: ignore
+        Page = None  # type: ignore
+        Playwright = None  # type: ignore
 
 
 class SearchResultItem(TypedDict, total=False):
@@ -261,7 +261,7 @@ class BaseBrowserEngine(ABC):
             self._playwright = None
 
     @asynccontextmanager
-    async def _get_page(self) -> Any:
+    async def _get_page(self) -> AsyncGenerator[Page, None]:
         """
         Create a new browser page with proper configuration
 
@@ -462,7 +462,7 @@ class BrowserEngineClient:
         self.config = config or BrowserConfig()
 
     @asynccontextmanager
-    async def get_engine(self, engine_class: type) -> Any:
+    async def get_engine(self, engine_class: Type[BaseBrowserEngine]) -> AsyncGenerator[BaseBrowserEngine, None]:
         """
         Get a browser engine instance with automatic cleanup
 
@@ -482,7 +482,7 @@ class BrowserEngineClient:
 
     async def execute_search(
         self,
-        engine_class: type,
+        engine_class: Type[BaseBrowserEngine],
         url: str,
         actions: List[BrowserActionDict],
         params: Optional[Dict[str, Any]] = None,
@@ -509,8 +509,8 @@ class BrowserEngineClient:
             ...     params={"query": "科技"}
             ... )
         """
-        async with self.get_engine(engine_class) as engine:
-            return await engine.search(url, actions, params)
+        async with self.get_engine(engine_class) as engine:  # type: ignore[var-annotated]
+            return await engine.search(url, actions, params)  # type: ignore[no-any-return]
 
     def is_available(self) -> bool:
         """

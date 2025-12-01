@@ -204,6 +204,10 @@ pub struct ApiSearchResultItem {
     /// 评分（用于排序）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<f64>,
+
+    /// 发布时间
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub published_date: Option<String>,
 }
 
 /// API 错误响应

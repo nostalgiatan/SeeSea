@@ -34,6 +34,45 @@ pub struct SearchConfig {
     pub search_timeout: u64,
     /// 并发引擎数量限制
     pub max_concurrent_engines: usize,
+    /// 最小并发数
+    #[serde(default)]
+    pub min_concurrency: usize,
+    /// 最大并发数
+    #[serde(default)]
+    pub max_concurrency: usize,
+    /// 并发调整间隔（秒）
+    #[serde(default)]
+    pub concurrency_adjust_interval: u64,
+    /// 并发基础倍数
+    #[serde(default)]
+    pub concurrency_base_multiplier: f64,
+    /// 预创建引擎列表
+    #[serde(default)]
+    pub precreate_engines: Vec<String>,
+    /// 预创建引擎数量
+    #[serde(default)]
+    pub precreate_engine_count: usize,
+    /// 引擎缓存最大大小
+    #[serde(default)]
+    pub engine_cache_max_size: usize,
+    /// 引擎缓存最小大小
+    #[serde(default)]
+    pub engine_cache_min_size: usize,
+    /// 引擎缓存过期时间（秒）
+    #[serde(default)]
+    pub engine_cache_ttl: u64,
+    /// 引擎实例池大小
+    #[serde(default)]
+    pub engine_pool_size: usize,
+    /// 引擎实例池最大大小
+    #[serde(default)]
+    pub engine_pool_max_size: usize,
+    /// 引擎实例池最小大小
+    #[serde(default)]
+    pub engine_pool_min_size: usize,
+    /// 引擎健康检查间隔（秒）
+    #[serde(default)]
+    pub engine_health_check_interval: u64,
     /// 默认语言
     pub default_language: String,
     /// 支持的语言列表
@@ -202,6 +241,23 @@ impl Default for SearchConfig {
             max_results_per_page: 50,
             search_timeout: 30,
             max_concurrent_engines: 5,
+            min_concurrency: 1,
+            max_concurrency: 200,
+            concurrency_adjust_interval: 1,
+            concurrency_base_multiplier: 10.0,
+            precreate_engines: vec![
+                "bing".to_string(),
+                "baidu".to_string(),
+                "yandex".to_string(),
+            ],
+            precreate_engine_count: 3,
+            engine_cache_max_size: 20,
+            engine_cache_min_size: 5,
+            engine_cache_ttl: 3600, // 1小时
+            engine_pool_size: 5,
+            engine_pool_max_size: 10,
+            engine_pool_min_size: 2,
+            engine_health_check_interval: 300, // 5分钟
             default_language: "auto".to_string(),
             supported_languages: vec![
                 "en".to_string(),

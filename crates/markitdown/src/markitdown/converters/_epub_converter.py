@@ -3,7 +3,7 @@ import zipfile
 from defusedxml import minidom
 from xml.dom.minidom import Document
 
-from typing import BinaryIO, Any, Dict, List
+from typing import BinaryIO, Any, Dict, List, Union
 
 from ._html_converter import HtmlConverter
 from .._base_converter import DocumentConverterResult
@@ -125,7 +125,7 @@ class EpubConverter(HtmlConverter):
                 markdown="\n\n".join(markdown_content), title=metadata["title"]
             )
 
-    def _get_text_from_node(self, dom: Document, tag_name: str) -> str | None:
+    def _get_text_from_node(self, dom: Document, tag_name: str) -> Union[str, None]:
         """Convenience function to extract a single occurrence of a tag (e.g., title)."""
         texts = self._get_all_texts_from_nodes(dom, tag_name)
         if len(texts) > 0:

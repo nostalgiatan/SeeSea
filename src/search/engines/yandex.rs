@@ -199,6 +199,40 @@ impl YandexEngine {
                     }
                 }
 
+                // 提取时间
+                let mut published_date = None;
+
+                // 尝试从结果卡片中提取时间
+                let time_selectors = [
+                    "div.organic__datetime",
+                    "span.organic__datetime",
+                    "div.organic__meta",
+                    "span.organic__meta",
+                    "div.organic__subtitle",
+                    "span.organic__subtitle",
+                    "div.serp-item__meta",
+                    "span.serp-item__meta",
+                ];
+
+                for selector_str in time_selectors {
+                    if let Ok(selector) = Selector::parse(selector_str) {
+                        for elem in result.select(&selector) {
+                            let text = elem.text().collect::<String>().trim().to_string();
+                            if !text.is_empty() {
+                                // 使用时间提取器提取时间
+                                let time_result = crate::search::utils::time_extractor::extract_time(&text, crate::search::utils::time_extractor::TimeSource::ResultCard);
+                                if time_result.datetime.is_some() {
+                                    published_date = time_result.datetime;
+                                    break;
+                                }
+                            }
+                        }
+                        if published_date.is_some() {
+                            break;
+                        }
+                    }
+                }
+
                 // 过滤有效结果
                 if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
                     items.push(SearchResultItem {
@@ -210,7 +244,7 @@ impl YandexEngine {
                         score: 1.0,
                         result_type: ResultType::Web,
                         thumbnail: None,
-                        published_date: None,
+                        published_date,
                         template: None,
                         metadata: HashMap::new(),
                     });

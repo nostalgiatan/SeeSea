@@ -1,5 +1,9 @@
 name: CI/CD Pipeline
 
+permissions:
+  contents: write
+  releases: write
+
 on:
   push:
     branches: [ main ]
@@ -441,6 +445,10 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install black ruff mypy
+        # Install type stubs for better mypy checking
+        pip install types-requests types-numpy types-pandas types-openpyxl types-xlrd types-defusedxml
+        # Install numpy for vector operations
+        pip install numpy
 
     - name: Run Black
       working-directory: ./seesea
