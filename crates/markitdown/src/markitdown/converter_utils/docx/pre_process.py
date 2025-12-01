@@ -62,9 +62,7 @@ def _get_omath_tag_replacement(tag: Tag, block: bool = False) -> Tag:
     """
     t_tag = Tag(name="w:t")
     t_tag.string = (
-        f"$${_convert_omath_to_latex(tag)}$$"
-        if block
-        else f"${_convert_omath_to_latex(tag)}$"
+        f"$${_convert_omath_to_latex(tag)}$$" if block else f"${_convert_omath_to_latex(tag)}$"
     )
     r_tag = Tag(name="w:r")
     r_tag.append(t_tag)

@@ -176,9 +176,7 @@ class RssConverter(DocumentConverter):
         except BaseException as _:
             return content
 
-    def _get_data_by_tag_name(
-        self, element: Element, tag_name: str
-    ) -> Union[str, None]:
+    def _get_data_by_tag_name(self, element: Element, tag_name: str) -> Union[str, None]:
         """Get data from first child element with the given tag name.
         Returns None when no such element is found.
         """

@@ -19,9 +19,7 @@ else:
         FileTestVector,
     )
 
-skip_remote = (
-    True if os.environ.get("GITHUB_ACTIONS") else False
-)  # Don't run these tests in CI
+skip_remote = True if os.environ.get("GITHUB_ACTIONS") else False  # Don't run these tests in CI
 
 TEST_FILES_DIR = os.path.join(os.path.dirname(__file__), "test_files")
 TEST_FILES_URL = "https://raw.githubusercontent.com/microsoft/markitdown/refs/heads/main/packages/markitdown/tests/test_files"
@@ -115,9 +113,7 @@ def test_input_from_stdin_without_hints(shared_tmp_dir, test_vector) -> None:
     )
 
     stdout = result.stdout.decode(locale.getpreferredencoding())
-    assert (
-        result.returncode == 0
-    ), f"CLI exited with error: {result.stderr.decode('utf-8')}"
+    assert result.returncode == 0, f"CLI exited with error: {result.stderr.decode('utf-8')}"
     for test_string in test_vector.must_include:
         assert test_string in stdout
     for test_string in test_vector.must_not_include:

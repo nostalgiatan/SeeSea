@@ -61,9 +61,7 @@ class EpubConverter(HtmlConverter):
 
             # Locate content.opf
             container_dom = minidom.parse(z.open("META-INF/container.xml"))
-            opf_path = container_dom.getElementsByTagName("rootfile")[0].getAttribute(
-                "full-path"
-            )
+            opf_path = container_dom.getElementsByTagName("rootfile")[0].getAttribute("full-path")
 
             # Parse content.opf
             opf_dom = minidom.parse(z.open(opf_path))
@@ -88,9 +86,7 @@ class EpubConverter(HtmlConverter):
             spine_order = [item.getAttribute("idref") for item in spine_items]
 
             # Convert spine order to actual file paths
-            base_path = "/".join(
-                opf_path.split("/")[:-1]
-            )  # Get base directory of content.opf
+            base_path = "/".join(opf_path.split("/")[:-1])  # Get base directory of content.opf
             spine = [
                 f"{base_path}/{manifest[item_id]}" if base_path else manifest[item_id]
                 for item_id in spine_order

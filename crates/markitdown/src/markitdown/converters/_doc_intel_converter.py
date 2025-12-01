@@ -77,13 +77,9 @@ def _get_mime_type_prefixes(types: List[DocumentIntelligenceFileType]) -> List[s
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
         elif type_ == DocumentIntelligenceFileType.PPTX:
-            prefixes.append(
-                "application/vnd.openxmlformats-officedocument.presentationml"
-            )
+            prefixes.append("application/vnd.openxmlformats-officedocument.presentationml")
         elif type_ == DocumentIntelligenceFileType.XLSX:
-            prefixes.append(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            prefixes.append("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         elif type_ == DocumentIntelligenceFileType.HTML:
             prefixes.append("text/html")
             prefixes.append("application/xhtml+xml")

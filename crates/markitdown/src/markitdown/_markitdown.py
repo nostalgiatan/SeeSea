@@ -51,12 +51,8 @@ from ._exceptions import (
 
 
 # Lower priority values are tried first.
-PRIORITY_SPECIFIC_FILE_FORMAT = (
-    0.0  # e.g., .docx, .pdf, .xlsx, Or specific pages, e.g., wikipedia
-)
-PRIORITY_GENERIC_FILE_FORMAT = (
-    10.0  # Near catch-all converters for mimetypes like text/*, etc.
-)
+PRIORITY_SPECIFIC_FILE_FORMAT = 0.0  # e.g., .docx, .pdf, .xlsx, Or specific pages, e.g., wikipedia
+PRIORITY_GENERIC_FILE_FORMAT = 10.0  # Near catch-all converters for mimetypes like text/*, etc.
 
 
 _plugins: Union[None, List[Any]] = None  # If None, plugins have not been loaded yet.
@@ -122,9 +118,7 @@ class MarkItDown:
         # Register the converters
         self._converters: List[ConverterRegistration] = []
 
-        if (
-            enable_builtins is None or enable_builtins
-        ):  # Default to True when not specified
+        if enable_builtins is None or enable_builtins:  # Default to True when not specified
             self.enable_builtins(**kwargs)
 
         if enable_plugins:
@@ -171,15 +165,11 @@ class MarkItDown:
             # Register converters for successful browsing operations
             # Later registrations are tried first / take higher priority than earlier registrations
             # To this end, the most specific converters should appear below the most generic converters
-            self.register_converter(
-                PlainTextConverter(), priority=PRIORITY_GENERIC_FILE_FORMAT
-            )
+            self.register_converter(PlainTextConverter(), priority=PRIORITY_GENERIC_FILE_FORMAT)
             self.register_converter(
                 ZipConverter(markitdown=self), priority=PRIORITY_GENERIC_FILE_FORMAT
             )
-            self.register_converter(
-                HtmlConverter(), priority=PRIORITY_GENERIC_FILE_FORMAT
-            )
+            self.register_converter(HtmlConverter(), priority=PRIORITY_GENERIC_FILE_FORMAT)
             self.register_converter(RssConverter())
             self.register_converter(WikipediaConverter())
             self.register_converter(YouTubeConverter())
@@ -324,9 +314,7 @@ class MarkItDown:
             base_guess = base_guess.copy_and_update(url=url)
 
         with open(path, "rb") as fh:
-            guesses = self._get_stream_info_guesses(
-                file_stream=fh, base_guess=base_guess
-            )
+            guesses = self._get_stream_info_guesses(file_stream=fh, base_guess=base_guess)
             return self._convert(file_stream=fh, stream_info_guesses=guesses, **kwargs)
 
     def convert_stream(
@@ -401,9 +389,7 @@ class MarkItDown:
         *,
         stream_info: Optional[StreamInfo] = None,
         file_extension: Optional[str] = None,  # Deprecated -- use stream_info
-        mock_url: Optional[
-            str
-        ] = None,  # Mock the request as if it came from a different URL
+        mock_url: Optional[str] = None,  # Mock the request as if it came from a different URL
         **kwargs: Any,
     ) -> DocumentConverterResult:
         uri = uri.strip()
@@ -412,9 +398,7 @@ class MarkItDown:
         if uri.startswith("file:"):
             netloc, path = file_uri_to_path(uri)
             if netloc and netloc != "localhost":
-                raise ValueError(
-                    f"Unsupported file URI: {uri}. Netloc must be empty or localhost."
-                )
+                raise ValueError(f"Unsupported file URI: {uri}. Netloc must be empty or localhost.")
             return self.convert_local(
                 path,
                 stream_info=stream_info,
@@ -523,9 +507,7 @@ class MarkItDown:
         buffer.seek(0)
 
         # Convert
-        guesses = self._get_stream_info_guesses(
-            file_stream=buffer, base_guess=base_guess
-        )
+        guesses = self._get_stream_info_guesses(file_stream=buffer, base_guess=base_guess)
         return self._convert(file_stream=buffer, stream_info_guesses=guesses, **kwargs)
 
     def _convert(
@@ -599,9 +581,7 @@ class MarkItDown:
                         res = converter.convert(file_stream, stream_info, **_kwargs)
                     except Exception:
                         failed_attempts.append(
-                            FailedConversionAttempt(
-                                converter=converter, exc_info=sys.exc_info()
-                            )
+                            FailedConversionAttempt(converter=converter, exc_info=sys.exc_info())
                         )
                     finally:
                         file_stream.seek(cur_pos)
@@ -659,9 +639,7 @@ class MarkItDown:
         after the built-ins. For example, a plugin with priority 9 will run
         before the PlainTextConverter, but after the built-in converters.
         """
-        self._converters.insert(
-            0, ConverterRegistration(converter=converter, priority=priority)
-        )
+        self._converters.insert(0, ConverterRegistration(converter=converter, priority=priority))
 
     def _get_stream_info_guesses(
         self, file_stream: BinaryIO, base_guess: StreamInfo
@@ -676,9 +654,7 @@ class MarkItDown:
 
         # If there's an extension and no mimetype, try to guess the mimetype
         if base_guess.mimetype is None and base_guess.extension is not None:
-            _m, _ = mimetypes.guess_type(
-                "placeholder" + base_guess.extension, strict=False
-            )
+            _m, _ = mimetypes.guess_type("placeholder" + base_guess.extension, strict=False)
             if _m is not None:
                 enhanced_guess = enhanced_guess.copy_and_update(mimetype=_m)
 
@@ -719,8 +695,7 @@ class MarkItDown:
 
                 if (
                     base_guess.extension is not None
-                    and base_guess.extension.lstrip(".")
-                    not in result.prediction.output.extensions
+                    and base_guess.extension.lstrip(".") not in result.prediction.output.extensions
                 ):
                     compatible = False
 
@@ -734,8 +709,7 @@ class MarkItDown:
                     # Add the compatible base guess
                     guesses.append(
                         StreamInfo(
-                            mimetype=base_guess.mimetype
-                            or result.prediction.output.mime_type,
+                            mimetype=base_guess.mimetype or result.prediction.output.mime_type,
                             extension=base_guess.extension or guessed_extension,
                             charset=base_guess.charset or charset,
                             filename=base_guess.filename,

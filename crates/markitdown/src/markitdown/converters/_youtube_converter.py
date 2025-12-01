@@ -162,9 +162,7 @@ class YouTubeConverter(DocumentConverter):
                     )
                     # Retry the transcript fetching operation
                     transcript = self._retry_operation(
-                        lambda: ytt_api.fetch(
-                            video_id, languages=youtube_transcript_languages
-                        ),
+                        lambda: ytt_api.fetch(video_id, languages=youtube_transcript_languages),
                         retries=3,  # Retry 3 times
                         delay=2,  # 2 seconds delay between retries
                     )

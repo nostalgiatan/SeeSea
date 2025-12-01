@@ -59,11 +59,8 @@ class OutlookMsgConverter(DocumentConverter):
             if olefile is not None:
                 msg = olefile.OleFileIO(file_stream)
                 toc = "\n".join([str(stream) for stream in msg.listdir()])
-                return (
-                    "__properties_version1.0" in toc
-                    and "__recip_version1.0_#00000000" in toc
-                )
-        except Exception as e:
+                return "__properties_version1.0" in toc and "__recip_version1.0_#00000000" in toc
+        except Exception:
             pass
         finally:
             file_stream.seek(cur_pos)
@@ -90,9 +87,7 @@ class OutlookMsgConverter(DocumentConverter):
                 _dependency_exc_info[2]
             )
 
-        assert (
-            olefile is not None
-        )  # If we made it this far, olefile should be available
+        assert olefile is not None  # If we made it this far, olefile should be available
         msg = olefile.OleFileIO(file_stream)
 
         # Extract email metadata
