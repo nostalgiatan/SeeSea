@@ -84,7 +84,7 @@ impl SearchInterface {
         let total_memory = system.total_memory();
         let available_memory = system.available_memory();
         let memory_usage = ((total_memory - available_memory) as f64 / total_memory as f64) * 100.0;
-        let load_avg = system.load_average().one as f64;
+        let load_avg = sysinfo::System::load_average().one as f64;
 
         // 基础并发数 = CPU核心数 * 基准倍数
         let base_concurrency = (cpu_cores as f64 * 8.0) as usize; // 调整基准倍数为8.0，更合理的初始值
@@ -148,7 +148,7 @@ impl SearchInterface {
         let cpu_cores = num_cpus::get();
         let initial_concurrency = std::cmp::min(
             (cpu_cores as f64 * 8.0) as usize, // 调整基准倍数为8.0，更合理的初始值
-            self.config.max_concurrent_engines // 优先使用配置中的最大并发数
+            config.max_concurrent_engines // 优先使用配置中的最大并发数
         );
         let semaphore = Arc::new(Semaphore::new(initial_concurrency.clamp(1, 200))); // 使用硬编码的最小和最大并发数
 
@@ -1067,7 +1067,7 @@ impl SearchInterface {
                         let result_cache = cache.results();
                         
                         // 根据引擎类型和查询类型设置不同的TTL
-                        let ttl = match engine_name {
+                        let ttl = match engine_name.as_str() {
                             // 图片和视频搜索结果可以缓存更长时间
                             "unsplash" | "bing_images" | "bilibili" | "bing_videos" | "sogou_videos" => {
                                 Some(Duration::from_secs(24 * 3600)) // 24小时

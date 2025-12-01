@@ -67,8 +67,17 @@ impl ResultCache {
         query.page_size.hash(&mut hasher);
         query.language.hash(&mut hasher);
         query.region.hash(&mut hasher);
-        query.query_type.hash(&mut hasher); // 添加查询类型
-        query.filters.hash(&mut hasher); // 添加查询过滤器
+        query.engine_type.hash(&mut hasher); // 添加引擎类型
+        
+        // 将 SafeSearchLevel 转换为数字进行哈希
+        let safe_search_num = match query.safe_search {
+            crate::config::common::SafeSearchLevel::None => 0,
+            crate::config::common::SafeSearchLevel::Moderate => 1,
+            crate::config::common::SafeSearchLevel::Strict => 2,
+        };
+        safe_search_num.hash(&mut hasher); // 添加安全搜索级别
+        
+        query.time_range.hash(&mut hasher); // 添加时间范围
         engine_name.hash(&mut hasher);
 
         format!("{}{:x}", RESULT_KEY_PREFIX, hasher.finish())
