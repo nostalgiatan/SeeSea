@@ -335,6 +335,7 @@ class SeeSeaInstaller:
             ("maturin[patchelf]", "maturin"),
             ("rich", "rich"),
             ("click", "click"),
+            ("typing-extensions", "typing_extensions"),
         ]
 
         missing_packages = []
