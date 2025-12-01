@@ -23,24 +23,24 @@ platform.macos_default_dir = "/Applications/SeeSea"
 
 [[dependencies]]
 name = "playwright"
-version = "^1.40.0"
+version = "1.56.0"
 kind = "runtime"
 optional = false
 
 [[dependencies]]
 name = "rich"
-version = "^13.0.0"
+version = "13.0.0"
 kind = "runtime"
 optional = false
 
 [[dependencies]]
 name = "click"
-version = "^8.0.0"
+version = "8.0.0"
 kind = "runtime"
 optional = false
 
 [[dependencies]]
 name = "typing-extensions"
-version = "^4.0.0"
+version = "4.0.0"
 kind = "runtime"
 optional = false
