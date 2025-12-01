@@ -149,20 +149,26 @@ jobs:
       run: |
         # Remove dot from Python version (e.g., py3.9 -> py39)
         $PYTHON_VERSION_NO_DOT = "${{ matrix.python-version }}".Replace(".", "")
-        # Check if target/release directory exists
-        if (Test-Path -Path "./installer/target/release/") {
-          # List available files for debugging
-          Get-ChildItem -Path "./installer/target/release/"
-          
-          # 查找并重命名exe安装程序，使用更灵活的匹配
-          $EXE_FILE = Get-ChildItem -Path "./installer/target/release/" -Name "*.exe" | Select-Object -First 1
-          if ($EXE_FILE) {
-            Move-Item -Path "./installer/target/release/$EXE_FILE" -Destination "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}-setup.exe"
-          }
+        Write-Host "Python version without dot: $PYTHON_VERSION_NO_DOT"
+        
+        # 检查target目录结构
+        Write-Host "Listing installer/target directory structure:"
+        Get-ChildItem -Path "./installer/target/" -Recurse | Select-Object -Property FullName
+        
+        # 查找所有exe文件
+        Write-Host "Finding all exe files in installer/target:"
+        $ALL_EXE_FILES = Get-ChildItem -Path "./installer/target/" -Name "*.exe" -Recurse
+        Write-Host "Found exe files: $ALL_EXE_FILES"
+        
+        # 查找并重命名exe安装程序
+        $EXE_FILE = $ALL_EXE_FILES | Select-Object -First 1
+        if ($EXE_FILE) {
+          # 获取完整路径
+          $FULL_PATH = Get-ChildItem -Path "./installer/target/" -Name "$EXE_FILE" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          Write-Host "Found exe file: $FULL_PATH"
+          Move-Item -Path "$FULL_PATH" -Destination "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}-setup.exe"
         } else {
-          Write-Host "target/release directory not found, skipping rename"
-          # List available directories for debugging
-          Get-ChildItem -Path "./installer/"
+          Write-Host "No exe files found in installer/target directory"
         }
 
     # Rename Linux installer
@@ -171,20 +177,19 @@ jobs:
       run: |
         # Remove dot from Python version (e.g., py3.9 -> py39)
         PYTHON_VERSION_NO_DOT=$(echo "${{ matrix.python-version }}" | tr -d '.')
-        # Check if target/release directory exists
-        if [ -d "./installer/target/release/" ]; then
-          # List available files for debugging
-          ls -la ./installer/target/release/
-          
-          # 查找并重命名deb包，使用更灵活的匹配
-          DEB_FILE=$(find ./installer/target/release/ -name "*.deb" | head -1)
-          if [ -n "$DEB_FILE" ]; then
-            mv "$DEB_FILE" "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.deb"
-          fi
+        echo "Python version without dot: $PYTHON_VERSION_NO_DOT"
+        
+        # 检查target目录结构
+        echo "Listing installer/target directory structure:"
+        find ./installer/target/ -type f | sort
+        
+        # 查找并重命名deb包
+        DEB_FILE=$(find ./installer/target/ -name "*.deb" | head -1)
+        if [ -n "$DEB_FILE" ]; then
+          echo "Found deb file: $DEB_FILE"
+          mv "$DEB_FILE" "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.deb"
         else
-          echo "target/release directory not found, skipping rename"
-          # List available directories for debugging
-          ls -la ./installer/
+          echo "No deb files found in installer/target directory"
         fi
 
     # Rename macOS installer
@@ -193,20 +198,19 @@ jobs:
       run: |
         # Remove dot from Python version (e.g., py3.9 -> py39)
         PYTHON_VERSION_NO_DOT=$(echo "${{ matrix.python-version }}" | tr -d '.')
-        # Check if target/release directory exists
-        if [ -d "./installer/target/release/" ]; then
-          # List available files for debugging
-          ls -la ./installer/target/release/
-          
-          # 查找并重命名dmg镜像，使用更灵活的匹配
-          DMG_FILE=$(find ./installer/target/release/ -name "*.dmg" | head -1)
-          if [ -n "$DMG_FILE" ]; then
-            mv "$DMG_FILE" "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.dmg"
-          fi
+        echo "Python version without dot: $PYTHON_VERSION_NO_DOT"
+        
+        # 检查target目录结构
+        echo "Listing installer/target directory structure:"
+        find ./installer/target/ -type f | sort
+        
+        # 查找并重命名dmg镜像
+        DMG_FILE=$(find ./installer/target/ -name "*.dmg" | head -1)
+        if [ -n "$DMG_FILE" ]; then
+          echo "Found dmg file: $DMG_FILE"
+          mv "$DMG_FILE" "./building/seesea-installer_1.0.0_py$PYTHON_VERSION_NO_DOT_${{ matrix.platform }}_${{ matrix.arch }}.dmg"
         else
-          echo "target/release directory not found, skipping rename"
-          # List available directories for debugging
-          ls -la ./installer/
+          echo "No dmg files found in installer/target directory"
         fi
 
     - name: Upload Artifacts
@@ -236,7 +240,9 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          building/**/*
+          building/*.exe
+          building/*.dmg
+          building/*.deb
         draft: false
         prerelease: false
         body: |
