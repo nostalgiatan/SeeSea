@@ -354,11 +354,10 @@ impl ResultVisualizer {
                     for i in 0..interval_sizes.len() {
                         if indices[i] < remaining[i] {
                             let key = &interval_sizes[i].0;
-                            if let Some(items) = timeline_map.get(key) {
-                                if let Some(item) = items.get(indices[i]) {
-                                    result.push(item.clone());
-                                    indices[i] += 1;
-                                }
+                            if let Some(items) = timeline_map.get(key)
+                                && let Some(item) = items.get(indices[i]) {
+                                result.push(item.clone());
+                                indices[i] += 1;
                             }
                         }
                     }
