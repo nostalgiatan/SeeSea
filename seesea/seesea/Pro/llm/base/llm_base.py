@@ -408,4 +408,4 @@ class LLMBase(ABC):
         llm_class = cls.get_llm_class(llm_type)
         if llm_class is None:
             raise ValueError(f"未注册的LLM类型: {llm_type}")
-        return llm_class(model_name, api_key, **kwargs)
+        return llm_class(model_name, api_key, **kwargs)  # type: ignore[no-any-return]

@@ -50,7 +50,7 @@ class OpenAILLM(LLMBase):
         super().__init__(model_name, api_key, **kwargs)
 
         # 导入openai模块
-        import openai
+        import openai  # type: ignore[import-not-found]
 
         # 配置OpenAI客户端
         self.client = openai.OpenAI(
@@ -117,7 +117,7 @@ class OpenAILLM(LLMBase):
                 return result
             else:
                 # 非流式生成
-                return response.choices[0].message.content.strip()
+                return response.choices[0].message.content.strip()  # type: ignore[no-any-return]
 
         except Exception as e:
             raise RuntimeError(f"OpenAI LLM生成文本失败: {str(e)}") from e
@@ -146,7 +146,7 @@ class OpenAILLM(LLMBase):
             # 调用OpenAI API生成嵌入
             response = self.client.embeddings.create(input=text, model=model, **kwargs)
 
-            return response.data[0].embedding
+            return response.data[0].embedding  # type: ignore[no-any-return]
 
         except Exception as e:
             raise RuntimeError(f"OpenAI LLM生成嵌入失败: {str(e)}") from e
@@ -175,7 +175,7 @@ class OpenAILLM(LLMBase):
             # 调用OpenAI API批量生成嵌入
             response = self.client.embeddings.create(input=texts, model=model, **kwargs)
 
-            return [embedding.data[0].embedding for embedding in response.data]
+            return [embedding.data[0].embedding for embedding in response.data]  # type: ignore[no-any-return]
 
         except Exception as e:
             raise RuntimeError(f"OpenAI LLM批量生成嵌入失败: {str(e)}") from e
