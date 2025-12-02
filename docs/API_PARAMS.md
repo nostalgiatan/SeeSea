@@ -42,10 +42,9 @@ curl http://localhost:8080/api/health
 #### 响应格式
 ```json
 {
-  "version": "1.0.0",
-  "build_date": "2023-10-01T12:00:00Z",
-  "rust_version": "1.72.0",
-  "python_version": "3.11.0"
+  "description":"隐私保护型元搜索引擎",
+  "name":"SeeSea",
+  "version": "1.0.0"
 }
 ```
 
@@ -109,18 +108,15 @@ curl http://localhost:8080/api/metrics
 #### 响应格式
 ```json
 {
-  "seesea_requests_total": 1000,
-  "seesea_requests_success": 950,
-  "seesea_requests_failed": 50,
-  "seesea_rate_limited": 10,
-  "seesea_circuit_breaker_trips": 5,
-  "seesea_ip_blocked": 0,
-  "seesea_active_connections": 5,
-  "seesea_response_time_ms": {
-    "min": 100,
-    "max": 2000,
-    "avg": 500
-  }
+  "total_requests":0,
+  "successful_requests":0,
+  "failed_requests":0,
+  "avg_response_time_ms":0.0,
+  "active_connections":0,
+  "rate_limited":0,
+  "circuit_breaker_trips":0,
+  "ip_blocked":0,
+  "uptime_seconds":4590
 }
 ```
 
