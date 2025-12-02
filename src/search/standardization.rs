@@ -164,7 +164,8 @@ pub fn standardize_item(item: &mut SearchResultItem) {
 
     // 2. 尝试从内容提取时间
     if extracted_time.is_none()
-        && let Some(time) = extract_time_from_content(&item.content) {
+        && let Some(time) = extract_time_from_content(&item.content)
+    {
         extracted_time = Some(time);
     }
 

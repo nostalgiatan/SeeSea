@@ -143,7 +143,7 @@ async def example_custom_engine():
                     result_item: SearchResultItem = {
                         "title": title.strip(),
                         "url": url,
-                        "snippet": ""
+                        "snippet": "",
                     }
                     results.append(result_item)
 

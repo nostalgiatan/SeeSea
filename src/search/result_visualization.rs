@@ -299,7 +299,12 @@ impl ResultVisualizer {
     }
 
     /// 计算结果的综合得分
-    fn calculate_composite_score(&self, item: &SearchResultItem, date: &DateTime<Utc>, now: &DateTime<Utc>) -> f64 {
+    fn calculate_composite_score(
+        &self,
+        item: &SearchResultItem,
+        date: &DateTime<Utc>,
+        now: &DateTime<Utc>,
+    ) -> f64 {
         // 计算时间衰减因子（越新的结果得分越高）
         let time_diff = now.signed_duration_since(*date);
         let days_diff = time_diff.num_days() as f64;
@@ -327,7 +332,8 @@ impl ResultVisualizer {
             DistributionStrategy::Even => {
                 // 均匀分布策略
                 // 计算每个时间区间的结果数
-                let mut interval_sizes: Vec<(String, usize, usize)> = Vec::with_capacity(sorted_keys.len());
+                let mut interval_sizes: Vec<(String, usize, usize)> =
+                    Vec::with_capacity(sorted_keys.len());
 
                 for (idx, key) in sorted_keys.iter().enumerate() {
                     let size = timeline_map.get(key).map(|v| v.len()).unwrap_or(0);
@@ -345,7 +351,8 @@ impl ResultVisualizer {
 
                 // 实现轮询选择算法
                 let mut indices: Vec<usize> = vec![0; interval_sizes.len()];
-                let remaining: Vec<usize> = interval_sizes.iter().map(|(_, size, _)| *size).collect();
+                let remaining: Vec<usize> =
+                    interval_sizes.iter().map(|(_, size, _)| *size).collect();
 
                 // 预分配结果向量的容量
                 let mut result = Vec::with_capacity(total_results);
@@ -355,7 +362,8 @@ impl ResultVisualizer {
                         if indices[i] < remaining[i] {
                             let key = &interval_sizes[i].0;
                             if let Some(items) = timeline_map.get(key)
-                                && let Some(item) = items.get(indices[i]) {
+                                && let Some(item) = items.get(indices[i])
+                            {
                                 result.push(item.clone());
                                 indices[i] += 1;
                             }
@@ -368,9 +376,10 @@ impl ResultVisualizer {
             DistributionStrategy::RecentFirst => {
                 // 优先显示最新结果
                 let mut all_items = Vec::new();
-                
+
                 // 收集所有结果并计算综合得分
-                for key in sorted_keys.iter().rev() { // 从最新的时间区间开始
+                for key in sorted_keys.iter().rev() {
+                    // 从最新的时间区间开始
                     if let Some(items) = timeline_map.get(key) {
                         for item in items {
                             if let Some(date) = item.published_date {
@@ -378,38 +387,46 @@ impl ResultVisualizer {
                                 all_items.push((score, item.clone()));
                             } else {
                                 // 无时间信息的结果得分较低
-                                all_items.push((item.score * self.config.untimed_results_weight, item.clone()));
+                                all_items.push((
+                                    item.score * self.config.untimed_results_weight,
+                                    item.clone(),
+                                ));
                             }
                         }
                     }
                 }
-                
+
                 // 按得分排序
-                all_items.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-                
+                all_items
+                    .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
                 // 提取结果
                 all_items.into_iter().map(|(_, item)| item).collect()
             }
             DistributionStrategy::RelevantFirst => {
                 // 优先显示最相关结果
                 let mut all_items = Vec::new();
-                
+
                 // 收集所有结果
                 for key in &sorted_keys {
                     if let Some(items) = timeline_map.get(key) {
                         all_items.extend(items.clone());
                     }
                 }
-                
+
                 // 按相关性排序
-                all_items.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-                
+                all_items.sort_by(|a, b| {
+                    b.score
+                        .partial_cmp(&a.score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+
                 all_items
             }
             DistributionStrategy::Hybrid => {
                 // 混合策略（平衡时间和相关性）
                 let mut all_items = Vec::new();
-                
+
                 // 收集所有结果并计算综合得分
                 for key in &sorted_keys {
                     if let Some(items) = timeline_map.get(key) {
@@ -419,15 +436,19 @@ impl ResultVisualizer {
                                 all_items.push((score, item.clone()));
                             } else {
                                 // 无时间信息的结果得分较低
-                                all_items.push((item.score * self.config.untimed_results_weight, item.clone()));
+                                all_items.push((
+                                    item.score * self.config.untimed_results_weight,
+                                    item.clone(),
+                                ));
                             }
                         }
                     }
                 }
-                
+
                 // 按综合得分排序
-                all_items.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-                
+                all_items
+                    .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
                 // 提取结果
                 all_items.into_iter().map(|(_, item)| item).collect()
             }

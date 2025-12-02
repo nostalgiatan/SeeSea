@@ -30,7 +30,17 @@ Performance Optimizations:
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, TypedDict, Callable, Type, TYPE_CHECKING, AsyncGenerator
+from typing import (
+    Dict,
+    List,
+    Optional,
+    Any,
+    TypedDict,
+    Callable,
+    Type,
+    TYPE_CHECKING,
+    AsyncGenerator,
+)
 import asyncio
 from contextlib import asynccontextmanager
 
@@ -462,7 +472,9 @@ class BrowserEngineClient:
         self.config = config or BrowserConfig()
 
     @asynccontextmanager
-    async def get_engine(self, engine_class: Type[BaseBrowserEngine]) -> AsyncGenerator[BaseBrowserEngine, None]:
+    async def get_engine(
+        self, engine_class: Type[BaseBrowserEngine]
+    ) -> AsyncGenerator[BaseBrowserEngine, None]:
         """
         Get a browser engine instance with automatic cleanup
 

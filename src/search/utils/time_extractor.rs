@@ -235,7 +235,8 @@ pub fn extract_time_expression(text: &str) -> Option<(&str, DateTime<Utc>)> {
 
     for capture in re.captures_iter(text) {
         if let Some(time_str) = capture.get(1)
-            && let Some(datetime) = parse_time(time_str.as_str()) {
+            && let Some(datetime) = parse_time(time_str.as_str())
+        {
             return Some((time_str.as_str(), datetime));
         }
     }
@@ -259,7 +260,8 @@ pub fn extract_time_from_url(url: &str) -> Option<DateTime<Utc>> {
     let re = Regex::new(r"/\d{4}[-/]\d{1,2}[-/]\d{1,2}/").expect("Invalid regex");
 
     if let Some(capture) = re.captures(url)
-        && let Some(date_str) = capture.get(0) {
+        && let Some(date_str) = capture.get(0)
+    {
         let date_str = date_str.as_str().trim_matches('/');
         // 替换分隔符为-，以便解析
         let date_str = date_str.replace('/', "-");
@@ -272,7 +274,8 @@ pub fn extract_time_from_url(url: &str) -> Option<DateTime<Utc>> {
     let re_num = Regex::new(r"/\d{8}/").expect("Invalid regex");
 
     if let Some(capture) = re_num.captures(url)
-        && let Some(date_str) = capture.get(0) {
+        && let Some(date_str) = capture.get(0)
+    {
         let date_str = date_str.as_str().trim_matches('/');
         // 转换为 YYYY-MM-DD 格式
         if date_str.len() == 8 {
