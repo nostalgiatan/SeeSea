@@ -84,7 +84,7 @@ impl SearchInterface {
         let total_memory = system.total_memory();
         let available_memory = system.available_memory();
         let memory_usage = ((total_memory - available_memory) as f64 / total_memory as f64) * 100.0;
-        let load_avg = sysinfo::System::load_average().one as f64;
+        let load_avg = sysinfo::System::load_average().one;
 
         // 基础并发数 = CPU核心数 * 基准倍数
         let base_concurrency = (cpu_cores as f64 * 8.0) as usize; // 调整基准倍数为8.0，更合理的初始值
@@ -225,11 +225,7 @@ impl SearchInterface {
             .load(std::sync::atomic::Ordering::Relaxed);
 
         // 如果目标并发数与当前并发数相差不大，不调整
-        let concurrency_diff = if target_concurrency > current_concurrency {
-            target_concurrency - current_concurrency
-        } else {
-            current_concurrency - target_concurrency
-        };
+        let concurrency_diff = target_concurrency.abs_diff(current_concurrency);
         if concurrency_diff < 2 { // 相差小于2，不调整
             return;
         }
@@ -542,10 +538,9 @@ impl SearchInterface {
         // 获取所有要执行的引擎实例
         for engine_name in &engines_to_use {
             // 检查引擎是否被临时禁用
-            if let Some(state) = self.engine_states.get(engine_name) {
-                if !state.is_available() {
-                    continue;
-                }
+            if let Some(state) = self.engine_states.get(engine_name)
+                && !state.is_available() {
+                continue;
             }
             match self.get_or_create_engine(engine_name).await {
                 Ok(engine) => {
@@ -854,10 +849,9 @@ impl SearchInterface {
         let mut keys_to_remove = Vec::new();
         for entry in self.engine_cache.iter() {
             let meta = entry.value();
-            if let Ok(elapsed) = now.duration_since(meta.last_used_at) {
-                if elapsed > ttl {
-                    keys_to_remove.push(entry.key().clone());
-                }
+            if let Ok(elapsed) = now.duration_since(meta.last_used_at)
+                && elapsed > ttl {
+                keys_to_remove.push(entry.key().clone());
             }
         }
 
@@ -1074,7 +1068,7 @@ impl SearchInterface {
                             }
                             // 新闻搜索结果缓存时间较短
                             "bing_news" => {
-                                Some(Duration::from_secs(1 * 3600)) // 1小时
+                                Some(Duration::from_secs(3600)) // 1小时
                             }
                             // 其他搜索结果缓存12小时
                             _ => {

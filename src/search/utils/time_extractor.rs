@@ -234,10 +234,9 @@ pub fn extract_time_expression(text: &str) -> Option<(&str, DateTime<Utc>)> {
         .expect("Invalid regex");
 
     for capture in re.captures_iter(text) {
-        if let Some(time_str) = capture.get(1) {
-            if let Some(datetime) = parse_time(time_str.as_str()) {
-                return Some((time_str.as_str(), datetime));
-            }
+        if let Some(time_str) = capture.get(1)
+            && let Some(datetime) = parse_time(time_str.as_str()) {
+            return Some((time_str.as_str(), datetime));
         }
     }
 
@@ -259,32 +258,30 @@ pub fn extract_time_from_url(url: &str) -> Option<DateTime<Utc>> {
     // 匹配URL中的日期模式，如 /2023/12/01/ 或 /20231201/
     let re = Regex::new(r"/\d{4}[-/]\d{1,2}[-/]\d{1,2}/").expect("Invalid regex");
 
-    if let Some(capture) = re.captures(url) {
-        if let Some(date_str) = capture.get(0) {
-            let date_str = date_str.as_str().trim_matches('/');
-            // 替换分隔符为-，以便解析
-            let date_str = date_str.replace('/', "-");
-            if let Some(datetime) = parse_time(&date_str) {
-                return Some(datetime);
-            }
+    if let Some(capture) = re.captures(url)
+        && let Some(date_str) = capture.get(0) {
+        let date_str = date_str.as_str().trim_matches('/');
+        // 替换分隔符为-，以便解析
+        let date_str = date_str.replace('/', "-");
+        if let Some(datetime) = parse_time(&date_str) {
+            return Some(datetime);
         }
     }
 
     // 匹配纯数字日期，如 /20231201/
     let re_num = Regex::new(r"/\d{8}/").expect("Invalid regex");
 
-    if let Some(capture) = re_num.captures(url) {
-        if let Some(date_str) = capture.get(0) {
-            let date_str = date_str.as_str().trim_matches('/');
-            // 转换为 YYYY-MM-DD 格式
-            if date_str.len() == 8 {
-                let year = &date_str[0..4];
-                let month = &date_str[4..6];
-                let day = &date_str[6..8];
-                let formatted = format!("{year}-{month}-{day}");
-                if let Some(datetime) = parse_time(&formatted) {
-                    return Some(datetime);
-                }
+    if let Some(capture) = re_num.captures(url)
+        && let Some(date_str) = capture.get(0) {
+        let date_str = date_str.as_str().trim_matches('/');
+        // 转换为 YYYY-MM-DD 格式
+        if date_str.len() == 8 {
+            let year = &date_str[0..4];
+            let month = &date_str[4..6];
+            let day = &date_str[6..8];
+            let formatted = format!("{year}-{month}-{day}");
+            if let Some(datetime) = parse_time(&formatted) {
+                return Some(datetime);
             }
         }
     }
