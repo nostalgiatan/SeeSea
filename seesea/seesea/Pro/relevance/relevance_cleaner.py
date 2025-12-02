@@ -253,7 +253,7 @@ class RelevanceCleaner:
         pheromone_processed[pheromone_processed < lower_bound] = lower_bound
         pheromone_processed[pheromone_processed > upper_bound] = upper_bound
 
-        return pheromone_processed
+        return pheromone_processed  # type: ignore[no-any-return]
 
     def _adapt_top_k_similar(self, iteration: int, max_iterations: int, num_blocks: int) -> int:
         """
@@ -440,7 +440,7 @@ class RelevanceCleaner:
 
             # 检查收敛情况
             # 1. 最大差异收敛判断
-            max_diff = np.max(np.abs(new_pheromone - pheromone))
+            max_diff: float = np.max(np.abs(new_pheromone - pheromone))
             # 2. 平均差异收敛判断
             avg_diff = np.mean(np.abs(new_pheromone - pheromone))
             # 3. 中位数差异收敛判断
@@ -746,7 +746,7 @@ class RelevanceCleaner:
             block_text = f"{block['title']}\n{block['content']}"
             block_vector = self.vectorizer.embed_text(block_text)
             # 计算相关性
-            relevance = self.compute_similarity(block_vector, keyword_vector)
+            relevance = self.compute_similarity(np.array(block_vector), np.array(keyword_vector))
             original_relevances.append(relevance)
 
         # 4. 计算清洗后数据块的相关性
@@ -756,7 +756,7 @@ class RelevanceCleaner:
             block_text = f"{block['title']}\n{block['content']}"
             block_vector = self.vectorizer.embed_text(block_text)
             # 计算相关性
-            relevance = self.compute_similarity(block_vector, keyword_vector)
+            relevance = self.compute_similarity(np.array(block_vector), np.array(keyword_vector))
             cleaned_relevances.append(relevance)
 
         # 5. 计算评估指标

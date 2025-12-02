@@ -179,7 +179,7 @@ class VectorDatabase:
             List[Dict[str, Any]]: 搜索结果列表
         """
         try:
-            return self.store.search(query=query, k=k, return_objects=return_objects)
+            return self.store.search(query=query, k=k, return_objects=return_objects)  # type: ignore[no-any-return]
         except Exception as e:
             raise RuntimeError(f"搜索失败: {str(e)}") from e
 
@@ -195,7 +195,7 @@ class VectorDatabase:
             List[Dict[str, Any]]: 搜索结果列表
         """
         try:
-            return self.store.search_by_vector(vector=vector, k=k)
+            return self.store.search_by_vector(vector=vector, k=k)  # type: ignore[no-any-return]
         except Exception as e:
             raise RuntimeError(f"向量搜索失败: {str(e)}") from e
 
