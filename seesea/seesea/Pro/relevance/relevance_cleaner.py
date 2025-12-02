@@ -90,7 +90,9 @@ class RelevanceCleaner:
 
         return data_blocks
 
-    def compute_similarity(self, vector1: Union[List[float], np.ndarray], vector2: Union[List[float], np.ndarray]) -> float:
+    def compute_similarity(
+        self, vector1: Union[List[float], np.ndarray], vector2: Union[List[float], np.ndarray]
+    ) -> float:
         """
         计算两个向量的余弦相似度（使用vector_utils中的compute_similarity函数）
 
@@ -353,7 +355,7 @@ class RelevanceCleaner:
                 "title_vector": title_vec.tolist(),
                 "content_vector": content_vec.tolist(),
                 "keyword_similarity": 0.0,
-                "score": 0.0
+                "score": 0.0,
             }
             processed_blocks.append(processed_block)
 
@@ -363,8 +365,12 @@ class RelevanceCleaner:
         title_weight = title_weight if title_weight is not None else 0.5
         keyword_vector_list = keyword_vector.tolist()
         for processed_block in processed_blocks:
-            title_similarity = self.compute_similarity(processed_block["title_vector"], keyword_vector_list)
-            content_similarity = self.compute_similarity(processed_block["content_vector"], keyword_vector_list)
+            title_similarity = self.compute_similarity(
+                processed_block["title_vector"], keyword_vector_list
+            )
+            content_similarity = self.compute_similarity(
+                processed_block["content_vector"], keyword_vector_list
+            )
 
             # 加权相似度
             processed_block["keyword_similarity"] = float(

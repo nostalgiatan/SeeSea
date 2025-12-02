@@ -225,6 +225,7 @@ class LLMBase(ABC):
 
     所有LLM实现都应继承此类，并使用装饰器增强功能
     """
+
     # 注册的LLM类型字典
     _registered_llm_types: Dict[str, type] = {}
 
@@ -356,6 +357,7 @@ class LLMBase(ABC):
         Returns:
             Callable: 装饰器函数
         """
+
         def decorator(llm_class: type) -> type:
             """
             装饰器函数，用于注册LLM类型
@@ -368,6 +370,7 @@ class LLMBase(ABC):
             """
             cls._registered_llm_types[llm_type] = llm_class
             return llm_class
+
         return decorator
 
     @classmethod
@@ -384,7 +387,9 @@ class LLMBase(ABC):
         return cls._registered_llm_types.get(llm_type)
 
     @classmethod
-    def create_by_type(cls, llm_type: str, model_name: str, api_key: Optional[str] = None, **kwargs) -> "LLMBase":
+    def create_by_type(
+        cls, llm_type: str, model_name: str, api_key: Optional[str] = None, **kwargs
+    ) -> "LLMBase":
         """
         根据LLM类型创建LLM实例
 

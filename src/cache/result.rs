@@ -68,7 +68,7 @@ impl ResultCache {
         query.language.hash(&mut hasher);
         query.region.hash(&mut hasher);
         query.engine_type.hash(&mut hasher); // 添加引擎类型
-        
+
         // 将 SafeSearchLevel 转换为数字进行哈希
         let safe_search_num = match query.safe_search {
             crate::config::common::SafeSearchLevel::None => 0,
@@ -76,7 +76,7 @@ impl ResultCache {
             crate::config::common::SafeSearchLevel::Strict => 2,
         };
         safe_search_num.hash(&mut hasher); // 添加安全搜索级别
-        
+
         query.time_range.hash(&mut hasher); // 添加时间范围
         engine_name.hash(&mut hasher);
 

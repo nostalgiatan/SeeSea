@@ -117,7 +117,8 @@ impl SearchInterface {
         };
 
         // 最终并发数 = 基础并发数 * CPU因子 * 内存因子 * 负载因子
-        let final_concurrency = (base_concurrency as f64 * cpu_factor * memory_factor * load_factor) as usize;
+        let final_concurrency =
+            (base_concurrency as f64 * cpu_factor * memory_factor * load_factor) as usize;
 
         // 确保并发数在合理范围内，优先使用配置中的值
         let min_concurrency = 1;
@@ -148,7 +149,7 @@ impl SearchInterface {
         let cpu_cores = num_cpus::get();
         let initial_concurrency = std::cmp::min(
             (cpu_cores as f64 * 8.0) as usize, // 调整基准倍数为8.0，更合理的初始值
-            config.max_concurrent_engines // 优先使用配置中的最大并发数
+            config.max_concurrent_engines,     // 优先使用配置中的最大并发数
         );
         let semaphore = Arc::new(Semaphore::new(initial_concurrency.clamp(1, 200))); // 使用硬编码的最小和最大并发数
 
@@ -226,15 +227,13 @@ impl SearchInterface {
 
         // 如果目标并发数与当前并发数相差不大，不调整
         let concurrency_diff = target_concurrency.abs_diff(current_concurrency);
-        if concurrency_diff < 2 { // 相差小于2，不调整
+        if concurrency_diff < 2 {
+            // 相差小于2，不调整
             return;
         }
 
         // 计算最大调整幅度（每次调整最多变化25%，但至少变化2）
-        let max_adjust = std::cmp::max(
-            (current_concurrency as f64 * 0.25) as usize,
-            2
-        );
+        let max_adjust = std::cmp::max((current_concurrency as f64 * 0.25) as usize, 2);
 
         // 计算新的并发数，实现平滑调整
         let new_concurrency = if target_concurrency > current_concurrency {
@@ -281,10 +280,10 @@ impl SearchInterface {
             // 记录调整日志
             tracing::info!(
                 "调整并发数: 从 {current_concurrency} 调整到 {new_concurrency}, 目标并发数: {target_concurrency}, 调整幅度: {}",
-                if target_concurrency > current_concurrency { 
-                    format!("+{}", new_concurrency - current_concurrency) 
-                } else { 
-                    format!("-{}", current_concurrency - new_concurrency) 
+                if target_concurrency > current_concurrency {
+                    format!("+{}", new_concurrency - current_concurrency)
+                } else {
+                    format!("-{}", current_concurrency - new_concurrency)
                 }
             );
         }
@@ -539,7 +538,8 @@ impl SearchInterface {
         for engine_name in &engines_to_use {
             // 检查引擎是否被临时禁用
             if let Some(state) = self.engine_states.get(engine_name)
-                && !state.is_available() {
+                && !state.is_available()
+            {
                 continue;
             }
             match self.get_or_create_engine(engine_name).await {
@@ -715,7 +715,9 @@ impl SearchInterface {
                 use std::collections::HashMap;
 
                 // 解析发布日期
-                let published_date = item.pub_date.as_ref()
+                let published_date = item
+                    .pub_date
+                    .as_ref()
                     .and_then(|date_str| parse_time(date_str));
 
                 SearchResultItem {
@@ -850,7 +852,8 @@ impl SearchInterface {
         for entry in self.engine_cache.iter() {
             let meta = entry.value();
             if let Ok(elapsed) = now.duration_since(meta.last_used_at)
-                && elapsed > ttl {
+                && elapsed > ttl
+            {
                 keys_to_remove.push(entry.key().clone());
             }
         }
@@ -1059,11 +1062,12 @@ impl SearchInterface {
 
                         // 缓存搜索结果，根据引擎类型和查询类型设置不同的TTL
                         let result_cache = cache.results();
-                        
+
                         // 根据引擎类型和查询类型设置不同的TTL
                         let ttl = match engine_name.as_str() {
                             // 图片和视频搜索结果可以缓存更长时间
-                            "unsplash" | "bing_images" | "bilibili" | "bing_videos" | "sogou_videos" => {
+                            "unsplash" | "bing_images" | "bilibili" | "bing_videos"
+                            | "sogou_videos" => {
                                 Some(Duration::from_secs(24 * 3600)) // 24小时
                             }
                             // 新闻搜索结果缓存时间较短
@@ -1075,7 +1079,7 @@ impl SearchInterface {
                                 Some(Duration::from_secs(12 * 3600)) // 12小时
                             }
                         };
-                        
+
                         let _ = result_cache.set(&query, &engine_name, &result, ttl);
 
                         let _ = tx.send((Ok(result), engine_name)).await;

@@ -177,7 +177,8 @@ impl SogouVideosEngine {
                     if !date_text.is_empty() {
                         let extract_result = extract_time(&date_text, TimeSource::ResultCard);
                         if let Some(dt) = extract_result.datetime
-                            && extract_result.confidence > best_confidence {
+                            && extract_result.confidence > best_confidence
+                        {
                             best_date = Some(dt);
                             // 提取置信度，但暂时不使用
                             let _ = extract_result.confidence;
@@ -189,7 +190,8 @@ impl SogouVideosEngine {
                 if best_confidence < 0.8 {
                     let extract_result = extract_time(&content, TimeSource::Content);
                     if let Some(dt) = extract_result.datetime
-                        && extract_result.confidence > best_confidence {
+                        && extract_result.confidence > best_confidence
+                    {
                         best_date = Some(dt);
                         best_confidence = extract_result.confidence;
                     }

@@ -6,7 +6,6 @@ import shutil
 import traceback
 import io
 from dataclasses import dataclass
-from importlib.metadata import entry_points
 from typing import Any, List, Dict, Optional, Union, BinaryIO
 from pathlib import Path
 from urllib.parse import urlparse
@@ -71,6 +70,7 @@ def _load_plugins() -> Union[None, List[Any]]:
     try:
         # Try the new API first (Python 3.10+)
         from importlib.metadata import entry_points
+
         for entry_point in entry_points().select(group="markitdown.plugin"):
             try:
                 _plugins.append(entry_point.load())
@@ -80,6 +80,7 @@ def _load_plugins() -> Union[None, List[Any]]:
     except (ImportError, AttributeError):
         # Fall back to the old API
         from pkg_resources import iter_entry_points
+
         for entry_point in iter_entry_points(group="markitdown.plugin"):
             try:
                 _plugins.append(entry_point.load())

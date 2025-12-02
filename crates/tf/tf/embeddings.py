@@ -32,7 +32,7 @@ class TextEmbedder:
         try:
             # Import mistralrs module
             import mistralrs
-            
+
             # Set HF_ENDPOINT environment variable for faster model downloads
             os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
@@ -130,7 +130,7 @@ class TextEmbedder:
         """
         # Import mistralrs module again to ensure it's available
         import mistralrs
-        
+
         # Handle single text input
         if isinstance(texts, str):
             texts = [texts]

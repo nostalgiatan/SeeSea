@@ -276,7 +276,9 @@ class VectorDatabase:
             raise RuntimeError(f"检查数据库状态失败: {str(e)}") from e
 
 
-def compute_similarity(vector1: Union[List[float], np.ndarray], vector2: Union[List[float], np.ndarray]) -> float:
+def compute_similarity(
+    vector1: Union[List[float], np.ndarray], vector2: Union[List[float], np.ndarray]
+) -> float:
     """
     计算两个向量的余弦相似度
 
