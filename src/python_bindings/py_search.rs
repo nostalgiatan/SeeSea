@@ -1,16 +1,17 @@
-// Copyright 2025 nostalgiatan
+﻿// Copyright (C) 2025 nostalgiatan
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! Python bindings for search functionality
 
@@ -36,15 +37,14 @@ impl PySearchClient {
     pub fn new() -> PyResult<Self> {
         let runtime = tokio::runtime::Runtime::new().map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Failed to create runtime: {}",
-                e
+                "Failed to create runtime: {e}"
             ))
         })?;
 
         let interface = runtime
             .block_on(async {
                 SearchInterface::new(SearchConfig::default())
-                    .map_err(|e| format!("Failed to create search interface: {}", e))
+                    .map_err(|e| format!("Failed to create search interface: {e}"))
             })
             .map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
 
@@ -137,7 +137,7 @@ impl PySearchClient {
                 .collect();
 
             dict.set_item("results", results)?;
-            Ok(dict.into_py_any(py)?)
+            dict.into_py_any(py)
         })
     }
 
@@ -163,8 +163,7 @@ impl PySearchClient {
             .block_on(async { self.interface.clear_cache().await })
             .map_err(|e| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Failed to clear cache: {}",
-                    e
+                    "Failed to clear cache: {e}"
                 ))
             })
     }
@@ -186,8 +185,7 @@ impl PySearchClient {
             .block_on(async { self.interface.health_check().await })
             .map_err(|e| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Health check failed: {}",
-                    e
+                    "Health check failed: {e}"
                 ))
             })?;
 
@@ -288,8 +286,7 @@ impl PySearchClient {
             })
             .map_err(|e| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Streaming search failed: {}",
-                    e
+                    "Streaming search failed: {e}"
                 ))
             })?;
 
@@ -320,7 +317,7 @@ impl PySearchClient {
                 .collect();
 
             dict.set_item("results", results)?;
-            Ok(dict.into_py_any(py)?)
+            dict.into_py_any(py)
         })
     }
 
@@ -363,8 +360,7 @@ impl PySearchClient {
             .block_on(async { self.interface.invalidate_engine(&engine_name).await })
             .map_err(|e| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Failed to invalidate engine: {}",
-                    e
+                    "Failed to invalidate engine: {e}"
                 ))
             })
     }
@@ -422,8 +418,7 @@ impl PySearchClient {
             .block_on(async { self.interface.search_fulltext(&request).await })
             .map_err(|e| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Fulltext search failed: {}",
-                    e
+                    "Fulltext search failed: {e}"
                 ))
             })?;
 
@@ -454,7 +449,7 @@ impl PySearchClient {
                 .collect();
 
             dict.set_item("results", results)?;
-            Ok(dict.into_py_any(py)?)
+            dict.into_py_any(py)
         })
     }
 

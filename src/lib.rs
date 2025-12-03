@@ -80,6 +80,9 @@ pub mod api;
 /// RSS 聚合和订阅管理模块
 pub mod rss;
 
+/// HTML解析模块，用于判定网页类型（SPA或HTML）
+pub mod html_parser;
+
 /// Python 绑定模块，提供 Python SDK 支持
 #[cfg(feature = "python")]
 pub mod python_bindings;
@@ -97,6 +100,7 @@ pub use derive::{
     EngineInfo, QueryBuilder, ResultParser, RssFeed, RssFeedItem, RssFeedQuery, RssFeedSource,
     SearchEngine, SearchQuery, SearchResult,
 };
+pub use html_parser::{HtmlPageType, HtmlParser};
 pub use net::{HttpClient, NetworkConfig, NetworkInterface};
 
 // Python module definition
@@ -108,7 +112,8 @@ use pyo3::prelude::*;
 #[pymodule]
 fn seesea_core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     use python_bindings::{
-        py_api, py_browser, py_cache, py_config, py_engine_registry, py_rss, py_search,
+        py_api, py_browser, py_cache, py_config, py_engine_registry, py_html_parser, py_net,
+        py_rss, py_search,
     };
 
     m.add_class::<py_search::PySearchClient>()?;
@@ -119,12 +124,23 @@ fn seesea_core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<py_rss::PyRssClient>()?;
     m.add_class::<py_browser::PyBrowserConfig>()?;
     m.add_class::<py_browser::PyBrowserEngineClient>()?;
+    m.add_class::<py_net::PyNetClient>()?;
 
     // 引擎注册表函数（不再暴露类，只暴露函数）
     m.add_function(wrap_pyfunction!(py_engine_registry::register_engine, m)?)?;
     m.add_function(wrap_pyfunction!(py_engine_registry::unregister_engine, m)?)?;
     m.add_function(wrap_pyfunction!(py_engine_registry::list_engines, m)?)?;
     m.add_function(wrap_pyfunction!(py_engine_registry::has_engine, m)?)?;
+
+    // 网络客户端函数
+    m.add_function(wrap_pyfunction!(py_net::get, m)?)?;
+    m.add_function(wrap_pyfunction!(py_net::post, m)?)?;
+    m.add_function(wrap_pyfunction!(py_net::get_file, m)?)?;
+    m.add_function(wrap_pyfunction!(py_net::post_file, m)?)?;
+
+    // HTML解析器函数
+    m.add_function(wrap_pyfunction!(py_html_parser::determine_page_type, m)?)?;
+    m.add_function(wrap_pyfunction!(py_html_parser::get_html_meta_info, m)?)?;
 
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add(

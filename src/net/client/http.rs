@@ -1,16 +1,17 @@
-// Copyright 2025 nostalgiatan
+﻿// Copyright (C) 2025 nostalgiatan
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! HTTP 客户端核心实现
 //!
@@ -62,10 +63,13 @@ use crate::net::config::{NetworkConfig, RequestOptions};
 use crate::net::metrics::MetricsCollector;
 use crate::net::privacy::PrivacyManager;
 use crate::net::retry::RetryConfig;
+use futures::StreamExt;
 use once_cell::sync::OnceCell;
 use reqwest::{Client, ClientBuilder, Response};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::io::StreamReader;
+use tokio_util::io::ReaderStream;
 
 /// HTTP 客户端封装
 #[derive(Clone)]
@@ -183,6 +187,9 @@ impl HttpClient {
             config.tls.clone(),
             config.dns.clone(),
         ));
+
+        // 禁用所有自动解压缩
+        builder = builder.gzip(false).brotli(false).deflate(false);
 
         // 构建客户端
         let client = builder.build().map_err(|e| {
@@ -309,6 +316,9 @@ impl HttpClient {
             request = request.header(&key, &value);
         }
 
+        // 设置Accept-Encoding为identity，避免自动解码响应体（保留原始二进制数据）
+        request = request.header("Accept-Encoding", "identity");
+
         // 发送请求
         let result = request.send().await;
 
@@ -432,6 +442,162 @@ impl HttpClient {
 
         // 处理结果
         result.map_err(|e| crate::errors::http_error(0, &format!("POST JSON request failed: {e}")))
+    }
+
+    /// 流式 GET 请求（支持零拷贝）
+    ///
+    /// 此方法用于下载大文件，使用零拷贝技术，避免将整个响应体加载到内存中
+    ///
+    /// # 参数
+    ///
+    /// * `url` - 请求 URL
+    /// * `options` - 请求选项（可选）
+    ///
+    /// # 返回
+    ///
+    /// 成功返回包含状态码、响应头和异步读取器的元组，失败返回错误
+    pub async fn get_stream(
+        &self,
+        url: &str,
+        options: Option<RequestOptions>,
+    ) -> Result<(u16, reqwest::header::HeaderMap, impl tokio::io::AsyncRead + Unpin + Send + 'static)> {
+        let start_time = self.metrics_collector.start_request();
+        let opts = options.unwrap_or_default();
+
+        let mut request = self.client.get(url).timeout(opts.timeout);
+
+        // 添加隐私保护请求头
+        if let Some(ref privacy_mgr) = self.privacy_manager {
+            let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
+            for (key, value) in privacy_headers {
+                request = request.header(&key, &value);
+            }
+        }
+
+        // 添加自定义请求头（会覆盖隐私头）
+        for (key, value) in opts.headers {
+            request = request.header(&key, &value);
+        }
+
+        // 设置Accept-Encoding为identity，避免自动解码响应体（保留原始二进制数据）
+        request = request.header("Accept-Encoding", "identity");
+
+        // 发送请求，确保不自动解码响应体（保留原始字节）
+        let response = request
+            .send()
+            .await
+            .map_err(|e| {
+                crate::errors::http_error(0, &format!("GET stream request failed: {e}"))
+            })?
+            .error_for_status()
+            .map_err(|e| {
+                crate::errors::http_error(0, &format!("GET stream request failed with status: {e}"))
+            })?;
+
+        // 记录指标
+        self.metrics_collector
+            .record_successful_request(start_time)
+            .await;
+
+        // 保存状态码和响应头
+        let status = response.status().as_u16();
+        let headers = response.headers().clone();
+
+        // 获取响应体流（原始字节流，避免自动解码）
+        let stream = response.bytes_stream();
+        
+        // 转换为 tokio AsyncRead
+        let reader = StreamReader::new(
+            stream.map(|result| {
+                result.map_err(|e| {
+                    tokio::io::Error::new(tokio::io::ErrorKind::Other, e)
+                })
+            })
+        );
+
+        Ok((status, headers, reader))
+    }
+
+    /// 流式 POST 请求（支持零拷贝）
+    ///
+    /// 此方法用于上传大文件，使用零拷贝技术，避免将整个请求体加载到内存中
+    ///
+    /// # 参数
+    ///
+    /// * `url` - 请求 URL
+    /// * `reader` - 异步读取器，用于分块读取请求体
+    /// * `content_length` - 请求体长度（可选）
+    /// * `content_type` - 内容类型（可选）
+    /// * `options` - 请求选项（可选）
+    ///
+    /// # 返回
+    ///
+    /// 成功返回 HTTP 响应，失败返回错误
+    pub async fn post_stream<R>(
+        &self,
+        url: &str,
+        reader: R,
+        content_length: Option<u64>,
+        content_type: Option<&str>,
+        options: Option<RequestOptions>,
+    ) -> Result<Response>
+    where
+        R: tokio::io::AsyncRead + Unpin + Send + 'static,
+    {
+        let start_time = self.metrics_collector.start_request();
+        let opts = options.unwrap_or_default();
+
+        // 创建请求体流
+        let body = reqwest::Body::wrap_stream(
+            ReaderStream::new(reader)
+        );
+
+        let mut request = self.client.post(url)
+            .timeout(opts.timeout)
+            .body(body);
+
+        // 设置内容长度（如果提供）
+        if let Some(length) = content_length {
+            request = request.header("Content-Length", length.to_string());
+        }
+
+        // 设置内容类型（如果提供）
+        if let Some(ct) = content_type {
+            request = request.header("Content-Type", ct);
+        }
+
+        // 添加隐私保护请求头
+        if let Some(ref privacy_mgr) = self.privacy_manager {
+            let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
+            for (key, value) in privacy_headers {
+                request = request.header(&key, &value);
+            }
+        }
+
+        // 添加自定义请求头（会覆盖隐私头）
+        for (key, value) in opts.headers {
+            request = request.header(&key, &value);
+        }
+
+        // 发送请求
+        let result = request.send().await;
+
+        // 记录指标
+        match &result {
+            Ok(_) => {
+                self.metrics_collector
+                    .record_successful_request(start_time)
+                    .await;
+            }
+            Err(_) => {
+                self.metrics_collector
+                    .record_failed_request(start_time)
+                    .await;
+            }
+        }
+
+        // 处理结果
+        result.map_err(|e| crate::errors::http_error(0, &format!("POST stream request failed: {e}")))
     }
 
     /// 获取网络配置
