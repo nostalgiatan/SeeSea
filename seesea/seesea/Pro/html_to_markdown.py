@@ -59,23 +59,36 @@ class HtmlToMarkdownConverter:
     def convert(self, html_content: str, **kwargs) -> str:
         """
         将HTML内容转换为Markdown格式
-
+        
         Args:
             html_content: HTML内容字符串
             **kwargs: 临时转换选项，会覆盖初始化时的配置
-
+        
         Returns:
             str: 转换后的Markdown内容
         """
         try:
+            import io
+            from markitdown import StreamInfo
+            
             # 合并配置选项
             conversion_config = self.config.copy()
             conversion_config.update(kwargs)
 
             # 使用markitdown转换HTML到Markdown
-            result = self.converter.convert_html(html_content)
+            # 将HTML字符串包装成BytesIO流对象
+            html_stream = io.BytesIO(html_content.encode('utf-8'))
+            # 使用convert_stream方法转换
+            result = self.converter.convert_stream(
+                html_stream,
+                stream_info=StreamInfo(
+                    mimetype='text/html',
+                    charset='utf-8'
+                ),
+                **conversion_config
+            )
 
-            return str(result)
+            return result.markdown
 
         except Exception as e:
             raise RuntimeError(f"HTML转换为Markdown失败: {str(e)}") from e

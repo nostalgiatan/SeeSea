@@ -1,0 +1,226 @@
+# -*- coding: utf-8 -*-
+"""
+模块名称：content_processor
+职责范围：提供从URL到纯净数据的完整处理流程
+期望实现计划：
+1. 实现URL内容获取功能
+2. 实现链接类型判断
+3. 实现HTML到Markdown转换
+4. 实现数据清理功能
+5. 返回纯净数据
+已实现功能：
+1. URL内容获取
+2. 链接类型判断
+3. HTML到Markdown转换
+4. 数据清理
+5. 纯净数据返回
+使用依赖：
+- requests
+- bs4 (BeautifulSoup)
+- link_type_detector
+- html_to_markdown
+- web_crawler
+- relevance_cleaner
+主要接口：
+- ContentProcessor：内容处理类，实现从URL到纯净数据的完整流程
+注意事项：
+- 需要确保所有依赖模块已正确安装
+- 支持HTML和SPA类型的链接
+- 数据清理需要关键词，可以自动提取或用户提供
+"""
+
+from typing import Optional, Dict, Any
+from bs4 import BeautifulSoup
+from .link_type_detector import detect_link_type
+from .html_to_markdown import HtmlToMarkdownConverter
+from .web_crawler import WebCrawler
+from .relevance.relevance_cleaner import RelevanceCleaner
+
+# 直接从 seesea_core 导入 get 函数，避免循环导入问题
+try:
+    import seesea_core
+    get = seesea_core.get
+except ImportError:
+    raise ImportError("未安装 seesea_core 模块，请先安装")
+
+
+class ContentProcessor:
+    """
+    内容处理类，实现从URL到纯净数据的完整流程
+
+    该类提供了一个完整的流程，用于处理URL，获取内容，转换格式，并清理数据，
+    最终返回纯净的数据结果。
+    """
+
+    def __init__(self, **kwargs):
+        """
+        初始化内容处理器
+
+        Args:
+            **kwargs: 配置选项
+                timeout: 请求超时时间（默认10秒）
+                headers: 请求头
+                crawler_config: WebCrawler配置
+                converter_config: HtmlToMarkdownConverter配置
+                cleaner_config: RelevanceCleaner配置
+        """
+        self.timeout = kwargs.get("timeout", 10)
+        self.headers = kwargs.get(
+            "headers",
+            {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+        )
+
+        # 初始化各个组件
+        self.crawler = WebCrawler(**kwargs.get("crawler_config", {}))
+        self.converter = HtmlToMarkdownConverter(**kwargs.get("converter_config", {}))
+        self.cleaner = RelevanceCleaner()
+
+    def _get_html_with_requests(self, url: str) -> str:
+        """
+        使用seesea库的get函数获取URL的HTML内容
+        
+        Args:
+            url: 目标URL
+            
+        Returns:
+            str: HTML内容
+        """
+        # 使用seesea的get函数获取内容
+        response_dict = get(url, self.headers)
+        
+        # 访问响应字典中的字段
+        status = response_dict["status"]
+        content = response_dict["content"]
+        
+        # 检查状态码
+        if status != 200:
+            raise Exception(f"HTTP请求失败，状态码: {status}")
+        
+        # 处理响应内容
+        if content is None:
+            return ""
+        
+        # 处理字节内容
+        if isinstance(content, bytes):
+            return content.decode("utf-8")
+        
+        return str(content)
+
+    def _extract_metadata(self, html: str) -> Dict[str, str]:
+        """
+        从HTML中提取元数据（标题、描述等）
+
+        Args:
+            html: HTML内容
+
+        Returns:
+            Dict[str, str]: 提取的元数据
+        """
+        soup = BeautifulSoup(html, "html.parser")
+
+        # 提取标题
+        title = ""
+        if soup.title:
+            title = soup.title.string or ""
+        else:
+            # 使用attrs字典来避免参数冲突
+            og_title = soup.find("meta", attrs={"property": "og:title"})
+            if og_title and "content" in og_title:
+                title = og_title["content"] or ""
+            else:
+                meta_title = soup.find("meta", attrs={"name": "title"})
+                if meta_title and "content" in meta_title:
+                    title = meta_title["content"] or ""
+
+        # 提取描述
+        description = ""
+        og_desc = soup.find("meta", attrs={"property": "og:description"})
+        if og_desc and "content" in og_desc:
+            description = og_desc["content"] or ""
+        else:
+            meta_desc = soup.find("meta", attrs={"name": "description"})
+            if meta_desc and "content" in meta_desc:
+                description = meta_desc["content"] or ""
+
+        return {"title": title.strip(), "description": description.strip()}
+
+    async def process_url(self, url: str, keywords: Optional[str] = None) -> Dict[str, Any]:
+        """
+        处理URL，获取纯净数据
+
+        Args:
+            url: 目标URL
+            keywords: 关键词，用于数据清理（可选，默认从标题和描述提取）
+
+        Returns:
+            Dict[str, Any]: 处理结果，包含以下字段：
+                - url: 原始URL
+                - page_type: 页面类型（html或spa）
+                - metadata: 页面元数据（标题、描述等）
+                - html: 原始HTML内容
+                - markdown: 转换后的Markdown内容
+                - cleaned_markdown: 清理后的Markdown内容
+                - cleaned_data: 清理后的数据块列表
+        """
+        # 1. 检测链接类型
+        page_type = detect_link_type(url)
+
+        # 2. 获取HTML内容
+        html = ""
+        if page_type == "html":
+            # HTML类型，直接使用requests获取
+            html = self._get_html_with_requests(url)
+        else:
+            # SPA类型，使用WebCrawler获取渲染后的HTML
+            html = await self.crawler.crawl(url)
+
+        # 3. 提取元数据
+        metadata = self._extract_metadata(html)
+
+        # 4. 转换为Markdown
+        markdown = self.converter.convert(html)
+
+        # 5. 准备关键词用于数据清理
+        if not keywords:
+            # 从标题和描述中提取关键词
+            keywords = f"{metadata['title']} {metadata['description']}".strip()
+            # 如果关键词为空，使用默认关键词
+            if not keywords:
+                keywords = "content"
+
+        # 6. 清理数据
+        cleaned_markdown, cleaned_data = self.cleaner.clean_data(
+            markdown_text=markdown, keywords=keywords
+        )
+
+        # 7. 返回结果
+        return {
+            "url": url,
+            "page_type": page_type,
+            "metadata": metadata,
+            "html": html,
+            "markdown": markdown,
+            "cleaned_markdown": cleaned_markdown,
+            "cleaned_data": cleaned_data,
+        }
+
+    def get_pure_data(self, url: str, keywords: Optional[str] = None) -> Dict[str, Any]:
+        """
+        同步版本的process_url方法
+
+        Args:
+            url: 目标URL
+            keywords: 关键词，用于数据清理（可选）
+
+        Returns:
+            Dict[str, Any]: 处理结果
+        """
+        import asyncio
+
+        return asyncio.run(self.process_url(url, keywords))
+
+
+# 导出接口
+__all__ = ["ContentProcessor"]

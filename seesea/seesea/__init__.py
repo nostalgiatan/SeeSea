@@ -1,16 +1,17 @@
-# Copyright 2025 nostalgiatan
+# Copyright (C) 2025 nostalgiatan
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published
+# by the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
 SeeSea - Privacy-focused Metasearch Engine with RSS and Browser Support
@@ -70,11 +71,20 @@ try:
         PyRssClient,
         PyBrowserConfig,
         PyBrowserEngineClient,
+        PyNetClient,
         # 引擎注册函数（不再是类）
         register_engine,
         unregister_engine,
         list_engines,
         has_engine,
+        # 网络客户端函数
+        get,
+        post,
+        get_file,
+        post_file,
+        # HTML解析器函数
+        determine_page_type,
+        get_html_meta_info,
     )
 except ImportError as e:
     import warnings
@@ -90,10 +100,15 @@ except ImportError as e:
     PyRssClient = None
     PyBrowserConfig = None
     PyBrowserEngineClient = None
+    PyNetClient = None
     register_engine = None
     unregister_engine = None
     list_engines = None
     has_engine = None
+    get = None
+    post = None
+    determine_page_type = None
+    get_html_meta_info = None
 
 # Python 高层接口
 from .search import SearchClient
@@ -264,11 +279,20 @@ __all__ = [
     "PyConfig",
     "PyCacheStats",
     "PyCacheInterface",
+    "PyNetClient",
     # 引擎注册函数
     "register_engine",
     "unregister_engine",
     "list_engines",
     "has_engine",
+    # 网络客户端函数
+    "get",
+    "post",
+    "get_file",
+    "post_file",
+    # HTML解析器函数
+    "determine_page_type",
+    "get_html_meta_info",
     # 工具函数
     "format_results",
     "parse_query",

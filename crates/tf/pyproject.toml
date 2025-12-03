@@ -3,7 +3,7 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "tf"
+name = "tf_rust"
 version = "0.1.0"
 description = "Text semantic retrieval system using Python and Rust"
 requires-python = ">=3.8"
@@ -18,5 +18,7 @@ dependencies = [
 ]
 
 [tool.maturin]
-python-source = "."
 module-name = "tf_rust"
+manifest-path ="./Cargo.toml"
+strip = true
+profile =  "release"
