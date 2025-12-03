@@ -16,6 +16,7 @@ lib/
 .plan/
 .ruff_cache/
 .mypy_cache/
+.tf/
 lib64/
 vendor/
 parts/
