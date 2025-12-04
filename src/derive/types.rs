@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -82,9 +82,9 @@ impl Default for SearchQuery {
     }
 }
 
-/// 请求参数（类似 searxng 的 params）
+/// 请求参数
 ///
-/// 用于构建和传递 HTTP 请求的参数
+/// 用于构建和传递 HTTP 请求的参数，包含 URL、HTTP 方法、头信息、数据等
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestParams {
     /// 请求 URL（在 request() 函数中设置）
@@ -295,9 +295,9 @@ pub enum EngineStatus {
     Error,
 }
 
-/// 引擎关于信息（类似 searxng 的 about 字段）
+/// 引擎关于信息
 ///
-/// 提供引擎的元数据信息
+/// 提供引擎的元数据信息，包括官方网站、API 使用情况等
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AboutInfo {
     /// 官方网站

@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -233,19 +233,19 @@ pub trait ConfigurableEngine: SearchEngine {
     fn update_config(&mut self, config: Self::Config) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
 
-/// 基于 request/response 模式的搜索引擎（类似 searxng）
+/// 基于 request/response 模式的搜索引擎
 ///
-/// 这个 trait 模仿 searxng 的引擎结构：
-/// - `request()` 方法准备请求参数
-/// - `response()` 方法解析响应
+/// 采用经典的请求-响应设计模式：
+/// - `request()` 方法根据查询参数准备请求参数
+/// - `response()` 方法将响应解析为搜索结果
 #[async_trait]
 pub trait RequestResponseEngine: SearchEngine {
     /// 响应类型（抽象）
     type Response;
 
-    /// 准备请求参数（类似 searxng 的 request() 函数）
+    /// 准备请求参数
     ///
-    /// 接收查询字符串和请求参数，修改参数以设置 URL、headers 等
+    /// 根据查询字符串和上下文，设置请求的 URL、HTTP 方法、头信息、数据等参数
     fn request(
         &self,
         query: &str,
@@ -260,9 +260,9 @@ pub trait RequestResponseEngine: SearchEngine {
         params: &RequestParams,
     ) -> Result<Self::Response, Box<dyn Error + Send + Sync>>;
 
-    /// 解析响应为结果列表（类似 searxng 的 response() 函数）
+    /// 解析响应为结果列表
     ///
-    /// 接收响应对象，返回搜索结果项列表
+    /// 将 HTTP 响应转换为标准化的搜索结果项列表，提取标题、URL、内容摘要等信息
     fn response(
         &self,
         resp: Self::Response,

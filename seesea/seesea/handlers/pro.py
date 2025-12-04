@@ -19,7 +19,7 @@ SeeSea Pro API Handlers - Pro API处理器
 提供Pro API的处理函数，包括搜索增强功能
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 import json
 from datetime import datetime
 
