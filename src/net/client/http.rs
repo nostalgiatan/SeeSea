@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -68,14 +68,16 @@ use once_cell::sync::OnceCell;
 use reqwest::{Client, ClientBuilder, Response};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio_util::io::StreamReader;
 use tokio_util::io::ReaderStream;
+use tokio_util::io::StreamReader;
 
 /// HTTP 客户端封装
 #[derive(Clone)]
 pub struct HttpClient {
-    /// 底层 reqwest 客户端
+    /// 底层 reqwest 客户端（用于普通请求，带自动解压缩）
     client: Arc<Client>,
+    /// 底层 reqwest 客户端（用于流式请求，不带自动解压缩）
+    stream_client: Arc<Client>,
     /// 网络配置
     config: Arc<NetworkConfig>,
     /// 隐私管理器
@@ -141,45 +143,58 @@ impl HttpClient {
     ///
     /// 成功返回配置好的 HttpClient，失败返回错误
     fn new_with_config(config: NetworkConfig) -> Result<Self> {
-        let mut builder = ClientBuilder::new();
+        // 创建基础配置构建器
+        let create_client = |enable_decompression| -> Result<Client> {
+            let mut builder = ClientBuilder::new();
 
-        // 配置超时
-        builder = builder
-            .timeout(Duration::from_secs(config.pool.read_timeout_secs))
-            .connect_timeout(Duration::from_secs(config.pool.connect_timeout_secs));
+            // 配置超时
+            builder = builder
+                .timeout(Duration::from_secs(config.pool.read_timeout_secs))
+                .connect_timeout(Duration::from_secs(config.pool.connect_timeout_secs));
 
-        // 配置连接池
-        builder = builder
-            .pool_max_idle_per_host(config.pool.max_idle_connections)
-            .pool_idle_timeout(Some(Duration::from_secs(config.pool.idle_timeout_secs)));
+            // 配置连接池
+            builder = builder
+                .pool_max_idle_per_host(config.pool.max_idle_connections)
+                .pool_idle_timeout(Some(Duration::from_secs(config.pool.idle_timeout_secs)));
 
-        // 配置 HTTP/2
-        if config.pool.http2_only {
-            builder = builder.http2_prior_knowledge();
-        }
+            // 配置 HTTP/2
+            if config.pool.http2_only {
+                builder = builder.http2_prior_knowledge();
+            }
 
-        // 配置 TCP_NODELAY
-        builder = builder.tcp_nodelay(config.pool.tcp_nodelay);
+            // 配置 TCP_NODELAY
+            builder = builder.tcp_nodelay(config.pool.tcp_nodelay);
 
-        // 配置 TCP 保活
-        if let Some(interval) = config.pool.tcp_keepalive_interval_secs {
-            builder = builder.tcp_keepalive_interval(Duration::from_secs(interval));
-        }
+            // 配置 TCP 保活
+            if let Some(interval) = config.pool.tcp_keepalive_interval_secs {
+                builder = builder.tcp_keepalive_interval(Duration::from_secs(interval));
+            }
 
-        if let Some(retries) = config.pool.tcp_keepalive_retries {
-            builder = builder.tcp_keepalive_retries(retries);
-        }
+            if let Some(retries) = config.pool.tcp_keepalive_retries {
+                builder = builder.tcp_keepalive_retries(retries);
+            }
 
-        // 配置 TLS
-        builder = super::tls::configure_tls(builder, &config.tls)?;
+            // 配置 TLS
+            builder = super::tls::configure_tls(builder, &config.tls)?;
 
-        // 配置代理
-        if config.proxy.enabled {
-            builder = super::proxy::configure_proxy(builder, &config.proxy)?;
-        }
+            // 配置代理
+            if config.proxy.enabled {
+                builder = super::proxy::configure_proxy(builder, &config.proxy)?;
+            }
 
-        // 添加隐私保护请求头
-        builder = crate::net::privacy::headers::configure_privacy(builder, &config.privacy);
+            // 添加隐私保护请求头
+            builder = crate::net::privacy::headers::configure_privacy(builder, &config.privacy);
+
+            // 配置解压缩
+            if enable_decompression {
+                builder = builder.gzip(true).brotli(true).deflate(true);
+            }
+
+            // 构建客户端
+            builder.build().map_err(|e| {
+                crate::errors::http_error(0, &format!("Failed to build HTTP client: {e}"))
+            })
+        };
 
         // 创建隐私管理器
         let privacy_manager = Arc::new(PrivacyManager::new(
@@ -188,16 +203,14 @@ impl HttpClient {
             config.dns.clone(),
         ));
 
-        // 禁用所有自动解压缩
-        builder = builder.gzip(false).brotli(false).deflate(false);
-
-        // 构建客户端
-        let client = builder.build().map_err(|e| {
-            crate::errors::http_error(0, &format!("Failed to build HTTP client: {e}"))
-        })?;
+        // 创建普通请求客户端（带自动解压缩）
+        let client = create_client(true)?;
+        // 创建流式请求客户端（不带自动解压缩）
+        let stream_client = create_client(false)?;
 
         Ok(Self {
             client: Arc::new(client),
+            stream_client: Arc::new(stream_client),
             config: Arc::new(config),
             privacy_manager: Some(privacy_manager),
             retry_config: RetryConfig::default(),
@@ -311,13 +324,11 @@ impl HttpClient {
             }
         }
 
-        // 添加自定义请求头（会覆盖隐私头）
+        // 添加自定义请求头
         for (key, value) in opts.headers {
             request = request.header(&key, &value);
         }
-
-        // 设置Accept-Encoding为identity，避免自动解码响应体（保留原始二进制数据）
-        request = request.header("Accept-Encoding", "identity");
+        // 非流处理请求：允许服务器返回压缩数据，client会自动解压缩
 
         // 发送请求
         let result = request.send().await;
@@ -360,7 +371,12 @@ impl HttpClient {
         let start_time = self.metrics_collector.start_request();
         let opts = options.unwrap_or_default();
 
-        let mut request = self.client.post(url).timeout(opts.timeout).body(body);
+        // 使用stream_client，它禁用了自动解压缩，确保获取原始二进制数据
+        let mut request = self
+            .stream_client
+            .post(url)
+            .timeout(opts.timeout)
+            .body(body);
 
         // 添加隐私保护请求头
         if let Some(ref privacy_mgr) = self.privacy_manager {
@@ -374,6 +390,8 @@ impl HttpClient {
         for (key, value) in opts.headers {
             request = request.header(&key, &value);
         }
+        // 非流处理请求：使用默认的Accept-Encoding设置，允许服务器返回压缩数据
+        // reqwest会自动解压缩响应体
 
         // 发送请求
         let result = request.send().await;
@@ -460,11 +478,16 @@ impl HttpClient {
         &self,
         url: &str,
         options: Option<RequestOptions>,
-    ) -> Result<(u16, reqwest::header::HeaderMap, impl tokio::io::AsyncRead + Unpin + Send + 'static)> {
+    ) -> Result<(
+        u16,
+        reqwest::header::HeaderMap,
+        impl tokio::io::AsyncRead + Unpin + Send + 'static,
+    )> {
         let start_time = self.metrics_collector.start_request();
         let opts = options.unwrap_or_default();
 
-        let mut request = self.client.get(url).timeout(opts.timeout);
+        // 使用stream_client，它禁用了自动解压缩，确保获取原始二进制数据
+        let mut request = self.stream_client.get(url).timeout(opts.timeout);
 
         // 添加隐私保护请求头
         if let Some(ref privacy_mgr) = self.privacy_manager {
@@ -478,17 +501,14 @@ impl HttpClient {
         for (key, value) in opts.headers {
             request = request.header(&key, &value);
         }
-
-        // 设置Accept-Encoding为identity，避免自动解码响应体（保留原始二进制数据）
+        // 流处理请求：禁用压缩，确保获取原始二进制数据
         request = request.header("Accept-Encoding", "identity");
 
         // 发送请求，确保不自动解码响应体（保留原始字节）
         let response = request
             .send()
             .await
-            .map_err(|e| {
-                crate::errors::http_error(0, &format!("GET stream request failed: {e}"))
-            })?
+            .map_err(|e| crate::errors::http_error(0, &format!("GET stream request failed: {e}")))?
             .error_for_status()
             .map_err(|e| {
                 crate::errors::http_error(0, &format!("GET stream request failed with status: {e}"))
@@ -505,15 +525,10 @@ impl HttpClient {
 
         // 获取响应体流（原始字节流，避免自动解码）
         let stream = response.bytes_stream();
-        
+
         // 转换为 tokio AsyncRead
-        let reader = StreamReader::new(
-            stream.map(|result| {
-                result.map_err(|e| {
-                    tokio::io::Error::new(tokio::io::ErrorKind::Other, e)
-                })
-            })
-        );
+        let reader =
+            StreamReader::new(stream.map(|result| result.map_err(tokio::io::Error::other)));
 
         Ok((status, headers, reader))
     }
@@ -548,13 +563,9 @@ impl HttpClient {
         let opts = options.unwrap_or_default();
 
         // 创建请求体流
-        let body = reqwest::Body::wrap_stream(
-            ReaderStream::new(reader)
-        );
+        let body = reqwest::Body::wrap_stream(ReaderStream::new(reader));
 
-        let mut request = self.client.post(url)
-            .timeout(opts.timeout)
-            .body(body);
+        let mut request = self.client.post(url).timeout(opts.timeout).body(body);
 
         // 设置内容长度（如果提供）
         if let Some(length) = content_length {
@@ -578,6 +589,8 @@ impl HttpClient {
         for (key, value) in opts.headers {
             request = request.header(&key, &value);
         }
+        // 流处理请求：禁用压缩，确保获取原始二进制数据
+        request = request.header("Accept-Encoding", "identity");
 
         // 发送请求
         let result = request.send().await;
@@ -597,7 +610,8 @@ impl HttpClient {
         }
 
         // 处理结果
-        result.map_err(|e| crate::errors::http_error(0, &format!("POST stream request failed: {e}")))
+        result
+            .map_err(|e| crate::errors::http_error(0, &format!("POST stream request failed: {e}")))
     }
 
     /// 获取网络配置

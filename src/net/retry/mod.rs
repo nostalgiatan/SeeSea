@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -192,10 +192,7 @@ mod tests {
                 attempts += 1;
                 Box::pin(async move {
                     if attempts < 3 {
-                        Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "temporary error",
-                        ))
+                        Err(std::io::Error::other("temporary error"))
                     } else {
                         Ok("success after retry")
                     }
@@ -222,10 +219,7 @@ mod tests {
             .execute(|| {
                 attempts += 1;
                 Box::pin(async move {
-                    Err::<&str, std::io::Error>(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "persistent error",
-                    ))
+                    Err::<&str, std::io::Error>(std::io::Error::other("persistent error"))
                 })
             })
             .await;

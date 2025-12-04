@@ -15,7 +15,6 @@
 4. 数据清理
 5. 纯净数据返回
 使用依赖：
-- requests
 - bs4 (BeautifulSoup)
 - link_type_detector
 - html_to_markdown
@@ -39,6 +38,7 @@ from .relevance.relevance_cleaner import RelevanceCleaner
 # 直接从 seesea_core 导入 get 函数，避免循环导入问题
 try:
     import seesea_core
+
     get = seesea_core.get
 except ImportError:
     raise ImportError("未安装 seesea_core 模块，请先安装")
@@ -79,33 +79,65 @@ class ContentProcessor:
 
     def _get_html_with_requests(self, url: str) -> str:
         """
-        使用seesea库的get函数获取URL的HTML内容
-        
+        使用seesea库的get函数获取URL的HTML内容，自动处理压缩和编码
+
         Args:
             url: 目标URL
-            
+
         Returns:
             str: HTML内容
         """
+        import gzip
+        import io
+        import zlib
+
         # 使用seesea的get函数获取内容
         response_dict = get(url, self.headers)
-        
+
         # 访问响应字典中的字段
         status = response_dict["status"]
         content = response_dict["content"]
-        
+
         # 检查状态码
         if status != 200:
             raise Exception(f"HTTP请求失败，状态码: {status}")
-        
+
         # 处理响应内容
         if content is None:
             return ""
-        
+
         # 处理字节内容
         if isinstance(content, bytes):
-            return content.decode("utf-8")
-        
+            # 检测并处理gzip压缩
+            if content.startswith(b"\x1f\x8b"):
+                try:
+                    with gzip.GzipFile(fileobj=io.BytesIO(content)) as f:
+                        content = f.read()
+                except Exception:
+                    pass  # 如果解压失败，尝试直接处理
+
+            # 检测并处理deflate压缩
+            elif (
+                content.startswith(b"\x78\x01")
+                or content.startswith(b"\x78\x9c")
+                or content.startswith(b"\x78xda")
+            ):
+                try:
+                    content = zlib.decompress(content)
+                except Exception:
+                    pass  # 如果解压失败，尝试直接处理
+
+            # 尝试多种编码方式
+            encoding_list = ["utf-8", "gbk", "gb2312", "latin-1"]
+            for encoding in encoding_list:
+                try:
+                    return content.decode(encoding)
+                except UnicodeDecodeError:
+                    continue
+
+            # 如果所有编码都失败，返回原始字符串
+            return str(content)
+
         return str(content)
 
     def _extract_metadata(self, html: str) -> Dict[str, str]:
@@ -128,21 +160,25 @@ class ContentProcessor:
             # 使用attrs字典来避免参数冲突
             og_title = soup.find("meta", attrs={"property": "og:title"})
             if og_title and "content" in og_title:
-                title = og_title["content"] or ""
+                content_value = og_title["content"]
+                title = str(content_value) if content_value else ""
             else:
                 meta_title = soup.find("meta", attrs={"name": "title"})
                 if meta_title and "content" in meta_title:
-                    title = meta_title["content"] or ""
+                    content_value = meta_title["content"]
+                    title = str(content_value) if content_value else ""
 
         # 提取描述
         description = ""
         og_desc = soup.find("meta", attrs={"property": "og:description"})
         if og_desc and "content" in og_desc:
-            description = og_desc["content"] or ""
+            content_value = og_desc["content"]
+            description = str(content_value) if content_value else ""
         else:
             meta_desc = soup.find("meta", attrs={"name": "description"})
             if meta_desc and "content" in meta_desc:
-                description = meta_desc["content"] or ""
+                content_value = meta_desc["content"]
+                description = str(content_value) if content_value else ""
 
         return {"title": title.strip(), "description": description.strip()}
 

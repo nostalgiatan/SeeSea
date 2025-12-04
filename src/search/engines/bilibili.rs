@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -211,6 +211,29 @@ impl RequestResponseEngine for BilibiliEngine {
 
         // Set cookies
         params.cookies = Self::generate_bilibili_cookies();
+
+        // 添加必要的请求头
+        params.headers.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36".to_string());
+        params.headers.insert(
+            "Referer".to_string(),
+            "https://www.bilibili.com/".to_string(),
+        );
+        params
+            .headers
+            .insert("Origin".to_string(), "https://www.bilibili.com".to_string());
+        params.headers.insert(
+            "Accept".to_string(),
+            "application/json, text/plain, */*".to_string(),
+        );
+        params
+            .headers
+            .insert("Accept-Language".to_string(), "zh-CN,zh;q=0.9".to_string());
+        params
+            .headers
+            .insert("X-Requested-With".to_string(), "XMLHttpRequest".to_string());
+        params
+            .headers
+            .insert("Connection".to_string(), "keep-alive".to_string());
 
         Ok(())
     }

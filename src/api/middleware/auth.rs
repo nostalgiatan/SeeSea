@@ -252,7 +252,7 @@ mod tests {
 
         // Test JWT token
         let token = state.generate_token("test_user".to_string()).unwrap();
-        let auth_header = format!("Bearer {}", token);
+        let auth_header = format!("Bearer {token}");
         assert!(state.verify_auth_header(&auth_header).is_ok());
 
         // Test API key

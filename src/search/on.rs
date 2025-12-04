@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -307,6 +307,10 @@ impl SearchInterface {
     ) -> Result<TwoDimensionalResult, Box<dyn std::error::Error + Send + Sync>> {
         // 执行常规搜索
         let response = self.search(request).await?;
+
+        // 打印原始结果数量
+        println!("原始结果数量: {}", response.total_count);
+        println!("使用的引擎: {:?}", response.engines_used);
 
         // 将搜索结果转换为二维排列
         let visualizer = match visualization_config {
@@ -1141,9 +1145,9 @@ impl SearchInterface {
 
                     // 直接使用result，不克隆，因为我们已经处理完所有需要的信息
                     successful_results.push(result);
-                    engines_used.push(engine_name);
+                    engines_used.push(engine_name.clone()); // 克隆engine_name，避免移动后借用问题
                 }
-                Err(_) => {
+                Err(_e) => {
                     // 失败，记录失败
                     let engine_name_clone = engine_name.clone();
                     let mut state = self

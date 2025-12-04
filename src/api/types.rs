@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -404,7 +404,7 @@ mod tests {
         // 测试默认情况（不包含深网搜索）
         let json = r#"{"q": "test"}"#;
         let request: ApiSearchRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.include_deepweb, false);
+        assert!(!request.include_deepweb);
 
         let config = EngineListConfig::default();
         let engines = request.get_engines();
@@ -413,7 +413,7 @@ mod tests {
         // 测试包含深网搜索
         let json = r#"{"q": "test", "include_deepweb": true}"#;
         let request: ApiSearchRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.include_deepweb, true);
+        assert!(request.include_deepweb);
 
         let engines = request.get_engines();
         assert_eq!(engines, config.global_engines);

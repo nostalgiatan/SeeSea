@@ -234,7 +234,7 @@ mod tests {
     fn create_test_item(title: &str, description: &str) -> RssFeedItem {
         RssFeedItem {
             title: title.to_string(),
-            link: format!("https://example.com/{}", title),
+            link: format!("https://example.com/{title}"),
             description: Some(description.to_string()),
             author: None,
             pub_date: None,
@@ -372,7 +372,7 @@ mod tests {
 
         let ranking = engine.rank_feeds(&[feed1, feed2]);
         assert_eq!(ranking.total_items, 2);
-        assert!(ranking.items.len() >= 1);
+        assert!(!ranking.items.is_empty());
     }
 
     #[test]

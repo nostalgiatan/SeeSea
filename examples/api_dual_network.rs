@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -50,7 +50,7 @@ async fn main() {
 
     // 验证配置
     if let Err(e) = network_config.validate() {
-        eprintln!("配置验证失败: {}", e);
+        eprintln!("配置验证失败: {e}");
         return;
     }
 
@@ -59,7 +59,7 @@ async fn main() {
     let search = match SearchInterface::new(search_config) {
         Ok(s) => Arc::new(s),
         Err(e) => {
-            eprintln!("创建搜索接口失败: {}", e);
+            eprintln!("创建搜索接口失败: {e}");
             return;
         }
     };
@@ -79,16 +79,13 @@ async fn main() {
 
     // 示例：生成一个魔法链接
     let magic_token = api.magic_link().generate_token("示例访问".to_string());
-    println!("📧 生成的魔法链接令牌: {}", magic_token);
-    println!(
-        "   使用方式: http://localhost:8080/api/search?q=test&magic_token={}",
-        magic_token
-    );
+    println!("📧 生成的魔法链接令牌: {magic_token}");
+    println!("   使用方式: http://localhost:8080/api/search?q=test&magic_token={magic_token}");
     println!();
 
     // 启动服务器（这会阻塞）
     let server_config = seesea_core::api::ServerConfig::default();
     if let Err(e) = api.serve(server_config).await {
-        eprintln!("服务器错误: {}", e);
+        eprintln!("服务器错误: {e}");
     }
 }

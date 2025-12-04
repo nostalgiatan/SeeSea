@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -207,11 +207,11 @@ impl ConfigManager {
     async fn load_from_file(config_path: &PathBuf) -> Result<SeeSeaConfig, ConfigError> {
         let config_str = tokio::fs::read_to_string(config_path)
             .await
-            .map_err(|e| ConfigError::IoError(e.to_string()))?;
+            .map_err(|e| ConfigError::Io(e.to_string()))?;
 
         // 尝试解析为 TOML
         let config: SeeSeaConfig =
-            toml::from_str(&config_str).map_err(|e| ConfigError::ParseError(e.to_string()))?;
+            toml::from_str(&config_str).map_err(|e| ConfigError::Parse(e.to_string()))?;
 
         Ok(config)
     }

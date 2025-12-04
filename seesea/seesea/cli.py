@@ -50,14 +50,15 @@ def cli(ctx):
 
 @cli.command()
 @click.argument("query")
-@click.option("-p", "--page", default=1, help="页码 (默认: 1)")
+@click.option("-p", "--pro", is_flag=True, help="使用 Pro API 进行搜索")
+@click.option("--page", default=1, help="页码 (默认: 1)")
 @click.option("-n", "--page-size", default=10, help="每页结果数 (默认: 10)")
 @click.option("-l", "--limit", default=10, help="显示结果数 (默认: 10)")
 @click.option("-j", "--json", is_flag=True, help="JSON 格式输出")
 @click.option("-v", "--verbose", is_flag=True, help="详细输出")
 @click.option("-e", "--engines", help="指定搜索引擎列表，用逗号分隔")
 @click.option("-c", "--count", type=int, help="使用的引擎数量（按延迟排序，选择低延迟引擎）")
-def search(query, page, page_size, limit, json, verbose, engines, count):
+def search(query, pro, page, page_size, limit, json, verbose, engines, count):
     """执行搜索"""
     with Progress(
         SpinnerColumn(),
@@ -68,20 +69,67 @@ def search(query, page, page_size, limit, json, verbose, engines, count):
         task = progress.add_task(f"搜索: {query}", total=None)
 
         try:
-            client = SearchClient()
-            # Parse engines parameter
-            engines_list = None
-            if engines:
-                engines_list = [e.strip() for e in engines.split(",") if e.strip()]
-            elif count:
-                # If count is specified but no engines, get all engines and take first N
-                all_engines = client.list_engines()
-                engines_list = all_engines[:count] if count < len(all_engines) else None
+            if pro:
+                # 直接调用本地的 Pro handlers 函数
+                from seesea.handlers.pro import handle_pro_search
+                import asyncio
 
-            results = client.search(
-                query=query, page=page, page_size=page_size, engines=engines_list
-            )
-            progress.update(task, description="搜索完成")
+                # 准备请求上下文
+                req = {
+                    "path": "/search",
+                    "method": "GET",
+                    "query_params": {"q": query, "page": page, "page_size": page_size},
+                    "body": {},
+                }
+
+                # 调用异步函数
+                response = asyncio.run(handle_pro_search(req))
+
+                # 解析响应体
+                import json
+
+                results_dict = json.loads(response.get("body", "{}"))
+
+                # 模拟 SearchResponse 对象结构
+                class ProSearchResponse:
+                    def __init__(self, data):
+                        self.query = data.get("query")
+                        self.results = [
+                            type(
+                                "obj",
+                                (object,),
+                                {
+                                    "title": item.get("title"),
+                                    "url": item.get("url"),
+                                    "content": item.get("description"),
+                                    "score": item.get("score", 0),
+                                },
+                            )
+                            for item in data.get("results", [])
+                        ]
+                        self.total_count = data.get("total_count", 0)
+                        self.cached = data.get("cached", False)
+                        self.query_time_ms = data.get("query_time_ms", 0)
+                        self.engines_used = data.get("engines_used", [])
+
+                results = ProSearchResponse(results_dict)
+                progress.update(task, description="Pro 搜索完成")
+            else:
+                # 使用普通搜索
+                client = SearchClient()
+                # Parse engines parameter
+                engines_list = None
+                if engines:
+                    engines_list = [e.strip() for e in engines.split(",") if e.strip()]
+                elif count:
+                    # If count is specified but no engines, get all engines and take first N
+                    all_engines = client.list_engines()
+                    engines_list = all_engines[:count] if count < len(all_engines) else None
+
+                results = client.search(
+                    query=query, page=page, page_size=page_size, engines=engines_list
+                )
+                progress.update(task, description="搜索完成")
 
         except Exception as e:
             progress.stop()

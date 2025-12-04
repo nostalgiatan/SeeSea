@@ -738,8 +738,8 @@ mod tests {
             let score = 1.0 - (i as f64 * 0.05);
             let date = now - Duration::hours(i as i64);
             items.push(create_test_item(
-                &format!("https://example.com/{}", i),
-                &format!("Title {}", i),
+                &format!("https://example.com/{i}"),
+                &format!("Title {i}"),
                 score,
                 Some(date),
             ));

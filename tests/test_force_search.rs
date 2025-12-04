@@ -11,7 +11,7 @@ mod force_search_tests {
         request.force = true;
         request.cache_timeline = Some(1800);
 
-        assert_eq!(request.force, true);
+        assert!(request.force);
         assert_eq!(request.cache_timeline, Some(1800));
     }
 
@@ -19,7 +19,7 @@ mod force_search_tests {
     fn test_search_request_default_timeline() {
         let request = SearchRequest::default();
 
-        assert_eq!(request.force, false);
+        assert!(!request.force);
         assert_eq!(request.cache_timeline, Some(3600)); // Default 1 hour
     }
 

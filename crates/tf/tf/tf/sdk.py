@@ -106,7 +106,7 @@ class DocumentStore:
                 and isinstance(embedding[0], list)
             ):
                 embedding = embedding[0]
-            return embedding
+            return embedding  # type: ignore[return-value]
 
         # Call Rust with callback
         with self._lock:

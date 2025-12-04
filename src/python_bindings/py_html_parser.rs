@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -54,6 +54,3 @@ pub fn get_html_meta_info(html_content: String) -> PyResult<Py<PyAny>> {
         Ok(result.into_any().unbind())
     })
 }
-
-
-

@@ -45,7 +45,7 @@ async fn main() {
 
     // 验证配置
     if let Err(e) = network_config.validate() {
-        eprintln!("配置验证失败: {}", e);
+        eprintln!("配置验证失败: {e}");
         return;
     }
 
@@ -54,7 +54,7 @@ async fn main() {
     let search = match SearchInterface::new(search_config) {
         Ok(s) => Arc::new(s),
         Err(e) => {
-            eprintln!("创建搜索接口失败: {}", e);
+            eprintln!("创建搜索接口失败: {e}");
             return;
         }
     };
@@ -75,6 +75,6 @@ async fn main() {
     // 启动服务器（这会阻塞）
     let server_config = seesea_core::api::ServerConfig::default();
     if let Err(e) = api.serve(server_config).await {
-        eprintln!("服务器错误: {}", e);
+        eprintln!("服务器错误: {e}");
     }
 }

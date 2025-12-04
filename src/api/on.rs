@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -19,15 +19,16 @@
 
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{any, get, post},
 };
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use super::dynamic_router::{ThreadSafeDynamicRouter, new_dynamic_router};
 use super::handlers::{
     cache, handle_engines_list, handle_favicon, handle_health, handle_index,
-    handle_magic_link_generate, handle_metrics, handle_realtime_metrics, handle_search,
-    handle_search_post, handle_stats, handle_version, rss,
+    handle_magic_link_generate, handle_metrics, handle_pro_api, handle_realtime_metrics,
+    handle_search, handle_search_post, handle_stats, handle_version, rss,
 };
 use super::metrics::{MetricsCollector, MetricsConfig};
 use super::middleware::{
@@ -76,6 +77,8 @@ pub struct ApiState {
     pub metrics: Arc<MetricsCollector>,
     /// 魔法链接状态
     pub magic_link: Arc<MagicLinkState>,
+    /// 动态路由匹配器
+    pub dynamic_router: ThreadSafeDynamicRouter,
 }
 
 /// API 接口
@@ -114,12 +117,14 @@ impl ApiInterface {
     ) -> Self {
         let metrics = Arc::new(MetricsCollector::new(MetricsConfig::default()));
         let magic_link = Arc::new(MagicLinkState::new(MagicLinkConfig::default()));
+        let dynamic_router = new_dynamic_router();
 
         let state = ApiState {
             search,
             version,
             metrics,
             magic_link,
+            dynamic_router,
         };
 
         // 根据网络配置初始化中间件
@@ -218,6 +223,8 @@ impl ApiInterface {
             .route("/api/metrics/realtime", get(handle_realtime_metrics))
             // 魔法链接管理路由（仅内网）
             .route("/api/magic-link/generate", post(handle_magic_link_generate))
+            // Pro API路由 - 匹配所有以/api/pro/开头的请求
+            .route("/api/pro/{*path}", any(handle_pro_api))
             .with_state(self.state.clone())
     }
 
@@ -250,6 +257,8 @@ impl ApiInterface {
             .route("/api/version", get(handle_version))
             // 指标路由（只读）
             .route("/api/metrics", get(handle_metrics))
+            // Pro API路由 - 匹配所有以/api/pro/开头的请求
+            .route("/api/pro/{*path}", any(handle_pro_api))
             .with_state(self.state.clone())
             // 应用中间件（顺序很重要）
             // 1. 魔法链接（最先检查，可以绕过认证）
@@ -451,6 +460,11 @@ impl ApiInterface {
     /// 获取IP过滤器
     pub fn ip_filter(&self) -> &Arc<IpFilterState> {
         &self.ip_filter
+    }
+
+    /// 获取动态路由匹配器
+    pub fn dynamic_router(&self) -> &ThreadSafeDynamicRouter {
+        &self.state.dynamic_router
     }
 }
 

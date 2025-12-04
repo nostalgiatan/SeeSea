@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -99,6 +99,9 @@ pub mod metrics;
 /// 网络相关功能模块，包括服务器配置和启动等
 pub mod network;
 
+/// 动态路由模块，实现基于前缀树的高效动态路由匹配机制
+pub mod dynamic_router;
+
 // 导出核心类型和功能，方便外部使用
 
 /// API 核心类型，包括请求、响应和配置等
@@ -112,3 +115,6 @@ pub use metrics::*;
 
 /// API 网络相关功能，包括服务器配置和启动
 pub use network::*;
+
+/// API 动态路由功能，支持高效路由匹配
+pub use dynamic_router::*;

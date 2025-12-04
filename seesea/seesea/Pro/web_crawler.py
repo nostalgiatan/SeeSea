@@ -234,7 +234,8 @@ class WebCrawler:
             # Get the rendered HTML
             html = await page.content()
 
-            return html
+            # Ensure the result is a string
+            return str(html)
         finally:
             await page.close()
             await context.close()

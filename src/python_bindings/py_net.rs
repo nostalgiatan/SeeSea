@@ -1,20 +1,20 @@
-﻿// Copyright 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! Python bindings for net client functionality
 
-use futures::StreamExt;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -248,10 +248,10 @@ pub fn get_file(url: String, file_path: String, headers: Option<Py<PyAny>>) -> P
     Python::attach(|py| {
         // 创建临时客户端实例处理请求
         let client = PyNetClient::new()?;
-        
+
         // 处理请求头
         let request_options = client.process_headers(py, headers)?;
-        
+
         // 获取HTTP客户端实例
         let http_client = client
             .runtime
@@ -261,8 +261,8 @@ pub fn get_file(url: String, file_path: String, headers: Option<Py<PyAny>>) -> P
                     "Failed to get HTTP client instance: {e}"
                 ))
             })?;
-        
-    // 发送流式GET请求获取原始字节流
+
+        // 发送流式GET请求获取原始字节流
         let (status, headers, mut reader) = client
             .runtime
             .block_on(async { http_client.get_stream(&url, Some(request_options)).await })
@@ -271,17 +271,15 @@ pub fn get_file(url: String, file_path: String, headers: Option<Py<PyAny>>) -> P
                     "GET stream request failed: {e}"
                 ))
             })?;
-        
+
         // 创建异步文件
         let mut file = client
             .runtime
             .block_on(async { tokio::fs::File::create(&file_path).await })
             .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyIOError, _>(format!(
-                    "Failed to create file: {e}"
-                ))
+                PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("Failed to create file: {e}"))
             })?;
-        
+
         // 使用零拷贝技术将流写入文件
         let bytes_written = client
             .runtime
@@ -291,13 +289,13 @@ pub fn get_file(url: String, file_path: String, headers: Option<Py<PyAny>>) -> P
                     "Failed to write file: {e}"
                 ))
             })?;
-        
+
         // 创建响应字典
         let response_dict = PyDict::new(py);
-        
+
         // 设置状态码
         response_dict.set_item("status", status)?;
-        
+
         // 设置响应头
         let headers_dict = PyDict::new(py);
         for (key, value) in headers {
@@ -310,13 +308,13 @@ pub fn get_file(url: String, file_path: String, headers: Option<Py<PyAny>>) -> P
             }
         }
         response_dict.set_item("headers", headers_dict)?;
-        
+
         // 设置文件信息
         let file_info_dict = PyDict::new(py);
         file_info_dict.set_item("path", file_path)?;
         file_info_dict.set_item("size", bytes_written)?;
         response_dict.set_item("file", file_info_dict)?;
-        
+
         Ok(response_dict.into_any().unbind())
     })
 }
@@ -333,18 +331,18 @@ pub fn get_file(url: String, file_path: String, headers: Option<Py<PyAny>>) -> P
 /// - 包含状态码、响应头和响应内容的字典
 #[pyfunction]
 pub fn post_file(
-    url: String, 
-    file_path: String, 
-    content_type: Option<String>, 
-    headers: Option<Py<PyAny>>
+    url: String,
+    file_path: String,
+    content_type: Option<String>,
+    headers: Option<Py<PyAny>>,
 ) -> PyResult<Py<PyAny>> {
     Python::attach(|py| {
         // 创建临时客户端实例处理请求
         let client = PyNetClient::new()?;
-        
+
         // 处理请求头
         let request_options = client.process_headers(py, headers)?;
-        
+
         // 获取文件元数据
         let file_metadata = client
             .runtime
@@ -354,19 +352,17 @@ pub fn post_file(
                     "Failed to get file metadata: {e}"
                 ))
             })?;
-        
+
         let content_length = file_metadata.len();
-        
+
         // 打开文件
         let file = client
             .runtime
             .block_on(async { tokio::fs::File::open(&file_path).await })
             .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyIOError, _>(format!(
-                    "Failed to open file: {e}"
-                ))
+                PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("Failed to open file: {e}"))
             })?;
-        
+
         // 获取HTTP客户端实例
         let http_client = client
             .runtime
@@ -376,29 +372,31 @@ pub fn post_file(
                     "Failed to get HTTP client instance: {e}"
                 ))
             })?;
-        
+
         // 发送流式POST请求
         let response = client
             .runtime
-            .block_on(async { 
-                http_client.post_stream(
-                    &url, 
-                    file, 
-                    Some(content_length), 
-                    content_type.as_deref(), 
-                    Some(request_options)
-                ).await 
+            .block_on(async {
+                http_client
+                    .post_stream(
+                        &url,
+                        file,
+                        Some(content_length),
+                        content_type.as_deref(),
+                        Some(request_options),
+                    )
+                    .await
             })
             .map_err(|e| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
                     "POST stream request failed: {e}"
                 ))
             })?;
-        
+
         // 保存状态码和响应头（在消耗response之前）
         let status = response.status().as_u16();
         let headers = response.headers().clone();
-        
+
         // 读取响应内容
         let body = client
             .runtime
@@ -408,11 +406,11 @@ pub fn post_file(
                     "Failed to read response body: {e}"
                 ))
             })?;
-        
+
         // 创建响应字典
         let response_dict = PyDict::new(py);
         response_dict.set_item("status", status)?;
-        
+
         // 设置响应头
         let headers_dict = PyDict::new(py);
         for (key, value) in headers {
@@ -425,10 +423,10 @@ pub fn post_file(
             }
         }
         response_dict.set_item("headers", headers_dict)?;
-        
+
         // 设置响应内容
         response_dict.set_item("content", pyo3::types::PyBytes::new(py, &body))?;
-        
+
         Ok(response_dict.into_any().unbind())
     })
 }
