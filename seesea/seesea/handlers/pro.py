@@ -177,7 +177,9 @@ async def handle_pro_search(req: Dict[str, Any]) -> Dict[str, Any]:
                 # 使用向量数据库的信任值替换原始搜索结果的信任值
                 enhanced_result["score"] = vector_score
                 # 记录调试信息
-                print(f"Updated score for {result_url} from {enhanced_result.get('score')} to {vector_score}")
+                print(
+                    f"Updated score for {result_url} from {enhanced_result.get('score')} to {vector_score}"
+                )
             else:
                 # 记录调试信息
                 print(f"No score found in vector result for {result_url}: {vector_result}")

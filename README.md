@@ -37,7 +37,7 @@
 
 ## 🌟 项目概述
 
-SeeSea 是一个以隐私保护为核心的多模态搜索平台，通过 Rust 构建高性能核心引擎，整合多种搜索源，支持智能缓存和语义匹配。平台提供网页搜索、RSS 聚合和浏览器自动化功能，适合需要隐私保护的搜索场景。
+SeeSea 是一个以隐私保护为核心的多模态搜索平台，通过 Rust 构建高性能核心引擎，整合多种搜索源，支持智能缓存和语义匹配。平台提供网页搜索、RSS 聚合、浏览器自动化和增强搜索（Pro）功能，适合需要隐私保护和深度搜索的场景。
 
 ### 🎯 核心价值
 
@@ -45,6 +45,7 @@ SeeSea 是一个以隐私保护为核心的多模态搜索平台，通过 Rust �
 - **🔍 多源整合**：结合网页搜索、RSS 订阅和浏览器自动化三种数据获取方式
 - **⚡ 高效性能**：基于 Rust 异步编程，支持多引擎并发查询
 - **🧠 智能缓存**：实现语义级缓存，支持向量相似性匹配和结果去重
+- **🚀 增强搜索（Pro）**：深入处理网页内容，提供基于向量的增强搜索结果
 - **🔧 实用工具**：提供完整的监控、配置管理和 REST API 接口
 - **🐍 Python 支持**：提供 Python SDK，支持灵活的引擎扩展和集成
 
@@ -101,6 +102,23 @@ SeeSea 是一个以隐私保护为核心的多模态搜索平台，通过 Rust �
 - **并发执行**：支持多浏览器实例同时抓取
 - **精准提取**：提供精准的内容提取和数据清洗
 
+### 6. 增强搜索（Pro）
+
+提供深度内容处理和向量增强搜索：
+
+- **链接类型智能检测**：自动区分静态HTML和SPA页面
+- **HTML深度处理**：获取完整内容，提取元数据，转换为Markdown
+- **智能内容清洗**：基于蚁群算法的相关性分析，过滤低相关内容
+- **向量增强**：内容向量化存储，基于语义相似度调整结果信任值
+- **相似文档推荐**：支持基于内容的相似文档搜索
+- **完整流程**：
+
+```
+搜索请求 → 原始结果获取 → URL内容处理 → 向量存储 → 结果融合 → 返回增强结果
+```
+
+![SeeSea Pro 流程](static/image/pro_flow_screenshot.png)
+
 ---
 
 ## 🏗️ 技术架构
@@ -142,6 +160,10 @@ SeeSea 是一个以隐私保护为核心的多模态搜索平台，通过 Rust �
 - **Playwright**：浏览器自动化框架
 - **PyO3**：Python-Rust 绑定
 - **Tracing**：结构化日志和监控
+- **TensorFlow Lite**：轻量级向量嵌入和相似性计算
+- **NumPy**：Python 数值计算库
+- **Markitdown**：HTML 到 Markdown 转换
+- **BeautifulSoup**：HTML 解析和内容提取
 
 ---
 
@@ -217,6 +239,30 @@ results = seesea.search_privacy("隐私技术",
 
 # RSS 订阅
 feeds = seesea.fetch_rss("https://example.com/feed.xml")
+
+# Pro 增强搜索
+from seesea.Pro import ContentProcessor, VectorUtils
+
+# 创建内容处理器
+processor = ContentProcessor()
+
+# 处理单个URL内容
+processed_data = await processor.process_url("https://example.com/article", keywords="深度学习")
+
+# 创建向量工具
+vector_utils = VectorUtils()
+
+# 添加文档到向量数据库
+vector_utils.add_document(
+    content=processed_data["cleaned_markdown"],
+    metadata={
+        "title": processed_data["metadata"]["title"],
+        "url": processed_data["url"]
+    }
+)
+
+# 向量相似搜索
+vector_results = vector_utils.search("深度学习", limit=10)
 
 # 注册自定义搜索引擎
 from seesea import register_engine, BrowserEngine
