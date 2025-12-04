@@ -168,6 +168,30 @@ jobs:
         python -m build --wheel
         cp dist/*.whl ../building/
 
+    - name: Build markitdown Python package
+      working-directory: ./crates/markitdown
+      shell: bash
+      run: |
+        python -m pip install -e .
+        python -m build --wheel
+        cp dist/*.whl ../../building/
+
+    - name: Build tf_rust Python package
+      working-directory: ./crates/tf
+      shell: bash
+      run: |
+        python -m pip install -e .
+        maturin build --release --strip
+        cp target/wheels/*.whl ../../building/
+
+    - name: Build tf Python package
+      working-directory: ./crates/tf/tf
+      shell: bash
+      run: |
+        python -m pip install -e .
+        python -m build --wheel
+        cp dist/*.whl ../../../building/
+
     - name: Copy install.toml to building directory
       shell: bash
       run: |
@@ -350,36 +374,7 @@ jobs:
           building/*.toml
         draft: false
         prerelease: false
-        body: |
-          ## SeeSea Release
-          
-          This release includes:
-          - seesea Python package wheel
-          - seesea-core native wheel for various platforms and Python versions
-          - Self-contained installer with Python version support
-          - Configuration files
-          
-          ### Supported Platforms
-          - Linux x64
-          - Windows x64
-          - macOS x64
-          - macOS arm64
-          
-          ### Supported Python Versions
-          - Python 3.9
-          - Python 3.10
-          - Python 3.11
-          - Python 3.12
-          
-          ### Installation
-          ```bash
-          # Using pip
-          pip install seesea seesea-core
-          
-          # Using installer
-          # Download the appropriate installer for your platform and Python version
-          # e.g., seesea-installer_1.0.0_py3.12_x64-setup.exe for Windows with Python 3.12
-          ```
+        overwrite: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

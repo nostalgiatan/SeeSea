@@ -13,7 +13,7 @@ MEMORY EFFICIENCY:
 - This allows storing millions of documents with minimal memory footprint
 """
 
-from tf import TextEmbedder, VectorStoreWrapper
+from tf.tf import TextEmbedder, VectorStoreWrapper
 
 
 def main():

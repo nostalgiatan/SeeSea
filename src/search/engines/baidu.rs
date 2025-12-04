@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -170,12 +170,11 @@ impl BaiduEngine {
         let json: Value = match serde_json::from_str(json_str) {
             Ok(json) => json,
             Err(e) => {
-                return Err(format!(
-                    "Baidu JSON解析失败: {}。响应内容前100字符: {}",
-                    e,
-                    &json_str[..json_str.len().min(100)]
-                )
-                .into());
+                // 使用chars()迭代器确保在有效的字符边界处切片
+                let preview: String = json_str.chars().take(100).collect();
+                return Err(
+                    format!("Baidu JSON解析失败: {e}。响应内容前100字符: {preview}").into(),
+                );
             }
         };
         let mut items = Vec::new();

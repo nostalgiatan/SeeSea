@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn test_network_interface_default() {
         let interface = NetworkInterface::default();
-        assert!(interface.config().proxy.enabled == false);
+        assert!(!interface.config().proxy.enabled);
     }
 
     #[test]

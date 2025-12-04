@@ -239,7 +239,7 @@ mod tests {
         // 检查不存在的元素
         // 注意：由于误判率的存在，这里可能会返回true，但概率很低
         let not_exists = filter.contains(&"not_exists");
-        println!("False positive: {}", not_exists);
+        println!("False positive: {not_exists}");
 
         // 检查计数
         assert_eq!(filter.count(), 3);

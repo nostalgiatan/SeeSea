@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -20,9 +20,11 @@ use std::sync::Arc;
 use tokio::signal;
 
 use crate::api::ApiInterface;
+use crate::api::dynamic_router::RouteHandler;
 use crate::api::network::{NetworkConfig as ApiNetworkConfig, NetworkMode};
 use crate::config::ConfigManager;
 use crate::search::SearchConfig;
+use std::env;
 
 /// Python bindings for API server
 ///
@@ -296,6 +298,7 @@ impl PyApiServer {
                     "GET /api/metrics/realtime".to_string(),
                 ],
             ),
+            ("pro".to_string(), vec!["ANY /api/pro/*".to_string()]),
         ];
 
         if self.network_mode == "internal" || self.network_mode == "dual" {
@@ -323,6 +326,50 @@ impl PyApiServer {
         }
 
         Ok(endpoints)
+    }
+
+    /// 添加Pro API路由
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - 路由路径（如 "/process-url"，自动添加 "/api/pro/" 前缀）
+    /// * `callback` - Python回调函数，接收请求上下文并返回响应字典
+    /// * `method` - HTTP方法（默认: "POST"）
+    ///
+    /// # Returns
+    ///
+    /// None
+    #[pyo3(signature = (path, callback, method=None))]
+    pub fn add_pro_route(
+        &self,
+        path: String,
+        callback: Py<PyAny>,
+        method: Option<&str>,
+    ) -> PyResult<()> {
+        // 构建完整路径（去掉/api/pro/前缀，因为Axum已经处理了）
+        let full_path = format!("/{}", path.trim_start_matches('/'));
+
+        // 获取HTTP方法，默认POST
+        let method = method.unwrap_or("POST").to_uppercase();
+
+        // 打印调试信息
+        println!("Adding Pro API route: /api/pro{full_path} with method: {method}");
+
+        // 转换为RouteHandler类型
+        let handler: RouteHandler = Arc::new(callback);
+
+        // 获取动态路由匹配器
+        let dynamic_router = self.api.dynamic_router().clone();
+        let full_path_clone = full_path.clone();
+        let method_clone = method.clone();
+
+        // 使用runtime.block_on来处理异步操作，将路由添加到动态路由匹配器中
+        self.runtime.block_on(async move {
+            let mut router = dynamic_router.write().await;
+            router.add_route(&full_path_clone, &method_clone, handler);
+        });
+
+        Ok(())
     }
 }
 

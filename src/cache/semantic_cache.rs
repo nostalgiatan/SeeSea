@@ -345,7 +345,7 @@ mod tests {
             .as_secs();
 
         let mut config = CacheImplConfig::default();
-        config.db_path = format!("./data/test_semantic_{}.db", timestamp);
+        config.db_path = format!("./data/test_semantic_{timestamp}.db");
         let manager = CacheManager::instance(config).unwrap();
         let semantic_config = SemanticCacheConfig::default();
         let cache = SemanticCache::new(manager, semantic_config);

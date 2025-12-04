@@ -170,9 +170,8 @@ fn test_calculate_score_returns_valid_range() {
     let score = calculate_score(&item, &query, "google", 0, &ScoringContext::default());
 
     assert!(
-        score >= 0.0 && score <= 1.0,
-        "Score should be in [0, 1] range, got {}",
-        score
+        (0.0..=1.0).contains(&score),
+        "Score should be in [0, 1] range, got {score}"
     );
 }
 

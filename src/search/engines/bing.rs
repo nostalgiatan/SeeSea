@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -260,95 +260,131 @@ impl BingEngine {
         let document = Html::parse_document(html);
         let mut items = Vec::new();
 
-        let results_selector = match Selector::parse("ol#b_results > li.b_algo") {
-            Ok(sel) => sel,
-            Err(_) => return Ok(Vec::new()),
-        };
+        // 尝试多种可能的选择器，因为Bing的HTML结构可能会变化
+        let possible_selectors = [
+            "ol#b_results > li.b_algo",
+            "div#b_results > div.b_algo",
+            "li.b_algo",
+            "div.b_algo",
+            "div[data-view-type='result']",
+            "div[data-bm='1']",
+            "div.b_focusTextMedium",
+        ];
 
-        for result in document.select(&results_selector) {
-            // 提取链接和标题 (h2/a)
-            let link_selector = Selector::parse("h2 > a").expect("valid selector");
-            let link_elem = match result.select(&link_selector).next() {
-                Some(elem) => elem,
-                None => continue,
+        let mut selector_found = false;
+
+        for selector_str in possible_selectors {
+            let results_selector = match Selector::parse(selector_str) {
+                Ok(sel) => sel,
+                Err(_) => continue,
             };
 
-            let title = link_elem.text().collect::<String>().trim().to_string();
-            let mut url = link_elem.value().attr("href").unwrap_or("").to_string();
+            let result_count = document.select(&results_selector).count();
 
-            // 解码 base64 编码的 URL
-            url = Self::decode_bing_url(&url);
+            if result_count > 0 {
+                selector_found = true;
 
-            // 提取内容 (p)
-            let content_selector = Selector::parse("p").expect("valid selector");
-            let mut content = String::new();
+                for result in document.select(&results_selector) {
+                    // 提取链接和标题 (h2/a)
+                    let link_selector = Selector::parse("h2 > a").expect("valid selector");
+                    let link_elem = match result.select(&link_selector).next() {
+                        Some(elem) => elem,
+                        None => continue,
+                    };
 
-            for p_elem in result.select(&content_selector) {
-                let text = p_elem
-                    .text()
-                    .filter(|t| !t.trim().is_empty())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-                    .trim()
-                    .to_string();
+                    let title = link_elem.text().collect::<String>().trim().to_string();
+                    let mut url = link_elem.value().attr("href").unwrap_or("").to_string();
 
-                if !text.is_empty() && text != "Web" {
-                    content = text;
-                    break;
-                }
-            }
+                    // 解码 base64 编码的 URL
+                    url = Self::decode_bing_url(&url);
 
-            // 提取时间
-            let mut published_date = None;
+                    // 提取内容，尝试多种选择器
+                    let content_selectors = ["p", "div.b_focusTextMedium", "div.b_caption"];
+                    let mut content = String::new();
 
-            // 尝试从结果卡片中提取时间
-            let time_selectors = [
-                "span.newTimeSpan",
-                "div.tb_meta",
-                "span.b_snippetDate",
-                "div.b_attribution",
-            ];
+                    for content_selector_str in content_selectors {
+                        if let Ok(content_selector) = Selector::parse(content_selector_str) {
+                            for p_elem in result.select(&content_selector) {
+                                let text = p_elem
+                                    .text()
+                                    .filter(|t| !t.trim().is_empty())
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                                    .trim()
+                                    .to_string();
 
-            for selector_str in time_selectors {
-                if let Ok(selector) = Selector::parse(selector_str) {
-                    for elem in result.select(&selector) {
-                        let text = elem.text().collect::<String>().trim().to_string();
-                        if !text.is_empty() {
-                            // 使用时间提取器提取时间
-                            let time_result = crate::search::utils::time_extractor::extract_time(
-                                &text,
-                                crate::search::utils::time_extractor::TimeSource::ResultCard,
-                            );
-                            if time_result.datetime.is_some() {
-                                published_date = time_result.datetime;
+                                if !text.is_empty() && text != "Web" {
+                                    content = text;
+                                    break;
+                                }
+                            }
+                            if !content.is_empty() {
                                 break;
                             }
                         }
                     }
-                    if published_date.is_some() {
-                        break;
+
+                    // 提取时间
+                    let mut published_date = None;
+
+                    // 尝试从结果卡片中提取时间
+                    let time_selectors = [
+                        "span.newTimeSpan",
+                        "div.tb_meta",
+                        "span.b_snippetDate",
+                        "div.b_attribution",
+                        "span.b_date",
+                    ];
+
+                    for selector_str in time_selectors {
+                        if let Ok(selector) = Selector::parse(selector_str) {
+                            for elem in result.select(&selector) {
+                                let text = elem.text().collect::<String>().trim().to_string();
+                                if !text.is_empty() {
+                                    // 使用时间提取器提取时间
+                                    let time_result = crate::search::utils::time_extractor::extract_time(
+                                        &text,
+                                        crate::search::utils::time_extractor::TimeSource::ResultCard,
+                                    );
+                                    if time_result.datetime.is_some() {
+                                        published_date = time_result.datetime;
+                                        break;
+                                    }
+                                }
+                            }
+                            if published_date.is_some() {
+                                break;
+                            }
+                        }
+                    }
+
+                    // 只添加有效结果
+                    if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
+                        items.push(SearchResultItem {
+                            title,
+                            url: url.clone(),
+                            content,
+                            display_url: Some(url),
+                            site_name: None,
+                            score: 1.0,
+                            result_type: ResultType::Web,
+                            thumbnail: None,
+                            published_date,
+                            template: None,
+                            metadata: HashMap::new(),
+                        });
                     }
                 }
-            }
 
-            // 只添加有效结果
-            if !title.is_empty() && !url.is_empty() && url.starts_with("http") {
-                items.push(SearchResultItem {
-                    title,
-                    url: url.clone(),
-                    content,
-                    display_url: Some(url),
-                    site_name: None,
-                    score: 1.0,
-                    result_type: ResultType::Web,
-                    thumbnail: None,
-                    published_date,
-                    template: None,
-                    metadata: HashMap::new(),
-                });
+                break;
             }
         }
 
+        if !selector_found {
+            // No valid selector found
+        }
+
+        // Final result count is in items.len()
         Ok(items)
     }
 }

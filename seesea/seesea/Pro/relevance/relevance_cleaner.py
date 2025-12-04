@@ -24,11 +24,26 @@
 - 支持多级标题分割
 """
 
-from typing import List, Dict, Tuple, Optional, Any, Union
+from typing import List, Dict, Tuple, Optional, Any, Union, TypedDict
 import re
 import numpy as np  # type: ignore
 from concurrent.futures import ThreadPoolExecutor
 from .vectorizer_singleton import VectorizerSingleton
+
+
+# 定义数据块的TypedDict类型
+class DataBlock(TypedDict, total=False):
+    """数据块类型定义"""
+
+    title: str
+    content: str
+    level: int
+    vector: List[float]
+    title_vector: List[float]
+    content_vector: List[float]
+    keyword_similarity: float
+    score: float
+    relevance: float
 
 
 class RelevanceCleaner:
@@ -51,7 +66,7 @@ class RelevanceCleaner:
         # 获取单例向量化器
         self.vectorizer = VectorizerSingleton(model_path=model_path, device=device)
 
-    def split_markdown_by_headings(self, markdown_text: str) -> List[Dict[str, str]]:
+    def split_markdown_by_headings(self, markdown_text: str) -> List[DataBlock]:
         """
         将markdown文本按照标题分割成数据块
 
@@ -61,6 +76,14 @@ class RelevanceCleaner:
         Returns:
             List[Dict[str, str]]: 数据块列表，每个数据块包含title和content字段
         """
+        # 首先检查文本是否有标题结构
+        heading_pattern = r"(?m)^#{1,6}\s+.+"
+        has_headings = re.search(heading_pattern, markdown_text)
+
+        if not has_headings:
+            # 如果没有标题结构，将整个文本作为一个数据块
+            return [{"title": "正文", "content": markdown_text.strip()}]
+
         # 使用正则表达式匹配所有标题（# 到 ######）
         heading_pattern = r"(#{1,6})\s+(.+?)\n"
 
@@ -81,14 +104,15 @@ class RelevanceCleaner:
         # 处理剩余的标题和内容
         for i in range(0, len(parts), 3):
             if i + 2 < len(parts):
-                parts[i].strip()
+                level = len(parts[i].strip())  # 标题级别
                 title = parts[i + 1].strip()
                 content = parts[i + 2].strip()
 
                 if content:
-                    data_blocks.append({"title": title, "content": content})
+                    data_blocks.append({"level": level, "title": title, "content": content})
 
-        return data_blocks
+        # 明确将返回值转换为List[DataBlock]类型
+        return data_blocks  # type: ignore
 
     def compute_similarity(
         self, vector1: Union[List[float], np.ndarray], vector2: Union[List[float], np.ndarray]
@@ -107,7 +131,7 @@ class RelevanceCleaner:
 
         return compute_similarity(vector1, vector2)
 
-    def _adapt_title_weight(self, data_blocks: List[Dict[str, str]]) -> float:
+    def _adapt_title_weight(self, data_blocks: List[DataBlock]) -> float:
         """
         根据数据特征自适应调整标题权重
 
@@ -161,7 +185,7 @@ class RelevanceCleaner:
         return max(0.05, min(evaporation_rate, 0.2))
 
     def _get_top_k_similar_blocks(
-        self, block_idx: int, data_blocks: List[Dict[str, Any]], k: int, title_weight: float
+        self, block_idx: int, data_blocks: List[DataBlock], k: int, title_weight: float
     ) -> List[Tuple[int, float]]:
         """
         获取与当前数据块最相似的k个数据块（优化版）
@@ -278,7 +302,7 @@ class RelevanceCleaner:
         self,
         markdown_text: str,
         keywords: str,
-        relevance_threshold: float = 0.3,
+        relevance_threshold: float = 0.1,
         pheromone_evaporation: float = 0.1,
         title_weight: Optional[float] = None,
         max_iterations: int = 10,
@@ -289,7 +313,7 @@ class RelevanceCleaner:
         handle_outliers: bool = True,
         max_similar_blocks: int = 50,
         top_k_similar: int = 20,
-    ) -> Tuple[str, List[Dict[str, Any]]]:
+    ) -> Tuple[str, List[DataBlock]]:
         """
         基于蚁群算法理念清洗数据（优化版）
 
@@ -331,7 +355,7 @@ class RelevanceCleaner:
         keyword_vector = np.array(keyword_vector)
 
         # 4. 向量化所有数据块，为标题分配更高权重
-        processed_blocks: List[Dict[str, Any]] = []
+        processed_blocks: List[DataBlock] = []
         for block in data_blocks:
             # 分别向量化标题和内容
             title_vector = self.vectorizer.embed_text(block["title"])
@@ -347,136 +371,181 @@ class RelevanceCleaner:
             if norm != 0:
                 weighted_vector = weighted_vector / norm
 
-            # 创建新的字典，确保类型正确
-            processed_block: Dict[str, Any] = {
+            # 计算关键词相似度（直接计算，不依赖外部函数）
+            title_sim = 0.0
+            content_sim = 0.0
+
+            # 计算标题与关键词的相似度
+            title_norm = np.linalg.norm(title_vec)
+            if title_norm > 0 and np.linalg.norm(keyword_vector) > 0:
+                title_sim = float(
+                    np.dot(title_vec, keyword_vector)
+                    / (title_norm * np.linalg.norm(keyword_vector))
+                )
+
+            # 计算内容与关键词的相似度
+            content_norm = np.linalg.norm(content_vec)
+            if content_norm > 0 and np.linalg.norm(keyword_vector) > 0:
+                content_sim = float(
+                    np.dot(content_vec, keyword_vector)
+                    / (content_norm * np.linalg.norm(keyword_vector))
+                )
+
+            # 加权相似度
+            keyword_similarity = title_weight * title_sim + (1 - title_weight) * content_sim
+
+            # 创建新的数据块，确保类型正确
+            processed_block: DataBlock = {
                 "title": block["title"],
                 "content": block["content"],
                 "vector": weighted_vector.tolist(),
                 "title_vector": title_vec.tolist(),
                 "content_vector": content_vec.tolist(),
-                "keyword_similarity": 0.0,
-                "score": 0.0,
+                "keyword_similarity": float(keyword_similarity),
+                "score": float(keyword_similarity),  # 初始分数 = 关键词相似度
             }
             processed_blocks.append(processed_block)
 
-        # 5. 计算每个数据块与关键词的相似度（初始信息素）
-        # 分别计算标题和内容的相似度，然后加权
-        # 使用默认值0.5如果title_weight为None
-        title_weight = title_weight if title_weight is not None else 0.5
-        keyword_vector_list = keyword_vector.tolist()
-        for processed_block in processed_blocks:
-            title_similarity = self.compute_similarity(
-                processed_block["title_vector"], keyword_vector_list
-            )
-            content_similarity = self.compute_similarity(
-                processed_block["content_vector"], keyword_vector_list
-            )
-
-            # 加权相似度
-            processed_block["keyword_similarity"] = float(
-                title_weight * title_similarity + (1 - title_weight) * content_similarity
-            )
-
-        # 替换原始数据块列表
+        # 5. 替换原始数据块列表
         data_blocks = processed_blocks
 
         # 6. 应用蚁群算法理念，计算综合得分
         num_blocks = len(data_blocks)
 
-        # 初始信息素 = 关键词相似度
-        pheromone = np.array([block["keyword_similarity"] for block in data_blocks])
+        # 只有数据块数量大于1时才进行迭代优化
+        if num_blocks > 1:
+            # 初始信息素 = 关键词相似度
+            pheromone = np.array([block["keyword_similarity"] for block in data_blocks])
 
-        # 迭代更新信息素（模拟蚂蚁路径选择）
-        for iteration in range(max_iterations):
-            # 计算新的信息素
-            new_pheromone = np.copy(pheromone)
+            # 迭代更新信息素（模拟蚂蚁路径选择）
+            for iteration in range(max_iterations):
+                # 计算新的信息素
+                new_pheromone = np.copy(pheromone)
 
-            # 自适应调整参数
-            # 1. 自适应信息素蒸发率
-            current_evaporation = (
-                self._adapt_pheromone_evaporation(iteration, max_iterations)
-                if adaptive_evaporation
-                else pheromone_evaporation
-            )
+                # 自适应调整参数
+                # 1. 自适应信息素蒸发率
+                current_evaporation = (
+                    self._adapt_pheromone_evaporation(iteration, max_iterations)
+                    if adaptive_evaporation
+                    else pheromone_evaporation
+                )
 
-            # 2. 自适应top_k_similar
-            current_top_k = (
-                self._adapt_top_k_similar(iteration, max_iterations, num_blocks)
-                if adaptive_top_k
-                else top_k_similar
-            )
+                # 2. 自适应top_k_similar
+                current_top_k = (
+                    self._adapt_top_k_similar(iteration, max_iterations, num_blocks)
+                    if adaptive_top_k
+                    else top_k_similar
+                )
 
-            # 并行计算每个数据块的新信息素
-            with ThreadPoolExecutor() as executor:
-                # 准备任务
-                tasks = []
-                for i in range(num_blocks):
-                    tasks.append(
-                        (
-                            i,
-                            data_blocks,
-                            pheromone,
-                            title_weight,
-                            num_blocks,
-                            current_evaporation,
-                            current_top_k,
+                # 并行计算每个数据块的新信息素
+                with ThreadPoolExecutor() as executor:
+                    # 准备任务
+                    tasks = []
+                    for i in range(num_blocks):
+                        tasks.append(
+                            (
+                                i,
+                                data_blocks,
+                                pheromone,
+                                title_weight,
+                                num_blocks,
+                                current_evaporation,
+                                current_top_k,
+                            )
                         )
-                    )
 
-                # 提交任务
-                futures = []
-                for task in tasks:
-                    futures.append(
-                        executor.submit(self._update_pheromone_for_block_optimized, *task)
-                    )
+                    # 提交任务
+                    futures = []
+                    for task in tasks:
+                        futures.append(
+                            executor.submit(self._update_pheromone_for_block_optimized, *task)
+                        )
 
-                # 获取结果
-                for i, result in enumerate(futures):
-                    new_pheromone[i] = result.result()
+                    # 获取结果
+                    for i, result in enumerate(futures):
+                        new_pheromone[i] = result.result()
 
-            # 检测和处理异常值
-            if handle_outliers:
-                new_pheromone = self._detect_and_handle_outliers(new_pheromone)
+                # 检测和处理异常值
+                if handle_outliers:
+                    new_pheromone = self._detect_and_handle_outliers(new_pheromone)
 
-            # 检查收敛情况
-            # 1. 最大差异收敛判断
-            max_diff: float = np.max(np.abs(new_pheromone - pheromone))
-            # 2. 平均差异收敛判断
-            avg_diff = np.mean(np.abs(new_pheromone - pheromone))
-            # 3. 中位数差异收敛判断
-            median_diff = np.median(np.abs(new_pheromone - pheromone))
+                # 检查收敛情况
+                # 1. 最大差异收敛判断
+                max_diff: float = np.max(np.abs(new_pheromone - pheromone))
+                # 2. 平均差异收敛判断
+                avg_diff = np.mean(np.abs(new_pheromone - pheromone))
+                # 3. 中位数差异收敛判断
+                median_diff = np.median(np.abs(new_pheromone - pheromone))
 
-            # 综合收敛判断：同时满足最大差异、平均差异和中位数差异条件
-            if (
-                max_diff < convergence_threshold
-                and avg_diff < convergence_threshold / 2
-                and median_diff < convergence_threshold / 3
-            ):
-                print(f"算法在第{iteration+1}次迭代收敛")
-                break
+                # 综合收敛判断：同时满足最大差异、平均差异和中位数差异条件
+                if (
+                    max_diff < convergence_threshold
+                    and avg_diff < convergence_threshold / 2
+                    and median_diff < convergence_threshold / 3
+                ):
+                    print(f"算法在第{iteration+1}次迭代收敛")
+                    break
 
-            pheromone = new_pheromone
+                pheromone = new_pheromone
 
-        # 7. 为每个数据块设置综合得分
-        for i, block in enumerate(data_blocks):
-            block["score"] = float(pheromone[i])  # type: ignore
+            # 为每个数据块设置综合得分
+            for i, block in enumerate(data_blocks):
+                block["score"] = float(pheromone[i])
+
+        # 7. 计算每个数据块的相关性得分（使用更简单的计算方式）
+        for block in data_blocks:
+            # 重新计算更准确的相关性得分
+            block_vec = np.array(block["vector"])
+            norm_block = np.linalg.norm(block_vec)
+            norm_keyword = np.linalg.norm(keyword_vector)
+            if norm_block > 0 and norm_keyword > 0:
+                relevance = np.dot(block_vec, keyword_vector) / (norm_block * norm_keyword)
+                block["relevance"] = float(relevance)
+                # 将相关性作为最终得分
+                block["score"] = float(relevance)
+            else:
+                block["relevance"] = 0.0
+                block["score"] = 0.0
 
         # 8. 根据得分过滤数据块
-        filtered_blocks = [block for block in data_blocks if block["score"] >= relevance_threshold]  # type: ignore
+        # 调整阈值，确保低相关性数据块被过滤
+        filtered_blocks = [block for block in data_blocks if block["score"] >= relevance_threshold]
 
-        # 9. 重新生成markdown文本
-        cleaned_markdown = ""
+        # 9. 额外的内容过滤，移除不相关的内容
+        final_blocks = []
         for block in filtered_blocks:
-            cleaned_markdown += f"## {block['title']}\n\n"
-            cleaned_markdown += f"{block['content']}\n\n"
+            content = block["content"].strip()
+            # 移除图片和链接较多的内容块
+            img_count = content.count("![") + content.count("<img")
+            link_count = content.count("[") + content.count("<a")
+            # 如果图片和链接占比过高，跳过该块
+            if img_count + link_count > len(content) / 20:
+                continue
+            # 移除内容过短的块
+            if len(content) < 50:
+                continue
+            final_blocks.append(block)
 
-        # 10. 返回结果
-        return cleaned_markdown.strip(), filtered_blocks
+        # 10. 重新生成markdown文本，只保留核心内容
+        cleaned_markdown = ""
+        for block in final_blocks:
+            # 只添加非空内容
+            if block["content"].strip():
+                # 只添加内容，不添加标题，避免增大文件
+                cleaned_markdown += f"{block['content']}\n\n"
+
+        # 去除多余的换行符和空白
+        cleaned_markdown = re.sub(r"\n{3,}", "\n\n", cleaned_markdown).strip()
+        # 去除多余的空格和制表符
+        cleaned_markdown = re.sub(r"\s{3,}", " ", cleaned_markdown)
+
+        # 11. 返回结果
+        return cleaned_markdown, final_blocks
 
     def _update_pheromone_for_block(
         self,
         i: int,
-        data_blocks: List[Dict[str, Any]],
+        data_blocks: List[DataBlock],
         pheromone: np.ndarray,
         title_weight: float,
         num_blocks: int,
@@ -534,7 +603,7 @@ class RelevanceCleaner:
     def _update_pheromone_for_block_optimized(
         self,
         i: int,
-        data_blocks: List[Dict[str, Any]],
+        data_blocks: List[DataBlock],
         pheromone: np.ndarray,
         title_weight: float,
         num_blocks: int,

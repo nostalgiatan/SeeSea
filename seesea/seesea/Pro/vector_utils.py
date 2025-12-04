@@ -294,13 +294,23 @@ def compute_similarity(
         vec1 = np.array(vector1)
         vec2 = np.array(vector2)
 
+        # 计算向量范数
+        norm1 = np.linalg.norm(vec1)
+        norm2 = np.linalg.norm(vec2)
+
+        # 处理范数为0的情况
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+
         # 计算余弦相似度
-        similarity = np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+        similarity = np.dot(vec1, vec2) / (norm1 * norm2)
 
         return float(similarity)
 
     except Exception as e:
-        raise RuntimeError(f"计算相似度失败: {str(e)}") from e
+        # 捕获所有异常，返回0.0作为默认值
+        print(f"计算相似度失败，返回默认值0.0: {str(e)}")
+        return 0.0
 
 
 def normalize_vector(vector: List[float]) -> List[float]:
@@ -327,3 +337,81 @@ def normalize_vector(vector: List[float]) -> List[float]:
 
     except Exception as e:
         raise RuntimeError(f"向量归一化失败: {str(e)}") from e
+
+
+class VectorUtils:
+    """
+    向量工具类，提供简化的向量操作接口
+
+    组合了Vectorizer和VectorDatabase的功能，提供更简单的接口
+    """
+
+    def __init__(self, model_path: Optional[str] = None, device: Optional[str] = None):
+        """
+        初始化向量工具类
+
+        Args:
+            model_path: 模型文件路径，默认为None，自动下载
+            device: 运行设备，可选值：'cuda'、'cpu'或None（自动检测）
+        """
+        self.model_path = model_path
+        self.device = device
+        self._vectorizer = None
+        self._database = None
+
+    @property
+    def vectorizer(self):
+        """延迟初始化向量器"""
+        if self._vectorizer is None:
+            self._vectorizer = Vectorizer(self.model_path, self.device)
+        return self._vectorizer
+
+    @property
+    def database(self):
+        """延迟初始化向量数据库"""
+        if self._database is None:
+            self._database = VectorDatabase(self.model_path, self.device)
+        return self._database
+
+    def add_document(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        """
+        添加文档到向量数据库
+
+        Args:
+            content: 文档内容
+            metadata: 文档元数据，如title、url、summary等
+        """
+        from uuid import uuid4
+
+        # 生成唯一ID
+        doc_id = str(uuid4())
+
+        # 转换元数据为JSON字符串，如果需要
+        kwargs = {}
+        if metadata:
+            kwargs.update(metadata)
+
+        # 添加到数据库
+        self.database.add_document(doc_id, content, **kwargs)
+
+    def search(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        在向量数据库中搜索相似文档
+
+        Args:
+            query: 搜索查询文本
+            limit: 返回结果数量
+
+        Returns:
+            List[Dict[str, Any]]: 搜索结果列表
+        """
+        try:
+            results = self.database.search(query, k=limit, return_objects=False)
+            # 确保结果是List[Dict[str, Any]]类型
+            if isinstance(results, list):
+                return results
+            return []
+        except Exception as e:
+            # 如果搜索失败，返回空列表
+            print(f"向量搜索失败，返回空列表: {str(e)}")
+            return []

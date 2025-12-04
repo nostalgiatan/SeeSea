@@ -411,7 +411,7 @@ mod tests {
         let manager = TorManager::default();
         let result = manager.get_current_ip().await;
         // This will fail without Tor running
-        assert!(result.is_err() || result.unwrap().len() > 0);
+        assert!(result.is_err() || !result.unwrap().is_empty());
     }
 
     #[tokio::test]

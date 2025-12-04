@@ -11,7 +11,7 @@ import importlib
 import shutil
 import hashlib
 import json
-from typing import List, Optional
+from typing import List, Optional, Any
 
 
 class Colors:
@@ -61,15 +61,17 @@ class CommandRunner:
     @staticmethod
     def run(
         command: List[str], check: bool = True, capture_output: bool = False
-    ) -> subprocess.CompletedProcess:
+    ) -> subprocess.CompletedProcess[Any]:
         """运行命令"""
         Logger.debug(f"执行命令: {' '.join(command)}")
 
         try:
-            if capture_output:
-                result = subprocess.run(command, check=check, capture_output=True, text=True)
-            else:
-                result = subprocess.run(command, check=check)
+            result = subprocess.run(
+                command, 
+                check=check, 
+                capture_output=capture_output, 
+                text=True
+            )
 
             Logger.debug(f"命令执行成功: {' '.join(command)}")
             return result
@@ -81,12 +83,25 @@ class CommandRunner:
                     Logger.error(f"标准输出: {e.stdout}")
                     Logger.error(f"标准错误: {e.stderr}")
                 sys.exit(1)
-            return e
+            # 创建一个CompletedProcess对象返回
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=e.returncode,
+                stdout=e.stdout if hasattr(e, 'stdout') else b'',
+                stderr=e.stderr if hasattr(e, 'stderr') else b''
+            )
         except Exception as e:
             if check:
                 Logger.error(f"命令执行异常: {' '.join(command)}")
                 Logger.error(f"异常信息: {e}")
                 sys.exit(1)
+            # 对于其他异常，返回一个带有错误码的CompletedProcess对象
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=1,
+                stdout=b'',
+                stderr=str(e).encode()
+            )
             raise e
 
 

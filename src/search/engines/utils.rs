@@ -355,7 +355,7 @@ mod tests {
             ("lang", Cow::Borrowed("en")),
         ];
 
-        let result = build_query_string(params.into_iter());
+        let result = build_query_string(params);
         assert!(result.contains("q=test%20query"));
         assert!(result.contains("page=1"));
         assert!(result.contains("lang=en"));
@@ -365,14 +365,14 @@ mod tests {
     fn test_build_query_string_owned() {
         let params = vec![("q", "test query".to_string()), ("page", "1".to_string())];
 
-        let result = build_query_string_owned(params.into_iter());
+        let result = build_query_string_owned(params);
         assert!(result.contains("q=test%20query"));
         assert!(result.contains("page=1"));
     }
 
     #[test]
     fn test_collect_text() {
-        let fragments = vec!["  Hello  ", "  world  ", "", "  !  "];
+        let fragments = ["  Hello  ", "  world  ", "", "  !  "];
         let result = collect_text(fragments.iter().copied());
         assert_eq!(result, "Hello world !");
     }

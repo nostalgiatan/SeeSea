@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -21,6 +21,7 @@ pub mod cache;
 pub mod config;
 pub mod health;
 pub mod metrics;
+pub mod pro;
 pub mod rss;
 pub mod search;
 pub mod static_files;
@@ -31,5 +32,6 @@ pub use health::handle_health;
 pub use metrics::{
     handle_engines_list, handle_metrics, handle_realtime_metrics, handle_stats, handle_version,
 };
+pub use pro::handle_pro_api;
 pub use search::{handle_search, handle_search_post};
 pub use static_files::{handle_favicon, handle_index};

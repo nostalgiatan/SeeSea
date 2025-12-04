@@ -22,6 +22,8 @@ SeeSea API Server - API 服务器
 from typing import Optional, Dict, List
 from seesea_core import PyApiServer  # type: ignore[import-untyped]
 
+from .handlers.pro import register_pro_routes
+
 
 class ApiServer:
     """
@@ -76,6 +78,14 @@ class ApiServer:
         self.port = port if port is not None else 8080
         self.network_mode = network_mode
         self.config_file = config_file
+
+        # 初始化时注册Pro API路由
+        try:
+            register_pro_routes(self)
+            print("✅ Pro API routes registered successfully")
+        except Exception as e:
+            print(f"⚠️  Failed to register Pro API routes: {e}")
+            print("   Pro API features may not be available")
 
     def start(self):
         """
@@ -162,6 +172,23 @@ class ApiServer:
 
     def __repr__(self) -> str:
         return f"<ApiServer(address='{self.address}', mode='{self.network_mode}')>"
+
+    def add_pro_route(self, path: str, callback, method: str = "POST") -> None:
+        """
+        添加 Pro API 路由
+
+        Args:
+            path: 路由路径（如 "/process-url"，自动添加 "/api/pro/" 前缀）
+            callback: Python 回调函数，接收请求上下文并返回响应字典
+            method: HTTP 方法（默认: "POST"）
+
+        示例:
+            >>> def my_callback(req):
+            ...     return {"status": 200, "body": "{\"message\": \"Hello from Pro API\"}"}
+            >>> server = ApiServer()
+            >>> server.add_pro_route("/hello", my_callback, method="GET")
+        """
+        self._server.add_pro_route(path, callback, method)
 
     def __str__(self) -> str:
         return f"SeeSea API Server @ {self.url} ({self.network_mode} mode)"
