@@ -117,7 +117,7 @@ SeeSea 是一个以隐私保护为核心的多模态搜索平台，通过 Rust �
 搜索请求 → 原始结果获取 → URL内容处理 → 向量存储 → 结果融合 → 返回增强结果
 ```
 
-![SeeSea Pro 流程](static/image/pro_flow_screenshot.png)
+![SeeSea Pro 流程](static/image/pro_flow_screenshot.jpg)
 
 ---
 
