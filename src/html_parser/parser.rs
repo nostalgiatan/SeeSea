@@ -264,11 +264,13 @@ impl HtmlParser {
         let meta_selector = Selector::parse("meta").unwrap();
         for meta in self.document.select(&meta_selector) {
             if let Some(name) = meta.value().attr("name")
-                && let Some(content) = meta.value().attr("content") {
-                    meta_info.insert(name.to_string(), content.to_string());
+                && let Some(content) = meta.value().attr("content")
+            {
+                meta_info.insert(name.to_string(), content.to_string());
             } else if let Some(property) = meta.value().attr("property")
-                && let Some(content) = meta.value().attr("content") {
-                    meta_info.insert(property.to_string(), content.to_string());
+                && let Some(content) = meta.value().attr("content")
+            {
+                meta_info.insert(property.to_string(), content.to_string());
             }
         }
 

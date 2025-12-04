@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -17,7 +17,9 @@
 //!
 //! 提供简化搜索引擎实现的宏
 
-/// 定义引擎元数据的宏（类似 searxng 的模块级变量）
+/// 定义引擎元数据的宏
+///
+/// 用于声明引擎的基本元数据信息，包括名称、分类、分页支持、时间范围支持和安全搜索支持等。
 ///
 /// # 示例
 ///
