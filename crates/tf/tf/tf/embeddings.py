@@ -82,7 +82,7 @@ class TextEmbedder:
             max_attempts = 2  # 最大尝试次数
             current_attempt = 1
             success = False
-            
+
             while current_attempt <= max_attempts and not success:
                 try:
                     # Initialize llama-cpp-python with embedding support
@@ -112,27 +112,30 @@ class TextEmbedder:
                 except Exception as e:
                     error_msg = str(e)
                     current_attempt += 1
-                    
+
                     # 检查是否是模型加载失败，且是第一次尝试
                     if "Failed to load model" in error_msg and current_attempt <= max_attempts:
                         # 删除可能损坏的模型文件
                         if os.path.exists(model_path):
                             os.remove(model_path)
-                        
+
                         # 重新创建模型目录
                         os.makedirs(os.path.dirname(model_path), exist_ok=True)
-                        
+
                         # 重新下载模型
                         from seesea_core import get_file
+
                         model_url = "https://hf-mirror.com/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-f16.gguf?download=true"
                         headers = {
                             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                         }
                         download_result = get_file(model_url, model_path, headers)
-                        
+
                         # 检查下载状态
                         if download_result["status"] != 200:
-                            raise RuntimeError(f"重新下载模型失败。状态码: {download_result['status']}")
+                            raise RuntimeError(
+                                f"重新下载模型失败。状态码: {download_result['status']}"
+                            )
                     else:
                         # 超过最大尝试次数或不是模型加载错误，抛出异常
                         raise RuntimeError(

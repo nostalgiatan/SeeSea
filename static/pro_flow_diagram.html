@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SeeSea Pro 流程图</title>
+    <!-- 引入 Font Awesome 图标 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #2c3e50;
+            font-size: 2.5em;
+        }
+
+        /* 流程图容器 */
+        .flowchart {
+            background-color: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            position: relative;
+        }
+
+        /* 流程步骤 */
+        .step {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 40px;
+            position: relative;
+        }
+
+        /* 垂直连接线 */
+        .step::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            width: 2px;
+            height: 40px;
+            background-color: #bdc3c7;
+            transform: translateX(-50%);
+        }
+
+        .step:last-child::after {
+            display: none;
+        }
+
+        /* 模块容器 */
+        .module {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        /* 单个模块 */
+        .box {
+            background-color: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            min-width: 200px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            position: relative;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        }
+
+        .box:hover {
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+            transform: translateY(-3px) scale(1.02);
+        }
+
+        /* 模块图标 */
+        .box .icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        /* 模块标题 */
+        .box h3 {
+            font-size: 1.1em;
+            margin-bottom: 8px;
+            color: #2c3e50;
+        }
+
+        /* 模块描述 */
+        .box p {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            margin: 0;
+        }
+
+        /* 阶段标题 */
+        .phase-title {
+            background-color: #3498db;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 1.2em;
+            font-weight: bold;
+            margin: 0 auto 30px;
+            display: inline-block;
+            box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
+        }
+
+        /* 阶段1：搜索请求处理 */
+        .phase-1 .box {
+            border-color: #3498db;
+        }
+
+        .phase-1 .box .icon {
+            color: #3498db;
+        }
+
+        .phase-1 .phase-title {
+            background-color: #3498db;
+        }
+
+        /* 阶段2：URL内容处理 */
+        .phase-2 .box {
+            border-color: #2ecc71;
+        }
+
+        .phase-2 .box .icon {
+            color: #2ecc71;
+        }
+
+        .phase-2 .phase-title {
+            background-color: #2ecc71;
+        }
+
+        /* 阶段3：内容清洗与增强 */
+        .phase-3 .box {
+            border-color: #f39c12;
+        }
+
+        .phase-3 .box .icon {
+            color: #f39c12;
+        }
+
+        .phase-3 .phase-title {
+            background-color: #f39c12;
+        }
+
+        /* 阶段4：向量数据库操作 */
+        .phase-4 .box {
+            border-color: #9b59b6;
+        }
+
+        .phase-4 .box .icon {
+            color: #9b59b6;
+        }
+
+        .phase-4 .phase-title {
+            background-color: #9b59b6;
+        }
+
+        /* 阶段5：结果融合与返回 */
+        .phase-5 .box {
+            border-color: #e74c3c;
+        }
+
+        .phase-5 .box .icon {
+            color: #e74c3c;
+        }
+
+        .phase-5 .phase-title {
+            background-color: #e74c3c;
+        }
+
+        /* 箭头连接 */
+        .arrow {
+            width: 60px;
+            height: 2px;
+            background-color: #bdc3c7;
+            position: relative;
+            margin: 0 10px;
+        }
+
+        .arrow::after {
+            content: '';
+            position: absolute;
+            right: -5px;
+            top: -4px;
+            width: 0;
+            height: 0;
+            border-left: 10px solid #bdc3c7;
+            border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .flowchart {
+                padding: 15px;
+            }
+
+            .module {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .arrow {
+                width: 2px;
+                height: 40px;
+                margin: 10px 0;
+            }
+
+            .arrow::after {
+                right: -4px;
+                top: auto;
+                bottom: -5px;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 10px solid #bdc3c7;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><i class="fas fa-project-diagram"></i> SeeSea Pro 流程</h1>
+        
+        <div class="flowchart">
+            <!-- 阶段1：搜索请求处理 -->
+            <div class="step phase-1">
+                <div class="phase-title">
+                    <i class="fas fa-search"></i> 搜索请求处理
+                </div>
+                <div class="module">
+                    <div class="box">
+                        <i class="fas fa-sliders-h icon"></i>
+                        <h3>解析请求参数</h3>
+                        <p>提取查询关键词和搜索参数</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-keyboard icon"></i>
+                        <h3>获取查询关键词</h3>
+                        <p>从请求中提取搜索关键词</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-search-plus icon"></i>
+                        <h3>执行基本搜索</h3>
+                        <p>调用搜索引擎获取原始结果</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 阶段2：URL内容处理 -->
+            <div class="step phase-2">
+                <div class="phase-title">
+                    <i class="fas fa-link"></i> URL内容处理
+                </div>
+                <div class="module">
+                    <div class="box">
+                        <i class="fas fa-network-wired icon"></i>
+                        <h3>链接类型检测</h3>
+                        <p>判断静态HTML或SPA页面</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-download icon"></i>
+                        <h3>获取HTML内容</h3>
+                        <p>HTTP请求或Playwright渲染</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-info-circle icon"></i>
+                        <h3>提取元数据</h3>
+                        <p>提取标题、描述等信息</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-file-alt icon"></i>
+                        <h3>HTML转Markdown</h3>
+                        <p>转换为易处理的文本格式</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 阶段3：内容清洗与增强 -->
+            <div class="step phase-3">
+                <div class="phase-title">
+                    <i class="fas fa-filter"></i> 内容清洗与增强
+                </div>
+                <div class="module">
+                    <div class="box">
+                        <i class="fas fa-cubes icon"></i>
+                        <h3>Markdown数据块分割</h3>
+                        <p>按标题分割内容块</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-balance-scale icon"></i>
+                        <h3>计算关键词相似度</h3>
+                        <p>评估内容与关键词相关性</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-ant icon"></i>
+                        <h3>蚁群算法优化</h3>
+                        <p>智能调整内容权重</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-trash icon"></i>
+                        <h3>过滤低相关数据块</h3>
+                        <p>移除不相关的内容</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 阶段4：向量数据库操作 -->
+            <div class="step phase-4">
+                <div class="phase-title">
+                    <i class="fas fa-database icon"></i> 向量数据库操作
+                </div>
+                <div class="module">
+                    <div class="box">
+                        <i class="fas fa-project-diagram icon"></i>
+                        <h3>内容向量化</h3>
+                        <p>生成内容的向量表示</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-save icon"></i>
+                        <h3>向量存储</h3>
+                        <p>存储到向量数据库</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-search-dollar icon"></i>
+                        <h3>向量相似搜索</h3>
+                        <p>查找相似内容</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-star-half-alt icon"></i>
+                        <h3>调整结果信任值</h3>
+                        <p>基于向量相似度调整</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 阶段5：结果融合与返回 -->
+            <div class="step phase-5">
+                <div class="phase-title">
+                    <i class="fas fa-return icon"></i> 结果融合与返回
+                </div>
+                <div class="module">
+                    <div class="box">
+                        <i class="fas fa-compress-alt icon"></i>
+                        <h3>融合搜索结果</h3>
+                        <p>合并原始结果与处理后内容</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-magic icon"></i>
+                        <h3>生成增强结果</h3>
+                        <p>构建最终增强搜索结果</p>
+                    </div>
+                    <div class="arrow"></div>
+                    <div class="box">
+                        <i class="fas fa-paper-plane icon"></i>
+                        <h3>返回最终结果</h3>
+                        <p>返回增强搜索结果</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

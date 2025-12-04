@@ -66,12 +66,7 @@ class CommandRunner:
         Logger.debug(f"执行命令: {' '.join(command)}")
 
         try:
-            result = subprocess.run(
-                command, 
-                check=check, 
-                capture_output=capture_output, 
-                text=True
-            )
+            result = subprocess.run(command, check=check, capture_output=capture_output, text=True)
 
             Logger.debug(f"命令执行成功: {' '.join(command)}")
             return result
@@ -87,8 +82,8 @@ class CommandRunner:
             return subprocess.CompletedProcess(
                 args=command,
                 returncode=e.returncode,
-                stdout=e.stdout if hasattr(e, 'stdout') else b'',
-                stderr=e.stderr if hasattr(e, 'stderr') else b''
+                stdout=e.stdout if hasattr(e, "stdout") else b"",
+                stderr=e.stderr if hasattr(e, "stderr") else b"",
             )
         except Exception as e:
             if check:
@@ -97,10 +92,7 @@ class CommandRunner:
                 sys.exit(1)
             # 对于其他异常，返回一个带有错误码的CompletedProcess对象
             return subprocess.CompletedProcess(
-                args=command,
-                returncode=1,
-                stdout=b'',
-                stderr=str(e).encode()
+                args=command, returncode=1, stdout=b"", stderr=str(e).encode()
             )
             raise e
 

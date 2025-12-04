@@ -263,14 +263,12 @@ impl HtmlParser {
         // 获取meta标签
         let meta_selector = Selector::parse("meta").unwrap();
         for meta in self.document.select(&meta_selector) {
-            if let Some(name) = meta.value().attr("name") {
-                if let Some(content) = meta.value().attr("content") {
+            if let Some(name) = meta.value().attr("name")
+                && let Some(content) = meta.value().attr("content") {
                     meta_info.insert(name.to_string(), content.to_string());
-                }
-            } else if let Some(property) = meta.value().attr("property") {
-                if let Some(content) = meta.value().attr("content") {
+            } else if let Some(property) = meta.value().attr("property")
+                && let Some(content) = meta.value().attr("content") {
                     meta_info.insert(property.to_string(), content.to_string());
-                }
             }
         }
 
