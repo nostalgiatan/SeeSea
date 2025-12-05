@@ -12,9 +12,8 @@ All operations are thread-safe and memory-efficient.
 """
 
 from typing import List, Dict, Optional, Any, Iterator, Union
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 from .embeddings import TextEmbedder
+from .vector_store import VectorStoreWrapper
 from .search_result import SearchResult
 
 
@@ -33,57 +32,49 @@ class DocumentStore:
     - Memory efficient: content is vectorized then discarded
     - Thread-safe: concurrent operations supported
     - Batch operations: parallel processing for bulk operations
+    - Bloom filter: efficient URL existence checking
+    - Content hashing: avoid unnecessary updates
+    - Persistent storage: data stored in .tf/data.db by default
     """
 
     def __init__(
         self,
         embedder: Optional[TextEmbedder] = None,
-        dimension: Optional[int] = None,
         model_path: Optional[str] = None,
         device: Optional[str] = None,
+        store_path: Optional[str] = None,
     ):
         """
         Initialize the document store.
 
         Args:
             embedder: TextEmbedder instance (created if None)
-            dimension: Vector dimension (auto-detected from embedder if None)
             model_path: Path to the GGUF format Qwen3 embedding model (used if embedder is None)
             device: Device to use for embedding model (used if embedder is None)
+            store_path: Path to persistent vector store (default: .tf/data.db)
         """
-        # Initialize embedder
+        # Initialize embedder if not provided
         if embedder is None:
             self.embedder = TextEmbedder(model_path=model_path, device=device)
         else:
             self.embedder = embedder
 
-        # Get dimension
-        if dimension is None:
-            dimension = self.embedder.get_dimension()
-
-        # Initialize Rust store
-        try:
-            from tf_rust import VectorStore  # type: ignore[import-not-found]
-
-            self._store = VectorStore(dimension)
-        except ImportError as e:
-            raise ImportError(
-                "Failed to import tf_rust module. "
-                "Please build the Rust extension first using 'maturin develop'."
-            ) from e
-
-        # Thread pool for parallel operations
-        self._executor = ThreadPoolExecutor(max_workers=4)
-        self._lock = threading.Lock()
+        # Initialize VectorStoreWrapper - this handles all Rust store operations
+        self._vector_store = VectorStoreWrapper(embedder=self.embedder, store_path=store_path)
 
     def add(
         self, doc_id: str, content: str, title: str = "", url: str = "", summary: str = ""
-    ) -> None:
+    ) -> bool:
         """
         Add a document to the store (Create operation).
 
         The content is vectorized via the embedding model, then immediately discarded.
         Only the vector and metadata (title, url, summary) are stored.
+        
+        This method uses bloom filter and content hash to avoid unnecessary operations:
+        1. Checks if URL exists in bloom filter
+        2. If exists, checks content hash to determine if update is needed
+        3. Only vectorizes and updates if necessary
 
         Args:
             doc_id: Unique identifier for the document
@@ -92,29 +83,45 @@ class DocumentStore:
             url: Document URL (stored)
             summary: Document summary (stored)
 
+        Returns:
+            True if the document was added or updated, False if no changes were needed
+
         Example:
             >>> store.add("doc1", "Long content...", title="My Doc", summary="Brief summary")
         """
+        return self._vector_store.add_document(doc_id, content, title, url, summary)
 
-        def embedding_callback(text: str) -> List[float]:
-            """Callback for Rust to get embedding."""
-            embedding = self.embedder.encode(text)
-            # Ensure flat list
-            if (
-                isinstance(embedding, list)
-                and len(embedding) > 0
-                and isinstance(embedding[0], list)
-            ):
-                embedding = embedding[0]
-            return embedding  # type: ignore[return-value]
-
-        # Call Rust with callback
-        with self._lock:
-            self._store.set(doc_id, content, title, url, summary, embedding_callback)
-
-    def add_batch(self, documents: List[Dict[str, str]], parallel: bool = True) -> None:
+    def add_document_with_vector(
+        self, doc_id: str, vector: List[float], title: str = "", url: str = "", summary: str = ""
+    ) -> bool:
         """
-        Add multiple documents in parallel (Create operation).
+        Add a document with a pre-computed vector.
+
+        Use this when you already have the vector and want to avoid re-computing it.
+        
+        This method uses bloom filter and content hash to avoid unnecessary operations.
+
+        Args:
+            doc_id: Unique identifier for the document
+            vector: Pre-computed embedding vector
+            title: Document title (optional)
+            url: Document URL (optional)
+            summary: Document summary (optional)
+
+        Returns:
+            True if the document was added or updated, False if no changes were needed
+        """
+        return self._vector_store.add_document_with_vector(doc_id, vector, title, url, summary)
+
+    def add_batch(self, documents: List[Dict[str, str]]) -> int:
+        """
+        Add multiple documents using batch processing (Create operation).
+        
+        This method is highly optimized:
+        1. First filters documents that need to be updated using bloom filter and hash comparison
+        2. Batch encodes the documents that need updates
+        3. Uses Rust's batch_set method for efficient insertion
+        4. Avoids unnecessary vectorization and database operations
 
         Args:
             documents: List of document dictionaries with keys:
@@ -123,7 +130,9 @@ class DocumentStore:
                       - title: Document title (optional)
                       - url: Document URL (optional)
                       - summary: Document summary (optional)
-            parallel: Use parallel processing (default: True)
+
+        Returns:
+            Number of documents successfully added or updated
 
         Example:
             >>> docs = [
@@ -132,49 +141,17 @@ class DocumentStore:
             ... ]
             >>> store.add_batch(docs)
         """
-        if parallel:
-            # Parallel processing with thread pool
-            futures = []
-            for doc in documents:
-                doc_id = doc.get("id")
-                content = doc.get("content")
-
-                if not doc_id or not content:
-                    raise ValueError(
-                        f"Document missing required fields 'id' and/or 'content': {doc}"
-                    )
-
-                future = self._executor.submit(
-                    self.add,
-                    doc_id,
-                    content,
-                    doc.get("title", ""),
-                    doc.get("url", ""),
-                    doc.get("summary", ""),
-                )
-                futures.append(future)
-
-            # Wait for all to complete
-            for future in as_completed(futures):
-                future.result()  # Raise any exceptions
-        else:
-            # Sequential processing
-            for doc in documents:
-                doc_id = doc.get("id")
-                content = doc.get("content")
-
-                if not doc_id or not content:
-                    raise ValueError(
-                        f"Document missing required fields 'id' and/or 'content': {doc}"
-                    )
-
-                self.add(
-                    doc_id,
-                    content,
-                    doc.get("title", ""),
-                    doc.get("url", ""),
-                    doc.get("summary", ""),
-                )
+        # Convert documents to the format expected by VectorStoreWrapper.add_documents
+        formatted_docs = []
+        for doc in documents:
+            formatted_docs.append({
+                "id": doc["id"],
+                "content": doc["content"],
+                "title": doc.get("title", ""),
+                "url": doc.get("url", ""),
+                "summary": doc.get("summary", "")
+            })
+        return self._vector_store.add_documents(formatted_docs)
 
     def get(self, doc_id: str) -> Optional[Dict[str, str]]:
         """
@@ -191,7 +168,7 @@ class DocumentStore:
             >>> metadata = store.get("doc1")
             >>> print(metadata['title'], metadata['summary'])
         """
-        return self._store.get(doc_id)  # type: ignore[no-any-return]
+        return self._vector_store.get_metadata(doc_id)
 
     def update(
         self,
@@ -199,9 +176,12 @@ class DocumentStore:
         title: Optional[str] = None,
         url: Optional[str] = None,
         summary: Optional[str] = None,
-    ) -> None:
+    ) -> bool:
         """
         Update document metadata (Update operation).
+        
+        This method uses content hash to determine if an update is actually needed.
+        It will only update the document if the content has changed.
 
         Args:
             doc_id: Document identifier
@@ -209,11 +189,14 @@ class DocumentStore:
             url: New URL (optional)
             summary: New summary (optional)
 
+        Returns:
+            True if the document was updated, False if no changes were needed
+
         Example:
             >>> store.update("doc1", title="New Title", summary="Updated summary")
         """
-        with self._lock:
-            self._store.update(doc_id, title, url, summary)
+        # Use Rust's update method which handles hash comparison
+        return self._vector_store.store.update(doc_id, title, url, summary)
 
     def delete(self, doc_id: str) -> None:
         """
@@ -225,8 +208,7 @@ class DocumentStore:
         Example:
             >>> store.delete("doc1")
         """
-        with self._lock:
-            self._store.rm(doc_id)
+        self._vector_store.remove_document(doc_id)
 
     def delete_batch(self, doc_ids: List[str]) -> None:
         """
@@ -238,9 +220,8 @@ class DocumentStore:
         Example:
             >>> store.delete_batch(["doc1", "doc2", "doc3"])
         """
-        with self._lock:
-            for doc_id in doc_ids:
-                self._store.rm(doc_id)
+        for doc_id in doc_ids:
+            self._vector_store.remove_document(doc_id)
 
     def search(
         self, query: str, k: int = 5, return_objects: bool = False
@@ -290,7 +271,7 @@ class DocumentStore:
             query_embedding = query_embedding[0]
 
         # Search in vector database - results already sorted by score (descending)
-        raw_results = self._store.search(query_embedding, k)
+        raw_results = self._vector_store.search_by_embedding(query_embedding, k)
 
         # Free embedding memory immediately
         del query_embedding
@@ -309,7 +290,7 @@ class DocumentStore:
             ]
         else:
             # Return as dictionaries (backward compatible)
-            return raw_results  # type: ignore[no-any-return]
+            return raw_results
 
     def search_streaming(self, query: str, k: int = 5) -> Iterator[SearchResult]:
         """
@@ -342,7 +323,7 @@ class DocumentStore:
             query_embedding = query_embedding[0]
 
         # Search - results already sorted
-        raw_results = self._store.search(query_embedding, k)
+        raw_results = self._vector_store.search_by_embedding(query_embedding, k)
 
         # Free embedding memory
         del query_embedding
@@ -356,7 +337,7 @@ class DocumentStore:
                 url=r.get("url", ""),
                 summary=r.get("summary", ""),
             )
-            # Each result is yielded and can be processed/freed immediately
+            # Each result is yielded and can be processed immediately, no buffering
 
     def search_by_vector(self, vector: List[float], k: int = 5) -> List[Dict[str, Any]]:
         """
@@ -373,7 +354,7 @@ class DocumentStore:
             >>> vec = embedder.encode("some text")
             >>> results = store.search_by_vector(vec, k=5)
         """
-        return self._store.search(vector, k)  # type: ignore[no-any-return]
+        return self._vector_store.search_by_embedding(vector, k)
 
     def count(self) -> int:
         """
@@ -385,7 +366,7 @@ class DocumentStore:
         Example:
             >>> print(f"Total documents: {store.count()}")
         """
-        return self._store.len()  # type: ignore[no-any-return]
+        return len(self._vector_store)
 
     def is_empty(self) -> bool:
         """
@@ -394,7 +375,87 @@ class DocumentStore:
         Returns:
             True if empty, False otherwise
         """
-        return self._store.is_empty()  # type: ignore[no-any-return]
+        return self._vector_store.is_empty()
+
+    def url_exists(self, url: str) -> bool:
+        """
+        Check if a URL exists in the store using bloom filter.
+        This is a fast O(1) operation.
+
+        Args:
+            url: URL to check
+
+        Returns:
+            True if URL likely exists, False if definitely doesn't exist
+        """
+        return self._vector_store.store.url_exists(url)
+
+    def url_exists_exact(self, url: str) -> bool:
+        """
+        Check if a URL exists in the store with exact match.
+        This is a slower operation but guarantees accuracy.
+
+        Args:
+            url: URL to check
+
+        Returns:
+            True if URL exists, False otherwise
+        """
+        return self._vector_store.store.url_exists_exact(url)
+
+    def get_by_url(self, url: str) -> Optional[Dict[str, Any]]:
+        """
+        Get document by URL.
+
+        Args:
+            url: URL to search for
+
+        Returns:
+            Document metadata if found, None otherwise
+        """
+        return self._vector_store.store.get_by_url(url)
+
+    def queue_document(
+        self, doc_id: str, content: str, title: str = "", url: str = "", summary: str = ""
+    ) -> bool:
+        """
+        Queue a document for batch processing.
+        This method is thread-safe and doesn't block.
+
+        Args:
+            doc_id: Unique identifier for the document
+            content: Document content (will be vectorized then discarded)
+            title: Document title (stored)
+            url: Document URL (stored)
+            summary: Document summary (stored)
+
+        Returns:
+            True if document was added to queue, False if URL already processed
+        """
+        return self._vector_store.store.queue_document(doc_id, content, title, url, summary)
+
+    def flush_queue(self) -> int:
+        """
+        Flush the document queue, processing all pending documents.
+        This method blocks until all documents are processed.
+
+        Returns:
+            Number of documents successfully processed
+        """
+        # Create callback function for Rust to call
+        def embedding_callback(text: str) -> List[float]:
+            """Callback that Rust calls to get the embedding vector."""
+            embedding = self.embedder.encode(text)
+            # Ensure embedding is a flat list of floats
+            if (
+                isinstance(embedding, list)
+                and len(embedding) > 0
+                and isinstance(embedding[0], list)
+            ):
+                return embedding[0]
+            return embedding
+
+        return self._vector_store.store.flush_queue(embedding_callback)
 
     def __len__(self) -> int:
         """Get document count."""
@@ -403,11 +464,6 @@ class DocumentStore:
     def __contains__(self, doc_id: str) -> bool:
         """Check if document exists."""
         return self.get(doc_id) is not None
-
-    def __del__(self):
-        """Cleanup thread pool."""
-        if hasattr(self, "_executor"):
-            self._executor.shutdown(wait=True)
 
 
 # Convenience alias

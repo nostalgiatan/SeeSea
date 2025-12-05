@@ -69,7 +69,12 @@ async def handle_pro_search(req: Dict[str, Any]) -> Dict[str, Any]:
 
     # 3. 初始化Pro组件
     processor = ContentProcessor()
-    vector_utils = VectorUtils()
+    
+    # 初始化VectorUtils，启用批处理功能
+    vector_utils = VectorUtils(
+        batch_size=20,  # 设置批处理大小
+        max_memory_mb=512  # 设置最大内存使用量
+    )
 
     # 4. 处理每个搜索结果
     enhanced_results: List[Dict[str, Any]] = []
@@ -184,6 +189,10 @@ async def handle_pro_search(req: Dict[str, Any]) -> Dict[str, Any]:
                 # 记录调试信息
                 print(f"No score found in vector result for {result_url}: {vector_result}")
 
+    # 9. 强制处理所有剩余文档
+    processed_count = vector_utils.flush()
+    print(f"强制处理了 {processed_count} 个文档")
+    
     # 10. 构建最终响应
     final_response = {
         "status": 200,

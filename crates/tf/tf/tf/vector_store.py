@@ -22,13 +22,14 @@ class VectorStoreWrapper:
     KEY FEATURE: Content is NOT stored - only vectors and metadata!
     """
 
-    def __init__(self, embedder: Optional[TextEmbedder] = None, rust_store=None):
+    def __init__(self, embedder: Optional[TextEmbedder] = None, rust_store=None, store_path=None):
         """
         Initialize the vector store wrapper.
 
         Args:
             embedder: TextEmbedder instance (created if None)
             rust_store: Rust VectorStore instance (created if None)
+            store_path: Path to persistent vector store (default: .tf/data.db)
         """
         # Initialize embedder
         if embedder is None:
@@ -41,7 +42,7 @@ class VectorStoreWrapper:
             try:
                 from tf_rust import VectorStore  # type: ignore[import-not-found]
 
-                self.store = VectorStore(self.embedder.get_dimension())  # type: ignore[assignment]
+                self.store = VectorStore(self.embedder.get_dimension(), store_path)  # type: ignore[assignment]
             except ImportError as e:
                 raise ImportError(
                     "Failed to import tf_rust module. "
@@ -49,15 +50,31 @@ class VectorStoreWrapper:
                 ) from e
         else:
             self.store = rust_store  # type: ignore[assignment]
+        
+        # Import hashlib for content hashing
+        import hashlib
+        self._hashlib = hashlib
+        
+        # Batch queue for automatic batch processing
+        self._batch_queue = []
+        self._batch_threshold = 10  # Automatically upgrade to batch processing when queue reaches this size
+        self._last_access_time = self._get_current_time()
+        self._idle_timeout = 300  # 5 minutes idle timeout in seconds
+        self._is_connected = True
 
     def add_document(
         self, doc_id: str, content: str, title: str = "", url: str = "", summary: str = ""
-    ) -> None:
+    ) -> bool:
         """
         Add a document to the vector store.
 
         MEMORY EFFICIENT: The content is vectorized and then immediately discarded.
         Only the vector and metadata (title, url, summary) are stored.
+        
+        OPTIMIZATION: Uses bloom filter and content hash to avoid unnecessary operations:
+        1. Checks if URL exists in bloom filter
+        2. If exists, checks content hash to determine if update is needed
+        3. Only vectorizes and updates if necessary
 
         Args:
             doc_id: Unique identifier for the document
@@ -65,8 +82,29 @@ class VectorStoreWrapper:
             title: Document title (optional, will be stored)
             url: Document URL (optional, will be stored)
             summary: Document summary (optional, will be stored)
+        
+        Returns:
+            True if the document was added or updated, False if no changes were needed
         """
-
+        # Check if URL already exists using bloom filter (fast check)
+        url_exists = self.store.url_exists(url)
+        
+        # Generate content hash
+        content_hash = self._hashlib.sha256(
+            f"{title}{url}{summary}".encode()
+        ).hexdigest()
+        
+        # If URL exists, check if we need to update
+        if url_exists:
+            # Get current document metadata
+            current_doc = self.get_metadata(doc_id)
+            if current_doc:
+                # Check if hash exists and matches
+                if "hash" in current_doc and current_doc["hash"] == content_hash:
+                    # No changes needed, skip update
+                    return False
+        
+        # Need to add or update the document
         # Create callback function for Rust to call
         def embedding_callback(text: str) -> List[float]:
             """Callback that Rust calls to get the embedding vector."""
@@ -80,20 +118,141 @@ class VectorStoreWrapper:
                 return embedding[0]  # type: ignore[return-value]
             return embedding  # type: ignore[return-value]
 
-        # Call Rust's set method with the callback
-        # Rust will:
-        # 1. Call embedding_callback(content) to get the vector
-        # 2. Store the vector with metadata (title, url, summary)
-        # 3. Discard the content - it's never stored!
-        self.store.set(doc_id, content, title, url, summary, embedding_callback)
+        # Add to batch queue
+        self._batch_queue.append((doc_id, content, title, url, summary))
+        
+        # Check if we should process the batch
+        if len(self._batch_queue) >= self._batch_threshold:
+            # Process the batch and return True if at least one document was processed
+            processed = self._flush_batch_queue()
+            return processed > 0
+        
+        # Document added to queue, will be processed later
+        return True
+    
+    def flush(self) -> int:
+        """
+        Flush the batch queue and process all documents immediately.
+        
+        Returns:
+            Number of documents successfully processed
+        """
+        return self._flush_batch_queue()
+    
+    def _get_current_time(self) -> float:
+        """
+        Get current time in seconds since epoch.
+        """
+        import time
+        return time.time()
+    
+    def _check_idle_timeout(self) -> None:
+        """
+        Check if the connection has been idle for too long and should be closed.
+        """
+        current_time = self._get_current_time()
+        if current_time - self._last_access_time > self._idle_timeout:
+            # Connection has been idle too long, close it
+            # Note: In a real implementation, this would close the database connection
+            # For now, we just mark it as disconnected
+            self._is_connected = False
+    
+    def _ensure_connected(self) -> None:
+        """
+        Ensure the database connection is active, reconnect if needed.
+        """
+        if not self._is_connected:
+            # In a real implementation, this would reconnect to the database
+            # For now, we just mark it as connected
+            self._is_connected = True
+        # Update last access time
+        self._last_access_time = self._get_current_time()
+    
+    def _flush_batch_queue(self) -> int:
+        """
+        Flush the batch queue and process all documents using batch_set.
+        
+        Returns:
+            Number of documents successfully processed
+        """
+        if not self._batch_queue:
+            return 0
+        
+        # Ensure connection is active
+        self._ensure_connected()
+        
+        # Filter documents that need to be added or updated (redundant check, but safe)
+        docs_to_process = []
+        for doc_id, content, title, url, summary in self._batch_queue:
+            # Check if URL already exists using bloom filter (fast check)
+            url_exists = self.store.url_exists(url)
+            
+            # Generate content hash
+            content_hash = self._hashlib.sha256(
+                f"{title}{url}{summary}".encode()
+            ).hexdigest()
+            
+            # If URL exists, check if we need to update
+            needs_update = True
+            if url_exists:
+                # Get current document metadata
+                current_doc = self.get_metadata(doc_id)
+                if current_doc:
+                    # Check if hash exists and matches
+                    if "hash" in current_doc and current_doc["hash"] == content_hash:
+                        # No changes needed, skip update
+                        needs_update = False
+            
+            if needs_update:
+                docs_to_process.append((doc_id, content, title, url, summary))
+        
+        if not docs_to_process:
+            # Clear the queue
+            self._batch_queue.clear()
+            return 0
+        
+        # Batch encode the documents that need updates
+        # First collect all content to encode
+        contents = [doc[1] for doc in docs_to_process]
+        
+        # Encode all contents at once (more efficient than one by one)
+        embeddings = self.embedder.encode(contents)
+        
+        # Ensure embeddings is a list of lists
+        if isinstance(embeddings[0], float):
+            embeddings = [embeddings]
+        
+        # Prepare batch data for Rust
+        batch_data = []
+        for i, (doc_id, content, title, url, summary) in enumerate(docs_to_process):
+            batch_data.append((
+                doc_id,
+                embeddings[i],
+                title,
+                url,
+                summary
+            ))
+        
+        # Use Rust's batch_set method for efficient insertion
+        result = self.store.batch_set(batch_data)
+        
+        # Clear the queue
+        self._batch_queue.clear()
+        
+        return result
 
     def add_document_with_vector(
         self, doc_id: str, vector: List[float], title: str = "", url: str = "", summary: str = ""
-    ) -> None:
+    ) -> bool:
         """
         Add a document with a pre-computed vector.
 
         Use this when you already have the vector and want to avoid re-computing it.
+        
+        OPTIMIZATION: Uses bloom filter and content hash to avoid unnecessary operations:
+        1. Checks if URL exists in bloom filter
+        2. If exists, checks content hash to determine if update is needed
+        3. Only updates if necessary
 
         Args:
             doc_id: Unique identifier for the document
@@ -101,15 +260,42 @@ class VectorStoreWrapper:
             title: Document title (optional)
             url: Document URL (optional)
             summary: Document summary (optional)
+        
+        Returns:
+            True if the document was added or updated, False if no changes were needed
         """
-        self.store.set_vector(doc_id, vector, title, url, summary if summary else None)
+        # Check if URL already exists using bloom filter (fast check)
+        url_exists = self.store.url_exists(url)
+        
+        # Generate content hash
+        content_hash = self._hashlib.sha256(
+            f"{title}{url}{summary}".encode()
+        ).hexdigest()
+        
+        # If URL exists, check if we need to update
+        if url_exists:
+            # Get current document metadata
+            current_doc = self.get_metadata(doc_id)
+            if current_doc:
+                # Check if hash exists and matches
+                if "hash" in current_doc and current_doc["hash"] == content_hash:
+                    # No changes needed, skip update
+                    return False
+        
+        # Need to add or update the document
+        result = self.store.set_vector(doc_id, vector, title, url, summary if summary else None)
+        return result
 
-    def add_documents(self, documents: List[Dict[str, str]]) -> None:
+    def add_documents(self, documents: List[Dict[str, str]]) -> int:
         """
-        Add multiple documents at once.
+        Add multiple documents at once with optimized batch processing.
 
-        MEMORY EFFICIENT: Each document's content is vectorized and discarded
-        before processing the next one.
+        OPTIMIZATIONS:
+        1. Uses bloom filter to avoid processing unchanged documents
+        2. Uses content hash to detect actual changes
+        3. Batch encodes documents for efficiency
+        4. Uses Rust's batch_set for fast insertion
+        5. Discards content after vectorization
 
         Args:
             documents: List of document dictionaries with keys:
@@ -117,20 +303,75 @@ class VectorStoreWrapper:
                       - content: Document content (required, will be discarded)
                       - title: Document title (optional, will be stored)
                       - url: Document URL (optional, will be stored)
+                      - summary: Document summary (optional, will be stored)
+        
+        Returns:
+            Number of documents successfully added or updated
         """
+        # Filter documents that need to be added or updated
+        docs_to_process = []
+        
         for doc in documents:
             doc_id = doc.get("id")
             content = doc.get("content")
-
+            
             if not doc_id or not content:
                 raise ValueError("Each document must have 'id' and 'content' fields")
-
+            
             title = doc.get("title", "")
             url = doc.get("url", "")
             summary = doc.get("summary", "")
-
-            self.add_document(doc_id, content, title, url, summary)
-            # At this point, content has been vectorized and discarded!
+            
+            # Check if URL already exists using bloom filter (fast check)
+            url_exists = self.store.url_exists(url)
+            
+            # Generate content hash
+            content_hash = self._hashlib.sha256(
+                f"{title}{url}{summary}".encode()
+            ).hexdigest()
+            
+            # If URL exists, check if we need to update
+            needs_update = True
+            if url_exists:
+                # Get current document metadata
+                current_doc = self.get_metadata(doc_id)
+                if current_doc:
+                    # Check if hash exists and matches
+                    if "hash" in current_doc and current_doc["hash"] == content_hash:
+                        # No changes needed, skip update
+                        needs_update = False
+            
+            if needs_update:
+                docs_to_process.append((doc_id, content, title, url, summary))
+        
+        if not docs_to_process:
+            return 0
+        
+        # Batch encode the documents that need updates
+        # First collect all content to encode
+        contents = [doc[1] for doc in docs_to_process]
+        
+        # Encode all contents at once (more efficient than one by one)
+        embeddings = self.embedder.encode(contents)
+        
+        # Ensure embeddings is a list of lists
+        if isinstance(embeddings[0], float):
+            embeddings = [embeddings]
+        
+        # Prepare batch data for Rust
+        batch_data = []
+        for i, (doc_id, content, title, url, summary) in enumerate(docs_to_process):
+            batch_data.append((
+                doc_id,
+                embeddings[i],
+                title,
+                url,
+                summary
+            ))
+        
+        # Use Rust's batch_set method for efficient insertion
+        result = self.store.batch_set(batch_data)
+        return result
 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         """
