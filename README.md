@@ -1,3 +1,4 @@
+
 # SeeSea - 多模态隐私搜索平台
 
 <img src="static/image/logo.png" alt="SeeSea Logo" width="100%">
@@ -98,7 +99,6 @@ SeeSea 是一个以隐私保护为核心的多模态搜索平台，通过 Rust �
 集成 Playwright 浏览器自动化：
 
 - **复杂网站支持**：处理 JavaScript 重度依赖的网站
-- **反检测机制**：内置自动化反机器人检测措施
 - **并发执行**：支持多浏览器实例同时抓取
 - **精准提取**：提供精准的内容提取和数据清洗
 
@@ -159,11 +159,8 @@ SeeSea 是一个以隐私保护为核心的多模态搜索平台，通过 Rust �
 - **Sled**：高性能嵌入式数据库
 - **Playwright**：浏览器自动化框架
 - **PyO3**：Python-Rust 绑定
-- **Tracing**：结构化日志和监控
-- **TensorFlow Lite**：轻量级向量嵌入和相似性计算
 - **NumPy**：Python 数值计算库
 - **Markitdown**：HTML 到 Markdown 转换
-- **BeautifulSoup**：HTML 解析和内容提取
 
 ---
 
@@ -173,22 +170,10 @@ SeeSea 是一个以隐私保护为核心的多模态搜索平台，通过 Rust �
 
 ```bash
 # 基础搜索
-cargo run --bin SeeSea -- search "Rust编程"
+seesea search ＜关键词＞
 
-# 指定搜索引擎
-cargo run --bin SeeSea -- search "机器学习" --engine bing,baidu
-
-# 图片搜索
-cargo run --bin SeeSea -- search "landscape" --type image --engine unsplash
-
-# 视频搜索
-cargo run --bin SeeSea -- search "Rust教程" --type video --engine bilibili
-
-# 隐私模式（启用所有隐私保护）
-cargo run --bin SeeSea -- search "隐私保护" --privacy-mode
-
-# 交互模式
-cargo run --bin SeeSea -- --interactive
+# API 服务器
+seesea server --host 0.0.0.0 --port 3001 -c config/development.toml
 ```
 
 ### 2. REST API
@@ -307,29 +292,401 @@ results = seesea.search("查询", engines=["bing", "custom_search", "my_browser"
 SeeSea 支持多环境配置，示例配置文件：
 
 ```toml
-# config/production.toml
+# config/development.toml
+# SeeSea 开发环境完整配置文件
+# 这是 SeeSea 元搜索引擎的完整配置，包含所有必要的设置
+
+# =============================================================================
+# 通用配置
+# =============================================================================
+[general]
+# 应用实例名称
+instance_name = "SeeSea"
+# 是否启用调试模式
+debug = true
+# 引擎加载模式: "global" 或 "settings"
+engine_loading_mode = "global"
+# 是否启用指标收集
+enable_metrics = true
+# 默认语言
+default_lang = "auto"
+# 运行环境: "development", "testing", "staging", "production"
+environment = "development"
+
+# =============================================================================
+# 服务器配置
+# =============================================================================
+[server]
+# 绑定地址
+bind_address = "127.0.0.1"
+# 端口号
+port = 3001
+# 是否启用限流
+limiter = true
+# 是否为公共实例
+public_instance = false
+# 服务密钥（生产环境请更改！）
+secret_key = "change-me-in-production-please-generate-a-strong-secret-key"
+
+# TLS 配置（HTTPS）
+[server.tls]
+enabled = false
+
+# =============================================================================
+# 搜索配置
+# =============================================================================
 [search]
-default_engines = ["bing", "yandex"]
-timeout_seconds = 30
-max_concurrent = 10
+# 安全搜索级别: 0=无, 1=中等, 2=严格
+safe_search = "none"
+# 自动完成引擎
+autocomplete = ""
+# 支持的输出格式
+formats = ["json", "html", "csv", "rss"]
+# 默认每页结果数
+results_per_page = 10
+# 最大结果数
+max_results_per_page = 50
+# 搜索超时时间（秒）
+search_timeout = 15
+# 最大并发引擎数
+max_concurrent_engines = 3
+# 默认语言
+default_language = "auto"
+# 支持的语言
+supported_languages = ["en", "zh", "ja", "ko", "es", "fr", "de", "ru"]
+# 是否支持时间范围
+time_range_support = true
 
+# 结果聚合配置
+[search.aggregation]
+# 启用结果去重
+enable_deduplication = true
+# 去重算法
+deduplication_method = "url_and_title"
+# 启用结果排序
+enable_ranking = true
+# 排序算法
+ranking_algorithm = "hybrid"
+# 最大聚合结果数
+max_results = 100
+# 启用结果分组
+enable_grouping = true
+# 分组策略
+grouping_strategy = "smart"
+
+# 查询处理配置
+[search.query_processing]
+# 启用查询扩展
+enable_expansion = true
+# 启用查询纠正
+enable_correction = true
+# 纠正阈值
+correction_threshold = 0.8
+# 启用同义词扩展
+enable_synonyms = true
+# 启用停用词过滤
+enable_stop_words = true
+# 最大查询长度
+max_query_length = 200
+# 最小查询长度
+min_query_length = 1
+
+# =============================================================================
+# 隐私保护配置
+# =============================================================================
 [privacy]
-enable_tor = true
-tor_proxy = "127.0.0.1:9050"
-tor_control_port = "127.0.0.1:9051"
-tor_mode = "adaptive"  # 可选值：always, adaptive, never
-tor_circuit_isolation = true
-fingerprint_protection = true
-user_agent_rotation = true
 
+# User-Agent 轮换配置
+[privacy.user_agent_rotation]
+enabled = false
+# 轮换策略
+rotation_strategy = "random"
+# 轮换间隔（请求数）
+rotation_interval = 10
+# 是否包含移动端 UA
+include_mobile = false
+# 按浏览器类型分组
+group_by_browser = true
+
+# TLS 指纹保护配置
+[privacy.fingerprint_protection]
+# 保护级别: "none", "basic", "advanced", "maximum"
+protection_level = "none"
+# 随机化 TLS 扩展
+randomize_extensions = true
+# 随机化密码套件
+randomize_cipher_suites = true
+# 模拟常见浏览器
+emulate_browsers = true
+
+# 请求时序随机化配置
+[privacy.request_timing]
+# 时序策略
+timing_strategy = "light"
+# 最小延迟（毫秒）
+min_delay = 100
+# 最大延迟（毫秒）
+max_delay = 2000
+# 基于请求大小调整延迟
+size_based_delay = true
+# 基于引擎调整延迟
+engine_based_delay = true
+
+# DNS 配置
+[privacy.dns_config]
+# 是否启用 DNS over HTTPS
+enabled = true
+# DNS 服务器列表（包含国内外服务商）
+[[privacy.dns_config.servers]]
+name = "Cloudflare"
+url = "https://cloudflare-dns.com/dns-query"
+enabled = true
+weight = 1.0
+
+[[privacy.dns_config.servers]]
+name = "Google"
+url = "https://dns.google/dns-query"
+enabled = true
+weight = 1.0
+
+[[privacy.dns_config.servers]]
+name = "阿里云"
+url = "https://dns.alidns.com/dns-query"
+enabled = true
+weight = 1.2
+
+[[privacy.dns_config.servers]]
+name = "腾讯 DNSPod"
+url = "https://doh.pub/dns-query"
+enabled = true
+weight = 1.2
+
+[[privacy.dns_config.servers]]
+name = "360 DoH"
+url = "https://doh.360.cn/dns-query"
+enabled = true
+weight = 1.1
+
+# DNS 超时时间（毫秒）
+timeout = 5000
+# 重试次数
+retry_count = 2
+# 是否启用 DNS 缓存
+enable_cache = true
+# 缓存过期时间（秒）
+cache_ttl = 300
+
+# 请求头配置
+[privacy.headers]
+# 移除隐私敏感头
+remove_privacy_headers = true
+# 标准化 Accept 头
+normalize_accept = true
+# 随机化其他头
+randomize_headers = false
+
+# Cookie 处理配置
+[privacy.cookie_handling]
+# 是否接受 Cookie
+accept_cookies = false
+# 是否发送 Cookie
+send_cookies = false
+# 过滤策略
+filter_policy = "disabled"
+
+# =============================================================================
+# 缓存配置
+# =============================================================================
 [cache]
-ttl_seconds = 3600
-max_size_mb = 1024
-semantic_matching = true
+# 缓存后端: "sled", "redis", "memory", "hybrid"
+backend = "sled"
+# 数据库路径（使用 .seesea 目录）
+database_path = ".seesea/cache.db"
+# 缓存过期时间（秒）
+ttl = 3600
+# 最大缓存大小（字节）
+max_size = 1073741824  # 1GB
+# 是否启用结果缓存
+enable_result_cache = true
+# 是否启用元数据缓存
+enable_metadata_cache = true
+# 是否启用 DNS 缓存
+enable_dns_cache = true
+# 是否启用 RSS 缓存
+enable_rss_cache = true
+# 缓存刷新间隔（秒）
+refresh_interval = 300
+# 淘汰策略
+eviction_policy = "ttl"
 
-[network]
-doh_providers = ["cloudflare", "google"]
-connection_pool_size = 50
+# 压缩配置
+[cache.compression]
+# 是否启用压缩
+enabled = true
+# 压缩算法
+algorithm = "lz4"
+# 压缩阈值（字节）
+threshold = 1024
+# 压缩级别
+level = 3
+
+# 监控配置
+[cache.monitoring]
+# 是否启用监控
+enabled = true
+# 指标收集间隔（秒）
+metrics_interval = 60
+# 是否启用慢查询日志
+enable_slow_query_log = true
+# 慢查询阈值（毫秒）
+slow_query_threshold = 1000
+
+# =============================================================================
+# API 配置
+# =============================================================================
+[api]
+# API 版本
+version = "v1"
+# 是否启用 CORS
+enable_cors = true
+
+# CORS 配置
+[api.cors]
+# 允许的源
+allowed_origins = ["*"]
+# 允许的方法
+allowed_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+# 是否允许凭证
+allow_credentials = false
+
+# 速率限制配置
+[api.rate_limit]
+# 是否启用速率限制
+enabled = true
+# 每秒请求数
+requests_per_second = 10
+# 每分钟请求数
+requests_per_minute = 100
+# 每小时请求数
+requests_per_hour = 1000
+# 每天请求数
+requests_per_day = 10000
+# 突发请求限制
+burst_size = 20
+
+# 认证配置
+[api.auth]
+# 是否启用认证
+enabled = false
+# 认证类型: "none", "api_key", "jwt", "basic"
+auth_type = "none"
+
+# 响应格式配置
+[api.response_format]
+# 默认格式
+default_format = "json"
+# 支持的格式
+supported_formats = ["json", "xml", "csv"]
+# 是否包含调试信息
+include_debug_info = false
+# 是否包含性能指标
+include_metrics = true
+# 是否包含请求 ID
+include_request_id = true
+
+# 响应压缩配置
+[api.response_format.compression]
+# 是否启用
+enabled = true
+# 压缩算法
+algorithms = ["gzip", "deflate"]
+# 压缩阈值
+threshold = 1024
+
+# API 安全配置
+[api.security]
+# 是否强制 HTTPS
+force_https = false
+
+# API 文档配置
+[api.documentation]
+# 是否启用
+enabled = true
+# 文档类型
+doc_type = "openapi3"
+# 文档路径
+path = "/docs"
+# 是否包含示例
+include_examples = true
+
+# =============================================================================
+# 引擎配置
+# =============================================================================
+[engines]
+
+# 全局引擎设置
+[engines.global_settings]
+# 默认超时时间（秒）
+default_timeout = 30
+# 默认重试次数
+default_retries = 3
+# 最大并发引擎数
+max_concurrent_engines = 5
+# 引擎失败阈值（0.0-1.0）
+failure_threshold = 0.5
+# 引擎恢复时间（秒）
+recovery_time = 300
+# 是否启用引擎监控
+enable_monitoring = true
+# 是否启用性能统计
+performance_stats = true
+
+# =============================================================================
+# 日志配置
+# =============================================================================
+[logging]
+# 日志级别: "error", "warn", "info", "debug", "trace"
+level = "debug"
+# 日志格式: "simple", "full", "json", "compact"
+format = "full"
+# 日志输出: "stdout", "stderr", "file", "both"
+output = "stdout"
+# 是否启用结构化日志
+structured = false
+# 是否启用彩色输出
+colored = true
+
+# =============================================================================
+# RSS Feed 配置
+# =============================================================================
+[rss]
+# 是否启用 RSS 功能
+enabled = true
+# RSS 模板目录
+template_dir = "rss/template"
+# 配置文件路径
+config_path = ".seesea/rss_config.toml"
+# 默认更新间隔（秒）
+default_update_interval = 3600  # 1 hour
+# 最大保留项目数
+max_items_per_feed = 1000
+# 是否启用自动更新
+auto_update = true
+# 启动时更新持久化 RSS
+update_on_startup = true
+
+# =============================================================================
+# 语义缓存配置
+# =============================================================================
+[cache.semantic]
+# 是否启用语义缓存
+enabled = true
+# 相似度阈值（0.0-1.0，建议0.7-0.85）
+similarity_threshold = 0.75
+# 每个查询最大返回结果数
+max_results_per_query = 50
+# 是否启用跨查询去重
+enable_deduplication = true
 ```
 
 ### 快速部署
@@ -339,34 +696,21 @@ connection_pool_size = 50
 rustup update stable
 
 # 2. 构建项目
-git clone <repository-url>
+git clone https://github.com/nostalgiatan/SeeSea.git
 cd SeeSea
-cargo build --release
+maturin build --release --strip
+cd seesea
+pip install .
+cd crates
+pip install markitdown tf
 
 # 3. 配置环境
 cp config/production.toml config/local.toml
 # 根据需要修改配置文件
 
 # 4. 启动服务
-cargo run --release --bin api-server
+seesea server --port 3001
 ```
-
-### Docker 部署
-
-```dockerfile
-FROM rust:1.91.1 as builder
-WORKDIR /app
-COPY . .
-RUN cargo build --release
-
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/seesea /usr/local/bin/
-COPY config /etc/seesea/
-EXPOSE 8080
-CMD ["seesea", "api-server", "--config", "/etc/seesea/production.toml"]
-```
-
 ---
 
 ## 📦 自包含安装程序
@@ -414,7 +758,7 @@ SeeSea 提供了跨平台的自包含安装程序，支持一键安装和卸载�
 **Linux/macOS**：
 ```bash
 # 使用卸载脚本
-seesea-uninstall
+seesea-installer uninstall
 ```
 
 ### ⚙️ 命令行安装选项
@@ -429,8 +773,11 @@ seesea-installer --install-dir /opt/seesea
 # 静默安装（无交互）
 seesea-installer --quiet
 
-# 仅安装核心组件
-seesea-installer --components core,cli
+# 正常安装
+seesea-installer install
+
+# 卸载
+seesea-installer uninstall
 ```
 
 ---
@@ -446,12 +793,6 @@ seesea-installer --components core,cli
 | **响应时间** | 11-17秒 | 多引擎并发搜索延迟 |
 | **内存使用** | 峰值132MB | 低内存占用，适合边缘部署 |
 | **隐私开销** | < 15% | 隐私保护功能的性能损耗 |
-
-### 扩展性
-
-- **模块化设计**：搜索引擎采用可插拔架构
-- **配置灵活**：支持运行时配置更新
-- **监控支持**：集成 Prometheus metrics
 
 ---
 
