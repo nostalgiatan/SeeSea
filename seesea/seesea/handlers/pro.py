@@ -95,8 +95,8 @@ async def handle_pro_search(req: Dict[str, Any]) -> Dict[str, Any]:
             web_title = web_metadata.get("title", "")
             web_description = web_metadata.get("description", "")
 
-            # 清洗后的内容
-            cleaned_content = processed_data.get("cleaned_markdown", "")
+            # 清洗后的数据块
+            cleaned_data = processed_data.get("cleaned_data", [])
 
             # 5. 合并结果
             # 标题：搜索结果优先，网页标题补充
@@ -108,8 +108,15 @@ async def handle_pro_search(req: Dict[str, Any]) -> Dict[str, Any]:
             # 时间：使用网页元数据中的时间，如果没有则为None
             final_date = web_metadata.get("published_date", published_date)
 
-            # 上下文：清洗后的内容作为上下文
-            context = cleaned_content
+            # 上下文：清洗后的数据块按照顺序拼接起来作为上下文
+            context = ""
+            for block in cleaned_data:
+                context += block.get("content", "") + "\n\n"
+            context = context.strip()
+            
+            # 如果上下文为空，使用描述作为备选
+            if not context:
+                context = final_description
 
             # 6. 构建增强结果
             enhanced_result = {

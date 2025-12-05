@@ -166,6 +166,12 @@ class VectorDatabase:
             # 转换为DocumentStore所需的格式
             docs = []
             for doc in documents:
+                # 确保文档有id和content字段
+                if "id" not in doc:
+                    raise ValueError(f"Document must have 'id' field: {doc}")
+                if "content" not in doc:
+                    raise ValueError(f"Document must have 'content' field: {doc}")
+                
                 doc_dict = {"id": doc["id"], "content": doc["content"]}
                 # 添加可选元数据
                 for key, value in doc.items():
@@ -424,6 +430,11 @@ class BatchProcessor:
             documents: 文档列表，每个文档包含'id'和'content'字段，可选元数据字段
         """
         for doc in documents:
+            # 确保文档有id和content字段
+            if "id" not in doc:
+                raise ValueError(f"Document must have 'id' field: {doc}")
+            if "content" not in doc:
+                raise ValueError(f"Document must have 'content' field: {doc}")
             self.add_document(
                 doc_id=doc["id"],
                 content=doc["content"],
@@ -572,11 +583,12 @@ class VectorUtils:
         """
         processed_docs = []
         for doc in documents:
-            # 确保每个文档都有id
+            # 确保每个文档都有id和content字段
             if "id" not in doc:
                 from uuid import uuid4
-
                 doc["id"] = str(uuid4())
+            if "content" not in doc:
+                raise ValueError(f"Document must have 'content' field: {doc}")
             processed_docs.append(doc)
 
         # 使用批处理处理器添加文档
