@@ -8,8 +8,12 @@ name = "tf_rust"
 crate-type = ["cdylib"]
 
 [dependencies]
+anyhow = "1.0.82"
+bloom = "0.3.2"
 pyo3 = { version = "0.27.1", features = ["extension-module"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
+sha2 = "0.10.8"
+thiserror = "1.0.61"
 uuid = { version = "1.18.1", features = ["v4"] }
 vecstore = "1.0.0"
