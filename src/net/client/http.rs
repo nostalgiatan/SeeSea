@@ -486,7 +486,7 @@ impl HttpClient {
         let start_time = self.metrics_collector.start_request();
         let opts = options.unwrap_or_default();
 
-        // 使用stream_client，它禁用了自动解压缩，确保获取原始二进制数据
+        // 使用独立的stream_client（完全禁用自动解压缩），确保获取原始字节流
         let mut request = self.stream_client.get(url).timeout(opts.timeout);
 
         // 添加隐私保护请求头
@@ -501,10 +501,11 @@ impl HttpClient {
         for (key, value) in opts.headers {
             request = request.header(&key, &value);
         }
-        // 流处理请求：禁用压缩，确保获取原始二进制数据
-        request = request.header("Accept-Encoding", "identity");
 
-        // 发送请求，确保不自动解码响应体（保留原始字节）
+        // 明确禁用压缩，确保获取原始二进制数据
+        request = request.header("Accept-Encoding", "identity");
+        
+        // 确保不自动解码响应体，直接获取原始字节流
         let response = request
             .send()
             .await
@@ -523,12 +524,14 @@ impl HttpClient {
         let status = response.status().as_u16();
         let headers = response.headers().clone();
 
-        // 获取响应体流（原始字节流，避免自动解码）
-        let stream = response.bytes_stream();
+        // 直接获取原始响应体流，不进行任何解码
+        let raw_response = response.bytes_stream();
 
-        // 转换为 tokio AsyncRead
-        let reader =
-            StreamReader::new(stream.map(|result| result.map_err(tokio::io::Error::other)));
+        // 转换为tokio AsyncRead，处理可能的错误，但不进行内容解码
+        let reader = StreamReader::new(raw_response.map(|result| {
+            // 直接传递原始字节，不进行任何解码
+            result.map_err(|e| tokio::io::Error::new(tokio::io::ErrorKind::Other, e))
+        }));
 
         Ok((status, headers, reader))
     }
