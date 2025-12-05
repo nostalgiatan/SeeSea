@@ -17,11 +17,7 @@ jobs:
     strategy:
       matrix:
         include:
-          # Linux x64 builds for Python 3.9-3.12
-          - os: ubuntu-latest
-            platform: linux
-            arch: x64
-            python-version: '3.9'
+          # Linux x64 builds for Python 3.10-3.12
           - os: ubuntu-latest
             platform: linux
             arch: x64
@@ -34,11 +30,7 @@ jobs:
             platform: linux
             arch: x64
             python-version: '3.12'
-          # Linux arm64 builds for Python 3.9-3.12
-          - os: ubuntu-latest
-            platform: linux
-            arch: arm64
-            python-version: '3.9'
+          # Linux arm64 builds for Python 3.10-3.12
           - os: ubuntu-latest
             platform: linux
             arch: arm64
@@ -51,11 +43,7 @@ jobs:
             platform: linux
             arch: arm64
             python-version: '3.12'
-          # Linux armv7 builds for Python 3.9-3.12
-          - os: ubuntu-latest
-            platform: linux
-            arch: armv7
-            python-version: '3.9'
+          # Linux armv7 builds for Python 3.10-3.12
           - os: ubuntu-latest
             platform: linux
             arch: armv7
@@ -68,11 +56,7 @@ jobs:
             platform: linux
             arch: armv7
             python-version: '3.12'
-          # Windows x64 builds for Python 3.9-3.12
-          - os: windows-latest
-            platform: windows
-            arch: x64
-            python-version: '3.9'
+          # Windows x64 builds for Python 3.10-3.12
           - os: windows-latest
             platform: windows
             arch: x64
@@ -85,11 +69,7 @@ jobs:
             platform: windows
             arch: x64
             python-version: '3.12'
-          # Windows arm64 builds for Python 3.9-3.12
-          - os: windows-latest
-            platform: windows
-            arch: arm64
-            python-version: '3.9'
+          # Windows arm64 builds for Python 3.10-3.12
           - os: windows-latest
             platform: windows
             arch: arm64
@@ -102,11 +82,7 @@ jobs:
             platform: windows
             arch: arm64
             python-version: '3.12'
-          # macOS x64 builds for Python 3.9-3.12
-          - os: macos-latest
-            platform: macos
-            arch: x64
-            python-version: '3.9'
+          # macOS x64 builds for Python 3.10-3.12
           - os: macos-latest
             platform: macos
             arch: x64
@@ -119,11 +95,7 @@ jobs:
             platform: macos
             arch: x64
             python-version: '3.12'
-          # macOS arm64 builds for Python 3.9-3.12
-          - os: macos-latest
-            platform: macos
-            arch: arm64
-            python-version: '3.9'
+          # macOS arm64 builds for Python 3.10-3.12
           - os: macos-latest
             platform: macos
             arch: arm64
