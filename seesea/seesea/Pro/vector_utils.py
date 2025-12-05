@@ -24,7 +24,6 @@
 
 from typing import List, Dict, Optional, Any, Union
 import numpy as np  # type: ignore[import-not-found]
-import threading
 
 
 class Vectorizer:
@@ -113,7 +112,12 @@ class VectorDatabase:
     提供统一的数据库接口。
     """
 
-    def __init__(self, model_path: Optional[str] = None, device: Optional[str] = None, store_path: Optional[str] = None):
+    def __init__(
+        self,
+        model_path: Optional[str] = None,
+        device: Optional[str] = None,
+        store_path: Optional[str] = None,
+    ):
         """
         初始化向量数据库
 
@@ -350,23 +354,25 @@ def normalize_vector(vector: List[float]) -> List[float]:
 class BatchProcessor:
     """
     批处理管理器类，用于积累文档并批量写入向量数据库
-    
+
     支持根据配置的批量大小或内存使用情况自动触发批量处理，
     提高处理大量文档时的效率，减少网络和IO开销。
-    
+
     注意：该实现不使用Python线程锁，而是依赖Rust层的线程安全实现，
     这样可以避开Python的GIL（全局解释器锁），提高性能。
     """
-    
-    def __init__(self,
-                 batch_size: int = 100,
-                 max_memory_mb: int = 1024,
-                 store_path: Optional[str] = None,
-                 model_path: Optional[str] = None,
-                 device: Optional[str] = None):
+
+    def __init__(
+        self,
+        batch_size: int = 100,
+        max_memory_mb: int = 1024,
+        store_path: Optional[str] = None,
+        model_path: Optional[str] = None,
+        device: Optional[str] = None,
+    ):
         """
         初始化批处理管理器
-        
+
         Args:
             batch_size: 批处理大小，达到此大小自动触发批量处理
             max_memory_mb: 最大内存使用量（MB），超过此值自动触发批量处理
@@ -379,50 +385,41 @@ class BatchProcessor:
         self.store_path = store_path
         self.model_path = model_path
         self.device = device
-        
+
         # 用于积累文档的列表
         self.batch: List[Dict[str, Any]] = []
         # 用于估计内存使用量
         self.estimated_memory_mb = 0.0
         # 向量数据库实例（Rust层已实现线程安全）
-        self.database = VectorDatabase(
-            model_path=model_path,
-            device=device,
-            store_path=store_path
-        )
-    
+        self.database = VectorDatabase(model_path=model_path, device=device, store_path=store_path)
+
     def add_document(self, doc_id: str, content: str, **kwargs) -> None:
         """
         添加单个文档到批处理队列
-        
+
         Args:
             doc_id: 文档唯一标识符
             content: 文档内容
             **kwargs: 文档元数据，如title、url、summary等
         """
         # 创建文档字典
-        doc = {
-            "id": doc_id,
-            "content": content,
-            **kwargs
-        }
-        
+        doc = {"id": doc_id, "content": content, **kwargs}
+
         # 估计文档占用的内存大小（字节）
-        estimated_size = len(str(doc).encode('utf-8')) / (1024 * 1024)  # 转换为MB
-        
+        estimated_size = len(str(doc).encode("utf-8")) / (1024 * 1024)  # 转换为MB
+
         # 添加到批处理队列
         self.batch.append(doc)
         self.estimated_memory_mb += estimated_size
-        
+
         # 检查是否需要触发批处理
-        if (len(self.batch) >= self.batch_size or 
-            self.estimated_memory_mb >= self.max_memory_mb):
+        if len(self.batch) >= self.batch_size or self.estimated_memory_mb >= self.max_memory_mb:
             self.process_batch()
-    
+
     def add_documents(self, documents: List[Dict[str, Any]]) -> None:
         """
         添加多个文档到批处理队列
-        
+
         Args:
             documents: 文档列表，每个文档包含'id'和'content'字段，可选元数据字段
         """
@@ -430,24 +427,24 @@ class BatchProcessor:
             self.add_document(
                 doc_id=doc["id"],
                 content=doc["content"],
-                **{k: v for k, v in doc.items() if k not in ["id", "content"]}
+                **{k: v for k, v in doc.items() if k not in ["id", "content"]},
             )
-    
+
     def process_batch(self) -> int:
         """
         处理当前批处理队列中的文档
-        
+
         Returns:
             int: 成功处理的文档数量
         """
         if not self.batch:
             return 0
-        
+
         # 复制当前批处理队列并清空
         batch_to_process = self.batch.copy()
         self.batch.clear()
         self.estimated_memory_mb = 0.0
-        
+
         # 处理批处理
         try:
             return self.database.add_documents(batch_to_process)
@@ -456,24 +453,28 @@ class BatchProcessor:
             # 如果处理失败，将文档重新添加到队列
             self.batch.extend(batch_to_process)
             self.estimated_memory_mb += sum(
-                len(str(doc).encode('utf-8')) / (1024 * 1024) for doc in batch_to_process
+                len(str(doc).encode("utf-8")) / (1024 * 1024) for doc in batch_to_process
             )
             return 0
-    
+
     def flush(self) -> int:
         """
         强制处理当前所有文档
-        
+
         Returns:
             int: 成功处理的文档数量
         """
         return self.process_batch()
-    
+
     def __del__(self):
         """
         析构函数，确保在对象销毁时处理剩余文档
+
+        注意：如果已经显式调用了flush方法，此方法不会再次处理文档
         """
-        self.flush()
+        # 只有当批处理队列不为空时才调用flush方法
+        if self.batch:
+            self.flush()
 
 
 class VectorUtils:
@@ -483,8 +484,14 @@ class VectorUtils:
     组合了Vectorizer和VectorDatabase的功能，提供更简单的接口
     """
 
-    def __init__(self, model_path: Optional[str] = None, device: Optional[str] = None, store_path: Optional[str] = None,
-                 batch_size: int = 100, max_memory_mb: int = 1024):
+    def __init__(
+        self,
+        model_path: Optional[str] = None,
+        device: Optional[str] = None,
+        store_path: Optional[str] = None,
+        batch_size: int = 100,
+        max_memory_mb: int = 1024,
+    ):
         """
         初始化向量工具类
 
@@ -517,7 +524,7 @@ class VectorUtils:
         if self._database is None:
             self._database = VectorDatabase(self.model_path, self.device, self.store_path)
         return self._database
-    
+
     @property
     def batch_processor(self):
         """延迟初始化批处理处理器"""
@@ -527,37 +534,39 @@ class VectorUtils:
                 max_memory_mb=self.max_memory_mb,
                 store_path=self.store_path,
                 model_path=self.model_path,
-                device=self.device
+                device=self.device,
             )
         return self._batch_processor
-    
-    def add_document(self, content: str, metadata: Optional[Dict[str, Any]] = None, doc_id: Optional[str] = None) -> None:
+
+    def add_document(
+        self, content: str, metadata: Optional[Dict[str, Any]] = None, doc_id: Optional[str] = None
+    ) -> None:
         """
         添加文档到向量数据库（支持批处理）
-        
+
         Args:
             content: 文档内容
             metadata: 文档元数据，如title、url、summary等
             doc_id: 文档唯一标识符，不提供则自动生成
         """
         from uuid import uuid4
-        
+
         # 生成唯一ID（如果未提供）
         if doc_id is None:
             doc_id = str(uuid4())
-        
+
         # 转换元数据为字典
         kwargs = {}
         if metadata:
             kwargs.update(metadata)
-        
+
         # 使用批处理处理器添加文档
         self.batch_processor.add_document(doc_id, content, **kwargs)
-    
+
     def add_documents(self, documents: List[Dict[str, Any]]) -> None:
         """
         批量添加文档到向量数据库
-        
+
         Args:
             documents: 文档列表，每个文档包含'content'字段，可选'id'和其他元数据字段
         """
@@ -566,16 +575,17 @@ class VectorUtils:
             # 确保每个文档都有id
             if "id" not in doc:
                 from uuid import uuid4
+
                 doc["id"] = str(uuid4())
             processed_docs.append(doc)
-        
+
         # 使用批处理处理器添加文档
         self.batch_processor.add_documents(processed_docs)
-    
+
     def flush(self) -> int:
         """
         强制处理当前所有文档
-        
+
         Returns:
             int: 成功处理的文档数量
         """

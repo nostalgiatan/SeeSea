@@ -22,13 +22,19 @@ class TextEmbedder:
     to load and run the Qwen3 embedding model in GGUF format.
     """
 
-    def __init__(self, model_path: Optional[str] = None, device: Optional[str] = None):
+    def __init__(
+        self,
+        model_path: Optional[str] = None,
+        device: Optional[str] = None,
+        n_threads: Optional[int] = None,
+    ):
         """
         Initialize the text embedder with llama-cpp-python.
 
         Args:
             model_path: Path to the GGUF format Qwen3 embedding model
             device: Device to use ('cuda', 'cpu', or None for auto-detect)
+            n_threads: Number of threads to use for embedding generation. If None, auto-detects based on CPU cores.
         """
         try:
             # Import required modules
@@ -70,13 +76,45 @@ class TextEmbedder:
 
                     model_path = local_model_file
 
-            # Configure GPU layers based on device
+            # Configure GPU layers based on device and auto-detection
             n_gpu_layers = 0
+
+            # 1. Check if device is explicitly set
             if device == "cuda":
                 n_gpu_layers = -1  # Use all GPU layers
             elif device is not None and "cpu" not in device.lower():
                 # Try to use GPU if device is not explicitly CPU
                 n_gpu_layers = -1
+            else:
+                # 2. Auto-detect GPU if device is None
+                # Use lightweight detection methods without adding new dependencies
+                try:
+                    # Check if CUDA is available via llama-cpp-python internal detection
+                    from llama_cpp import cuda_available
+
+                    if cuda_available():
+                        n_gpu_layers = -1  # Auto-detect: use all GPU layers
+                except ImportError:
+                    # Fallback: check environment variables for GPU indicators
+                    gpu_env_vars = ["CUDA_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES"]
+                    for env_var in gpu_env_vars:
+                        if os.environ.get(env_var):
+                            n_gpu_layers = -1  # Auto-detect: use all GPU layers
+                            break
+                    # Additional fallback: check if CUDA_PATH is set (Windows)
+                    if n_gpu_layers == 0 and os.environ.get("CUDA_PATH"):
+                        n_gpu_layers = -1
+
+            # Configure number of threads
+            if n_threads is None:
+                # Auto-detect based on CPU cores
+                n_threads = os.cpu_count() or 4  # Default to 4 if auto-detection fails
+
+            # Ensure n_threads is at least 1
+            n_threads = max(1, n_threads)
+
+            # Save n_threads as an instance attribute for VectorStoreWrapper to access
+            self.n_threads = n_threads
 
             # 加载模型，处理模型文件不完整的情况
             max_attempts = 2  # 最大尝试次数
@@ -93,7 +131,7 @@ class TextEmbedder:
                         embedding=True,  # Enable embedding mode
                         n_gpu_layers=n_gpu_layers,
                         n_ctx=1024,  # Context size for embedding
-                        n_threads=4,  # Number of threads to use
+                        n_threads=n_threads,  # Number of threads to use
                         verbose=False,  # Reduce verbosity
                         n_output=0,  # No output needed for embedding models
                         output_format="json",  # Ensure proper output format

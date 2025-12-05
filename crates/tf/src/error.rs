@@ -70,6 +70,10 @@ pub enum TFError {
     /// 通用错误 (错误码: 3010)
     #[error("3010: Generic error: {0}")]
     GenericError(#[from] anyhow::Error),
+
+    /// 线程错误 (错误码: 3011)
+    #[error("3011: Thread error: {0}")]
+    ThreadError(String),
 }
 
 /// 类型别名，简化自定义错误的使用
