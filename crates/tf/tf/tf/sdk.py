@@ -43,6 +43,7 @@ class DocumentStore:
         model_path: Optional[str] = None,
         device: Optional[str] = None,
         store_path: Optional[str] = None,
+        n_threads: Optional[int] = None,
     ):
         """
         Initialize the document store.
@@ -52,10 +53,11 @@ class DocumentStore:
             model_path: Path to the GGUF format Qwen3 embedding model (used if embedder is None)
             device: Device to use for embedding model (used if embedder is None)
             store_path: Path to persistent vector store (default: .tf/data.db)
+            n_threads: Number of threads to use for embedding generation. If None, auto-detects based on CPU cores.
         """
         # Initialize embedder if not provided
         if embedder is None:
-            self.embedder = TextEmbedder(model_path=model_path, device=device)
+            self.embedder = TextEmbedder(model_path=model_path, device=device, n_threads=n_threads)
         else:
             self.embedder = embedder
 
@@ -70,7 +72,7 @@ class DocumentStore:
 
         The content is vectorized via the embedding model, then immediately discarded.
         Only the vector and metadata (title, url, summary) are stored.
-        
+
         This method uses bloom filter and content hash to avoid unnecessary operations:
         1. Checks if URL exists in bloom filter
         2. If exists, checks content hash to determine if update is needed
@@ -98,7 +100,7 @@ class DocumentStore:
         Add a document with a pre-computed vector.
 
         Use this when you already have the vector and want to avoid re-computing it.
-        
+
         This method uses bloom filter and content hash to avoid unnecessary operations.
 
         Args:
@@ -116,7 +118,7 @@ class DocumentStore:
     def add_batch(self, documents: List[Dict[str, str]]) -> int:
         """
         Add multiple documents using batch processing (Create operation).
-        
+
         This method is highly optimized:
         1. First filters documents that need to be updated using bloom filter and hash comparison
         2. Batch encodes the documents that need updates
@@ -144,13 +146,15 @@ class DocumentStore:
         # Convert documents to the format expected by VectorStoreWrapper.add_documents
         formatted_docs = []
         for doc in documents:
-            formatted_docs.append({
-                "id": doc["id"],
-                "content": doc["content"],
-                "title": doc.get("title", ""),
-                "url": doc.get("url", ""),
-                "summary": doc.get("summary", "")
-            })
+            formatted_docs.append(
+                {
+                    "id": doc["id"],
+                    "content": doc["content"],
+                    "title": doc.get("title", ""),
+                    "url": doc.get("url", ""),
+                    "summary": doc.get("summary", ""),
+                }
+            )
         return self._vector_store.add_documents(formatted_docs)
 
     def get(self, doc_id: str) -> Optional[Dict[str, str]]:
@@ -179,7 +183,7 @@ class DocumentStore:
     ) -> bool:
         """
         Update document metadata (Update operation).
-        
+
         This method uses content hash to determine if an update is actually needed.
         It will only update the document if the content has changed.
 
@@ -271,7 +275,7 @@ class DocumentStore:
             query_embedding = query_embedding[0]
 
         # Search in vector database - results already sorted by score (descending)
-        raw_results = self._vector_store.search_by_embedding(query_embedding, k)
+        raw_results = self._vector_store.search_by_embedding(query_embedding, k)  # type: ignore[arg-type]
 
         # Free embedding memory immediately
         del query_embedding
@@ -323,7 +327,7 @@ class DocumentStore:
             query_embedding = query_embedding[0]
 
         # Search - results already sorted
-        raw_results = self._vector_store.search_by_embedding(query_embedding, k)
+        raw_results = self._vector_store.search_by_embedding(query_embedding, k)  # type: ignore[arg-type]
 
         # Free embedding memory
         del query_embedding
@@ -442,6 +446,7 @@ class DocumentStore:
         Returns:
             Number of documents successfully processed
         """
+
         # Create callback function for Rust to call
         def embedding_callback(text: str) -> List[float]:
             """Callback that Rust calls to get the embedding vector."""
@@ -452,8 +457,8 @@ class DocumentStore:
                 and len(embedding) > 0
                 and isinstance(embedding[0], list)
             ):
-                return embedding[0]
-            return embedding
+                return embedding[0]  # type: ignore[return-value]
+            return embedding  # type: ignore[return-value]
 
         return self._vector_store.store.flush_queue(embedding_callback)
 

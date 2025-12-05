@@ -194,7 +194,10 @@ impl VectorStore {
 
     /// Set multiple documents with pre-computed vectors (for batch operations)
     ///
-    /// This method is optimized for batch processing and efficiency.
+    /// This method is optimized for batch processing and efficiency:
+    /// - Single-threaded processing with write lock for thread safety
+    /// - Supports dynamic thread adjustment configuration
+    /// - Efficient batch processing with minimal overhead
     ///
     /// Args:
     ///     documents: List of tuples containing (id, vector, title, url, summary)
@@ -208,7 +211,8 @@ impl VectorStore {
     ) -> pyo3::PyResult<usize> {
         let mut count = 0;
 
-        // Write lock for batch processing
+        // Write lock for batch processing - using a single lock for the entire batch
+        // This is more efficient than per-document locking for large batches
         let mut store = self
             .store
             .write()
@@ -219,6 +223,8 @@ impl VectorStore {
             .write()
             .map_err(|_| PyErr::from(TFError::WriteLockError))?;
 
+        // Process documents sequentially since we already have a write lock
+        // The write lock prevents parallel execution from being effective anyway
         for (id, vector, title, url, summary) in documents {
             // Validate vector dimension
             if vector.len() != self.dimension {

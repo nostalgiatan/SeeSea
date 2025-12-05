@@ -69,11 +69,10 @@ async def handle_pro_search(req: Dict[str, Any]) -> Dict[str, Any]:
 
     # 3. 初始化Pro组件
     processor = ContentProcessor()
-    
+
     # 初始化VectorUtils，启用批处理功能
     vector_utils = VectorUtils(
-        batch_size=20,  # 设置批处理大小
-        max_memory_mb=512  # 设置最大内存使用量
+        batch_size=20, max_memory_mb=512  # 设置批处理大小  # 设置最大内存使用量
     )
 
     # 4. 处理每个搜索结果
@@ -88,7 +87,7 @@ async def handle_pro_search(req: Dict[str, Any]) -> Dict[str, Any]:
         engine = None
 
         try:
-            # 处理URL内容 - 直接await异步方法，避免事件循环冲突
+            # 处理URL内容 - 调用异步方法，使用await等待完成
             processed_data = await processor.process_url(url, keywords=query)
 
             # 提取网页元数据
@@ -157,10 +156,14 @@ async def handle_pro_search(req: Dict[str, Any]) -> Dict[str, Any]:
                 }
             )
 
-    # 8. 从向量数据库获取相关结果
+    # 8. 强制处理所有剩余文档，确保所有文档都已存入向量数据库
+    processed_count = vector_utils.flush()
+    print(f"批处理结果：总共处理了 {processed_count} 个新文档或更新了 {processed_count} 个现有文档")
+
+    # 9. 从向量数据库获取相关结果
     vector_results = vector_utils.search(query, limit=page_size)
 
-    # 9. 融合搜索结果和向量结果，调整信任值
+    # 10. 融合搜索结果和向量结果，调整信任值
     # 创建URL到向量结果的映射，用于快速查找
     vector_result_map = {}
     for vector_result in vector_results:
@@ -189,10 +192,6 @@ async def handle_pro_search(req: Dict[str, Any]) -> Dict[str, Any]:
                 # 记录调试信息
                 print(f"No score found in vector result for {result_url}: {vector_result}")
 
-    # 9. 强制处理所有剩余文档
-    processed_count = vector_utils.flush()
-    print(f"强制处理了 {processed_count} 个文档")
-    
     # 10. 构建最终响应
     final_response = {
         "status": 200,
