@@ -530,7 +530,7 @@ impl HttpClient {
         // 转换为tokio AsyncRead，处理可能的错误，但不进行内容解码
         let reader = StreamReader::new(raw_response.map(|result| {
             // 直接传递原始字节，不进行任何解码
-            result.map_err(|e| tokio::io::Error::new(tokio::io::ErrorKind::Other, e))
+            result.map_err(tokio::io::Error::other)
         }));
 
         Ok((status, headers, reader))

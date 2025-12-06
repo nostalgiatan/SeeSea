@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -162,6 +162,6 @@ mod tests {
     #[test]
     fn test_template_manager_creation() {
         let _manager = RssTemplateManager::new("rss/template");
-        assert!(true);
+
     }
 }

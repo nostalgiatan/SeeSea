@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -220,6 +220,6 @@ mod tests {
         let network_config = crate::net::config::NetworkConfig::default();
         let client = Arc::new(HttpClient::new(network_config).unwrap());
         let _interface = RssInterface::new(client);
-        assert!(true);
+
     }
 }

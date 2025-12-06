@@ -30,8 +30,10 @@ async fn main() {
     println!();
 
     // 创建网络配置
-    let mut network_config = NetworkConfig::default();
-    network_config.mode = NetworkMode::Dual;
+    let mut network_config = NetworkConfig {
+        mode: NetworkMode::Dual,
+        ..Default::default()
+    };
 
     // 配置内网
     network_config.internal.enabled = true;

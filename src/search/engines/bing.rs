@@ -553,8 +553,10 @@ mod tests {
     #[test]
     fn test_request_with_pagination() {
         let engine = BingEngine::new();
-        let mut params = RequestParams::default();
-        params.page = 3;
+        let mut params = RequestParams {
+            page: 3,
+            ..Default::default()
+        };
 
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());
@@ -567,8 +569,10 @@ mod tests {
     #[test]
     fn test_request_with_time_range() {
         let engine = BingEngine::new();
-        let mut params = RequestParams::default();
-        params.time_range = Some("week".to_string());
+        let mut params = RequestParams {
+            time_range: Some("week".to_string()),
+            ..Default::default()
+        };
 
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());

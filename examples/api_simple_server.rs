@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -32,8 +32,10 @@ async fn main() {
     println!();
 
     // 创建网络配置（外网模式，基本安全特性）
-    let mut network_config = NetworkConfig::default();
-    network_config.mode = NetworkMode::External;
+    let mut network_config = NetworkConfig {
+        mode: NetworkMode::External,
+        ..Default::default()
+    };
     network_config.external.enabled = true;
     network_config.external.host = "0.0.0.0".to_string();
     network_config.external.port = 8080;

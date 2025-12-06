@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -46,8 +46,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_index_html_not_empty() {
-        assert!(!INDEX_HTML.is_empty());
+    fn test_index_html_contains_seesea() {
         assert!(INDEX_HTML.contains("SeeSea"));
     }
 }

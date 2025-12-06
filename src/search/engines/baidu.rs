@@ -514,8 +514,10 @@ mod tests {
     #[test]
     fn test_request_with_pagination() {
         let engine = BaiduEngine::new();
-        let mut params = RequestParams::default();
-        params.page = 2;
+        let mut params = RequestParams {
+            page: 2,
+            ..Default::default()
+        };
 
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());

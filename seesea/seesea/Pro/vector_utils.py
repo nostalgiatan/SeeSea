@@ -166,12 +166,12 @@ class VectorDatabase:
             # 转换为DocumentStore所需的格式
             docs = []
             for doc in documents:
-                # 确保文档有id和content字段
-                if "id" not in doc:
-                    raise ValueError(f"Document must have 'id' field: {doc}")
-                if "content" not in doc:
-                    raise ValueError(f"Document must have 'content' field: {doc}")
-                
+                # 确保文档有id和content字段，并且不为空
+                if "id" not in doc or not doc["id"]:
+                    raise ValueError(f"Document must have a non-empty 'id' field: {doc}")
+                if "content" not in doc or not doc["content"]:
+                    raise ValueError(f"Document must have a non-empty 'content' field: {doc}")
+
                 doc_dict = {"id": doc["id"], "content": doc["content"]}
                 # 添加可选元数据
                 for key, value in doc.items():
@@ -197,7 +197,23 @@ class VectorDatabase:
             List[Dict[str, Any]]: 搜索结果列表
         """
         try:
-            return self.store.search(query=query, k=k, return_objects=return_objects)  # type: ignore[no-any-return]
+            results = self.store.search(query=query, k=k, return_objects=return_objects)  # type: ignore[no-any-return]
+
+            # 确保返回的是List[Dict[str, Any]]类型
+            if return_objects:
+                # 如果返回的是SearchResult对象列表，转换为字典列表
+                dict_results = []
+                for result in results:  # type: ignore[union-attr]
+                    # 假设SearchResult对象有to_dict方法
+                    if hasattr(result, "to_dict"):
+                        dict_results.append(result.to_dict())  # type: ignore[attr-defined]
+                    else:
+                        # 否则，尝试使用字典推导式转换
+                        dict_results.append({k: v for k, v in result.__dict__.items() if not k.startswith("_")})  # type: ignore[union-attr]
+                return dict_results
+            else:
+                # 如果已经是字典列表，直接返回
+                return results  # type: ignore[return-value]
         except Exception as e:
             raise RuntimeError(f"搜索失败: {str(e)}") from e
 
@@ -370,8 +386,8 @@ class BatchProcessor:
 
     def __init__(
         self,
-        batch_size: int = 100,
-        max_memory_mb: int = 1024,
+        batch_size: int = 50,  # 减小默认批处理大小，避免过大的解码上下文
+        max_memory_mb: int = 512,  # 减小默认最大内存使用量
         store_path: Optional[str] = None,
         model_path: Optional[str] = None,
         device: Optional[str] = None,
@@ -398,6 +414,13 @@ class BatchProcessor:
         self.estimated_memory_mb = 0.0
         # 向量数据库实例（Rust层已实现线程安全）
         self.database = VectorDatabase(model_path=model_path, device=device, store_path=store_path)
+        # 用于去重的集合，存储已处理的URL和内容哈希
+        self.processed_urls: set[str] = set()
+        self.processed_content_hashes: set[str] = set()
+        # 用于快速计算内容哈希
+        import hashlib
+
+        self._hashlib = hashlib
 
     def add_document(self, doc_id: str, content: str, **kwargs) -> None:
         """
@@ -408,17 +431,34 @@ class BatchProcessor:
             content: 文档内容
             **kwargs: 文档元数据，如title、url、summary等
         """
-        # 创建文档字典
+        # 1. 检查URL是否已处理，避免重复处理相同网页
+        url = kwargs.get("url", "")
+        if url and url in self.processed_urls:
+            # URL已处理，跳过
+            return
+
+        # 2. 计算内容哈希，避免重复处理相同内容
+        content_hash = self._hashlib.sha256(content.encode()).hexdigest()
+        if content_hash in self.processed_content_hashes:
+            # 内容已处理，跳过
+            return
+
+        # 3. 创建文档字典
         doc = {"id": doc_id, "content": content, **kwargs}
 
-        # 估计文档占用的内存大小（字节）
+        # 4. 估计文档占用的内存大小（字节）
         estimated_size = len(str(doc).encode("utf-8")) / (1024 * 1024)  # 转换为MB
 
-        # 添加到批处理队列
+        # 5. 标记URL和内容为已处理
+        if url:
+            self.processed_urls.add(url)
+        self.processed_content_hashes.add(content_hash)
+
+        # 6. 添加到批处理队列
         self.batch.append(doc)
         self.estimated_memory_mb += estimated_size
 
-        # 检查是否需要触发批处理
+        # 7. 检查是否需要触发批处理
         if len(self.batch) >= self.batch_size or self.estimated_memory_mb >= self.max_memory_mb:
             self.process_batch()
 
@@ -430,11 +470,12 @@ class BatchProcessor:
             documents: 文档列表，每个文档包含'id'和'content'字段，可选元数据字段
         """
         for doc in documents:
-            # 确保文档有id和content字段
-            if "id" not in doc:
-                raise ValueError(f"Document must have 'id' field: {doc}")
-            if "content" not in doc:
-                raise ValueError(f"Document must have 'content' field: {doc}")
+            # 确保文档有id和content字段，并且不为空
+            if "id" not in doc or not doc["id"]:
+                raise ValueError(f"Document must have a non-empty 'id' field: {doc}")
+            if "content" not in doc or not doc["content"]:
+                raise ValueError(f"Document must have a non-empty 'content' field: {doc}")
+            # 使用add_document方法添加，这样可以共享去重逻辑
             self.add_document(
                 doc_id=doc["id"],
                 content=doc["content"],
@@ -583,12 +624,13 @@ class VectorUtils:
         """
         processed_docs = []
         for doc in documents:
-            # 确保每个文档都有id和content字段
+            # 确保每个文档都有id和content字段，并且content不为空
             if "id" not in doc:
                 from uuid import uuid4
+
                 doc["id"] = str(uuid4())
-            if "content" not in doc:
-                raise ValueError(f"Document must have 'content' field: {doc}")
+            if "content" not in doc or not doc["content"]:
+                raise ValueError(f"Document must have a non-empty 'content' field: {doc}")
             processed_docs.append(doc)
 
         # 使用批处理处理器添加文档
