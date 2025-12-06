@@ -1,7 +1,7 @@
 import sys
 import re
 import os
-from typing import BinaryIO, Any, List, Union
+from typing import BinaryIO, Any, List, Union, TYPE_CHECKING
 from enum import Enum
 
 from .._base_converter import DocumentConverter, DocumentConverterResult
@@ -11,7 +11,9 @@ from .._exceptions import MissingDependencyException
 # Try loading optional (but in this case, required) dependencies
 # Save reporting of any exceptions for later
 _dependency_exc_info = None
-try:
+
+if TYPE_CHECKING:
+    # For type checking, always use the real types
     from azure.ai.documentintelligence import DocumentIntelligenceClient
     from azure.ai.documentintelligence.models import (
         AnalyzeDocumentRequest,
@@ -20,31 +22,41 @@ try:
     )
     from azure.core.credentials import AzureKeyCredential, TokenCredential
     from azure.identity import DefaultAzureCredential
-except ImportError:
-    # Preserve the error and stack trace for later
-    _dependency_exc_info = sys.exc_info()
+else:
+    try:
+        from azure.ai.documentintelligence import DocumentIntelligenceClient
+        from azure.ai.documentintelligence.models import (
+            AnalyzeDocumentRequest,
+            AnalyzeResult,
+            DocumentAnalysisFeature,
+        )
+        from azure.core.credentials import AzureKeyCredential, TokenCredential
+        from azure.identity import DefaultAzureCredential
+    except ImportError:
+        # Preserve the error and stack trace for later
+        _dependency_exc_info = sys.exc_info()
 
-    # Define these types for type hinting when the package is not available
-    class AzureKeyCredential:
-        pass
+        # Define these types for runtime when the package is not available
+        class AzureKeyCredential:
+            pass
 
-    class TokenCredential:
-        pass
+        class TokenCredential:
+            pass
 
-    class DocumentIntelligenceClient:
-        pass
+        class DocumentIntelligenceClient:
+            pass
 
-    class AnalyzeDocumentRequest:
-        pass
+        class AnalyzeDocumentRequest:
+            pass
 
-    class AnalyzeResult:
-        pass
+        class AnalyzeResult:
+            pass
 
-    class DocumentAnalysisFeature:
-        pass
+        class DocumentAnalysisFeature:
+            pass
 
-    class DefaultAzureCredential:
-        pass
+        class DefaultAzureCredential:
+            pass
 
 
 # TODO: currently, there is a bug in the document intelligence SDK with importing the "ContentFormat" enum.

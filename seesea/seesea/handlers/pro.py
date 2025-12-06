@@ -113,10 +113,14 @@ async def handle_pro_search(req: Dict[str, Any]) -> Dict[str, Any]:
             for block in cleaned_data:
                 context += block.get("content", "") + "\n\n"
             context = context.strip()
-            
-            # 如果上下文为空，使用描述作为备选
+
+            # 如果上下文为空，使用描述作为备选，如果描述也为空，则使用默认文本
             if not context:
-                context = final_description
+                context = final_description or "No content available"
+
+            # 确保content不为空
+            if not context:
+                context = "No content available"
 
             # 6. 构建增强结果
             enhanced_result = {

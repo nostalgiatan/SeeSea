@@ -7,7 +7,7 @@ mod semantic_cache_tests {
     #[test]
     fn test_vectorizer_creation() {
         let _vectorizer = SimpleVectorizer::new();
-        assert!(true); // Just test it can be created
+        // Creation test - if this fails, the test will automatically fail
     }
 
     #[test]

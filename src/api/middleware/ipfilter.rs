@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -190,8 +190,10 @@ mod tests {
 
     #[test]
     fn test_ip_filter_whitelist() {
-        let mut config = IpFilterConfig::default();
-        config.whitelist_mode = true;
+        let config = IpFilterConfig {
+            whitelist_mode: true,
+            ..Default::default()
+        };
         let state = IpFilterState::new(config);
 
         let ip: IpAddr = "192.168.1.1".parse().unwrap();

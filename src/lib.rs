@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#![cfg_attr(test, allow(clippy::field_reassign_with_default))]
+
 //! SeeSea - 看海看得远，看得广
 //!
 //! 一个基于 Rust 实现的隐私保护型元搜索引擎，专注于提供高性能、隐私优先的多模态搜索服务

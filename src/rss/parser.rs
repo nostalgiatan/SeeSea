@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn test_rss_parser_creation() {
         let _parser = RssParser::new();
-        assert!(true);
+
     }
 
     #[test]

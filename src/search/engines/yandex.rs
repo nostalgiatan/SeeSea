@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -407,8 +407,10 @@ mod tests {
     #[test]
     fn test_request_with_pagination() {
         let engine = YandexEngine::new();
-        let mut params = RequestParams::default();
-        params.page = 3;
+        let mut params = RequestParams {
+            page: 3,
+            ..Default::default()
+        };
 
         let result = engine.request("test", &mut params);
         assert!(result.is_ok());

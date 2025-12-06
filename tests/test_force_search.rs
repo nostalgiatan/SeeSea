@@ -7,9 +7,11 @@ mod force_search_tests {
 
     #[test]
     fn test_search_request_force_flag() {
-        let mut request = SearchRequest::default();
-        request.force = true;
-        request.cache_timeline = Some(1800);
+        let request = SearchRequest {
+            force: true,
+            cache_timeline: Some(1800),
+            ..Default::default()
+        };
 
         assert!(request.force);
         assert_eq!(request.cache_timeline, Some(1800));
@@ -50,16 +52,25 @@ mod force_search_tests {
 
     #[test]
     fn test_cache_timeline_configuration() {
-        let mut request = SearchRequest::default();
+        // Test 10 minutes timeline
+        let request_10min = SearchRequest {
+            cache_timeline: Some(600),
+            ..Default::default()
+        };
+        assert_eq!(request_10min.cache_timeline, Some(600));
 
-        // Test different timeline values
-        request.cache_timeline = Some(600); // 10 minutes
-        assert_eq!(request.cache_timeline, Some(600));
+        // Test 2 hours timeline
+        let request_2hours = SearchRequest {
+            cache_timeline: Some(7200),
+            ..Default::default()
+        };
+        assert_eq!(request_2hours.cache_timeline, Some(7200));
 
-        request.cache_timeline = Some(7200); // 2 hours
-        assert_eq!(request.cache_timeline, Some(7200));
-
-        request.cache_timeline = None; // No timeline
-        assert_eq!(request.cache_timeline, None);
+        // Test no timeline
+        let request_no_timeline = SearchRequest {
+            cache_timeline: None,
+            ..Default::default()
+        };
+        assert_eq!(request_no_timeline.cache_timeline, None);
     }
 }

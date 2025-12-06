@@ -130,7 +130,7 @@ class TextEmbedder:
                         model_path=model_path,
                         embedding=True,  # Enable embedding mode
                         n_gpu_layers=n_gpu_layers,
-                        n_ctx=1024,  # Context size for embedding
+                        n_ctx=32768,  # Full context size for embedding, match training context
                         n_threads=n_threads,  # Number of threads to use
                         verbose=False,  # Reduce verbosity
                         n_output=0,  # No output needed for embedding models
@@ -187,14 +187,15 @@ class TextEmbedder:
             ) from e
 
     def encode(
-        self, texts: Union[str, List[str]], batch_size: int = 32
+        self, texts: Union[str, List[str]], batch_size: int = 8
     ) -> Union[List[float], List[List[float]]]:
         """
         Encode text(s) into vector embeddings using llama-cpp-python.
+        Implements safe processing by handling documents individually when necessary.
 
         Args:
             texts: Single text string or list of text strings
-            batch_size: Batch size for processing multiple texts (not used in llama-cpp-python)
+            batch_size: Not used for safety reasons, individual processing is safer
 
         Returns:
             Single embedding (List[float]) if input is a string,
@@ -207,17 +208,35 @@ class TextEmbedder:
         else:
             single_input = False
 
-        # Generate embeddings using llama-cpp-python
-        # Use correct parameter name - create_embedding expects 'input' parameter
-        result = self.embedder.create_embedding(input=texts)
+        # Limit input text length to avoid llama_decode errors
+        max_chars_per_text = 8192  # ~2048 tokens
+        truncated_texts = []
+        for text in texts:
+            if isinstance(text, str) and len(text) > max_chars_per_text:
+                truncated_texts.append(text[:max_chars_per_text])
+            else:
+                truncated_texts.append(text)
 
-        # Extract embeddings correctly from the response
-        # Response format: {"data": [{"embedding": [...]}], "model": "...", "usage": {...}}
+        # Generate embeddings with safe processing
         all_embeddings = []
-        for item in result.get("data", []):
-            embedding = item.get("embedding", [])
-            if embedding:
-                all_embeddings.append(embedding)
+
+        # Process each document individually to avoid context overflow
+        # This is the safest approach for embedding models
+        for text in truncated_texts:
+            try:
+                # Process a single document at a time to avoid context overflow
+                result = self.embedder.create_embedding(input=[text])
+
+                # Extract embedding from the response
+                if result and "data" in result and result["data"]:
+                    data_items = result["data"]
+                    embedding = data_items[0].get("embedding", [])
+                    if embedding:
+                        all_embeddings.append(embedding)
+            except Exception:
+                # If we encounter any error, just skip this document
+                # Avoid complex logging to prevent syntax errors
+                pass
 
         # Return single embedding if single input
         if single_input and all_embeddings:

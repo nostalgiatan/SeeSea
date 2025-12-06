@@ -42,7 +42,7 @@ class _CustomMarkdownify(markdownify.MarkdownConverter):
         text: str,
         convert_as_inline: Optional[bool] = False,
         **kwargs,
-    ):
+    ) -> str:
         """Same as usual converter, but removes Javascript links and escapes URIs."""
         prefix, suffix, text = markdownify.chomp(text)  # type: ignore
         if not text:
@@ -65,15 +65,16 @@ class _CustomMarkdownify(markdownify.MarkdownConverter):
                 return "%s%s%s" % (prefix, text, suffix)
 
         # For the replacement see #29: text nodes underscores are escaped
+        # Use super().options to access parent class attribute
         if (
-            self.options["autolinks"]
+            getattr(self, "options", {}).get("autolinks", False)
             and text.replace(r"\_", "_") == href
             and not title
-            and not self.options["default_title"]
+            and not getattr(self, "options", {}).get("default_title", False)
         ):
             # Shortcut syntax
             return "<%s>" % href
-        if self.options["default_title"] and not title:
+        if getattr(self, "options", {}).get("default_title", False) and not title:
             title = href
         title_part = ' "%s"' % title.replace('"', r"\"") if title else ""
         return "%s[%s](%s%s)%s" % (prefix, text, href, title_part, suffix) if href else text
@@ -93,11 +94,15 @@ class _CustomMarkdownify(markdownify.MarkdownConverter):
         title_part = ' "%s"' % title.replace('"', r"\"") if title else ""
         # Remove all line breaks from alt
         alt = alt.replace("\n", " ")
-        if convert_as_inline and el.parent.name not in self.options["keep_inline_images_in"]:
+        if convert_as_inline and el.parent.name not in getattr(self, "options", {}).get(
+            "keep_inline_images_in", []
+        ):
             return alt
 
         # Remove dataURIs
-        if src.startswith("data:") and not self.options["keep_data_uris"]:
+        if src.startswith("data:") and not getattr(self, "options", {}).get(
+            "keep_data_uris", False
+        ):
             src = src.split(",")[0] + "..."
 
         return "![%s](%s%s)" % (alt, src, title_part)

@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -177,8 +177,10 @@ mod tests {
 
     #[test]
     fn test_internal_network_validation() {
-        let mut config = NetworkConfig::default();
-        config.mode = NetworkMode::Internal;
+        let mut config = NetworkConfig {
+            mode: NetworkMode::Internal,
+            ..Default::default()
+        };
         assert!(config.validate().is_ok());
 
         // 内网绑定到非localhost应该失败
@@ -188,8 +190,10 @@ mod tests {
 
     #[test]
     fn test_dual_mode_validation() {
-        let mut config = NetworkConfig::default();
-        config.mode = NetworkMode::Dual;
+        let mut config = NetworkConfig {
+            mode: NetworkMode::Dual,
+            ..Default::default()
+        };
         assert!(config.validate().is_ok());
 
         // 禁用所有网络应该失败
