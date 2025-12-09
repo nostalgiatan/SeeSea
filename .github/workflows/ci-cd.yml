@@ -245,12 +245,10 @@ jobs:
 
     - name: Run Clippy
       run: |
-        # 直接在主目录运行 clippy，不使用工作区
         cargo clippy --manifest-path Cargo.toml -- -D warnings
 
     - name: Run Rustfmt
       run: |
-        # 直接在主目录运行 rustfmt，不使用工作区
         cargo fmt --manifest-path Cargo.toml --check
 
   audit:
@@ -270,8 +268,6 @@ jobs:
 
     - name: Run Security Audit
       run: |
-        # 直接在主目录运行 audit，不使用工作区
-        # 忽略未维护的crate警告，只关注安全漏洞
         cargo audit --ignore RUSTSEC-2025-0057 --ignore RUSTSEC-2024-0384 --ignore RUSTSEC-2025-0119
 
   python-lint:
@@ -290,9 +286,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install black ruff mypy
-        # Install type stubs for better mypy checking
         pip install types-requests types-openpyxl types-xlrd types-defusedxml
-        # Install numpy for vector operations
         pip install numpy
 
     - name: Run Black
