@@ -220,6 +220,5 @@ mod tests {
         let network_config = crate::net::config::NetworkConfig::default();
         let client = Arc::new(HttpClient::new(network_config).unwrap());
         let _interface = RssInterface::new(client);
-
     }
 }

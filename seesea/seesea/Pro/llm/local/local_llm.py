@@ -265,7 +265,14 @@ class LocalLLM(LLMBase):
             # 调用Llama实例生成文本
             output = self.llama(prompt=prompt, max_tokens=max_tokens, stop=stop, **sampling_params)
 
-            return output["choices"][0]["text"].strip()
+            # 处理不同类型的输出
+            if isinstance(output, dict) and "choices" in output:
+                return output["choices"][0]["text"].strip()
+            # 处理迭代器类型输出
+            for item in output:
+                if isinstance(item, dict) and "choices" in item:
+                    return item["choices"][0]["text"].strip()
+            return ""
         except Exception as e:
             raise RuntimeError(f"本地LLM生成文本失败: {str(e)}") from e
 
@@ -286,7 +293,9 @@ class LocalLLM(LLMBase):
         try:
             # 调用Llama实例生成嵌入
             result = self.llama.create_embedding(input=text)
-            return result["data"][0]["embedding"]
+            from typing import cast
+
+            return cast(List[float], result["data"][0]["embedding"])
         except Exception as e:
             raise RuntimeError(f"本地LLM生成嵌入失败: {str(e)}") from e
 
@@ -304,7 +313,9 @@ class LocalLLM(LLMBase):
         try:
             # 调用Llama实例批量生成嵌入
             result = self.llama.create_embedding(input=texts)
-            return [item["embedding"] for item in result["data"]]
+            from typing import cast
+
+            return cast(List[List[float]], [item["embedding"] for item in result["data"]])
         except Exception as e:
             raise RuntimeError(f"本地LLM批量生成嵌入失败: {str(e)}") from e
 

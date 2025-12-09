@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -12,8 +12,6 @@
 //
 
 //! SeeSea 主配置类型定义
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use serde::{Deserialize, Serialize};
 
@@ -51,6 +49,9 @@ pub struct SeeSeaConfig {
     /// 搜索引擎配置
     #[serde(default)]
     pub engines: crate::config::engines::EnginesConfig,
+    /// 向量数据库配置
+    #[serde(default)]
+    pub vector_store: crate::config::vector_store::VectorStoreConfig,
 }
 
 impl SeeSeaConfig {
@@ -62,6 +63,15 @@ impl SeeSeaConfig {
         config.general.environment = Environment::Development;
         config.general.debug = true;
         config.logging.level = LogLevel::Debug;
+
+        // 确保搜索配置符合验证规则
+        config.search.max_concurrent_engines = 5;
+        config.search.search_timeout = 30;
+        config.search.formats = vec!["json".to_string()];
+
+        // 确保服务器配置符合验证规则
+        config.server.secret_key = "development-secret-key-1234567890123456".to_string();
+
         config
     }
 
@@ -386,7 +396,8 @@ impl ConfigLoader {
     }
 
     fn merge_config(&self, target: &mut SeeSeaConfig, source: SeeSeaConfig) {
-        // TODO: 实现配置合并逻辑
+        // TODO: 实现完整的配置合并逻辑
+        // For now, just replace the entire config
         *target = source;
     }
 

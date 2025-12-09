@@ -1,24 +1,24 @@
 try:
     # 导出Pro功能
-    from .html_to_markdown import HtmlToMarkdownConverter
     from .vector_utils import Vectorizer, VectorDatabase, compute_similarity, normalize_vector
-    from .relevance import VectorizerSingleton, RelevanceCleaner
     from .llm import LLMBase, OpenAILLM, llm_cache, llm_log, llm_retry
-    from .web_crawler import WebCrawler
-    from .content_processor import ContentProcessor
+    from .url_to_markdown import UrlToMarkdownConverter
+
+    # 直接从seesea_core导入PyCleaner和PyDataBlock
+    from seesea_core import PyCleaner, PyDataBlock
 
     # 导出所有公共接口
     __all__ = [
-        # HTML转换
-        "HtmlToMarkdownConverter",
+        # URL到Markdown转换
+        "UrlToMarkdownConverter",
         # 向量工具
         "Vectorizer",
         "VectorDatabase",
         "compute_similarity",
         "normalize_vector",
         # 相关性分析
-        "VectorizerSingleton",
-        "RelevanceCleaner",
+        "PyCleaner",
+        "PyDataBlock",
         # LLM功能
         "LLMBase",
         "OpenAILLM",
@@ -26,10 +26,6 @@ try:
         "llm_cache",
         "llm_log",
         "llm_retry",
-        # 网页爬取
-        "WebCrawler",
-        # 内容处理
-        "ContentProcessor",
     ]
-except ImportError:
-    raise ImportError("未安装Pro特性，不开放Pro功能")
+except ImportError as e:
+    raise ImportError(f"未安装Pro特性或缺少依赖，不开放Pro功能: {e}")

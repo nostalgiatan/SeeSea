@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -173,7 +173,7 @@ impl SearchEngine for PythonEngineWrapper {
                         ))
                     })?
                 } else {
-                    py_result.into()
+                    py_result
                 };
 
                 // 解析结果
@@ -263,11 +263,20 @@ pub struct PyEngineRegistry {
 impl PyEngineRegistry {
     /// 创建新的注册表（内部使用）
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+// 添加Default实现以满足Clippy警告
+impl Default for PyEngineRegistry {
+    fn default() -> Self {
         Self {
             engines: Arc::new(RwLock::new(HashMap::new())),
         }
     }
+}
 
+impl PyEngineRegistry {
     /// 注册一个新的Python引擎（内部使用）
     pub async fn register_engine_internal(
         &self,
@@ -382,7 +391,7 @@ pub fn register_engine(
         registry
             .register_engine_internal(name, engine_type_enum, description, categories, callback)
             .await
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
+            .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
         Ok(true)
     })?
 }

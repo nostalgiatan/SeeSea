@@ -16,13 +16,35 @@
 """
 SeeSea API Server - API 服务器
 
-提供 REST API 服务器功能
+提供完整的 REST API 接口，支持搜索、RSS、缓存管理、统计、健康检查等功能。
+
+主要功能:
+- 搜索接口（支持 GET/POST）
+- 引擎管理和状态监控
+- RSS 订阅和模板管理
+- 缓存管理和统计
+- 健康检查和指标导出
+- 支持多种网络模式（内网、外网、双模式）
+- 安全机制（CORS、IP过滤、速率限制、熔断）
+- Pro API 扩展支持
+
+API 端点分类:
+- 搜索相关: /api/search, /api/engines
+- 统计相关: /api/stats, /api/metrics
+- 健康相关: /api/health, /api/version
+- RSS 相关: /api/rss/*
+- 缓存相关: /api/cache/*
+- Pro 扩展: /api/pro/*
+
+性能特性:
+- 异步处理，高并发支持
+- 共享连接池
+- 智能路由匹配
+- 完整的指标监控
 """
 
 from typing import Optional, Dict, List
 from seesea_core import PyApiServer  # type: ignore[import-untyped]
-
-from .handlers.pro import register_pro_routes
 
 
 class ApiServer:
@@ -79,13 +101,22 @@ class ApiServer:
         self.network_mode = network_mode
         self.config_file = config_file
 
-        # 初始化时注册Pro API路由
+        # 初始化Pro API路由和处理器
         try:
-            register_pro_routes(self)
-            print("✅ Pro API routes registered successfully")
+            from seesea.handlers.pro import add_pro_routes, initialize_pro_handlers
+            import asyncio
+
+            # 注册Pro路由
+            add_pro_routes(self)
+
+            # 初始化Pro处理器
+            asyncio.run(initialize_pro_handlers())
+            print("✅ Pro API routes initialized and handlers started")
         except Exception as e:
-            print(f"⚠️  Failed to register Pro API routes: {e}")
-            print("   Pro API features may not be available")
+            print(f"⚠️  Failed to initialize Pro API routes: {e}")
+            import traceback
+
+            print(f"   Detailed error: {traceback.format_exc()}")
 
     def start(self):
         """

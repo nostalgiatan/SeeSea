@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""
+SeeSea Windows Installer Script
+Module Name: windows.py
+Responsibility: Handle SeeSea installation on Windows platform
+Expected Implementation: Extract and install SeeSea packages with dependencies
+Implemented Features: zstandard decompression, whl reconstruction, dependency installation
+Usage Dependencies: Python 3.10-3.12, zstandard
+Main Interfaces: Command-line interface with install/update/uninstall commands
+Note: This script is generated during release process, do not edit manually
+"""
+
+import sys
+import os
+import tempfile
+import shutil
+import subprocess
+import zstandard
+import io
+from pathlib import Path
+
+# Template metadata dictionary
+metadata = {{ metadata }}
+
+# Template compressed data
+bin_seesea = {{ bin_seesea }}
+bin_seesea_core = {{ bin_seesea_core }}
+
+# Template requirements list
+import json
+requirements = json.loads('{{ requirements }}')
+
+
+def run_command(cmd, cwd=None, shell=True, show_progress=True):
+    """Run a command with user-friendly progress display"""
+    if show_progress:
+        print(f"\n📦 {cmd.split()[0].capitalize()} {cmd.split()[1] if len(cmd.split()) > 1 else ''}...")
+        
+    # Use Popen to show real-time output instead of capturing all at once
+    result = subprocess.run(cmd, cwd=cwd, shell=shell, capture_output=False, text=True)
+    if result.returncode != 0:
+        print(f"\n❌ Error executing command: {cmd}")
+        sys.exit(1)
+    
+    if show_progress:
+        print(f"✅ Done")
+    return result
+
+
+def decompress_whl(compressed_data, output_path):
+    """Decompress zstandard compressed whl file"""
+    dctx = zstandard.ZstdDecompressor()
+    with open(output_path, 'wb') as f:
+        dctx.copy_stream(compressed_data, f)
+
+
+def install_dependencies():
+    """Install dependencies"""
+    # Install requirements
+    if requirements:
+        run_command(f"pip install {' '.join(requirements)}")
+    
+    # Special handling for playwright
+    run_command("pip install playwright")
+    run_command("playwright install chromium")
+    
+    # Special handling for crawl4ai - only run setup, installation is already in requirements
+    run_command("crawl4ai-setup")
+
+
+def install_seesea():
+    """Install SeeSea packages"""
+    # Create temporary directory
+    with tempfile.TemporaryDirectory() as tmpdir:
+        print(f"Working in temporary directory: {tmpdir}")
+        
+        # Decompress whl files using BytesIO streams
+        seesea_path = os.path.join(tmpdir, metadata['seesea_filename'])
+        seesea_core_path = os.path.join(tmpdir, metadata['seesea_core_filename'])
+        
+        # Create BytesIO streams from compressed data
+        seesea_stream = io.BytesIO(bin_seesea)
+        seesea_core_stream = io.BytesIO(bin_seesea_core)
+        
+        # Decompress whl files
+        decompress_whl(seesea_stream, seesea_path)
+        decompress_whl(seesea_core_stream, seesea_core_path)
+        
+        # Install whl files
+        run_command(f"pip install {seesea_core_path}")
+        run_command(f"pip install {seesea_path}")
+
+
+def uninstall_seesea():
+    """Uninstall SeeSea"""
+    run_command("pip uninstall -y seesea seesea-core")
+
+
+def update_seesea():
+    """Update SeeSea"""
+    # For update, we just reinstall
+    uninstall_seesea()
+    install_seesea()
+
+
+def main(command):
+    """Main function"""
+    print(f"SeeSea Windows Installer - {command}")
+    
+    if command == 'install':
+        install_dependencies()
+        install_seesea()
+    elif command == 'update':
+        update_seesea()
+    elif command == 'uninstall':
+        uninstall_seesea()
+    else:
+        print(f"Error: Unknown command {command}")
+        sys.exit(1)
+    
+    print("Operation completed successfully!")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: windows.py [install|update|uninstall]")
+        sys.exit(1)
+    main(sys.argv[1])

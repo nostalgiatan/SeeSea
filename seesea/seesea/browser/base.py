@@ -16,18 +16,49 @@
 """
 Browser engine base module for SeeSea
 
-Provides the foundational classes and interfaces for browser automation,
-supporting JavaScript-rendered search engines through Playwright integration.
+提供浏览器自动化的基础类和接口，通过 Playwright 集成支持 JavaScript 渲染的搜索引擎。
 
-This module defines:
-- BrowserConfig: Configuration for browser instances
-- BaseBrowserEngine: Abstract base class for browser engines
-- BrowserEngineClient: High-level client for browser operations
+主要组件:
+- BrowserConfig: 浏览器实例配置类
+- BaseBrowserEngine: 浏览器引擎抽象基类
+- BrowserEngineClient: 浏览器操作的高级客户端
 
-Performance Optimizations:
-- Singleton browser instance management
-- Context reuse where possible
-- Efficient resource cleanup
+设计原则:
+- 抽象封装: 隐藏 Playwright 底层细节，提供简洁接口
+- 资源管理: 自动管理浏览器实例和上下文生命周期
+- 异步支持: 全面支持异步操作，提高并发性能
+- 扩展性: 支持自定义浏览器引擎实现
+- 容错设计: 优雅处理 Playwright 不可用的情况
+
+性能优化:
+- 单例浏览器实例管理
+- 上下文复用机制
+- 高效的资源清理
+- 懒加载浏览器实例
+- 上下文隔离设计
+
+支持特性:
+- 无头浏览器模式
+- 隐身模式
+- 自定义 User-Agent
+- 视口配置
+- 多种浏览器类型支持（Chromium, Firefox, WebKit）
+- 丰富的浏览器操作支持
+- 支持多种搜索结果提取
+
+应用场景:
+- JavaScript 渲染的搜索引擎
+- 动态内容抓取
+- 支持需要交互的搜索引擎
+- 复杂网页内容提取
+
+依赖要求:
+- playwright: 用于浏览器自动化（可选，运行时检测）
+
+注意事项:
+- 使用前需安装 Playwright 浏览器: `playwright install chromium`
+- 建议在专用环境中运行，避免安全风险
+- 浏览器操作可能消耗较多资源
 """
 
 from abc import ABC, abstractmethod

@@ -162,6 +162,5 @@ mod tests {
     #[test]
     fn test_template_manager_creation() {
         let _manager = RssTemplateManager::new("rss/template");
-
     }
 }

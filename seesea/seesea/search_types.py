@@ -16,10 +16,82 @@
 """
 SeeSea Search Result Types - 搜索结果类型
 
-提供类型安全的搜索结果对象
+提供 SeeSea 搜索引擎的核心类型定义，包括搜索结果、响应、状态和统计信息。
+
+设计目标:
+- 类型安全: 使用 dataclass 提供完整的类型信息
+- 易用性: 简洁明了的属性访问
+- 可扩展性: 支持新的属性和方法扩展
+- 向后兼容: 支持从字典创建，兼容旧版本
+- 可读性: 清晰的属性命名和文档
+
+主要类型:
+1. SearchResultItem: 单个搜索结果项
+2. SearchResponse: 完整的搜索响应
+3. EngineState: 搜索引擎状态
+4. CacheInfo: 缓存信息
+5. SearchStats: 搜索统计
+6. PrivacyStats: 隐私保护统计
+
+类型关系:
+- SearchResponse 包含多个 SearchResultItem
+- SearchStats 包含搜索和缓存相关统计
+- EngineState 描述单个引擎的状态
+- CacheInfo 描述缓存的整体状态
+- PrivacyStats 描述隐私保护机制的状态
+
+设计原则:
+- 不可变性: 所有数据类都是不可变的，确保线程安全
+- 一致性: 所有类型都提供 from_dict 方法和一致的 repr 实现
+- 可读性: 详细的属性文档和示例
+- 性能: 轻量级数据结构，避免不必要的开销
+
+使用示例:
+    >>> from seesea import SearchClient
+    >>>
+    >>> client = SearchClient()
+    >>> response = client.search("rust programming")
+    >>>
+    >>> # 使用 SearchResponse 对象
+    >>> print(f"查询: {response.query}")
+    >>> print(f"总结果: {response.total_count}")
+    >>> print(f"查询耗时: {response.query_time_ms}ms")
+    >>>
+    >>> # 迭代 SearchResultItem
+    >>> for item in response.results:
+    ...     print(f"标题: {item.title}")
+    ...     print(f"URL: {item.url}")
+    ...     print(f"评分: {item.score:.2f}")
+    ...     print(f"网站: {item.site_name or '未知'}")
+    ...     print()
+    >>>
+    >>> # 直接迭代 response（支持）
+    >>> for item in response:
+    ...     print(f"{item.title[:30]}... - {item.score:.2f}")
+
+序列化支持:
+- 所有类型都提供 from_dict 方法，支持从字典创建
+- 兼容 JSON 序列化格式
+- 支持与 Rust 核心类型的双向转换
+
+性能特性:
+- 基于 dataclass，内存占用小
+- 快速的属性访问
+- 高效的序列化/反序列化
+- 支持批量处理
+
+注意事项:
+- 所有可选属性可能为 None，使用时需注意空值处理
+- score 属性范围为 0.0 到 1.0
+- content 属性可能包含 HTML 标签，使用时需注意清理
+
+扩展建议:
+- 如需添加新属性，建议保持向后兼容
+- 所有新属性应添加适当的默认值
+- 考虑为新属性添加文档和示例
 """
 
-from typing import List, Optional, Any, Dict
+from typing import Dict, List, Optional, Any, Iterator
 from dataclasses import dataclass, field
 
 
@@ -104,11 +176,11 @@ class SearchResponse:
         """返回结果数量"""
         return len(self.results)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[SearchResultItem]:
         """允许迭代结果"""
         return iter(self.results)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> SearchResultItem:
         """允许索引访问"""
         return self.results[index]
 

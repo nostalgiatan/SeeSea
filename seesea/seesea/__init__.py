@@ -57,12 +57,12 @@ SeeSea 是一个基于 Rust 的高性能隐私保护型元搜索引擎，通过 
     >>> browser_client = BrowserEngineClient(config)
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "SeeSea Team"
 
 # 导入 Rust 核心模块
 try:
-    from seesea_core import (  # type: ignore[import-untyped]
+    from seesea_core import (
         PySearchClient,
         PyApiServer,
         PyConfig,
@@ -137,7 +137,7 @@ from .search_types import (
 )
 
 
-def _auto_register_engines():
+def _auto_register_engines() -> None:
     """
     自动注册所有可用的Python引擎
 

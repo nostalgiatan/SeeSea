@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -22,14 +22,26 @@ pub mod py_browser;
 #[cfg(feature = "python")]
 pub mod py_cache;
 #[cfg(feature = "python")]
+pub mod py_cleaner;
+#[cfg(feature = "python")]
 pub mod py_config;
 #[cfg(feature = "python")]
+pub mod py_date_page;
+#[cfg(feature = "python")]
 pub mod py_engine_registry;
+#[cfg(feature = "python")]
+pub mod py_hot;
 #[cfg(feature = "python")]
 pub mod py_html_parser;
 #[cfg(feature = "python")]
 pub mod py_net;
 #[cfg(feature = "python")]
+pub mod py_object_pool;
+#[cfg(feature = "python")]
 pub mod py_rss;
 #[cfg(feature = "python")]
 pub mod py_search;
+#[cfg(feature = "python")]
+pub mod py_system_controller;
+#[cfg(feature = "python")]
+pub mod py_vector_store;

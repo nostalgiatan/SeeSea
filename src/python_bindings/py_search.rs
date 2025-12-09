@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -54,6 +54,7 @@ impl PySearchClient {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn search(
         &self,
         query: String,
@@ -212,6 +213,7 @@ impl PySearchClient {
     /// # Returns
     ///
     /// 返回最终聚合的搜索结果
+    #[allow(clippy::too_many_arguments)]
     pub fn search_streaming(
         &self,
         py: Python,

@@ -1,7 +1,7 @@
 
 [package]
 name = "SeeSea"
-version = "1.1.1"
+version = "2.0.0"
 edition = "2024"
 
 description = "SeeSea - A privacy-focused metasearch engine"
@@ -22,6 +22,7 @@ base64 = "0.22.1"
 chrono = { version = "0.4.42", features = ["serde"] }
 html-escape = "0.2.13"
 num_cpus = "1.17.0"
+rayon = "1.10.0"
 proc-macro2 = { version = "1.0.103", optional = true }
 quote = { version = "1.0.42", optional = true }
 regex = "1.11.1"
@@ -39,10 +40,14 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 url = "2.5.7"
 idna = "1.1.0"
+qdrant-client = { version = "1.16.0", features = ["reqwest"] }
 
-
-
-
+# 跨平台SIMD和零拷贝依赖
+wide = "0.7.13"  # 跨平台SIMD库
+simd-adler32 = "0.3.5"  # SIMD优化的Adler32算法
+memmap2 = "0.9.4"  # 跨平台内存映射，用于零拷贝
+bytemuck = { version = "1.17.0", features = ["derive"] }  # 安全的字节转换
+crossbeam = "0.8.4"  # 跨平台并发原语
 
 # 内部依赖 - 错误处理模块
 error = { path = "src/crates/error" }

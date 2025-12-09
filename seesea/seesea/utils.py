@@ -15,15 +15,64 @@
 
 """
 SeeSea Utilities - 工具函数
+
+提供 SeeSea 搜索引擎的通用工具函数，包括结果格式化和查询解析功能。
+
+主要功能:
+- 搜索结果格式化
+- 查询字符串解析
+- 支持简单的过滤语法
+- 结果描述长度控制
+
+设计原则:
+- 向后兼容: 支持旧版本的字典结果和新版本的 SearchResultItem 对象
+- 易用性: 简洁的函数接口，默认参数合理
+- 高性能: 高效的字符串处理，避免不必要的拷贝
+- 类型安全: 支持类型化输入和输出
+
+使用示例:
+    >>> from seesea import format_results, parse_query
+    >>>
+    >>> # 格式化结果
+    >>> results = [SearchResultItem(title="Test", url="https://example.com", content="This is a test", score=0.8)]
+    >>> formatted = format_results(results, max_description_length=100)
+    >>> print(formatted[0]['title'])  # 输出: Test
+    >>> print(formatted[0]['description'])  # 输出: This is a test
+    >>>
+    >>> # 解析查询
+    >>> query = "python lang:en site:github.com"
+    >>> parsed = parse_query(query)
+    >>> print(parsed['query'])  # 输出: python
+    >>> print(parsed['language'])  # 输出: en
+    >>> print(parsed['site'])  # 输出: github.com
+
+支持的查询过滤语法:
+- lang:en 或 language:en: 语言过滤
+- site:github.com: 站点过滤
+
+性能特性:
+- 高效的字符串处理
+- 避免不必要的对象创建
+- 支持批量处理
+
+与其他模块的关系:
+- 与 search 模块紧密协作，用于结果格式化
+- 与 api 模块集成，用于查询解析
+- 支持 search_types 模块的类型安全结果
 """
 
 from typing import Dict, List, Any, Union
 from seesea.search_types import SearchResultItem
 
+# 类型别名
+ResultsList = List[Union[SearchResultItem, Dict[str, Any]]]
+FormattedResults = List[Dict[str, Any]]
+QueryDict = Dict[str, Any]
+
 
 def format_results(
-    results: List[Union[SearchResultItem, Dict[str, Any]]], max_description_length: int = 200
-) -> List[Dict[str, Any]]:
+    results: Union[List[SearchResultItem], ResultsList], max_description_length: int = 200
+) -> FormattedResults:
     """
     格式化搜索结果
 
@@ -56,7 +105,7 @@ def format_results(
     return formatted
 
 
-def parse_query(query: str) -> Dict[str, Any]:
+def parse_query(query: str) -> QueryDict:
     """
     解析查询字符串
 

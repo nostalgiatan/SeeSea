@@ -19,12 +19,13 @@
 //!
 //! 一个基于 Rust 实现的隐私保护型元搜索引擎，专注于提供高性能、隐私优先的多模态搜索服务
 //!
-//! ## 核心特性
+//! 核心特性
 //!
 //! - **隐私优先**：支持 Tor 网络、TLS 指纹混淆、DNS over HTTPS 等多层隐私保护
 //! - **多模态搜索**：整合网页搜索、RSS 聚合、浏览器自动化三种数据获取方式
 //! - **高性能架构**：基于 Rust 异步编程，支持高并发搜索请求
 //! - **智能缓存**：语义级缓存系统，支持向量相似性匹配和智能去重
+//! - **强大的向量存储**：基于 Qdrant 的高效向量存储，支持相似性搜索和元数据过滤
 //! - **多引擎聚合**：支持 12+ 专业搜索引擎，覆盖通用、图片、视频、新闻等多种搜索场景
 //! - **Python SDK**：强大的 Python 绑定，支持灵活的引擎扩展和集成
 //!
@@ -86,6 +87,18 @@ pub mod rss;
 /// HTML解析模块，用于判定网页类型（SPA或HTML）
 pub mod html_parser;
 
+/// 向量存储模块，基于 Qdrant 提供高效的向量存储和相似性搜索
+pub mod vector_store;
+
+/// 系统调控中心模块，负责统一管理系统资源和动态调整
+pub mod sys;
+
+/// 文本清洗模块，用于处理和优化搜索结果文本
+pub mod cleaner;
+
+/// 热点数据模块，用于获取和解析多平台热点数据
+pub mod hot;
+
 /// Python 绑定模块，提供 Python SDK 支持
 #[cfg(feature = "python")]
 pub mod python_bindings;
@@ -96,6 +109,26 @@ pub type Error = errors::ErrorInfo;
 /// 统一的结果类型别名，用于简化错误处理
 pub type Result<T> = errors::Result<T>;
 
+// 自动初始化系统调控中心
+use once_cell::sync::OnceCell;
+
+static INIT_GUARD: OnceCell<()> = OnceCell::new();
+
+/// 确保系统调控中心已初始化
+fn ensure_init() {
+    INIT_GUARD.get_or_init(|| {
+        tracing::info!("SeeSea 库加载，自动初始化系统调控中心");
+        let _ = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map(|rt| {
+                rt.block_on(async {
+                    let _controller = sys::controller::get_global_system_controller();
+                });
+            });
+    });
+}
+
 // 重新导出主要类型，方便外部使用
 pub use cache::{CacheImplConfig, CacheInterface, CacheMode};
 pub use config::{ConfigError, ConfigManager, SeeSeaConfig};
@@ -105,6 +138,10 @@ pub use derive::{
 };
 pub use html_parser::{HtmlPageType, HtmlParser};
 pub use net::{HttpClient, NetworkConfig, NetworkInterface};
+pub use sys::controller::get_global_system_controller;
+pub use vector_store::{
+    Document, VectorStore, VectorStoreConfig, VectorStoreResult, create_vector_store,
+};
 
 // Python module definition
 #[cfg(feature = "python")]
@@ -115,8 +152,8 @@ use pyo3::prelude::*;
 #[pymodule]
 fn seesea_core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     use python_bindings::{
-        py_api, py_browser, py_cache, py_config, py_engine_registry, py_html_parser, py_net,
-        py_rss, py_search,
+        py_api, py_browser, py_cache, py_cleaner, py_config, py_date_page, py_engine_registry,
+        py_hot, py_html_parser, py_net, py_object_pool, py_rss, py_search,
     };
 
     m.add_class::<py_search::PySearchClient>()?;
@@ -128,6 +165,14 @@ fn seesea_core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<py_browser::PyBrowserConfig>()?;
     m.add_class::<py_browser::PyBrowserEngineClient>()?;
     m.add_class::<py_net::PyNetClient>()?;
+    m.add_class::<py_cleaner::PyCleaner>()?;
+    m.add_class::<py_cleaner::PyDataBlock>()?;
+    m.add_class::<py_date_page::PyDatePage>()?;
+    m.add_class::<py_date_page::PyMapItem>()?;
+    m.add_class::<py_date_page::PyExtraInfoItem>()?;
+    m.add_class::<py_object_pool::PyDatePageObjectPool>()?;
+    m.add_class::<py_object_pool::PyDatePageObjectPoolStats>()?;
+    m.add_class::<py_hot::PyHotTrendClient>()?;
 
     // 引擎注册表函数（不再暴露类，只暴露函数）
     m.add_function(wrap_pyfunction!(py_engine_registry::register_engine, m)?)?;
@@ -144,6 +189,46 @@ fn seesea_core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // HTML解析器函数
     m.add_function(wrap_pyfunction!(py_html_parser::determine_page_type, m)?)?;
     m.add_function(wrap_pyfunction!(py_html_parser::get_html_meta_info, m)?)?;
+
+    // 配置初始化函数
+    m.add_function(wrap_pyfunction!(py_config::init_config, m)?)?;
+
+    // 系统控制器函数
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_system_controller::init_system_controller,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_system_controller::register_component,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_system_controller::adjust_component_concurrency,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_system_controller::adjust_component_priority,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_system_controller::get_system_status,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_system_controller::set_resource_threshold,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_system_controller::adjust_crawl4ai_concurrency,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_system_controller::adjust_pro_processor_concurrency,
+        m
+    )?)?;
+
+    // 向量数据库绑定
+    m.add_class::<python_bindings::py_vector_store::PyVectorClient>()?;
 
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add(

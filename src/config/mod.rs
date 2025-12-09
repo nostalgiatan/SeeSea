@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -97,6 +97,9 @@ pub mod logging;
 /// 引擎配置模块，包括各搜索引擎的具体配置
 pub mod engines;
 
+/// 向量数据库配置模块，包括向量数据库的配置
+pub mod vector_store;
+
 /// 核心类型定义模块，包括环境类型等
 pub mod types;
 
@@ -151,6 +154,9 @@ pub use engines::EnginesConfig;
 
 /// 环境类型，包括开发、测试、生产等
 pub use types::Environment;
+
+/// 向量数据库配置
+pub use vector_store::{DynamicAdjustmentConfig, VectorStoreConfig, VectorStoreStatsConfig};
 
 /// 主配置类型和相关结果类型
 pub use config::{

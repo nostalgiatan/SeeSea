@@ -16,11 +16,39 @@
 """
 SeeSea RSS Client - RSS 订阅客户端
 
-提供简单易用的 RSS feed 获取和解析接口
+提供简单易用的 RSS feed 获取、解析和模板管理功能，支持持久化 RSS 订阅和自动更新。
+
+主要功能:
+- RSS feed 获取与解析
+- 基于关键词的结果过滤
+- RSS 模板管理
+- 从模板批量添加 RSS feeds
+- RSS 榜单创建与关键词评分
+- 支持持久化 RSS 订阅
+
+性能特性:
+- 异步处理支持
+- 智能缓存机制
+- 高效的 XML 解析
+- 批量操作支持
+
+应用场景:
+- 新闻聚合与订阅
+- 内容监控与追踪
+- 基于关键词的内容筛选
+- 个性化 RSS 推荐
+
+支持格式:
+- RSS 2.0
+- Atom
+- RDF
+
+示例模板:
+- xinhua: 新华网 RSS 订阅模板
 """
 
 from typing import Dict, List, Optional, Any
-from seesea_core import PyRssClient  # type: ignore[import-untyped]
+from seesea_core import PyRssClient
 
 
 class RssClient:
@@ -43,7 +71,7 @@ class RssClient:
         >>> client.add_from_template("xinhua", ["politics", "tech"])
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """初始化 RSS 客户端"""
         self._client = PyRssClient()
 
@@ -146,7 +174,7 @@ class RssClient:
     def create_ranking(
         self,
         feed_urls: List[str],
-        keywords: List[tuple],
+        keywords: List[tuple[str, float]],
         min_score: Optional[float] = 0.0,
         max_results: Optional[int] = 100,
     ) -> Dict[str, Any]:

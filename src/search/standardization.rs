@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -13,8 +13,6 @@
 
 //! 搜索结果标准化
 //!
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //! 对搜索结果进行基本的清理和标准化
 
 use crate::derive::{SearchResult, SearchResultItem};

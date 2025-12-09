@@ -80,7 +80,7 @@ impl RetryExecutor {
     /// 成功返回操作结果，失败返回错误
     pub async fn execute<F, T, E>(&self, mut operation: F) -> Result<T>
     where
-        F: FnMut() -> std::pin::Pin<Box<dyn Future<Output = std::result::Result<T, E>>>>,
+        F: FnMut() -> std::pin::Pin<Box<dyn Future<Output = std::result::Result<T, E>> + Send>>,
         E: std::error::Error + Send + Sync + 'static,
     {
         let mut attempt = 0;
@@ -133,19 +133,19 @@ pub trait RetryExt<T, E> {
     /// 执行带重试的操作
     async fn with_retry<F>(self, config: RetryConfig) -> Result<T>
     where
-        F: FnMut() -> std::pin::Pin<Box<dyn Future<Output = std::result::Result<T, E>>>>,
+        F: FnMut() -> std::pin::Pin<Box<dyn Future<Output = std::result::Result<T, E>> + Send>>,
         E: std::error::Error + Send + Sync + 'static;
 }
 
 #[allow(async_fn_in_trait)]
 impl<T, E> RetryExt<T, E>
-    for fn() -> std::pin::Pin<Box<dyn Future<Output = std::result::Result<T, E>>>>
+    for fn() -> std::pin::Pin<Box<dyn Future<Output = std::result::Result<T, E>> + Send>>
 where
     E: std::error::Error + Send + Sync + 'static,
 {
     async fn with_retry<F>(self, config: RetryConfig) -> Result<T>
     where
-        F: FnMut() -> std::pin::Pin<Box<dyn Future<Output = std::result::Result<T, E>>>>,
+        F: FnMut() -> std::pin::Pin<Box<dyn Future<Output = std::result::Result<T, E>> + Send>>,
         E: std::error::Error + Send + Sync + 'static,
     {
         let executor = RetryExecutor::new(config);

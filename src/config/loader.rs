@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -237,6 +237,8 @@ impl ConfigLoader {
     ) -> Result<(), ConfigError> {
         // 这里可以使用 serde_json 来深度合并配置
         // 简化实现：直接替换主要字段
+
+        // 类似地合并其他配置字段...
 
         // 合并通用配置
         if source.general.instance_name != SeeSeaConfig::default().general.instance_name {

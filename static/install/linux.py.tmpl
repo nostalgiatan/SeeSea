@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""
+SeeSea Linux Installer Script
+Module Name: linux.py
+Responsibility: Handle SeeSea installation on Linux platform
+Expected Implementation: Extract and install SeeSea packages with dependencies
+Implemented Features: zstandard decompression, whl reconstruction, dependency installation, virtual environment setup
+Usage Dependencies: Python 3.10-3.12, zstandard
+Main Interfaces: Command-line interface with install/update/uninstall commands
+Note: This script is generated during release process, do not edit manually
+"""
+
+import sys
+import os
+import tempfile
+import shutil
+import subprocess
+import zstandard
+import io
+from pathlib import Path
+
+# Template metadata dictionary
+metadata = {{ metadata }}
+
+# Template compressed data
+bin_seesea = {{ bin_seesea }}
+bin_seesea_core = {{ bin_seesea_core }}
+
+# Template requirements list
+import json
+requirements = json.loads('{{ requirements }}')
+
+INSTALL_DIR = "/etc/seesea"
+VENV_DIR = os.path.join(INSTALL_DIR, "venv")
+BIN_DIR = "/usr/local/bin"
+
+
+def run_command(cmd, cwd=None, shell=True, show_progress=True):
+    """Run a command with user-friendly progress display"""
+    if show_progress:
+        print(f"\n📦 {cmd.split()[0].capitalize()} {cmd.split()[1] if len(cmd.split()) > 1 else ''}...")
+        
+    # Use Popen to show real-time output instead of capturing all at once
+    result = subprocess.run(cmd, cwd=cwd, shell=shell, capture_output=False, text=True)
+    if result.returncode != 0:
+        print(f"\n❌ Error executing command: {cmd}")
+        sys.exit(1)
+    
+    if show_progress:
+        print(f"✅ Done")
+    return result
+
+
+def setup_environment():
+    """Setup installation environment"""
+    # Create install directory
+    run_command(f"mkdir -p {INSTALL_DIR}")
+    
+    # Create virtual environment
+    run_command(f"python3 -m venv {VENV_DIR}")
+
+
+def activate_venv():
+    """Return commands with virtual environment activated"""
+    return f"source {VENV_DIR}/bin/activate && "
+
+
+def install_dependencies():
+    """Install dependencies"""
+    # Install zstandard first for decompression
+    run_command(f"{activate_venv()} pip install zstandard")
+    
+    # Install requirements
+    if requirements:
+        run_command(f"{activate_venv()} pip install {' '.join(requirements)}")
+    
+    # Special handling for playwright
+    run_command(f"{activate_venv()} pip install playwright")
+    run_command(f"{activate_venv()} playwright install chromium")
+    run_command(f"{activate_venv()} playwright install-deps")
+    
+    # Special handling for crawl4ai - only run setup, installation is already in requirements
+    run_command(f"{activate_venv()} crawl4ai-setup")
+
+
+def install_seesea():
+    """Install SeeSea packages"""
+    # Change to install directory
+    os.chdir(INSTALL_DIR)
+    
+    # Decompress whl files using BytesIO streams
+    seesea_path = os.path.join(INSTALL_DIR, metadata['seesea_filename'])
+    seesea_core_path = os.path.join(INSTALL_DIR, metadata['seesea_core_filename'])
+    
+    # Create BytesIO streams from compressed data
+    seesea_stream = io.BytesIO(bin_seesea)
+    seesea_core_stream = io.BytesIO(bin_seesea_core)
+    
+    # Decompress whl files
+    decompress_whl(seesea_stream, seesea_path)
+    decompress_whl(seesea_core_stream, seesea_core_path)
+    
+    # Install whl files
+    run_command(f"{activate_venv()} pip install {seesea_core_path}")
+    run_command(f"{activate_venv()} pip install {seesea_path}")
+    
+    # Create symlink to /usr/local/bin
+    seesea_venv_path = os.path.join(VENV_DIR, "bin", "seesea")
+    seesea_link_path = os.path.join(BIN_DIR, "seesea")
+    
+    # Remove existing link if it exists
+    if os.path.exists(seesea_link_path):
+        run_command(f"rm {seesea_link_path}")
+    
+    # Create new link
+    run_command(f"ln -s {seesea_venv_path} {seesea_link_path}")
+
+
+def uninstall_seesea():
+    """Uninstall SeeSea"""
+    # Remove symlink
+    seesea_link_path = os.path.join(BIN_DIR, "seesea")
+    if os.path.exists(seesea_link_path):
+        run_command(f"rm {seesea_link_path}")
+    
+    # Remove install directory
+    if os.path.exists(INSTALL_DIR):
+        run_command(f"rm -rf {INSTALL_DIR}")
+
+
+def update_seesea():
+    """Update SeeSea"""
+    # For update, we just reinstall
+    uninstall_seesea()
+    setup_environment()
+    install_dependencies()
+    install_seesea()
+
+
+def main(command):
+    """Main function"""
+    print(f"SeeSea Linux Installer - {command}")
+    
+    if command == 'install':
+        setup_environment()
+        install_dependencies()
+        install_seesea()
+    elif command == 'update':
+        update_seesea()
+    elif command == 'uninstall':
+        uninstall_seesea()
+    else:
+        print(f"Error: Unknown command {command}")
+        sys.exit(1)
+    
+    print("Operation completed successfully!")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: linux.py [install|update|uninstall]")
+        sys.exit(1)
+    main(sys.argv[1])
