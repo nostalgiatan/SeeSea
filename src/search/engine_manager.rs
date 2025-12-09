@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -13,8 +13,6 @@
 
 //! 搜索引擎管理器
 //!
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //! 负责管理搜索引擎的生命周期、状态和并发执行
 
 use std::collections::HashMap;

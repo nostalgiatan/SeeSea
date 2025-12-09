@@ -71,8 +71,8 @@ pub async fn handle_pro_api(
         // 2. 在阻塞线程池中调用Python函数
         // 这样可以避免阻塞异步执行器
         let result = tokio::task::spawn_blocking(move || {
-            // 使用Python::with_gil来调用Python回调函数
-            Python::with_gil(|py| {
+            // 使用Python::attach来调用Python回调函数
+            Python::attach(|py| {
                 // 调用Python回调函数
                 let result =
                     handler_clone.call1(py, (full_path_clone, &method_str, &query_params))?;

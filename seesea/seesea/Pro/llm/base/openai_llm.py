@@ -175,7 +175,7 @@ class OpenAILLM(LLMBase):
             # 调用OpenAI API批量生成嵌入
             response = self.client.embeddings.create(input=texts, model=model, **kwargs)
 
-            return [embedding.data[0].embedding for embedding in response.data]  # type: ignore[no-any-return]
+            return [embedding.embedding for embedding in response.data]  # type: ignore[no-any-return]
 
         except Exception as e:
             raise RuntimeError(f"OpenAI LLM批量生成嵌入失败: {str(e)}") from e

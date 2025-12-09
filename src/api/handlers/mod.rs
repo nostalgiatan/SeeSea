@@ -20,6 +20,7 @@
 pub mod cache;
 pub mod config;
 pub mod health;
+pub mod hot;
 pub mod metrics;
 pub mod pro;
 pub mod rss;
@@ -29,6 +30,9 @@ pub mod static_files;
 // Re-export handlers for convenient use
 pub use config::handle_magic_link_generate;
 pub use health::handle_health;
+pub use hot::{
+    handle_hot_all, handle_hot_multiple, handle_hot_platform, handle_hot_platforms_list,
+};
 pub use metrics::{
     handle_engines_list, handle_metrics, handle_realtime_metrics, handle_stats, handle_version,
 };

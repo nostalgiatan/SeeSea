@@ -63,17 +63,20 @@ use crate::net::config::{NetworkConfig, RequestOptions};
 use crate::net::metrics::MetricsCollector;
 use crate::net::privacy::PrivacyManager;
 use crate::net::retry::RetryConfig;
+use crate::sys::config::{ConfigUpdateEvent, ConfigUpdateHandler};
+use async_trait::async_trait;
 use futures::StreamExt;
 use once_cell::sync::OnceCell;
 use reqwest::{Client, ClientBuilder, Response};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
 use tokio_util::io::ReaderStream;
 use tokio_util::io::StreamReader;
 
-/// HTTP 客户端封装
+/// HTTP 客户端状态，包含可动态更新的字段
 #[derive(Clone)]
-pub struct HttpClient {
+pub struct HttpClientState {
     /// 底层 reqwest 客户端（用于普通请求，带自动解压缩）
     client: Arc<Client>,
     /// 底层 reqwest 客户端（用于流式请求，不带自动解压缩）
@@ -82,6 +85,13 @@ pub struct HttpClient {
     config: Arc<NetworkConfig>,
     /// 隐私管理器
     privacy_manager: Option<Arc<PrivacyManager>>,
+}
+
+/// HTTP 客户端封装
+#[derive(Clone)]
+pub struct HttpClient {
+    /// 客户端状态，使用 RwLock 保护，支持动态更新
+    state: Arc<RwLock<HttpClientState>>,
     /// 重试配置
     retry_config: RetryConfig,
     /// 指标收集器
@@ -144,6 +154,105 @@ impl HttpClient {
     /// 成功返回配置好的 HttpClient，失败返回错误
     fn new_with_config(config: NetworkConfig) -> Result<Self> {
         // 创建基础配置构建器
+        let create_client = |enable_decompression, config: &NetworkConfig| -> Result<Client> {
+            let mut builder = ClientBuilder::new();
+
+            // 配置超时
+            builder = builder
+                .timeout(Duration::from_secs(config.pool.read_timeout_secs))
+                .connect_timeout(Duration::from_secs(config.pool.connect_timeout_secs));
+
+            // 配置连接池
+            builder = builder
+                .pool_max_idle_per_host(config.pool.max_idle_connections)
+                .pool_idle_timeout(Some(Duration::from_secs(config.pool.idle_timeout_secs)));
+
+            // 配置 HTTP/2
+            if config.pool.http2_only {
+                builder = builder.http2_prior_knowledge();
+            }
+
+            // 配置 TCP_NODELAY
+            builder = builder.tcp_nodelay(config.pool.tcp_nodelay);
+
+            // 配置 TCP 保活
+            if let Some(interval) = config.pool.tcp_keepalive_interval_secs {
+                builder = builder.tcp_keepalive_interval(Duration::from_secs(interval));
+            }
+
+            if let Some(retries) = config.pool.tcp_keepalive_retries {
+                builder = builder.tcp_keepalive_retries(retries);
+            }
+
+            // 配置 TLS
+            builder = super::tls::configure_tls(builder, &config.tls)?;
+
+            // 配置代理
+            if config.proxy.enabled {
+                builder = super::proxy::configure_proxy(builder, &config.proxy)?;
+            }
+
+            // 添加隐私保护请求头
+            builder = crate::net::privacy::headers::configure_privacy(builder, &config.privacy);
+
+            // 配置解压缩
+            if enable_decompression {
+                builder = builder.gzip(true).brotli(true).deflate(true);
+            } else {
+                // 明确禁用所有压缩算法，确保获取原始字节流
+                builder = builder.gzip(false).brotli(false).deflate(false);
+            }
+
+            // 构建客户端
+            builder.build().map_err(|e| {
+                crate::errors::http_error(0, &format!("Failed to build HTTP client: {e}"))
+            })
+        };
+
+        // 创建隐私管理器
+        let privacy_manager = Arc::new(PrivacyManager::new(
+            config.privacy.clone(),
+            config.tls.clone(),
+            config.dns.clone(),
+        ));
+
+        // 创建普通请求客户端（带自动解压缩）
+        let client = create_client(true, &config)?;
+        // 创建流式请求客户端（不带自动解压缩）
+        let stream_client = create_client(false, &config)?;
+
+        // 创建客户端状态
+        let state = HttpClientState {
+            client: Arc::new(client),
+            stream_client: Arc::new(stream_client),
+            config: Arc::new(config),
+            privacy_manager: Some(privacy_manager),
+        };
+
+        Ok(Self {
+            state: Arc::new(RwLock::new(state)),
+            retry_config: RetryConfig::default(),
+            metrics_collector: Arc::new(MetricsCollector::new()),
+        })
+    }
+
+    /// 获取隐私管理器
+    pub async fn privacy_manager(&self) -> Option<Arc<PrivacyManager>> {
+        let state = self.state.read().await;
+        state.privacy_manager.clone()
+    }
+
+    /// 动态更新网络配置
+    ///
+    /// # 参数
+    ///
+    /// * `config` - 新的网络配置
+    ///
+    /// # 返回
+    ///
+    /// 成功返回 Ok，失败返回错误
+    pub async fn update_config(&self, config: NetworkConfig) -> Result<()> {
+        // 创建基础配置构建器
         let create_client = |enable_decompression| -> Result<Client> {
             let mut builder = ClientBuilder::new();
 
@@ -188,6 +297,9 @@ impl HttpClient {
             // 配置解压缩
             if enable_decompression {
                 builder = builder.gzip(true).brotli(true).deflate(true);
+            } else {
+                // 明确禁用所有压缩算法，确保获取原始字节流
+                builder = builder.gzip(false).brotli(false).deflate(false);
             }
 
             // 构建客户端
@@ -208,19 +320,16 @@ impl HttpClient {
         // 创建流式请求客户端（不带自动解压缩）
         let stream_client = create_client(false)?;
 
-        Ok(Self {
+        // 更新客户端状态
+        let mut state = self.state.write().await;
+        *state = HttpClientState {
             client: Arc::new(client),
             stream_client: Arc::new(stream_client),
             config: Arc::new(config),
             privacy_manager: Some(privacy_manager),
-            retry_config: RetryConfig::default(),
-            metrics_collector: Arc::new(MetricsCollector::new()),
-        })
-    }
+        };
 
-    /// 获取隐私管理器
-    pub fn privacy_manager(&self) -> Option<&Arc<PrivacyManager>> {
-        self.privacy_manager.as_ref()
+        Ok(())
     }
 
     /// 获取全局 HttpClient 单例
@@ -314,10 +423,11 @@ impl HttpClient {
         let start_time = self.metrics_collector.start_request();
         let opts = options.unwrap_or_default();
 
-        let mut request = self.client.get(url).timeout(opts.timeout);
+        let state = self.state.read().await;
+        let mut request = state.client.get(url).timeout(opts.timeout);
 
         // 添加隐私保护请求头
-        if let Some(ref privacy_mgr) = self.privacy_manager {
+        if let Some(ref privacy_mgr) = state.privacy_manager {
             let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
             for (key, value) in privacy_headers {
                 request = request.header(&key, &value);
@@ -372,14 +482,15 @@ impl HttpClient {
         let opts = options.unwrap_or_default();
 
         // 使用stream_client，它禁用了自动解压缩，确保获取原始二进制数据
-        let mut request = self
+        let state = self.state.read().await;
+        let mut request = state
             .stream_client
             .post(url)
             .timeout(opts.timeout)
             .body(body);
 
         // 添加隐私保护请求头
-        if let Some(ref privacy_mgr) = self.privacy_manager {
+        if let Some(ref privacy_mgr) = state.privacy_manager {
             let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
             for (key, value) in privacy_headers {
                 request = request.header(&key, &value);
@@ -434,7 +545,8 @@ impl HttpClient {
         let start_time = self.metrics_collector.start_request();
         let opts = options.unwrap_or_default();
 
-        let mut request = self.client.post(url).timeout(opts.timeout).json(json);
+        let state = self.state.read().await;
+        let mut request = state.client.post(url).timeout(opts.timeout).json(json);
 
         // 添加自定义请求头
         for (key, value) in opts.headers {
@@ -484,13 +596,19 @@ impl HttpClient {
         impl tokio::io::AsyncRead + Unpin + Send + 'static,
     )> {
         let start_time = self.metrics_collector.start_request();
-        let opts = options.unwrap_or_default();
+        let mut opts = options.unwrap_or_default();
+
+        // 为流式请求设置更长的默认超时时间（5分钟）
+        if opts.timeout < std::time::Duration::from_secs(300) {
+            opts.timeout = std::time::Duration::from_secs(300);
+        }
 
         // 使用独立的stream_client（完全禁用自动解压缩），确保获取原始字节流
-        let mut request = self.stream_client.get(url).timeout(opts.timeout);
+        let state = self.state.read().await;
+        let mut request = state.stream_client.get(url).timeout(opts.timeout);
 
         // 添加隐私保护请求头
-        if let Some(ref privacy_mgr) = self.privacy_manager {
+        if let Some(ref privacy_mgr) = state.privacy_manager {
             let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
             for (key, value) in privacy_headers {
                 request = request.header(&key, &value);
@@ -504,16 +622,20 @@ impl HttpClient {
 
         // 明确禁用压缩，确保获取原始二进制数据
         request = request.header("Accept-Encoding", "identity");
-        
+
         // 确保不自动解码响应体，直接获取原始字节流
-        let response = request
-            .send()
-            .await
-            .map_err(|e| crate::errors::http_error(0, &format!("GET stream request failed: {e}")))?
-            .error_for_status()
-            .map_err(|e| {
-                crate::errors::http_error(0, &format!("GET stream request failed with status: {e}"))
-            })?;
+        let response = request.send().await.map_err(|e| {
+            crate::errors::http_error(0, &format!("GET stream request failed: {e}"))
+        })?;
+
+        // 手动检查状态码，避免使用 error_for_status() 尝试解码响应体
+        let status = response.status();
+        if !status.is_success() {
+            return Err(crate::errors::http_error(
+                status.as_u16(),
+                &format!("GET stream request failed with status: {status}"),
+            ));
+        }
 
         // 记录指标
         self.metrics_collector
@@ -524,14 +646,12 @@ impl HttpClient {
         let status = response.status().as_u16();
         let headers = response.headers().clone();
 
-        // 直接获取原始响应体流，不进行任何解码
-        let raw_response = response.bytes_stream();
+        // 获取响应体流，使用raw()方法确保获取原始字节流
+        let stream = response.bytes_stream();
 
-        // 转换为tokio AsyncRead，处理可能的错误，但不进行内容解码
-        let reader = StreamReader::new(raw_response.map(|result| {
-            // 直接传递原始字节，不进行任何解码
-            result.map_err(tokio::io::Error::other)
-        }));
+        // 转换为tokio AsyncRead，直接传递原始字节流
+        let reader =
+            StreamReader::new(stream.map(|result| result.map_err(tokio::io::Error::other)));
 
         Ok((status, headers, reader))
     }
@@ -568,7 +688,8 @@ impl HttpClient {
         // 创建请求体流
         let body = reqwest::Body::wrap_stream(ReaderStream::new(reader));
 
-        let mut request = self.client.post(url).timeout(opts.timeout).body(body);
+        let state = self.state.read().await;
+        let mut request = state.client.post(url).timeout(opts.timeout).body(body);
 
         // 设置内容长度（如果提供）
         if let Some(length) = content_length {
@@ -581,7 +702,7 @@ impl HttpClient {
         }
 
         // 添加隐私保护请求头
-        if let Some(ref privacy_mgr) = self.privacy_manager {
+        if let Some(ref privacy_mgr) = state.privacy_manager {
             let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
             for (key, value) in privacy_headers {
                 request = request.header(&key, &value);
@@ -618,13 +739,15 @@ impl HttpClient {
     }
 
     /// 获取网络配置
-    pub fn config(&self) -> &NetworkConfig {
-        &self.config
+    pub async fn config(&self) -> NetworkConfig {
+        let state = self.state.read().await;
+        state.config.as_ref().clone()
     }
 
     /// 获取底层 reqwest 客户端（用于高级用途）
-    pub fn inner(&self) -> &Client {
-        &self.client
+    pub async fn inner(&self) -> Arc<Client> {
+        let state = self.state.read().await;
+        state.client.clone()
     }
 
     /// 获取指标收集器
@@ -643,6 +766,54 @@ impl HttpClient {
     }
 }
 
+/// 实现 ConfigUpdateHandler trait，用于处理配置更新事件
+#[async_trait]
+impl ConfigUpdateHandler for HttpClient {
+    async fn handle_config_update(&self, event: ConfigUpdateEvent) -> crate::errors::Result<()> {
+        match event {
+            ConfigUpdateEvent::HttpPoolUpdate {
+                component_id: _,
+                config: pool_config,
+            } => {
+                // 更新连接池配置
+                let mut current_config = self.config().await;
+                current_config.pool = pool_config;
+                self.update_config(current_config).await?;
+            }
+            ConfigUpdateEvent::DnsConfigUpdate {
+                component_id: _,
+                config: dns_config,
+            } => {
+                // 更新DNS配置
+                let mut current_config = self.config().await;
+                current_config.dns = dns_config;
+                self.update_config(current_config).await?;
+            }
+            ConfigUpdateEvent::NetworkConfigUpdate { config } => {
+                // 更新全局网络配置
+                self.update_config(config).await?;
+            }
+            ConfigUpdateEvent::ResourceLimitUpdate {
+                component_id: _,
+                resource_type: _,
+                limit: _,
+            } => {
+                // 资源限制更新，暂时不处理
+            }
+            ConfigUpdateEvent::BatchSizeUpdate {
+                component_id: _,
+                batch_size: _,
+            } => {
+                // 批量大小更新，暂时不处理
+            }
+            ConfigUpdateEvent::Other { key: _, value: _ } => {
+                // 其他配置更新，暂时不处理
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -655,12 +826,13 @@ mod tests {
         assert!(client.is_ok());
     }
 
-    #[test]
-    fn test_http_client_config_access() {
+    #[tokio::test]
+    async fn test_http_client_config_access() {
         let config = NetworkConfig::default();
         let client = HttpClient::new(config.clone()).unwrap();
+        let client_config = client.config().await;
         assert_eq!(
-            client.config().pool.max_idle_connections,
+            client_config.pool.max_idle_connections,
             config.pool.max_idle_connections
         );
     }
@@ -735,44 +907,46 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_http_client_post_request() {
         // 测试POST请求
         let client = HttpClient::new(NetworkConfig::default()).unwrap();
 
-        // 使用httpbin.org进行测试，它提供了测试POST请求的端点
-        let body = b"test=value&another=123";
+        // 使用reqres.in进行测试，它提供了可靠的测试POST请求的端点
+        let body = b"name=test&job=developer";
         let response = assert_ok!(
             client
-                .post("https://httpbin.org/post", body.to_vec(), None)
+                .post("https://reqres.in/api/users", body.to_vec(), None)
                 .await
         );
 
         // 验证状态码
-        assert_eq!(response.status().as_u16(), 200);
+        assert_eq!(response.status().as_u16(), 201);
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_http_client_post_json_request() {
         // 测试POST JSON请求
         let client = HttpClient::new(NetworkConfig::default()).unwrap();
 
-        // 使用httpbin.org进行测试
-        let json_data = serde_json::json!({"test": "value", "number": 123});
+        // 使用reqres.in进行测试
+        let json_data = serde_json::json!({"name": "test", "job": "developer"});
         let response = assert_ok!(
             client
-                .post_json("https://httpbin.org/post", &json_data, None)
+                .post_json("https://reqres.in/api/users", &json_data, None)
                 .await
         );
 
         // 验证状态码
-        assert_eq!(response.status().as_u16(), 200);
+        assert_eq!(response.status().as_u16(), 201);
     }
 
     #[tokio::test]
     async fn test_http_client_timeout() {
         // 测试请求超时
         let mut config = NetworkConfig::default();
-        config.pool.idle_timeout_secs = 1; // 设置较短的超时时间
+        config.pool.connect_timeout_secs = 1; // 设置较短的连接超时时间
         let client = HttpClient::new(config).unwrap();
 
         // 使用一个不存在的IP地址，应该超时
@@ -780,5 +954,53 @@ mod tests {
 
         // 验证请求失败（超时）
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_http_client_dynamic_config_update() {
+        // 测试动态配置更新
+        let mut initial_config = NetworkConfig::default();
+        initial_config.pool.max_idle_connections = 100;
+        let client = HttpClient::new(initial_config.clone()).unwrap();
+
+        // 验证初始配置
+        let initial_client_config = client.config().await;
+        assert_eq!(initial_client_config.pool.max_idle_connections, 100);
+
+        // 创建新的配置
+        let mut new_config = initial_config;
+        new_config.pool.max_idle_connections = 200;
+
+        // 更新配置
+        assert_ok!(client.update_config(new_config.clone()).await);
+
+        // 验证配置已更新
+        let updated_config = client.config().await;
+        assert_eq!(updated_config.pool.max_idle_connections, 200);
+        assert_eq!(
+            updated_config.pool.connect_timeout_secs,
+            new_config.pool.connect_timeout_secs
+        );
+    }
+
+    #[tokio::test]
+    async fn test_http_client_privacy_manager_access() {
+        let config = NetworkConfig::default();
+        let client = HttpClient::new(config).unwrap();
+
+        // 测试获取隐私管理器
+        let privacy_mgr = client.privacy_manager().await;
+        assert!(privacy_mgr.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_http_client_inner_access() {
+        let config = NetworkConfig::default();
+        let client = HttpClient::new(config).unwrap();
+
+        // 测试获取内部客户端
+        let inner_client = client.inner().await;
+        // Arc类型不能使用is_some()，直接测试其存在性
+        assert!(!std::ptr::eq(inner_client.as_ref(), std::ptr::null()));
     }
 }

@@ -148,7 +148,9 @@ class VectorDatabase:
             bool: 添加成功返回True，文档已存在且内容未变化返回False
         """
         try:
-            return self.store.add(doc_id=doc_id, content=content, **kwargs)
+            from typing import cast
+
+            return cast(bool, self.store.add(doc_id=doc_id, content=content, **kwargs))
         except Exception as e:
             raise RuntimeError(f"添加文档失败: {str(e)}") from e
 
@@ -180,7 +182,9 @@ class VectorDatabase:
                 docs.append(doc_dict)
 
             # 批量添加，返回更新的文档数量
-            return self.store.add_batch(docs)
+            from typing import cast
+
+            return cast(int, self.store.add_batch(docs))
         except Exception as e:
             raise RuntimeError(f"批量添加文档失败: {str(e)}") from e
 
@@ -213,7 +217,9 @@ class VectorDatabase:
                 return dict_results
             else:
                 # 如果已经是字典列表，直接返回
-                return results  # type: ignore[return-value]
+                from typing import cast
+
+                return cast(List[Dict[str, Any]], results)
         except Exception as e:
             raise RuntimeError(f"搜索失败: {str(e)}") from e
 
@@ -643,7 +649,9 @@ class VectorUtils:
         Returns:
             int: 成功处理的文档数量
         """
-        return self.batch_processor.flush()
+        from typing import cast
+
+        return cast(int, self.batch_processor.flush())
 
     def search(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """

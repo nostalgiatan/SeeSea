@@ -103,13 +103,19 @@ impl PyApiServer {
                         .map_err(|e| format!("Search error: {}", e))?,
                 );
 
-                let mut api_network_config = ApiNetworkConfig::default();
-                api_network_config.mode = network_mode_enum;
-
-                // Use config values if available
-                api_network_config.internal.port = config.server.port;
-                api_network_config.external.port = config.server.port + 1;
-                api_network_config.external.host = config.server.bind_address.clone();
+                // 使用结构体字面量初始化，包含所有字段，避免Clippy警告
+                let api_network_config = ApiNetworkConfig {
+                    mode: network_mode_enum,
+                    internal: crate::api::network::InternalNetworkConfig {
+                        port: config.server.port,
+                        ..Default::default()
+                    },
+                    external: crate::api::network::ExternalNetworkConfig {
+                        port: config.server.port + 1,
+                        host: config.server.bind_address.clone(),
+                        ..Default::default()
+                    },
+                };
 
                 let api = ApiInterface::with_network_config(
                     search,

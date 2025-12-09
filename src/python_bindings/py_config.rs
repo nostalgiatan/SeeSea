@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -32,10 +32,31 @@ pub struct PyConfig {
 impl PyConfig {
     #[new]
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+// 添加Default实现以满足Clippy警告
+impl Default for PyConfig {
+    fn default() -> Self {
         Self {
             debug: false,
             max_results: 100,
             timeout_seconds: 30,
         }
     }
+}
+
+/// 初始化配置
+#[pyfunction]
+pub fn init_config(environment: &str) -> PyResult<()> {
+    // 初始化全局配置
+    tokio::runtime::Runtime::new()
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+        .block_on(async {
+            match crate::config::init_config_with_env(environment).await {
+                Ok(_) => Ok(()),
+                Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
+            }
+        })
 }

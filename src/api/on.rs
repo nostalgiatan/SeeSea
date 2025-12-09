@@ -26,9 +26,10 @@ use tokio::sync::RwLock;
 
 use super::dynamic_router::{ThreadSafeDynamicRouter, new_dynamic_router};
 use super::handlers::{
-    cache, handle_engines_list, handle_favicon, handle_health, handle_index,
-    handle_magic_link_generate, handle_metrics, handle_pro_api, handle_realtime_metrics,
-    handle_search, handle_search_post, handle_stats, handle_version, rss,
+    cache, handle_engines_list, handle_favicon, handle_health, handle_hot_all, handle_hot_multiple,
+    handle_hot_platform, handle_hot_platforms_list, handle_index, handle_magic_link_generate,
+    handle_metrics, handle_pro_api, handle_realtime_metrics, handle_search, handle_search_post,
+    handle_stats, handle_version, rss,
 };
 use super::metrics::{MetricsCollector, MetricsConfig};
 use super::middleware::{
@@ -39,8 +40,10 @@ use super::middleware::{
 };
 use super::network::{NetworkConfig, NetworkMode};
 use crate::cache::CacheInterface;
+use crate::hot::client::AsyncHotTrendClient;
 use crate::net::NetworkInterface;
 use crate::search::SearchInterface;
+use tokio::sync::OnceCell;
 
 /// 服务器配置
 #[derive(Debug, Clone)]
@@ -71,6 +74,8 @@ impl Default for ServerConfig {
 pub struct ApiState {
     /// 搜索接口
     pub search: Arc<SearchInterface>,
+    /// 热门搜索客户端（懒加载）
+    pub hot_client: Arc<OnceCell<AsyncHotTrendClient>>,
     /// 版本信息
     pub version: String,
     /// 指标收集器
@@ -119,8 +124,13 @@ impl ApiInterface {
         let magic_link = Arc::new(MagicLinkState::new(MagicLinkConfig::default()));
         let dynamic_router = new_dynamic_router();
 
+        // 创建AsyncHotTrendClient，不在这里初始化，而是在第一次使用时初始化
+        // 这里我们直接使用空的OnceCell，等待第一次使用时再初始化
+        let hot_client = Arc::new(OnceCell::new());
+
         let state = ApiState {
             search,
+            hot_client,
             version,
             metrics,
             magic_link,
@@ -202,6 +212,12 @@ impl ApiInterface {
             .route("/api/search", post(handle_search_post))
             // 引擎信息路由
             .route("/api/engines", get(handle_engines_list))
+            // 热门搜索路由
+            .route("/api/hot", get(handle_hot_all))
+            .route("/api/hot/all", get(handle_hot_all))
+            .route("/api/hot/platforms", get(handle_hot_platforms_list))
+            .route("/api/hot/multiple", get(handle_hot_multiple))
+            .route("/api/hot/{platform_id}", get(handle_hot_platform))
             // RSS 相关路由
             .route("/api/rss/feeds", get(rss::handle_rss_feeds_list))
             .route("/api/rss/fetch", post(rss::handle_rss_fetch))
@@ -245,6 +261,12 @@ impl ApiInterface {
             .route("/api/search", post(handle_search_post))
             // 引擎信息路由
             .route("/api/engines", get(handle_engines_list))
+            // 热门搜索路由
+            .route("/api/hot", get(handle_hot_all))
+            .route("/api/hot/all", get(handle_hot_all))
+            .route("/api/hot/platforms", get(handle_hot_platforms_list))
+            .route("/api/hot/multiple", get(handle_hot_multiple))
+            .route("/api/hot/{platform_id}", get(handle_hot_platform))
             // RSS 相关路由（可能需要认证）
             .route("/api/rss/feeds", get(rss::handle_rss_feeds_list))
             .route("/api/rss/fetch", post(rss::handle_rss_fetch))

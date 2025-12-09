@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -10,11 +10,11 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 //
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! 语义相似度模块
 //!
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //! 提供基于向量的语义相似度计算功能
 
 use serde::{Deserialize, Serialize};

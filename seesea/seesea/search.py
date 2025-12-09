@@ -16,10 +16,20 @@
 """
 SeeSea Search Client - 搜索客户端
 
-提供简单易用的搜索接口
+提供简单易用的搜索接口，自动处理并发、缓存和结果聚合。
+
+主要功能:
+- 多引擎并发搜索
+- 智能结果聚合与排序
+- 自动缓存管理
+- 类型安全的结果返回
+- 支持流式搜索
+- 支持全文搜索（整合网络、缓存和RSS）
+- 引擎健康检查
+- 隐私保护
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 from seesea_core import PySearchClient
 from .search_types import (
     SearchResponse,
@@ -43,7 +53,7 @@ class SearchClient:
         ...     print(f"{item['title']}: {item['url']}")
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """初始化搜索客户端"""
         self._client = PySearchClient()
 
@@ -156,7 +166,7 @@ class SearchClient:
     def search_streaming(
         self,
         query: str,
-        callback,
+        callback: Callable[[Dict[str, Any]], None],
         page: Optional[int] = 1,
         page_size: Optional[int] = 10,
         engines: Optional[List[str]] = None,

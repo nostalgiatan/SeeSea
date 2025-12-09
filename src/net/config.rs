@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -15,8 +15,6 @@
 //!
 //! 本模块定义了网络层所需的核心配置类型，包括：
 //! - 代理配置
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //! - TLS 配置
 //! - DNS 配置
 //! - 隐私设置
@@ -192,6 +190,24 @@ pub struct PoolConfig {
     pub tcp_keepalive_interval_secs: Option<u64>,
     /// TCP 保活重试次数
     pub tcp_keepalive_retries: Option<u32>,
+    /// 健康检查间隔（秒）
+    pub health_check_interval_secs: Option<u64>,
+    /// 连接最大生命周期（秒）
+    pub max_lifetime_secs: Option<u64>,
+    /// 连接获取超时时间（秒）
+    pub connection_acquisition_timeout_secs: u64,
+    /// 是否启用连接泄漏检测
+    pub enable_connection_leak_detection: bool,
+    /// 连接泄漏检测超时时间（秒）
+    pub leak_detection_timeout_secs: u64,
+    /// 是否启用动态调整连接池大小
+    pub dynamic_resizing_enabled: bool,
+    /// 每个主机的最小连接数
+    pub min_connections_per_host: usize,
+    /// 退避因子
+    pub backoff_factor: f64,
+    /// 最大重试次数
+    pub max_retries: usize,
 }
 
 impl Default for PoolConfig {
@@ -204,9 +220,18 @@ impl Default for PoolConfig {
             read_timeout_secs: 30,        // 30秒
             write_timeout_secs: 30,       // 30秒
             http2_only: false,
-            tcp_nodelay: true,                 // 启用 TCP_NODELAY
-            tcp_keepalive_interval_secs: None, // 使用系统默认
-            tcp_keepalive_retries: None,       // 使用系统默认
+            tcp_nodelay: true,                       // 启用 TCP_NODELAY
+            tcp_keepalive_interval_secs: None,       // 使用系统默认
+            tcp_keepalive_retries: None,             // 使用系统默认
+            health_check_interval_secs: None,        // 默认关闭健康检查
+            max_lifetime_secs: None,                 // 无最大生命周期限制
+            connection_acquisition_timeout_secs: 10, // 10秒
+            enable_connection_leak_detection: false, // 默认关闭泄漏检测
+            leak_detection_timeout_secs: 300,        // 5分钟
+            dynamic_resizing_enabled: false,         // 默认关闭动态调整
+            min_connections_per_host: 1,             // 每个主机至少1个连接
+            backoff_factor: 1.5,                     // 退避因子
+            max_retries: 3,                          // 最大重试次数
         }
     }
 }
@@ -337,6 +362,16 @@ impl NetworkConfig {
             tcp_nodelay: true,                 // 项目级配置中没有直接对应，使用默认值
             tcp_keepalive_interval_secs: None, // 项目级配置中没有直接对应，使用默认值
             tcp_keepalive_retries: None,       // 项目级配置中没有直接对应，使用默认值
+            // 使用默认值初始化新增字段
+            health_check_interval_secs: None,
+            max_lifetime_secs: None,
+            connection_acquisition_timeout_secs: 10,
+            enable_connection_leak_detection: false,
+            leak_detection_timeout_secs: 300,
+            dynamic_resizing_enabled: false,
+            min_connections_per_host: 1,
+            backoff_factor: 1.5,
+            max_retries: 3,
         };
 
         Self {

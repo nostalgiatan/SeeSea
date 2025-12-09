@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -14,8 +14,6 @@
 //! 隐私保护管理器
 //!
 //! 统一管理所有隐私保护功能的协调器
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use super::fingerprint::FingerprintProtector;
 use super::headers::generate_fake_headers;

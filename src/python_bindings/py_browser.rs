@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -72,6 +72,7 @@ impl PyBrowserConfig {
 
 /// 浏览器引擎客户端（Python端）
 #[pyclass]
+#[derive(Default)]
 pub struct PyBrowserEngineClient {
     /// Python playwright 回调函数
     playwright_callback: Option<Py<PyAny>>,
@@ -81,9 +82,7 @@ pub struct PyBrowserEngineClient {
 impl PyBrowserEngineClient {
     #[new]
     pub fn new() -> Self {
-        Self {
-            playwright_callback: None,
-        }
+        Self::default()
     }
 
     /// 注册Playwright回调函数

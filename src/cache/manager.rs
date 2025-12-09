@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -14,8 +14,6 @@
 //! 缓存管理器
 //!
 //! 提供基于 sled 的缓存管理核心功能
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::cache::bloom::{BloomFilter, BloomFilterConfig};
 use crate::cache::types::*;

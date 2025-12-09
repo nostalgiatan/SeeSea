@@ -250,9 +250,12 @@ pub fn get_file(url: String, file_path: String, headers: Option<Py<PyAny>>) -> P
         let client = PyNetClient::new()?;
 
         // 处理请求头
-        let request_options = client.process_headers(py, headers)?;
+        let mut request_options = client.process_headers(py, headers)?;
 
-        // 获取HTTP客户端实例
+        // 为大文件下载设置更长的超时时间（5分钟）
+        request_options.timeout = std::time::Duration::from_secs(300);
+
+        // 使用已有的HttpClient，确保使用stream_client进行流式请求
         let http_client = client
             .runtime
             .block_on(async { HttpClient::instance().await })

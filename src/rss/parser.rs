@@ -330,7 +330,6 @@ mod tests {
     #[test]
     fn test_rss_parser_creation() {
         let _parser = RssParser::new();
-
     }
 
     #[test]

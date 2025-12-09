@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -23,7 +23,7 @@ use std::sync::Arc;
 use crate::cache::{CacheImplConfig, CacheInterface, CacheMode};
 
 #[pyclass]
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct PyCacheStats {
     #[pyo3(get)]
     pub hits: u64,
@@ -37,11 +37,7 @@ pub struct PyCacheStats {
 impl PyCacheStats {
     #[new]
     pub fn new() -> Self {
-        Self {
-            hits: 0,
-            misses: 0,
-            size: 0,
-        }
+        Self::default()
     }
 
     pub fn hit_rate(&self) -> f64 {
@@ -51,6 +47,10 @@ impl PyCacheStats {
         } else {
             0.0
         }
+    }
+
+    pub fn miss_rate(&self) -> f64 {
+        1.0 - self.hit_rate()
     }
 }
 

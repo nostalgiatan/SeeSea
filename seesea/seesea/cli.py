@@ -71,8 +71,16 @@ def search(query, pro, page, page_size, limit, json, verbose, engines, count):
         try:
             if pro:
                 # 直接调用本地的 Pro handlers 函数
-                from seesea.handlers.pro import handle_pro_search
+                from seesea.handlers.pro import handle_pro_search, initialize_pro_handlers
                 import asyncio
+
+                # 先初始化配置，确保向量数据库配置能被正确读取
+                from seesea_core import init_config
+
+                init_config("development")
+
+                # 初始化 Pro handlers 和异步工作器
+                asyncio.run(initialize_pro_handlers())
 
                 # 准备请求上下文
                 req = {
@@ -554,18 +562,18 @@ def stats(json):
         stats_table.add_column("统计项", style="bold blue")
         stats_table.add_column("数值", style="bold green")
 
-        stats_table.add_row("总搜索次数", str(stats_data["total_searches"]))
-        stats_table.add_row("缓存命中", str(stats_data["cache_hits"]))
-        stats_table.add_row("缓存未命中", str(stats_data["cache_misses"]))
+        stats_table.add_row("总搜索次数", str(stats_data.total_searches))
+        stats_table.add_row("缓存命中", str(stats_data.cache_hits))
+        stats_table.add_row("缓存未命中", str(stats_data.cache_misses))
 
-        if stats_data["total_searches"] > 0:
-            total_cache = stats_data["cache_hits"] + stats_data["cache_misses"]
+        if stats_data.total_searches > 0:
+            total_cache = stats_data.cache_hits + stats_data.cache_misses
             if total_cache > 0:
-                hit_rate = stats_data["cache_hits"] / total_cache * 100
+                hit_rate = stats_data.cache_hits / total_cache * 100
                 stats_table.add_row("缓存命中率", f"{hit_rate:.1f}%")
 
-        stats_table.add_row("引擎失败", str(stats_data["engine_failures"]))
-        stats_table.add_row("超时次数", str(stats_data["timeouts"]))
+        stats_table.add_row("引擎失败", str(stats_data.engine_failures))
+        stats_table.add_row("超时次数", str(stats_data.timeouts))
 
         console.print(stats_table)
 

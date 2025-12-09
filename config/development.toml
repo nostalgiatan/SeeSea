@@ -328,6 +328,8 @@ include_examples = true
 # 引擎配置
 # =============================================================================
 [engines]
+# 启用的搜索引擎
+enabled = ["baidu"]
 
 # 全局引擎设置
 [engines.global_settings]
@@ -346,18 +348,40 @@ enable_monitoring = true
 # 是否启用性能统计
 performance_stats = true
 
+# 引擎发现配置
+[engines.discovery]
+# 是否启用自动发现
+enabled = true
+# 发现路径
+discovery_paths = ["./engines"]
+# 是否启用热重载
+enable_hot_reload = false
+
+# 健康检查配置
+[engines.health_check]
+# 是否启用健康检查
+enabled = true
+# 检查间隔（秒）
+check_interval = 300
+# 检查超时（秒）
+check_timeout = 10
+# 失败阈值
+failure_threshold = 3
+# 恢复阈值
+recovery_threshold = 2
+
 # =============================================================================
 # 日志配置
 # =============================================================================
 [logging]
 # 日志级别: "error", "warn", "info", "debug", "trace"
-level = "debug"
+level = "info"
 # 日志格式: "simple", "full", "json", "compact"
 format = "full"
 # 日志输出: "stdout", "stderr", "file", "both"
 output = "stdout"
 # 是否启用结构化日志
-structured = false
+structured = true
 # 是否启用彩色输出
 colored = true
 
@@ -392,3 +416,84 @@ similarity_threshold = 0.75
 max_results_per_query = 50
 # 是否启用跨查询去重
 enable_deduplication = true
+
+# =============================================================================
+# 向量数据库配置
+# =============================================================================
+[vector_store]
+# 是否启用向量数据库
+enabled = true
+# 向量数据库类型
+provider = "Qdrant"
+# 向量维度
+dimension = 1536
+# 集合名称
+collection_name = "seesea_pro"
+# 距离度量
+distance = "Cosine"
+# 日志级别
+log_level = "info"
+
+# Qdrant 特定配置
+[vector_store.qdrant]
+# Qdrant 服务器 URL
+url = "http://localhost:6334"
+# API 密钥
+api_key = ""
+# 使用 TLS
+use_tls = false
+# GRPC 端口
+grpc_port = 6334
+# REST 端口
+rest_port = 6333
+# 超时时间（秒）
+timeout = 30
+# 最大重试次数
+max_retries = 3
+
+# 向量数据库缓存配置
+[vector_store.cache]
+# 是否启用缓存
+enabled = true
+# 缓存 TTL（秒）
+ttl = 3600
+# 最大缓存大小
+max_size = 1073741824  # 1GB
+# 缓存作用域
+scope = "vector"
+# 缓存路径
+cache_path = ".seesea/vector_cache"
+
+# 动态调整配置
+[vector_store.dynamic_adjustment]
+# 是否启用动态调整
+enabled = false
+# 最小批次大小
+min_batch_size = 10
+# 最大批次大小
+max_batch_size = 100
+# 最小删除批次大小
+min_delete_batch_size = 10
+# 最大删除批次大小
+max_delete_batch_size = 50
+# 批次大小调整阈值
+batch_size_adjustment_threshold = 50
+# HNSW 参数 m 调整范围
+hnsw_m_range = [10, 48]
+# HNSW 参数 ef_construct 调整范围
+hnsw_ef_construct_range = [100, 500]
+# 是否调整 HNSW 参数
+adjust_hnsw_params = false
+
+# 向量数据库统计信息配置
+[vector_store.stats]
+# 是否启用统计信息收集
+enabled = false
+# 统计信息收集间隔（秒）
+collection_interval = 3600
+# 统计信息保留时间（天）
+retention_days = 30
+# 是否启用实时统计
+realtime = false
+# 是否启用趋势分析
+enable_trend_analysis = false
