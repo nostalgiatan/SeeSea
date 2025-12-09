@@ -267,11 +267,11 @@ class LocalLLM(LLMBase):
 
             # 处理不同类型的输出
             if isinstance(output, dict) and "choices" in output:
-                return output["choices"][0]["text"].strip()
+                return str(output["choices"][0]["text"]).strip()
             # 处理迭代器类型输出
             for item in output:
                 if isinstance(item, dict) and "choices" in item:
-                    return item["choices"][0]["text"].strip()
+                    return str(item["choices"][0]["text"]).strip()
             return ""
         except Exception as e:
             raise RuntimeError(f"本地LLM生成文本失败: {str(e)}") from e
