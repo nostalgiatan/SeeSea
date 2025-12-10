@@ -1,23 +1,11 @@
 #!/usr/bin/env python3
 """
-SeeSea Lindef run_command(cmd, cwd=None, shell=True, show_progress=True):
-    """Run a command with user-friendly progress display"""
-    if show_progress:
-        print(f"\n🔧 Running: {cmd[:80]}..." if len(cmd) > 80 else f"🔧 Running: {cmd}")
-    
-    # Don't capture output to show real-time pip progress
-    result = subprocess.run(cmd, cwd=cwd, shell=shell, executable='/bin/bash', text=True)
-    if result.returncode != 0:
-        print(f"❌ Command failed with exit code {result.returncode}")
-        sys.exit(1)
-    if show_progress:
-        print(f"✅ Done")
-    return resultcript
+SeeSea Linux Installer Script
 Module Name: linux.py
 Responsibility: Handle SeeSea installation on Linux platform
 Expected Implementation: Extract and install SeeSea packages with dependencies
 Implemented Features: zstandard decompression, whl reconstruction, dependency installation, virtual environment setup
-Usage Dependencies: Python 3.10-3.12, zstandard
+Usage Dependencies: Python 3.10-3.14, zstandard
 Main Interfaces: Command-line interface with install/update/uninstall commands
 Note: This script is generated during release process, do not edit manually
 """
@@ -349,12 +337,25 @@ def main(command):
         
     else:
         print(f"\n❌ Error: Unknown command '{command}'")
-        print("\nUsage: linux.py [install|update|uninstall]")
+        print("\nUsage: python linux.py [install|update|uninstall]")
+        print("\nCommands:")
+        print("  install    - Install SeeSea")
+        print("  update     - Update SeeSea to latest version")
+        print("  uninstall  - Remove SeeSea from system")
         sys.exit(1)
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: linux.py [install|update|uninstall]")
+        print("\n" + "="*60)
+        print("🌊 SeeSea Linux Installer")
+        print("="*60)
+        print("\nUsage: python linux.py [install|update|uninstall]")
+        print("\nCommands:")
+        print("  install    - Install SeeSea")
+        print("  update     - Update SeeSea to latest version")
+        print("  uninstall  - Remove SeeSea from system")
+        print("="*60 + "\n")
         sys.exit(1)
+    
     main(sys.argv[1])

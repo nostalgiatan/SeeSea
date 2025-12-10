@@ -102,7 +102,8 @@ def install_dependencies():
     
     # Install zstandard first for decompression
     print("\n[1/5] Installing zstandard...")
-    run_command(f"{get_pip_prefix()} pip install zstandard")
+    run_command(f"{get_pip_prefix()} pip install zstandard", show_progress=False)
+    print("✅ zstandard installed")
     
     # Now import zstandard after installation
     global zstandard
@@ -111,85 +112,26 @@ def install_dependencies():
     # Install requirements
     if requirements:
         print("\n[2/5] Installing Python packages...")
-        run_command(f"{get_pip_prefix()} pip install {' '.join(requirements)}")
+        run_command(f"{get_pip_prefix()} pip install {' '.join(requirements)}", show_progress=False)
+        print("✅ Python packages installed")
     
     # Special handling for playwright
-    print("\n[3/5] Installing Playwright...")
-    run_command(f"{get_pip_prefix()} pip install playwright")
+    print("\n[3/5] Installing playwright...")
+    run_command(f"{get_pip_prefix()} pip install playwright", show_progress=False)
+    print("✅ playwright installed")
     
-    print("\n[4/5] Installing Chromium browser (this may take a while)...")
-    run_command(f"{get_pip_prefix()} playwright install chromium")
-    run_command(f"{get_pip_prefix()} playwright install-deps")
+    print("\n[4/5] Installing Chromium browser...")
+    run_command(f"{get_pip_prefix()} playwright install chromium", show_progress=False)
+    run_command(f"{get_pip_prefix()} playwright install-deps", show_progress=False)
+    print("✅ Chromium browser installed")
     
     # Special handling for crawl4ai - only run setup, installation is already in requirements
-    print("\n[5/5] Setting up Crawl4AI...")
-    run_command(f"{get_pip_prefix()} crawl4ai-setup")
-
-
-def ask_install_pro():
-    """Ask user whether to install Pro features"""
-    print("\n" + "="*60)
-    print("🚀 Pro Features (Optional)")
-    print("="*60)
-    print("Pro features include:")
-    print("  • Local LLM support with llama-cpp-python")
-    print("  • Qwen3-Embedding-0.6B model for semantic search")
-    print("  • Enhanced AI capabilities")
-    print("\n⚠️  Note: This will download ~2GB of additional data")
-    print("="*60)
-    
-    while True:
-        response = input("\nInstall Pro features? (y/N): ").strip().lower()
-        if response in ['n', 'no', '']:
-            print("⏭️  Skipping Pro features installation")
-            return False
-        elif response in ['y', 'yes']:
-            break
-        else:
-            print("❌ Invalid input. Please enter Y or N.")
-    
-    # Ask for installation method
-    print("\n" + "="*60)
-    print("📦 llama-cpp-python Installation Method")
-    print("="*60)
-    print("Choose installation method:")
-    print("  [1] Pre-built package (Faster, CPU only)")
-    print("  [2] Local compilation (Slower, optimized for your system)")
-    print("="*60)
-    
-    while True:
-        choice = input("\nYour choice (1/2): ").strip()
-        if choice == '1':
-            print("✅ Will use pre-built package")
-            return 'prebuilt'
-        elif choice == '2':
-            print("✅ Will compile locally")
-            return 'compile'
-        else:
-            print("❌ Invalid input. Please enter 1 or 2.")
-
-
-def install_pro_features(method):
-    """Install Pro features including LLM support"""
-    print("\n" + "="*60)
-    print("🚀 Installing Pro Features...")
-    print("="*60)
-    
-    if method == 'prebuilt':
-        print("\n[1/2] Installing llama-cpp-python (pre-built)...")
-        run_command(f"{get_pip_prefix()} pip install llama-cpp-python --index-url https://abetlen.github.io/llama-cpp-python/whl/cpu")
-    else:  # compile
-        print("\n[1/2] Installing llama-cpp-python (compiling locally, this may take 10-20 minutes)...")
-        run_command(f"{get_pip_prefix()} pip install llama-cpp-python")
-    
-    print("\n[2/2] Downloading Qwen3-Embedding-0.6B model...")
-    print("📥 This will download approximately 1.5GB of model data...")
-    # The actual model download will be handled by SeeSea on first run
-    print("✅ Pro features installation complete!")
-    print("💡 Model will be downloaded automatically on first use")
+    print("\n[5/5] Setting up crawl4ai...")
+    run_command(f"{get_pip_prefix()} crawl4ai-setup", show_progress=False)
+    print("✅ crawl4ai configured")
     
     print("\n" + "="*60)
-    print("✨ Pro Features Ready!")
+    print("🎉 All dependencies installed!")
     print("="*60)
 
 
@@ -231,10 +173,12 @@ def install_seesea():
     
     # Install whl files
     print("\n[3/4] Installing seesea-core...")
-    run_command(f"{get_pip_prefix()} pip install {seesea_core_path}")
+    run_command(f"{get_pip_prefix()} pip install {seesea_core_path}", show_progress=False)
+    print("✅ seesea-core installed")
     
     print("\n[4/4] Installing seesea...")
-    run_command(f"{get_pip_prefix()} pip install {seesea_path}")
+    run_command(f"{get_pip_prefix()} pip install {seesea_path}", show_progress=False)
+    print("✅ seesea installed")
     
     # Create symlink to /usr/local/bin (only for venv mode)
     if USE_VENV:
@@ -294,21 +238,15 @@ def main(command):
         # Ask about virtual environment first
         ask_use_venv()
         
-        print("\n[Step 1/4] Setting up environment...")
+        print("\n[Step 1/3] Setting up environment...")
         setup_environment()
         print("✅ Environment ready")
         
-        print("\n[Step 2/4] Installing dependencies...")
+        print("\n[Step 2/3] Installing dependencies...")
         install_dependencies()
         
-        print("\n[Step 3/4] Installing SeeSea...")
+        print("\n[Step 3/3] Installing SeeSea...")
         install_seesea()
-        
-        # Ask about Pro features
-        print("\n[Step 4/4] Optional Pro features...")
-        pro_method = ask_install_pro()
-        if pro_method:
-            install_pro_features(pro_method)
         
         print("\n" + "="*60)
         print("✨ Installation Complete! ✨")
@@ -333,12 +271,25 @@ def main(command):
         
     else:
         print(f"\n❌ Error: Unknown command '{command}'")
-        print("\nUsage: macos.py [install|update|uninstall]")
+        print("\nUsage: python macos.py [install|update|uninstall]")
+        print("\nCommands:")
+        print("  install    - Install SeeSea")
+        print("  update     - Update SeeSea to latest version")
+        print("  uninstall  - Remove SeeSea from system")
         sys.exit(1)
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: macos.py [install|update|uninstall]")
+        print("\n" + "="*60)
+        print("🌊 SeeSea macOS Installer")
+        print("="*60)
+        print("\nUsage: python macos.py [install|update|uninstall]")
+        print("\nCommands:")
+        print("  install    - Install SeeSea")
+        print("  update     - Update SeeSea to latest version")
+        print("  uninstall  - Remove SeeSea from system")
+        print("="*60 + "\n")
         sys.exit(1)
+    
     main(sys.argv[1])
