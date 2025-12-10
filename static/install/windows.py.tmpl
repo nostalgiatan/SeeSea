@@ -254,12 +254,25 @@ def update_seesea():
         
     else:
         print(f"\n❌ Error: Unknown command '{command}'")
-        print("\nUsage: windows.py [install|update|uninstall]")
+        print("\nUsage: python windows.py [install|update|uninstall]")
+        print("\nCommands:")
+        print("  install    - Install SeeSea")
+        print("  update     - Update SeeSea to latest version")
+        print("  uninstall  - Remove SeeSea from system")
         sys.exit(1)
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: windows.py [install|update|uninstall]")
+        print("\n" + "="*60)
+        print("🌊 SeeSea Windows Installer")
+        print("="*60)
+        print("\nUsage: python windows.py [install|update|uninstall]")
+        print("\nCommands:")
+        print("  install    - Install SeeSea")
+        print("  update     - Update SeeSea to latest version")
+        print("  uninstall  - Remove SeeSea from system")
+        print("="*60 + "\n")
         sys.exit(1)
+    
     main(sys.argv[1])
