@@ -5,18 +5,18 @@ build-backend = "maturin"
 [project]
 name = "seesea-core"
 version = "2.0.0"
-description = "SeeSea Rust core module - High-performance metasearch engine"
+description = "SeeSea Rust core module - High-performance privacy-focused data aggregation platform"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
-keywords = ["search", "metasearch", "privacy", "rust"]
+license = {text = "AGPL-3.0-or-later"}
+keywords = ["search", "metasearch", "privacy", "rust", "rss", "hot-trends", "ai", "vector-database"]
 authors = [
-    {name = "SeeSea Team"}
+    {name = "SeeSea Team", email = "nostalgiatan@example.com"}
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
@@ -25,6 +25,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Rust",
     "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content :: News/Diary",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
 dependencies = []
@@ -53,8 +55,7 @@ module-name = "seesea_core"
 include = [
     "rss/template/*.see",  # RSS模板文件
     "static/html/*",
-    "static/html/**/*",
-    "static/app/**/*"  # 前端SPA构建产物
+    "static/html/**/*"
 ]
 
 [tool.black]

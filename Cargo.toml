@@ -4,11 +4,11 @@ name = "SeeSea"
 version = "2.0.1"
 edition = "2024"
 
-description = "SeeSea - A privacy-focused metasearch engine"
+description = "SeeSea - A privacy-focused data aggregation platform with search, RSS, hot trends, and AI enhancement"
 
-keywords = ["search", "metasearch", "rust", "privacy", "tor", "proxy", "python"]
+keywords = ["search", "metasearch", "rust", "privacy", "tor", "proxy", "python", "rss", "ai"]
 
-license = "MIT"
+license = "AGPL-3.0-or-later"
 readme = "README.md"
 
 [lib]

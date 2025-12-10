@@ -140,30 +140,6 @@ jobs:
         python -m build --wheel
         cp dist/*.whl ../building/
 
-    - name: Build markitdown Python package
-      working-directory: ./crates/markitdown
-      shell: bash
-      run: |
-        python -m pip install -e .
-        python -m build --wheel
-        cp dist/*.whl ../../building/
-
-    - name: Build tf_rust Python package
-      working-directory: ./crates/tf
-      shell: bash
-      run: |
-        python -m pip install -e .
-        maturin build --release --strip
-        cp target/wheels/*.whl ../../building/
-
-    - name: Build tf Python package
-      working-directory: ./crates/tf/tf
-      shell: bash
-      run: |
-        python -m pip install -e .
-        python -m build --wheel
-        cp dist/*.whl ../../../building/
-
     - name: Install build dependencies
       run: |
         python -m pip install --upgrade pip

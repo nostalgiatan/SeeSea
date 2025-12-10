@@ -1,16 +1,133 @@
 SeeSea
 Copyright 2025 nostalgiatan
 
-This product includes software developed at SeeSea (https://github.com/nostalgiatan/SeeSea).
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published
+by the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
 
-    http://www.apache.org/licenses/LICENSE-2.0
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+---
+
+ADDITIONAL TERMS (Under AGPL-3.0 Section 7)
+
+1. Trademark Protection: The name "SeeSea" and associated logos may not 
+   be used for promotional purposes without explicit written permission.
+
+2. Contributor Attribution: All derivative works must retain attribution 
+   to original contributors.
+
+3. Enhanced Disclaimer: This software is provided "AS IS" without any 
+   warranties. Users are solely responsible for any legal consequences 
+   arising from using this software for search, data scraping, or other 
+   activities. The authors and contributors are not liable for any direct 
+   or indirect damages resulting from the use of this software.
+
+4. Service Termination: Your rights to use this software terminate 
+   automatically if you violate the AGPL-3.0 license terms.
+
+---
+
+DISCLAIMER OF WARRANTY
+
+THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
+APPLICABLE LAW. THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES PROVIDE
+THE PROGRAM "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED
+OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK
+AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU.
+
+SPECIFIC DISCLAIMERS:
+
+1. Service Availability: No guarantees are made regarding the continuous
+   availability of any search engines, RSS feeds, or hot trend platforms.
+
+2. Data Accuracy: No warranties are provided for the accuracy, completeness,
+   or timeliness of data obtained through search, RSS, or hot trends.
+
+3. Legal Compliance: Users are responsible for ensuring their use complies
+   with applicable laws, including but not limited to data scraping laws,
+   privacy regulations, copyright laws, and cybersecurity laws.
+
+4. Third-Party Services: Integrated third-party services are managed by
+   their respective providers. Users must comply with their terms of service.
+
+5. Privacy Tools: The effectiveness of privacy protection tools (Tor, proxies,
+   etc.) depends on correct configuration and usage. No guarantees are made.
+
+6. AI Features: LLM and vector database results may be inaccurate and should
+   not be relied upon as the sole basis for critical decisions.
+
+---
+
+THIRD-PARTY SOFTWARE
+
+This product includes the following third-party software components:
+
+Rust Ecosystem:
+- Rust Standard Library (MIT/Apache-2.0)
+- Tokio (MIT) - https://tokio.rs
+- Axum (MIT) - https://github.com/tokio-rs/axum
+- Sled (MIT/Apache-2.0) - https://github.com/spacejam/sled
+- Reqwest (MIT/Apache-2.0) - https://github.com/seanmonstar/reqwest
+- Serde (MIT/Apache-2.0) - https://serde.rs
+- PyO3 (Apache-2.0/MIT) - https://pyo3.rs
+
+Python Ecosystem:
+- Playwright (Apache-2.0) - https://playwright.dev
+- Crawl4AI (Apache-2.0) - https://github.com/unclecode/crawl4ai
+- OpenAI Python SDK (MIT) - https://github.com/openai/openai-python
+- llama-cpp-python (MIT) - https://github.com/abetlen/llama-cpp-python
+
+Vector Database:
+- Qdrant Client (Apache-2.0) - https://qdrant.tech
+
+Frontend:
+- Svelte (MIT) - https://svelte.dev
+- SvelteKit (MIT) - https://kit.svelte.dev
+- TailwindCSS (MIT) - https://tailwindcss.com
+
+For a complete list of dependencies, see:
+- Cargo.toml (Rust dependencies)
+- pyproject.toml (Python dependencies)
+- server/package.json (Frontend dependencies)
+
+All third-party software is used under their respective licenses.
+
+---
+
+DATA SOURCES
+
+This software integrates with various data sources:
+
+Search Engines:
+- Bing (Microsoft Corporation)
+- Baidu (Baidu, Inc.)
+- Sogou (Sogou, Inc.)
+- Yandex (Yandex LLC)
+- And others
+
+Hot Trends API:
+- newsnow.busiyi.world
+
+Users must comply with the terms of service of these data providers.
+
+---
+
+CONTACT
+
+For questions regarding this notice or the license:
+- GitHub: https://github.com/nostalgiatan/SeeSea
+- Email: nostalgiatan@example.com
+
+---
+
+This NOTICE file is part of SeeSea and is licensed under AGPL-3.0.
+
