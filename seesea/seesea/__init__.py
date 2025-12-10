@@ -28,6 +28,7 @@ SeeSea 是一个基于 Rust 的高性能隐私保护型元搜索引擎，通过 
 - 完整的 REST API 服务器
 - 隐私保护（无追踪、支持代理）
 - 类型安全（Python dataclass 对象）
+- Pro 功能（可选）: LLM 支持、向量数据库、语义搜索
 
 快速开始：
     >>> from seesea import SearchClient, RssClient
@@ -55,6 +56,26 @@ SeeSea 是一个基于 Rust 的高性能隐私保护型元搜索引擎，通过 
     >>> from seesea import BrowserEngineClient, BrowserConfig
     >>> config = BrowserConfig(headless=True, stealth=True)
     >>> browser_client = BrowserEngineClient(config)
+    >>>
+    >>> # API Server with Pro features (可选)
+    >>> from seesea import ApiServer
+    >>> # 默认不启用 Pro 功能
+    >>> server = ApiServer(host="127.0.0.1", port=8080)
+    >>> # 启用 Pro 功能 (需要安装 llama-cpp-python)
+    >>> server = ApiServer(host="127.0.0.1", port=8080, enable_pro=True)
+    >>> server.start()
+
+Pro 功能 (可选):
+    Pro 功能包括高级的 LLM 和向量搜索能力，需要额外的依赖：
+
+    安装方式:
+    1. 预编译包 (推荐，快速):
+       pip install llama-cpp-python --index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+
+    2. 本地编译 (针对系统优化):
+       pip install llama-cpp-python
+
+    注意: Pro 功能默认不启用，避免自动下载模型。使用 enable_pro=True 显式启用。
 """
 
 __version__ = "2.0.0"

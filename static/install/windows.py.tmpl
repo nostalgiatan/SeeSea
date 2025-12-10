@@ -15,7 +15,6 @@ import os
 import tempfile
 import shutil
 import subprocess
-import zstandard
 import io
 from pathlib import Path
 
@@ -29,6 +28,11 @@ bin_seesea_core = {{ bin_seesea_core }}
 # Template requirements list
 import json
 requirements = json.loads('{{ requirements }}')
+
+# Global variables
+INSTALL_DIR = os.path.join(os.environ.get('PROGRAMDATA', 'C:\\ProgramData'), 'SeeSea')
+VENV_DIR = os.path.join(INSTALL_DIR, 'venv')
+USE_VENV = None  # Will be set by user choice
 
 
 def run_command(cmd, cwd=None, shell=True, show_progress=True):
@@ -47,6 +51,52 @@ def run_command(cmd, cwd=None, shell=True, show_progress=True):
     return result
 
 
+def ask_use_venv():
+    """Ask user whether to use virtual environment"""
+    global USE_VENV
+    print("\n" + "="*60)
+    print("🤔 Virtual Environment Setup")
+    print("="*60)
+    print("Do you want to use a virtual environment?")
+    print("  [Y] Yes - Install in isolated environment (Recommended)")
+    print("  [N] No  - Install globally (Requires admin privileges)")
+    print("="*60)
+    
+    while True:
+        response = input("\nYour choice (Y/n): ").strip().lower()
+        if response in ['', 'y', 'yes']:
+            USE_VENV = True
+            print("✅ Will use virtual environment")
+            break
+        elif response in ['n', 'no']:
+            USE_VENV = False
+            print("✅ Will install globally")
+            break
+        else:
+            print("❌ Invalid input. Please enter Y or N.")
+
+
+def setup_environment():
+    """Setup installation environment"""
+    if USE_VENV:
+        # Create install directory
+        os.makedirs(INSTALL_DIR, exist_ok=True)
+        
+        # Create virtual environment
+        print("\n📦 Creating virtual environment...")
+        run_command(f"python -m venv {VENV_DIR}", show_progress=False)
+        print("✅ Virtual environment created")
+
+
+def get_pip_prefix():
+    """Return pip command prefix based on venv choice"""
+    if USE_VENV:
+        # Windows activation uses .bat file
+        activate_script = os.path.join(VENV_DIR, 'Scripts', 'activate.bat')
+        return f"{activate_script} && "
+    return ""
+
+
 def decompress_whl(compressed_data, output_path):
     """Decompress zstandard compressed whl file"""
     dctx = zstandard.ZstdDecompressor()
@@ -56,39 +106,98 @@ def decompress_whl(compressed_data, output_path):
 
 def install_dependencies():
     """Install dependencies"""
+    print("\n" + "="*60)
+    print("📦 Installing Dependencies...")
+    print("="*60)
+    
+    # Install zstandard first for decompression
+    print("\n[1/5] Installing zstandard for decompression...")
+    run_command(f"{get_pip_prefix()}pip install zstandard", show_progress=False)
+    print("✅ zstandard installed")
+    
+    # Now import zstandard after installation
+    global zstandard
+    import zstandard
+    
     # Install requirements
     if requirements:
-        run_command(f"pip install {' '.join(requirements)}")
+        print(f"\n[2/5] Installing Python packages ({len(requirements)} packages)...")
+        run_command(f"{get_pip_prefix()}pip install {' '.join(requirements)}", show_progress=False)
+        print("✅ Python packages installed")
     
     # Special handling for playwright
-    run_command("pip install playwright")
-    run_command("playwright install chromium")
+    print("\n[3/5] Installing playwright...")
+    run_command(f"{get_pip_prefix()}pip install playwright", show_progress=False)
+    print("✅ playwright installed")
+    
+    print("\n[4/5] Installing Chromium browser...")
+    run_command(f"{get_pip_prefix()}playwright install chromium", show_progress=False)
+    print("✅ Chromium browser installed")
     
     # Special handling for crawl4ai - only run setup, installation is already in requirements
-    run_command("crawl4ai-setup")
+    print("\n[5/5] Setting up crawl4ai...")
+    run_command(f"{get_pip_prefix()}crawl4ai-setup", show_progress=False)
+    print("✅ crawl4ai configured")
+
+
+def decompress_whl(compressed_data, output_path):
+    """Decompress zstandard compressed whl file"""
+    dctx = zstandard.ZstdDecompressor()
+    with open(output_path, 'wb') as f:
+        dctx.copy_stream(compressed_data, f)
 
 
 def install_seesea():
     """Install SeeSea packages"""
+    print("\n" + "="*60)
+    print("📦 Installing SeeSea...")
+    print("="*60)
+    
     # Create temporary directory
-    with tempfile.TemporaryDirectory() as tmpdir:
-        print(f"Working in temporary directory: {tmpdir}")
-        
+    work_dir = INSTALL_DIR if USE_VENV else tempfile.mkdtemp()
+    if not USE_VENV:
+        print(f"\n[1/5] Working in temporary directory: {work_dir}")
+    else:
+        print(f"\n[1/5] Working in installation directory: {work_dir}")
+    
+    try:
         # Decompress whl files using BytesIO streams
-        seesea_path = os.path.join(tmpdir, metadata['seesea_filename'])
-        seesea_core_path = os.path.join(tmpdir, metadata['seesea_core_filename'])
+        seesea_path = os.path.join(work_dir, metadata['seesea_filename'])
+        seesea_core_path = os.path.join(work_dir, metadata['seesea_core_filename'])
         
         # Create BytesIO streams from compressed data
         seesea_stream = io.BytesIO(bin_seesea)
         seesea_core_stream = io.BytesIO(bin_seesea_core)
         
         # Decompress whl files
+        print("\n[2/5] Decompressing seesea-core package...")
         decompress_whl(seesea_stream, seesea_path)
+        print("✅ seesea-core decompressed")
+        
+        print("\n[3/5] Decompressing seesea package...")
         decompress_whl(seesea_core_stream, seesea_core_path)
+        print("✅ seesea decompressed")
         
         # Install whl files
-        run_command(f"pip install {seesea_core_path}")
-        run_command(f"pip install {seesea_path}")
+        print("\n[4/5] Installing seesea-core...")
+        run_command(f"{get_pip_prefix()}pip install {seesea_core_path}", show_progress=False)
+        print("✅ seesea-core installed")
+        
+        print("\n[5/5] Installing seesea...")
+        run_command(f"{get_pip_prefix()}pip install {seesea_path}", show_progress=False)
+        print("✅ seesea installed")
+    finally:
+        # Clean up temp directory if not using venv
+        if not USE_VENV and work_dir != INSTALL_DIR:
+            shutil.rmtree(work_dir, ignore_errors=True)
+        
+        print("\n[5/5] Installing seesea...")
+        run_command(f"pip install {seesea_path}", show_progress=False)
+        print("✅ seesea installed")
+    
+    print("\n" + "="*60)
+    print("🎉 SeeSea installed successfully!")
+    print("="*60)
 
 
 def uninstall_seesea():
@@ -98,27 +207,55 @@ def uninstall_seesea():
 
 def update_seesea():
     """Update SeeSea"""
-    # For update, we just reinstall
-    uninstall_seesea()
-    install_seesea()
-
-
-def main(command):
-    """Main function"""
-    print(f"SeeSea Windows Installer - {command}")
+    print("="*60)
     
     if command == 'install':
+        # Ask about virtual environment first
+        ask_use_venv()
+        
+        print("\n[Step 1/4] Setting up environment...")
+        setup_environment()
+        print("✅ Environment ready")
+        
+        print("\n[Step 2/4] Installing dependencies...")
         install_dependencies()
+        
+        print("\n[Step 3/4] Installing SeeSea...")
         install_seesea()
+        
+        # Ask about Pro features
+        print("\n[Step 4/4] Optional Pro features...")
+        pro_method = ask_install_pro()
+        if pro_method:
+            install_pro_features(pro_method)
+        
+        print("\n" + "="*60)
+        print("✨ Installation Complete! ✨")
+        print("="*60)
+        print("\n📚 Quick Start:")
+        print("  seesea --help")
+        print("\n🔧 Configuration:")
+        print(f"  Config file: %USERPROFILE%\\.seesea\\config.toml")
+        print("\n📖 Documentation:")
+        print("  https://github.com/zwtesttt/SeeSea")
+        print("="*60 + "\n")
+        print("  https://github.com/zwtesttt/SeeSea")
+        print("="*60 + "\n")
+        
     elif command == 'update':
+        print("\n🔄 Updating SeeSea...")
         update_seesea()
+        print("\n✅ Update completed successfully!")
+        
     elif command == 'uninstall':
+        print("\n🗑️  Uninstalling SeeSea...")
         uninstall_seesea()
+        print("\n✅ Uninstall completed successfully!")
+        
     else:
-        print(f"Error: Unknown command {command}")
+        print(f"\n❌ Error: Unknown command '{command}'")
+        print("\nUsage: windows.py [install|update|uninstall]")
         sys.exit(1)
-    
-    print("Operation completed successfully!")
 
 
 if __name__ == "__main__":

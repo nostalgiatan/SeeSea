@@ -70,33 +70,39 @@ def search(query, pro, page, page_size, limit, json, verbose, engines, count):
 
         try:
             if pro:
-                # 直接调用本地的 Pro handlers 函数
-                from seesea.handlers.pro import handle_pro_search, initialize_pro_handlers
-                import asyncio
+                # Pro 功能需要显式启用才会加载
+                try:
+                    # 直接调用本地的 Pro handlers 函数
+                    from seesea.handlers.pro import handle_pro_search, initialize_pro_handlers
+                    import asyncio
 
-                # 先初始化配置，确保向量数据库配置能被正确读取
-                from seesea_core import init_config
+                    from seesea_core import init_config
 
-                init_config("development")
+                    init_config("development")
 
-                # 初始化 Pro handlers 和异步工作器
-                asyncio.run(initialize_pro_handlers())
+                    asyncio.run(initialize_pro_handlers())
 
-                # 准备请求上下文
-                req = {
-                    "path": "/search",
-                    "method": "GET",
-                    "query_params": {"q": query, "page": page, "page_size": page_size},
-                    "body": {},
-                }
+                    req = {
+                        "path": "/search",
+                        "method": "GET",
+                        "query_params": {"q": query, "page": page, "page_size": page_size},
+                        "body": {},
+                    }
 
-                # 调用异步函数
-                response = asyncio.run(handle_pro_search(req))
+                    response = asyncio.run(handle_pro_search(req))
 
-                # 解析响应体
-                import json
+                    import json
 
-                results_dict = json.loads(response.get("body", "{}"))
+                    results_dict = json.loads(response.get("body", "{}"))
+                except ImportError as e:
+                    console.print(f"[red]❌ Pro features not available: {e}[/red]")
+                    console.print("[yellow]Install Pro dependencies:[/yellow]")
+                    console.print("  pip install llama-cpp-python")
+                    console.print("[yellow]Or use pre-built package:[/yellow]")
+                    console.print(
+                        "  pip install llama-cpp-python --index-url https://abetlen.github.io/llama-cpp-python/whl/cpu"
+                    )
+                    return
 
                 # 模拟 SearchResponse 对象结构
                 class ProSearchResponse:
@@ -497,61 +503,125 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
 @click.option("--host", default=None, help="监听地址 (默认: 配置文件中的地址)")
 @click.option("--port", type=int, default=None, help="监听端口 (默认: 配置文件中的端口)")
 @click.option("-c", "--config", default=None, help="配置文件路径")
-def server(host, port, config):
+@click.option("--pro", is_flag=True, help="启用 Pro 功能 (LLM、向量搜索等)")
+def server(host, port, config, pro):
     """启动 API 服务器"""
     # 使用默认值或配置文件中的值
     default_host = host if host is not None else "127.0.0.1"
     default_port = port if port is not None else 8080
 
-    server_info = Table(box=box.ROUNDED)
-    server_info.add_column("属性", style="bold green")
-    server_info.add_column("值")
-    server_info.add_row("服务", "SeeSea API 服务器")
-    server_info.add_row("地址", f"{default_host}:{default_port}")
-    server_info.add_row("搜索端点", f"GET/POST http://{default_host}:{default_port}/api/search")
-    server_info.add_row("健康检查", f"GET http://{default_host}:{default_port}/api/health")
-    server_info.add_row("统计信息", f"GET http://{default_host}:{default_port}/api/stats")
-    if config:
-        server_info.add_row("配置文件", config)
+    # 显示启动前的配置信息
+    server_info = Table(box=box.ROUNDED, show_header=False)
+    server_info.add_column("属性", style="cyan bold", width=20)
+    server_info.add_column("值", style="white")
 
-    console.print(Panel(server_info, title="API服务器信息", border_style="green"))
-    console.print("\n服务器启动中... 按Ctrl+C停止\n")
+    server_info.add_row("📡 服务", "SeeSea API 服务器")
+    server_info.add_row("🌐 监听地址", f"{default_host}:{default_port}")
+
+    # Pro 功能状态显示
+    if pro:
+        pro_status = "[bold green]✅ 已启用[/bold green]"
+        pro_features = "LLM 分析、向量搜索、语义缓存"
+    else:
+        pro_status = "[bold yellow]⚠️  未启用[/bold yellow]"
+        pro_features = "使用 --pro 参数启用"
+
+    server_info.add_row("⚡ Pro 功能", pro_status)
+    server_info.add_row("   功能详情", f"[dim]{pro_features}[/dim]")
+
+    if config:
+        server_info.add_row("⚙️  配置文件", config)
+
+    console.print(
+        Panel(
+            server_info,
+            title="[bold white]🚀 API 服务器配置[/bold white]",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+    )
+
+    if pro:
+        console.print("  [dim]提示: Pro 功能需要额外的依赖和模型,首次使用时会自动下载[/dim]\n")
+    else:
+        console.print("  [dim]提示: 使用 'seesea server --pro' 启用 LLM 和向量搜索功能[/dim]\n")
+
+    console.print("[bold green]⏳ 服务器启动中...[/bold green] [dim]按 Ctrl+C 停止[/dim]\n")
 
     try:
         # 如果提供了配置文件，传递给ApiServer，不传递host和port
         if config:
             # 使用配置文件时，不传递host和port，让ApiServer自己从配置文件中获取
-            api_server = ApiServer(config_file=config)
+            api_server = ApiServer(config_file=config, enable_pro=pro)
         else:
             # 没有配置文件时，使用默认值
-            api_server = ApiServer(host=default_host, port=default_port)
+            api_server = ApiServer(host=default_host, port=default_port, enable_pro=pro)
 
         # 获取实际使用的地址
         actual_address = api_server.address
         actual_host, actual_port = actual_address.split(":")
 
-        # 更新显示的服务器信息
-        server_info = Table(box=box.ROUNDED)
-        server_info.add_column("属性", style="bold green")
-        server_info.add_column("值")
-        server_info.add_row("服务", "SeeSea API 服务器")
-        server_info.add_row("地址", f"{actual_host}:{actual_port}")
-        server_info.add_row("搜索端点", f"GET/POST http://{actual_host}:{actual_port}/api/search")
-        server_info.add_row("健康检查", f"GET http://{actual_host}:{actual_port}/api/health")
-        server_info.add_row("统计信息", f"GET http://{actual_host}:{actual_port}/api/stats")
-        if config:
-            server_info.add_row("配置文件", config)
+        # 启动成功后显示详细信息
+        endpoint_table = Table(box=box.SIMPLE, show_header=True, header_style="bold magenta")
+        endpoint_table.add_column("端点", style="cyan", width=30)
+        endpoint_table.add_column("方法", style="yellow", width=10)
+        endpoint_table.add_column("说明", style="white")
 
-        # 重新打印服务器信息
-        console.clear()
-        console.print(Panel(server_info, title="API服务器信息", border_style="green"))
-        console.print("\n服务器启动中... 按Ctrl+C停止\n")
+        endpoint_table.add_row(
+            f"http://{actual_host}:{actual_port}/api/search", "GET/POST", "搜索接口"
+        )
+        endpoint_table.add_row(f"http://{actual_host}:{actual_port}/api/health", "GET", "健康检查")
+        endpoint_table.add_row(f"http://{actual_host}:{actual_port}/api/stats", "GET", "统计信息")
 
+        if pro:
+            endpoint_table.add_row(
+                f"http://{actual_host}:{actual_port}/api/semantic-search",
+                "POST",
+                "[green]语义搜索 (Pro)[/green]",
+            )
+            endpoint_table.add_row(
+                f"http://{actual_host}:{actual_port}/api/analyze",
+                "POST",
+                "[green]LLM 分析 (Pro)[/green]",
+            )
+
+        success_info = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
+        success_info.add_column("", style="white", width=80)
+        success_info.add_row(endpoint_table)
+
+        console.print(
+            Panel(
+                success_info,
+                title="[bold green]✅ 服务器已启动[/bold green]",
+                border_style="green",
+                padding=(1, 2),
+            )
+        )
+
+        if pro:
+            console.print("\n  [bold green]💡 Pro 功能已启用[/bold green]")
+            console.print("  [dim]• LLM 模型会在首次调用时自动加载[/dim]")
+            console.print("  [dim]• 向量数据库已就绪,支持语义搜索[/dim]\n")
+        else:
+            console.print("\n  [bold yellow]💡 当前运行在标准模式[/bold yellow]")
+            console.print("  [dim]• 支持 12+ 搜索引擎聚合[/dim]")
+            console.print("  [dim]• 需要 LLM 功能? 使用 'seesea server --pro'[/dim]\n")
+
+        # 启动服务器
         api_server.start()
     except KeyboardInterrupt:
-        console.print("\n[green]服务器已停止[/green]")
+        # 启动服务器
+        api_server.start()
+    except KeyboardInterrupt:
+        console.print("\n[bold yellow]⏹️  服务器已停止[/bold yellow]")
     except Exception as e:
-        console.print(f"[red]服务器错误: {e}[/red]")
+        console.print(
+            Panel(
+                f"[red]错误: {e}[/red]",
+                title="[bold red]❌ 服务器启动失败[/bold red]",
+                border_style="red",
+            )
+        )
         sys.exit(1)
 
 
