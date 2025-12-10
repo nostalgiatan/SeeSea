@@ -78,6 +78,7 @@ class ApiServer:
         port: Optional[int] = None,
         network_mode: str = "internal",
         config_file: Optional[str] = None,
+        enable_pro: bool = False,
     ):
         """
         初始化 API 服务器
@@ -87,6 +88,9 @@ class ApiServer:
             port: 监听端口
             network_mode: 网络模式 - "internal"（内网）, "external"（外网）, 或 "dual"（双模式）
             config_file: 配置文件路径
+            enable_pro: 是否启用 Pro 功能（默认: False）
+                       启用后会加载 LLM、向量数据库等高级功能
+                       ⚠️  注意: 首次启用会下载 ~2GB 的模型数据
 
         Raises:
             ValueError: 当 network_mode 不是有效值时
@@ -108,23 +112,33 @@ class ApiServer:
             self.port = port if port is not None else 8080
         self.network_mode = network_mode
         self.config_file = config_file
+        self.enable_pro = enable_pro
 
-        # 初始化Pro API路由和处理器
-        try:
-            from seesea.handlers.pro import add_pro_routes, initialize_pro_handlers
-            import asyncio
+        # 仅在显式启用时初始化Pro API路由和处理器
+        if enable_pro:
+            try:
+                from seesea.handlers.pro import add_pro_routes, initialize_pro_handlers
+                import asyncio
 
-            # 注册Pro路由
-            add_pro_routes(self)
+                # 注册Pro路由
+                add_pro_routes(self)
 
-            # 初始化Pro处理器
-            asyncio.run(initialize_pro_handlers())
-            print("✅ Pro API routes initialized and handlers started")
-        except Exception as e:
-            print(f"⚠️  Failed to initialize Pro API routes: {e}")
-            import traceback
+                # 初始化Pro处理器
+                asyncio.run(initialize_pro_handlers())
+                print("✅ Pro API routes initialized and handlers started")
+            except ImportError as e:
+                print(f"⚠️  Pro features not available: {e}")
+                print("   Install with: pip install llama-cpp-python")
+                print(
+                    "   Or use pre-built: pip install llama-cpp-python --index-url https://abetlen.github.io/llama-cpp-python/whl/cpu"
+                )
+            except Exception as e:
+                print(f"⚠️  Failed to initialize Pro API routes: {e}")
+                import traceback
 
-            print(f"   Detailed error: {traceback.format_exc()}")
+                print(f"   Detailed error: {traceback.format_exc()}")
+        else:
+            print("ℹ️  Pro features disabled. Use enable_pro=True to enable advanced features.")
 
     def start(self):
         """

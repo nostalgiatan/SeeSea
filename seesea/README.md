@@ -8,6 +8,8 @@ SeeSea 是一个基于 Rust 实现的隐私保护型元搜索引擎，支持多�
 
 **🐍 强大的 Python SDK**：SeeSea 提供完整的 Python 绑定，不仅可以使用 Rust 内置引擎，还支持用 Python 编写和注册自定义搜索引擎。Python 引擎与 Rust 引擎无缝集成，可以同时使用任意 Python HTTP 库（requests、httpx、aiohttp）或浏览器自动化工具（Playwright、Selenium）。
 
+**🚀 Pro 功能 (可选)**：提供高级 AI 增强搜索能力，包括本地 LLM、语义搜索、向量数据库等。**默认不启用**，避免自动下载模型和占用资源。详见 [Pro Features 文档](./PRO_FEATURES.md)。
+
 ### 🔍 支持的搜索引擎
 
 SeeSea 精选了 **11个核心搜索引擎**，覆盖通用搜索、百科知识、代码开发等领域：
