@@ -224,9 +224,9 @@ jobs:
       shell: bash
       run: |
         # 为特定目标架构构建
-        maturin build --release --strip --target ${{ matrix.maturin-target }}
+        maturin build --release --strip
         mkdir -p building
-        cp target/${{ matrix.maturin-target }}/wheels/*.whl building/ 2>/dev/null || cp target/wheels/*.whl building/
+        cp target/wheels/*.whl building/ 2>/dev/null || cp target/wheels/*.whl building/
 
     - name: Build seesea Python package
       working-directory: ./seesea
