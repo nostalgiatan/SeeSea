@@ -26,7 +26,7 @@ use crate::search::{SearchConfig, SearchInterface, SearchRequest};
 
 #[pyclass]
 pub struct PySearchClient {
-    runtime: tokio::runtime::Runtime,
+    runtime: Option<tokio::runtime::Runtime>,
     interface: Arc<SearchInterface>,
 }
 
@@ -35,23 +35,44 @@ impl PySearchClient {
     /// 创建搜索客户端
     #[new]
     pub fn new() -> PyResult<Self> {
-        let runtime = tokio::runtime::Runtime::new().map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Failed to create runtime: {e}"
-            ))
-        })?;
+        // 检查当前是否已经存在Tokio运行时
+        match tokio::runtime::Handle::try_current() {
+            // 如果已经存在运行时，使用现有的运行时
+            Ok(handle) => {
+                // 使用现有的运行时执行异步操作
+                let interface = handle
+                    .block_on(async {
+                        SearchInterface::new(SearchConfig::default())
+                            .map_err(|e| format!("Failed to create search interface: {e}"))
+                    })
+                    .map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
 
-        let interface = runtime
-            .block_on(async {
-                SearchInterface::new(SearchConfig::default())
-                    .map_err(|e| format!("Failed to create search interface: {e}"))
-            })
-            .map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
+                Ok(Self {
+                    runtime: None,
+                    interface: Arc::new(interface),
+                })
+            }
+            // 如果不存在运行时，创建新的运行时
+            Err(_) => {
+                let runtime = tokio::runtime::Runtime::new().map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                        "Failed to create runtime: {e}"
+                    ))
+                })?;
 
-        Ok(Self {
-            runtime,
-            interface: Arc::new(interface),
-        })
+                let interface = runtime
+                    .block_on(async {
+                        SearchInterface::new(SearchConfig::default())
+                            .map_err(|e| format!("Failed to create search interface: {e}"))
+                    })
+                    .map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
+
+                Ok(Self {
+                    runtime: Some(runtime),
+                    interface: Arc::new(interface),
+                })
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -100,12 +121,19 @@ impl PySearchClient {
 
         let response = if let EngineMode::Custom(_) = mode {
             // 自定义引擎模式，使用常规搜索
-            self.runtime
-                .block_on(async { self.interface.search(&request).await })
+            match self.runtime.as_ref() {
+                Some(runtime) => runtime.block_on(async { self.interface.search(&request).await }),
+                None => tokio::runtime::Handle::current()
+                    .block_on(async { self.interface.search(&request).await }),
+            }
         } else {
             // 全局模式，使用模式搜索
-            self.runtime
-                .block_on(async { self.interface.search_with_mode(&request, mode).await })
+            match self.runtime.as_ref() {
+                Some(runtime) => runtime
+                    .block_on(async { self.interface.search_with_mode(&request, mode).await }),
+                None => tokio::runtime::Handle::current()
+                    .block_on(async { self.interface.search_with_mode(&request, mode).await }),
+            }
         }
         .map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Search failed: {}", e))
@@ -143,9 +171,11 @@ impl PySearchClient {
     }
 
     pub fn get_stats(&self) -> PyResult<Py<PyAny>> {
-        let stats = self
-            .runtime
-            .block_on(async { self.interface.get_stats().await });
+        let stats = match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { self.interface.get_stats().await }),
+            None => tokio::runtime::Handle::current()
+                .block_on(async { self.interface.get_stats().await }),
+        };
 
         Python::attach(|py| {
             let dict = PyDict::new(py);
@@ -160,13 +190,14 @@ impl PySearchClient {
 
     /// 清除缓存
     pub fn clear_cache(&self) -> PyResult<()> {
-        self.runtime
-            .block_on(async { self.interface.clear_cache().await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Failed to clear cache: {e}"
-                ))
-            })
+        match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { self.interface.clear_cache().await }),
+            None => tokio::runtime::Handle::current()
+                .block_on(async { self.interface.clear_cache().await }),
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to clear cache: {e}"))
+        })
     }
 
     /// 列出可用的搜索引擎
@@ -181,14 +212,14 @@ impl PySearchClient {
 
     /// 健康检查所有引擎
     pub fn health_check(&self) -> PyResult<Py<PyAny>> {
-        let results = self
-            .runtime
-            .block_on(async { self.interface.health_check().await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Health check failed: {e}"
-                ))
-            })?;
+        let results = match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { self.interface.health_check().await }),
+            None => tokio::runtime::Handle::current()
+                .block_on(async { self.interface.health_check().await }),
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Health check failed: {e}"))
+        })?;
 
         Python::attach(|py| {
             let dict = PyDict::new(py);
@@ -254,43 +285,77 @@ impl PySearchClient {
         // 创建回调包装器
         let py_callback = callback.clone_ref(py);
 
-        let response = self
-            .runtime
-            .block_on(async move {
-                self.interface
-                    .search_streaming(&request, move |result, engine_name| {
-                        // 在回调中调用Python函数
-                        Python::attach(|py| {
-                            let result_dict = PyDict::new(py);
-                            let _ = result_dict.set_item("engine", engine_name);
-                            let _ = result_dict.set_item("total_results", result.total_results);
+        let response = match self.runtime.as_ref() {
+            Some(runtime) => {
+                runtime.block_on(async move {
+                    self.interface
+                        .search_streaming(&request, move |result, engine_name| {
+                            // 在回调中调用Python函数
+                            Python::attach(|py| {
+                                let result_dict = PyDict::new(py);
+                                let _ = result_dict.set_item("engine", engine_name);
+                                let _ = result_dict.set_item("total_results", result.total_results);
 
-                            let items: Vec<Py<PyAny>> = result
-                                .items
-                                .iter()
-                                .map(|item| {
-                                    let item_dict = PyDict::new(py);
-                                    let _ = item_dict.set_item("title", &item.title);
-                                    let _ = item_dict.set_item("url", &item.url);
-                                    let _ = item_dict.set_item("content", &item.content);
-                                    let _ = item_dict.set_item("score", item.score);
-                                    item_dict.into_py_any(py).unwrap_or_else(|_| py.None())
-                                })
-                                .collect();
+                                let items: Vec<Py<PyAny>> = result
+                                    .items
+                                    .iter()
+                                    .map(|item| {
+                                        let item_dict = PyDict::new(py);
+                                        let _ = item_dict.set_item("title", &item.title);
+                                        let _ = item_dict.set_item("url", &item.url);
+                                        let _ = item_dict.set_item("content", &item.content);
+                                        let _ = item_dict.set_item("score", item.score);
+                                        item_dict.into_py_any(py).unwrap_or_else(|_| py.None())
+                                    })
+                                    .collect();
 
-                            let _ = result_dict.set_item("items", items);
+                                let _ = result_dict.set_item("items", items);
 
-                            // 调用Python回调
-                            let _ = py_callback.call1(py, (result_dict,));
-                        });
-                    })
-                    .await
-            })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Streaming search failed: {e}"
-                ))
-            })?;
+                                // 调用Python回调
+                                let _ = py_callback.call1(py, (result_dict,));
+                            });
+                        })
+                        .await
+                })
+            }
+            None => {
+                tokio::runtime::Handle::current().block_on(async move {
+                    self.interface
+                        .search_streaming(&request, move |result, engine_name| {
+                            // 在回调中调用Python函数
+                            Python::attach(|py| {
+                                let result_dict = PyDict::new(py);
+                                let _ = result_dict.set_item("engine", engine_name);
+                                let _ = result_dict.set_item("total_results", result.total_results);
+
+                                let items: Vec<Py<PyAny>> = result
+                                    .items
+                                    .iter()
+                                    .map(|item| {
+                                        let item_dict = PyDict::new(py);
+                                        let _ = item_dict.set_item("title", &item.title);
+                                        let _ = item_dict.set_item("url", &item.url);
+                                        let _ = item_dict.set_item("content", &item.content);
+                                        let _ = item_dict.set_item("score", item.score);
+                                        item_dict.into_py_any(py).unwrap_or_else(|_| py.None())
+                                    })
+                                    .collect();
+
+                                let _ = result_dict.set_item("items", items);
+
+                                // 调用Python回调
+                                let _ = py_callback.call1(py, (result_dict,));
+                            });
+                        })
+                        .await
+                })
+            }
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Streaming search failed: {e}"
+            ))
+        })?;
 
         Python::attach(|py| {
             let dict = PyDict::new(py);
@@ -325,9 +390,11 @@ impl PySearchClient {
 
     /// 获取引擎状态信息
     pub fn get_engine_states(&self) -> PyResult<Py<PyAny>> {
-        let states = self
-            .runtime
-            .block_on(async { self.interface.get_engine_states().await });
+        let states = match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { self.interface.get_engine_states().await }),
+            None => tokio::runtime::Handle::current()
+                .block_on(async { self.interface.get_engine_states().await }),
+        };
 
         Python::attach(|py| {
             let dict = PyDict::new(py);
@@ -344,9 +411,13 @@ impl PySearchClient {
 
     /// 获取缓存统计信息
     pub fn get_cache_info(&self) -> PyResult<Py<PyAny>> {
-        let (cache_size, cached_engines) = self
-            .runtime
-            .block_on(async { self.interface.get_engine_cache_stats().await });
+        let (cache_size, cached_engines) = match self.runtime.as_ref() {
+            Some(runtime) => {
+                runtime.block_on(async { self.interface.get_engine_cache_stats().await })
+            }
+            None => tokio::runtime::Handle::current()
+                .block_on(async { self.interface.get_engine_cache_stats().await }),
+        };
 
         Python::attach(|py| {
             let dict = PyDict::new(py);
@@ -358,13 +429,18 @@ impl PySearchClient {
 
     /// 强制刷新特定引擎的缓存
     pub fn invalidate_engine(&self, engine_name: String) -> PyResult<()> {
-        self.runtime
-            .block_on(async { self.interface.invalidate_engine(&engine_name).await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Failed to invalidate engine: {e}"
-                ))
-            })
+        match self.runtime.as_ref() {
+            Some(runtime) => {
+                runtime.block_on(async { self.interface.invalidate_engine(&engine_name).await })
+            }
+            None => tokio::runtime::Handle::current()
+                .block_on(async { self.interface.invalidate_engine(&engine_name).await }),
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to invalidate engine: {e}"
+            ))
+        })
     }
 
     /// 全文搜索 - 搜索网络和数据库（包括历史结果）
@@ -415,14 +491,18 @@ impl PySearchClient {
             include_deepweb: include_deepweb.unwrap_or(false),
         };
 
-        let response = self
-            .runtime
-            .block_on(async { self.interface.search_fulltext(&request).await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Fulltext search failed: {e}"
-                ))
-            })?;
+        let response = match self.runtime.as_ref() {
+            Some(runtime) => {
+                runtime.block_on(async { self.interface.search_fulltext(&request).await })
+            }
+            None => tokio::runtime::Handle::current()
+                .block_on(async { self.interface.search_fulltext(&request).await }),
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Fulltext search failed: {e}"
+            ))
+        })?;
 
         Python::attach(|py| {
             let dict = PyDict::new(py);
@@ -457,9 +537,11 @@ impl PySearchClient {
 
     /// 获取隐私保护统计信息
     pub fn get_privacy_stats(&self) -> PyResult<Py<PyAny>> {
-        let stats_opt = self
-            .runtime
-            .block_on(async { self.interface.get_privacy_stats().await });
+        let stats_opt = match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { self.interface.get_privacy_stats().await }),
+            None => tokio::runtime::Handle::current()
+                .block_on(async { self.interface.get_privacy_stats().await }),
+        };
 
         Python::attach(|py| {
             if let Some(stats) = stats_opt {

@@ -518,13 +518,35 @@ def server(host, port, config):
     console.print("\n服务器启动中... 按Ctrl+C停止\n")
 
     try:
-        # 如果提供了配置文件，传递给ApiServer
+        # 如果提供了配置文件，传递给ApiServer，不传递host和port
         if config:
             # 使用配置文件时，不传递host和port，让ApiServer自己从配置文件中获取
             api_server = ApiServer(config_file=config)
         else:
             # 没有配置文件时，使用默认值
             api_server = ApiServer(host=default_host, port=default_port)
+
+        # 获取实际使用的地址
+        actual_address = api_server.address
+        actual_host, actual_port = actual_address.split(":")
+
+        # 更新显示的服务器信息
+        server_info = Table(box=box.ROUNDED)
+        server_info.add_column("属性", style="bold green")
+        server_info.add_column("值")
+        server_info.add_row("服务", "SeeSea API 服务器")
+        server_info.add_row("地址", f"{actual_host}:{actual_port}")
+        server_info.add_row("搜索端点", f"GET/POST http://{actual_host}:{actual_port}/api/search")
+        server_info.add_row("健康检查", f"GET http://{actual_host}:{actual_port}/api/health")
+        server_info.add_row("统计信息", f"GET http://{actual_host}:{actual_port}/api/stats")
+        if config:
+            server_info.add_row("配置文件", config)
+
+        # 重新打印服务器信息
+        console.clear()
+        console.print(Panel(server_info, title="API服务器信息", border_style="green"))
+        console.print("\n服务器启动中... 按Ctrl+C停止\n")
+
         api_server.start()
     except KeyboardInterrupt:
         console.print("\n[green]服务器已停止[/green]")

@@ -133,7 +133,7 @@ impl PyDataBlock {
 #[pyclass]
 pub struct PyCleaner {
     pub cleaner: Cleaner,
-    runtime: tokio::runtime::Runtime,
+    runtime: Option<tokio::runtime::Runtime>,
 }
 
 #[pymethods]
@@ -141,22 +141,41 @@ impl PyCleaner {
     /// 创建新的清洗器实例
     #[new]
     pub fn new(max_lines_per_block: Option<usize>) -> PyResult<Self> {
-        let runtime = tokio::runtime::Runtime::new().map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Failed to create runtime: {e}"
-            ))
-        })?;
+        // 检查当前是否已经存在Tokio运行时
+        match tokio::runtime::Handle::try_current() {
+            // 如果已经存在运行时，不创建新的运行时
+            Ok(_) => {
+                let cleaner = Cleaner::new(max_lines_per_block.unwrap_or(50));
+                Ok(Self {
+                    cleaner,
+                    runtime: None,
+                })
+            }
+            // 如果不存在运行时，创建新的运行时
+            Err(_) => {
+                let runtime = tokio::runtime::Runtime::new().map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                        "Failed to create runtime: {e}"
+                    ))
+                })?;
 
-        let cleaner = Cleaner::new(max_lines_per_block.unwrap_or(50));
+                let cleaner = Cleaner::new(max_lines_per_block.unwrap_or(50));
 
-        Ok(Self { cleaner, runtime })
+                Ok(Self {
+                    cleaner,
+                    runtime: Some(runtime),
+                })
+            }
+        }
     }
 
     /// 处理文本，返回清洗后的数据块
     pub fn process(&self, text: &str) -> PyResult<Vec<PyDataBlock>> {
-        let (_, blocks) = self
-            .runtime
-            .block_on(async { self.cleaner.process(text, None).await });
+        let (_, blocks) = match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { self.cleaner.process(text, None).await }),
+            None => tokio::runtime::Handle::current()
+                .block_on(async { self.cleaner.process(text, None).await }),
+        };
 
         Ok(blocks
             .into_iter()
@@ -169,13 +188,26 @@ impl PyCleaner {
         // 预先克隆self，避免异步闭包捕获self导致的生命周期问题
         let cleaner = &self.cleaner;
 
-        let results = self.runtime.block_on(async {
-            futures::future::join_all(texts.into_iter().map(|text| {
-                // 创建新的异步任务，确保text的生命周期足够长
-                async move { cleaner.process(&text, None).await }
-            }))
-            .await
-        });
+        let results = match self.runtime.as_ref() {
+            Some(runtime) => {
+                runtime.block_on(async {
+                    futures::future::join_all(texts.into_iter().map(|text| {
+                        // 创建新的异步任务，确保text的生命周期足够长
+                        async move { cleaner.process(&text, None).await }
+                    }))
+                    .await
+                })
+            }
+            None => {
+                tokio::runtime::Handle::current().block_on(async {
+                    futures::future::join_all(texts.into_iter().map(|text| {
+                        // 创建新的异步任务，确保text的生命周期足够长
+                        async move { cleaner.process(&text, None).await }
+                    }))
+                    .await
+                })
+            }
+        };
 
         Ok(results
             .into_iter()
@@ -190,9 +222,11 @@ impl PyCleaner {
 
     /// 处理文本，返回清洗后的上下文
     pub fn process_with_context(&self, text: &str) -> PyResult<String> {
-        let (_, blocks) = self
-            .runtime
-            .block_on(async { self.cleaner.process(text, None).await });
+        let (_, blocks) = match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { self.cleaner.process(text, None).await }),
+            None => tokio::runtime::Handle::current()
+                .block_on(async { self.cleaner.process(text, None).await }),
+        };
 
         // 过滤有效数据块
         let valid_blocks = blocks

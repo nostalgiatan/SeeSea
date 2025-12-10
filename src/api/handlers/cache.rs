@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -30,17 +30,25 @@ use serde::Serialize;
 #[derive(Debug, Serialize)]
 pub struct CacheStatsResponse {
     /// 总缓存条目数
-    pub total_entries: usize,
+    pub total_entries: u64,
     /// 缓存大小（字节）
-    pub size_bytes: usize,
+    pub size_bytes: u64,
+    /// 命中次数
+    pub hits: u64,
+    /// 未命中次数
+    pub misses: u64,
     /// 命中率
     pub hit_rate: f64,
-    /// 搜索缓存条目数
-    pub search_entries: usize,
-    /// RSS缓存条目数
-    pub rss_entries: usize,
-    /// 语义缓存条目数
-    pub semantic_entries: usize,
+    /// 写入次数
+    pub writes: u64,
+    /// 删除次数
+    pub deletes: u64,
+    /// 过期清理次数
+    pub evictions: u64,
+    /// 读取平均延迟（毫秒）
+    pub avg_get_latency_ms: f64,
+    /// 写入平均延迟（毫秒）
+    pub avg_set_latency_ms: f64,
 }
 
 /// 缓存清理响应
@@ -55,40 +63,83 @@ pub struct CacheClearResponse {
 }
 
 /// 处理获取缓存统计请求
-pub async fn handle_cache_stats(State(_state): State<ApiState>) -> Response {
-    // TODO: 实现缓存统计
+pub async fn handle_cache_stats(State(state): State<ApiState>) -> Response {
+    let cache_stats = state.search.get_cache_stats();
+
+    // 转换纳秒到毫秒
+    let avg_get_latency_ms = if cache_stats.get_latency.count > 0 {
+        cache_stats.get_latency.avg_ns as f64 / 1_000_000.0
+    } else {
+        0.0
+    };
+
+    let avg_set_latency_ms = if cache_stats.set_latency.count > 0 {
+        cache_stats.set_latency.avg_ns as f64 / 1_000_000.0
+    } else {
+        0.0
+    };
+
     let stats = CacheStatsResponse {
-        total_entries: 0,
-        size_bytes: 0,
-        hit_rate: 0.0,
-        search_entries: 0,
-        rss_entries: 0,
-        semantic_entries: 0,
+        total_entries: cache_stats.total_keys,
+        size_bytes: cache_stats.estimated_size_bytes,
+        hits: cache_stats.hits,
+        misses: cache_stats.misses,
+        hit_rate: cache_stats.hit_rate(),
+        writes: cache_stats.writes,
+        deletes: cache_stats.deletes,
+        evictions: cache_stats.evictions,
+        avg_get_latency_ms,
+        avg_set_latency_ms,
     };
 
     (StatusCode::OK, Json(stats)).into_response()
 }
 
 /// 处理清除所有缓存请求
-pub async fn handle_cache_clear(State(_state): State<ApiState>) -> Response {
-    // TODO: 实现缓存清理
-    let response = CacheClearResponse {
-        success: true,
-        cleared_entries: 0,
-        message: "Cache cleared successfully".to_string(),
-    };
+pub async fn handle_cache_clear(State(state): State<ApiState>) -> Response {
+    // 先获取当前条目数
+    let cache_stats = state.search.get_cache_stats();
+    let entries_before = cache_stats.total_keys;
 
-    (StatusCode::OK, Json(response)).into_response()
+    // 清除缓存
+    match state.search.clear_cache().await {
+        Ok(()) => {
+            let response = CacheClearResponse {
+                success: true,
+                cleared_entries: entries_before as usize,
+                message: format!("成功清除 {} 条缓存", entries_before),
+            };
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => {
+            let response = CacheClearResponse {
+                success: false,
+                cleared_entries: 0,
+                message: format!("清除缓存失败: {}", e),
+            };
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(response)).into_response()
+        }
+    }
 }
 
 /// 处理清理过期缓存请求
-pub async fn handle_cache_cleanup(State(_state): State<ApiState>) -> Response {
-    // TODO: 实现过期缓存清理
-    let response = CacheClearResponse {
-        success: true,
-        cleared_entries: 0,
-        message: "Expired cache entries cleaned up".to_string(),
-    };
-
-    (StatusCode::OK, Json(response)).into_response()
+pub async fn handle_cache_cleanup(State(state): State<ApiState>) -> Response {
+    match state.search.cleanup_expired_cache() {
+        Ok(cleaned_count) => {
+            let response = CacheClearResponse {
+                success: true,
+                cleared_entries: cleaned_count,
+                message: format!("成功清理 {} 条过期缓存", cleaned_count),
+            };
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => {
+            let response = CacheClearResponse {
+                success: false,
+                cleared_entries: 0,
+                message: format!("清理过期缓存失败: {}", e),
+            };
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(response)).into_response()
+        }
+    }
 }

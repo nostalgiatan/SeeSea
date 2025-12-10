@@ -95,9 +95,17 @@ class ApiServer:
             raise ValueError("network_mode must be 'internal', 'external', or 'dual'")
 
         # 如果提供了配置文件，不传递host和port，让PyApiServer自己从配置文件中获取
-        self._server = PyApiServer(host, port, network_mode, config_file=config_file)
-        self.host = host if host is not None else "127.0.0.1"
-        self.port = port if port is not None else 8080
+        if config_file:
+            # 使用配置文件时，不传递host和port，让PyApiServer自己从配置文件中获取
+            self._server = PyApiServer(None, None, network_mode, config_file=config_file)
+            # 这些值会被PyApiServer实际使用的值覆盖
+            self.host = "127.0.0.1"
+            self.port = 8080
+        else:
+            # 没有配置文件时，使用提供的值或默认值
+            self._server = PyApiServer(host, port, network_mode, config_file=config_file)
+            self.host = host if host is not None else "127.0.0.1"
+            self.port = port if port is not None else 8080
         self.network_mode = network_mode
         self.config_file = config_file
 

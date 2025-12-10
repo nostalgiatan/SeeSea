@@ -99,6 +99,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 创建搜索接口
     let search = Arc::new(SearchInterface::new(search_config)?);
 
+    // 保存bind_address和port，因为它们会被移动
+    let bind_address = config.server.bind_address.clone();
+    let port = config.server.port;
+    let external_port = port + 1;
+    let limiter = config.server.limiter;
+    let auth_enabled = config.api.auth.enabled;
+
     // 创建自定义网络配置，使用配置文件中的端口号
     // 内网和外网使用不同的端口，避免冲突
     let network_config = seesea_core::api::network::NetworkConfig {
@@ -106,17 +113,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         internal: seesea_core::api::network::InternalNetworkConfig {
             enabled: true,
             host: "127.0.0.1".to_string(),
-            port: config.server.port, // 内网使用配置文件中的端口号
+            port, // 内网使用配置文件中的端口号
         },
         external: seesea_core::api::network::ExternalNetworkConfig {
             enabled: true,
             host: config.server.bind_address,
-            port: config.server.port + 1, // 外网使用配置文件中的端口号+1，避免冲突
+            port: external_port, // 外网使用配置文件中的端口号+1，避免冲突
             cors_origins: vec!["*".to_string()],
-            enable_rate_limit: config.server.limiter,
+            enable_rate_limit: limiter,
             enable_circuit_breaker: true,
             enable_ip_filter: true,
-            enable_jwt_auth: config.api.auth.enabled,
+            enable_jwt_auth: auth_enabled,
             enable_magic_link: true,
         },
     };
@@ -129,6 +136,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     );
 
     println!("  ✅ API接口初始化成功");
+    println!();
+
+    // 配置 VITE_API_BASE_URL 环境变量，指向外网后端URL
+    let api_base_url = format!("http://{}:{}/api", bind_address, external_port);
+    // std::env::set_var是unsafe的，需要在unsafe块中调用
+    unsafe {
+        std::env::set_var("VITE_API_BASE_URL", api_base_url);
+    }
+    println!("  🔧 配置环境变量:");
+    println!(
+        "    VITE_API_BASE_URL: {}",
+        std::env::var("VITE_API_BASE_URL").unwrap()
+    );
     println!();
 
     // 启动服务器

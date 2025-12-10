@@ -1201,8 +1201,23 @@ impl SearchInterface {
 
     /// 清除缓存
     pub async fn clear_cache(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // 缓存清理逻辑
-        Ok(())
+        self.cache.clear_all().map_err(|e| {
+            Box::new(std::io::Error::other(format!("清除缓存失败: {e:?}")))
+                as Box<dyn std::error::Error + Send + Sync>
+        })
+    }
+
+    /// 获取缓存统计信息
+    pub fn get_cache_stats(&self) -> crate::cache::types::CacheStats {
+        self.cache.manager().stats()
+    }
+
+    /// 清理过期缓存
+    pub fn cleanup_expired_cache(&self) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+        self.cache.cleanup().map_err(|e| {
+            Box::new(std::io::Error::other(format!("清理过期缓存失败: {e:?}")))
+                as Box<dyn std::error::Error + Send + Sync>
+        })
     }
 
     /// 列出可用引擎

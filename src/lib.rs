@@ -112,20 +112,34 @@ pub type Result<T> = errors::Result<T>;
 // 自动初始化系统调控中心
 use once_cell::sync::OnceCell;
 
+#[allow(dead_code)]
 static INIT_GUARD: OnceCell<()> = OnceCell::new();
 
 /// 确保系统调控中心已初始化
+#[allow(dead_code)]
 fn ensure_init() {
     INIT_GUARD.get_or_init(|| {
         tracing::info!("SeeSea 库加载，自动初始化系统调控中心");
-        let _ = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map(|rt| {
-                rt.block_on(async {
+        // 检查当前是否已经存在 Tokio 运行时
+        match tokio::runtime::Handle::try_current() {
+            // 如果已经存在运行时，使用现有的运行时
+            Ok(handle) => {
+                handle.block_on(async {
                     let _controller = sys::controller::get_global_system_controller();
                 });
-            });
+            }
+            // 如果不存在运行时，创建一个新的运行时
+            Err(_) => {
+                let _ = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map(|rt| {
+                        rt.block_on(async {
+                            let _controller = sys::controller::get_global_system_controller();
+                        });
+                    });
+            }
+        }
     });
 }
 

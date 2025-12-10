@@ -84,7 +84,7 @@ impl PyExtraInfoItem {
 #[pyclass]
 pub struct PyDatePage {
     pub date_page: DatePage,
-    pub runtime: tokio::runtime::Runtime,
+    pub runtime: Option<tokio::runtime::Runtime>,
 }
 
 #[pymethods]
@@ -100,11 +100,17 @@ impl PyDatePage {
         // 转换Unix时间戳为SystemTime
         let time = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs_f64(time);
 
-        let runtime = tokio::runtime::Runtime::new().map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Failed to create runtime: {e}"
-            ))
-        })?;
+        // 检查当前是否已经存在Tokio运行时
+        let runtime = match tokio::runtime::Handle::try_current() {
+            // 如果已经存在运行时，不创建新的运行时
+            Ok(_) => None,
+            // 如果不存在运行时，创建新的运行时
+            Err(_) => Some(tokio::runtime::Runtime::new().map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "Failed to create runtime: {e}"
+                ))
+            })?),
+        };
 
         let date_page = DatePage::new(url, time, description, source_data);
 
@@ -214,9 +220,19 @@ impl PyDatePage {
     ) -> PyResult<()> {
         let cleaner = &cleaner.cleaner;
 
-        self.runtime.block_on(async {
-            self.date_page.cleaning(cleaner).await;
-        });
+        // 根据runtime是否存在来执行异步操作
+        match self.runtime.as_ref() {
+            Some(runtime) => {
+                runtime.block_on(async {
+                    self.date_page.cleaning(cleaner).await;
+                });
+            }
+            None => {
+                tokio::runtime::Handle::current().block_on(async {
+                    self.date_page.cleaning(cleaner).await;
+                });
+            }
+        }
 
         Ok(())
     }

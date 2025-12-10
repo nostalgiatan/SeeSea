@@ -32,7 +32,7 @@ use std::env;
 /// health checks, metrics, and more.
 #[pyclass]
 pub struct PyApiServer {
-    runtime: tokio::runtime::Runtime,
+    runtime: Option<tokio::runtime::Runtime>,
     api: Arc<ApiInterface>,
     address: String,
     network_mode: String,
@@ -60,12 +60,18 @@ impl PyApiServer {
         network_mode: Option<String>,
         config_file: Option<String>,
     ) -> PyResult<Self> {
-        let runtime = tokio::runtime::Runtime::new().map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Failed to create runtime: {}",
-                e
-            ))
-        })?;
+        // 检查当前是否已经存在Tokio运行时
+        let runtime = match tokio::runtime::Handle::try_current() {
+            // 如果已经存在运行时，不创建新的运行时
+            Ok(_) => None,
+            // 如果不存在运行时，创建新的运行时
+            Err(_) => Some(tokio::runtime::Runtime::new().map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "Failed to create runtime: {}",
+                    e
+                ))
+            })?),
+        };
 
         let mode = network_mode.unwrap_or_else(|| "internal".to_string());
         let network_mode_enum = match mode.as_str() {
@@ -79,57 +85,114 @@ impl PyApiServer {
             }
         };
 
-        let (api, actual_host, actual_port) = runtime
-            .block_on(async {
-                // Load configuration if provided
-                let config_path = config_file.map(std::path::PathBuf::from);
-                println!("Loading config from: {:?}", config_path);
-                let config_manager = ConfigManager::with_environment(config_path, "development")
-                    .await
-                    .map_err(|e| format!("Failed to load config: {}", e))?;
-                let config = config_manager.get_config().await;
+        // 根据runtime是否存在来执行异步操作
+        let (api, actual_host, actual_port) = match runtime.as_ref() {
+            Some(runtime) => {
+                runtime.block_on(async {
+                    // Load configuration if provided
+                    let config_path = config_file.map(std::path::PathBuf::from);
+                    println!("Loading config from: {:?}", config_path);
+                    let config_manager =
+                        ConfigManager::with_environment(config_path, "development")
+                            .await
+                            .map_err(|e| format!("Failed to load config: {}", e))?;
+                    let config = config_manager.get_config().await;
 
-                // Print config values for debugging
-                println!("Config loaded successfully:");
-                println!("  Server port: {}", config.server.port);
-                println!("  Server bind address: {}", config.server.bind_address);
-                println!("  Environment: {:?}", config.general.environment);
+                    // Print config values for debugging
+                    println!("Config loaded successfully:");
+                    println!("  Server port: {}", config.server.port);
+                    println!("  Server bind address: {}", config.server.bind_address);
+                    println!("  Environment: {:?}", config.general.environment);
 
-                // Create API interface with network configuration
-                // Note: network and cache are created by the ApiInterface internally
-                let search_config = SearchConfig::default();
-                let search = Arc::new(
-                    crate::search::SearchInterface::new(search_config)
-                        .map_err(|e| format!("Search error: {}", e))?,
-                );
+                    // Create API interface with network configuration
+                    // Note: network and cache are created by the ApiInterface internally
+                    let search_config = SearchConfig::default();
+                    let search = Arc::new(
+                        crate::search::SearchInterface::new(search_config)
+                            .map_err(|e| format!("Search error: {}", e))?,
+                    );
 
-                // 使用结构体字面量初始化，包含所有字段，避免Clippy警告
-                let api_network_config = ApiNetworkConfig {
-                    mode: network_mode_enum,
-                    internal: crate::api::network::InternalNetworkConfig {
-                        port: config.server.port,
-                        ..Default::default()
-                    },
-                    external: crate::api::network::ExternalNetworkConfig {
-                        port: config.server.port + 1,
-                        host: config.server.bind_address.clone(),
-                        ..Default::default()
-                    },
-                };
+                    // 使用结构体字面量初始化，包含所有字段，避免Clippy警告
+                    let api_network_config = ApiNetworkConfig {
+                        mode: network_mode_enum,
+                        internal: crate::api::network::InternalNetworkConfig {
+                            port: config.server.port,
+                            ..Default::default()
+                        },
+                        external: crate::api::network::ExternalNetworkConfig {
+                            port: config.server.port + 1,
+                            host: config.server.bind_address.clone(),
+                            ..Default::default()
+                        },
+                    };
 
-                let api = ApiInterface::with_network_config(
-                    search,
-                    env!("CARGO_PKG_VERSION").to_string(),
-                    api_network_config,
-                );
+                    let api = ApiInterface::with_network_config(
+                        search,
+                        env!("CARGO_PKG_VERSION").to_string(),
+                        api_network_config,
+                    );
 
-                // Calculate actual host and port to use for binding
-                let actual_host = host.unwrap_or_else(|| config.server.bind_address.clone());
-                let actual_port = port.unwrap_or(config.server.port);
+                    // Calculate actual host and port to use for binding
+                    let actual_host = host.unwrap_or_else(|| config.server.bind_address.clone());
+                    let actual_port = port.unwrap_or(config.server.port);
 
-                Ok::<_, String>((api, actual_host, actual_port))
-            })
-            .map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
+                    Ok::<_, String>((api, actual_host, actual_port))
+                })
+            }
+            None => {
+                tokio::runtime::Handle::current().block_on(async {
+                    // Load configuration if provided
+                    let config_path = config_file.map(std::path::PathBuf::from);
+                    println!("Loading config from: {:?}", config_path);
+                    let config_manager =
+                        ConfigManager::with_environment(config_path, "development")
+                            .await
+                            .map_err(|e| format!("Failed to load config: {}", e))?;
+                    let config = config_manager.get_config().await;
+
+                    // Print config values for debugging
+                    println!("Config loaded successfully:");
+                    println!("  Server port: {}", config.server.port);
+                    println!("  Server bind address: {}", config.server.bind_address);
+                    println!("  Environment: {:?}", config.general.environment);
+
+                    // Create API interface with network configuration
+                    // Note: network and cache are created by the ApiInterface internally
+                    let search_config = SearchConfig::default();
+                    let search = Arc::new(
+                        crate::search::SearchInterface::new(search_config)
+                            .map_err(|e| format!("Search error: {}", e))?,
+                    );
+
+                    // 使用结构体字面量初始化，包含所有字段，避免Clippy警告
+                    let api_network_config = ApiNetworkConfig {
+                        mode: network_mode_enum,
+                        internal: crate::api::network::InternalNetworkConfig {
+                            port: config.server.port,
+                            ..Default::default()
+                        },
+                        external: crate::api::network::ExternalNetworkConfig {
+                            port: config.server.port + 1,
+                            host: config.server.bind_address.clone(),
+                            ..Default::default()
+                        },
+                    };
+
+                    let api = ApiInterface::with_network_config(
+                        search,
+                        env!("CARGO_PKG_VERSION").to_string(),
+                        api_network_config,
+                    );
+
+                    // Calculate actual host and port to use for binding
+                    let actual_host = host.unwrap_or_else(|| config.server.bind_address.clone());
+                    let actual_port = port.unwrap_or(config.server.port);
+
+                    Ok::<_, String>((api, actual_host, actual_port))
+                })
+            }
+        }
+        .map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
 
         let address = format!("{}:{}", actual_host, actual_port);
 
@@ -179,18 +242,26 @@ impl PyApiServer {
         println!("   Press Ctrl+C to stop");
         println!();
 
-        self.runtime
-            .block_on(async {
-                let listener = tokio::net::TcpListener::bind(&addr)
-                    .await
-                    .map_err(|e| format!("Failed to bind: {}", e))?;
+        // 定义异步任务
+        let async_task = async move {
+            let listener = tokio::net::TcpListener::bind(&addr)
+                .await
+                .map_err(|e| format!("Failed to bind: {}", e))?;
 
-                axum::serve(listener, app)
-                    .with_graceful_shutdown(shutdown_signal())
-                    .await
-                    .map_err(|e| format!("Server error: {}", e))
-            })
-            .map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+                .map_err(|e| format!("Server error: {}", e))
+        };
+
+        // 根据runtime是否存在来决定如何执行异步任务
+        match self.runtime.as_ref() {
+            // 如果runtime存在，使用它的block_on方法
+            Some(runtime) => runtime.block_on(async_task),
+            // 如果runtime不存在，使用当前运行时的block_on方法
+            None => tokio::runtime::Handle::current().block_on(async_task),
+        }
+        .map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
     }
 
     /// Start the API server in internal mode (blocking)
@@ -207,8 +278,9 @@ impl PyApiServer {
         println!("   Press Ctrl+C to stop");
         println!();
 
-        self.runtime
-            .block_on(async {
+        // 根据runtime是否存在来执行异步任务
+        match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async {
                 let listener = tokio::net::TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;
@@ -216,8 +288,18 @@ impl PyApiServer {
                     .with_graceful_shutdown(shutdown_signal())
                     .await
                     .map_err(|e| format!("Server error: {}", e))
-            })
-            .map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
+            }),
+            None => tokio::runtime::Handle::current().block_on(async {
+                let listener = tokio::net::TcpListener::bind(&addr)
+                    .await
+                    .map_err(|e| format!("Failed to bind: {}", e))?;
+                axum::serve(listener, app)
+                    .with_graceful_shutdown(shutdown_signal())
+                    .await
+                    .map_err(|e| format!("Server error: {}", e))
+            }),
+        }
+        .map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
     }
 
     /// Start the API server in external mode (blocking)
@@ -234,8 +316,9 @@ impl PyApiServer {
         println!("   Press Ctrl+C to stop");
         println!();
 
-        self.runtime
-            .block_on(async {
+        // 根据runtime是否存在来执行异步任务
+        match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async {
                 let listener = tokio::net::TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;
@@ -243,8 +326,18 @@ impl PyApiServer {
                     .with_graceful_shutdown(shutdown_signal())
                     .await
                     .map_err(|e| format!("Server error: {}", e))
-            })
-            .map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
+            }),
+            None => tokio::runtime::Handle::current().block_on(async {
+                let listener = tokio::net::TcpListener::bind(&addr)
+                    .await
+                    .map_err(|e| format!("Failed to bind: {}", e))?;
+                axum::serve(listener, app)
+                    .with_graceful_shutdown(shutdown_signal())
+                    .await
+                    .map_err(|e| format!("Server error: {}", e))
+            }),
+        }
+        .map_err(|e: String| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))
     }
 
     /// Get the server address
@@ -369,11 +462,21 @@ impl PyApiServer {
         let full_path_clone = full_path.clone();
         let method_clone = method.clone();
 
-        // 使用runtime.block_on来处理异步操作，将路由添加到动态路由匹配器中
-        self.runtime.block_on(async move {
-            let mut router = dynamic_router.write().await;
-            router.add_route(&full_path_clone, &method_clone, handler);
-        });
+        // 根据runtime是否存在来执行异步操作
+        match self.runtime.as_ref() {
+            Some(runtime) => {
+                runtime.block_on(async move {
+                    let mut router = dynamic_router.write().await;
+                    router.add_route(&full_path_clone, &method_clone, handler);
+                });
+            }
+            None => {
+                tokio::runtime::Handle::current().block_on(async move {
+                    let mut router = dynamic_router.write().await;
+                    router.add_route(&full_path_clone, &method_clone, handler);
+                });
+            }
+        };
 
         Ok(())
     }

@@ -118,12 +118,17 @@ impl PyDatePageObjectPool {
     pub fn get(&self) -> PyResult<PyDatePage> {
         let date_page = self.pool.get();
 
-        // 创建PyDatePage实例
-        let runtime = tokio::runtime::Runtime::new().map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Failed to create runtime: {e}"
-            ))
-        })?;
+        // 创建PyDatePage实例，根据是否存在Tokio运行时来决定是否创建新的运行时
+        let runtime = match tokio::runtime::Handle::try_current() {
+            // 如果已经存在运行时，不创建新的运行时
+            Ok(_) => None,
+            // 如果不存在运行时，创建新的运行时
+            Err(_) => Some(tokio::runtime::Runtime::new().map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "Failed to create runtime: {e}"
+                ))
+            })?),
+        };
 
         Ok(PyDatePage { date_page, runtime })
     }

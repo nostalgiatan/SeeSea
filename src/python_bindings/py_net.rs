@@ -23,7 +23,7 @@ use crate::net::config::RequestOptions;
 
 #[pyclass]
 pub struct PyNetClient {
-    runtime: tokio::runtime::Runtime,
+    runtime: Option<tokio::runtime::Runtime>,
 }
 
 #[pymethods]
@@ -31,13 +31,23 @@ impl PyNetClient {
     /// 创建网络客户端（内部使用，Python中不直接实例化）
     #[new]
     pub fn new() -> PyResult<Self> {
-        let runtime = tokio::runtime::Runtime::new().map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                "Failed to create runtime: {e}"
-            ))
-        })?;
+        // 检查当前是否已经存在Tokio运行时
+        match tokio::runtime::Handle::try_current() {
+            // 如果已经存在运行时，不创建新的运行时
+            Ok(_) => Ok(Self { runtime: None }),
+            // 如果不存在运行时，创建新的运行时
+            Err(_) => {
+                let runtime = tokio::runtime::Runtime::new().map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                        "Failed to create runtime: {e}"
+                    ))
+                })?;
 
-        Ok(Self { runtime })
+                Ok(Self {
+                    runtime: Some(runtime),
+                })
+            }
+        }
     }
 
     /// 发送GET请求
@@ -54,24 +64,30 @@ impl PyNetClient {
             let request_options = self.process_headers(py, headers)?;
 
             // 复用全局HttpClient实例
-            let http_client = self
-                .runtime
-                .block_on(async { HttpClient::instance().await })
-                .map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                        "Failed to get HTTP client instance: {e}"
-                    ))
-                })?;
+            let http_client = match self.runtime.as_ref() {
+                Some(runtime) => runtime.block_on(async { HttpClient::instance().await }),
+                None => tokio::runtime::Handle::current()
+                    .block_on(async { HttpClient::instance().await }),
+            }
+            .map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "Failed to get HTTP client instance: {e}"
+                ))
+            })?;
 
             // 发送GET请求
-            let response = self
-                .runtime
-                .block_on(async { http_client.get(&url, Some(request_options)).await })
-                .map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                        "GET request failed: {e}"
-                    ))
-                })?;
+            let response = match self.runtime.as_ref() {
+                Some(runtime) => {
+                    runtime.block_on(async { http_client.get(&url, Some(request_options)).await })
+                }
+                None => tokio::runtime::Handle::current()
+                    .block_on(async { http_client.get(&url, Some(request_options)).await }),
+            }
+            .map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "GET request failed: {e}"
+                ))
+            })?;
 
             // 处理响应
             self.process_response(py, response)
@@ -101,24 +117,29 @@ impl PyNetClient {
             let request_options = self.process_headers(py, headers)?;
 
             // 复用全局HttpClient实例
-            let http_client = self
-                .runtime
-                .block_on(async { HttpClient::instance().await })
-                .map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                        "Failed to get HTTP client instance: {e}"
-                    ))
-                })?;
+            let http_client = match self.runtime.as_ref() {
+                Some(runtime) => runtime.block_on(async { HttpClient::instance().await }),
+                None => tokio::runtime::Handle::current()
+                    .block_on(async { HttpClient::instance().await }),
+            }
+            .map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "Failed to get HTTP client instance: {e}"
+                ))
+            })?;
 
             // 发送POST请求
-            let response = self
-                .runtime
-                .block_on(async { http_client.post(&url, body, Some(request_options)).await })
-                .map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                        "POST request failed: {e}"
-                    ))
-                })?;
+            let response = match self.runtime.as_ref() {
+                Some(runtime) => runtime
+                    .block_on(async { http_client.post(&url, body, Some(request_options)).await }),
+                None => tokio::runtime::Handle::current()
+                    .block_on(async { http_client.post(&url, body, Some(request_options)).await }),
+            }
+            .map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "POST request failed: {e}"
+                ))
+            })?;
 
             // 处理响应
             self.process_response(py, response)
@@ -180,14 +201,15 @@ impl PyNetClient {
         }
 
         // 获取响应内容
-        let body = self
-            .runtime
-            .block_on(async { response.bytes().await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Failed to read response body: {e}"
-                ))
-            })?;
+        let body = match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { response.bytes().await }),
+            None => tokio::runtime::Handle::current().block_on(async { response.bytes().await }),
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to read response body: {e}"
+            ))
+        })?;
 
         // 创建响应字典
         let response_dict = PyDict::new(py);
@@ -256,42 +278,52 @@ pub fn get_file(url: String, file_path: String, headers: Option<Py<PyAny>>) -> P
         request_options.timeout = std::time::Duration::from_secs(300);
 
         // 使用已有的HttpClient，确保使用stream_client进行流式请求
-        let http_client = client
-            .runtime
-            .block_on(async { HttpClient::instance().await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Failed to get HTTP client instance: {e}"
-                ))
-            })?;
+        let http_client = match client.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { HttpClient::instance().await }),
+            None => {
+                tokio::runtime::Handle::current().block_on(async { HttpClient::instance().await })
+            }
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to get HTTP client instance: {e}"
+            ))
+        })?;
 
         // 发送流式GET请求获取原始字节流
-        let (status, headers, mut reader) = client
-            .runtime
-            .block_on(async { http_client.get_stream(&url, Some(request_options)).await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "GET stream request failed: {e}"
-                ))
-            })?;
+        let (status, headers, mut reader) = match client.runtime.as_ref() {
+            Some(runtime) => runtime
+                .block_on(async { http_client.get_stream(&url, Some(request_options)).await }),
+            None => tokio::runtime::Handle::current()
+                .block_on(async { http_client.get_stream(&url, Some(request_options)).await }),
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "GET stream request failed: {e}"
+            ))
+        })?;
 
         // 创建异步文件
-        let mut file = client
-            .runtime
-            .block_on(async { tokio::fs::File::create(&file_path).await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("Failed to create file: {e}"))
-            })?;
+        let mut file = match client.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { tokio::fs::File::create(&file_path).await }),
+            None => tokio::runtime::Handle::current()
+                .block_on(async { tokio::fs::File::create(&file_path).await }),
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("Failed to create file: {e}"))
+        })?;
 
         // 使用零拷贝技术将流写入文件
-        let bytes_written = client
-            .runtime
-            .block_on(async { tokio::io::copy(&mut reader, &mut file).await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Failed to write file: {e}"
-                ))
-            })?;
+        let bytes_written = match client.runtime.as_ref() {
+            Some(runtime) => {
+                runtime.block_on(async { tokio::io::copy(&mut reader, &mut file).await })
+            }
+            None => tokio::runtime::Handle::current()
+                .block_on(async { tokio::io::copy(&mut reader, &mut file).await }),
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to write file: {e}"))
+        })?;
 
         // 创建响应字典
         let response_dict = PyDict::new(py);
@@ -347,39 +379,45 @@ pub fn post_file(
         let request_options = client.process_headers(py, headers)?;
 
         // 获取文件元数据
-        let file_metadata = client
-            .runtime
-            .block_on(async { tokio::fs::metadata(&file_path).await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyIOError, _>(format!(
-                    "Failed to get file metadata: {e}"
-                ))
-            })?;
+        let file_metadata = match client.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { tokio::fs::metadata(&file_path).await }),
+            None => tokio::runtime::Handle::current()
+                .block_on(async { tokio::fs::metadata(&file_path).await }),
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyIOError, _>(format!(
+                "Failed to get file metadata: {e}"
+            ))
+        })?;
 
         let content_length = file_metadata.len();
 
         // 打开文件
-        let file = client
-            .runtime
-            .block_on(async { tokio::fs::File::open(&file_path).await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("Failed to open file: {e}"))
-            })?;
+        let file = match client.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { tokio::fs::File::open(&file_path).await }),
+            None => tokio::runtime::Handle::current()
+                .block_on(async { tokio::fs::File::open(&file_path).await }),
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("Failed to open file: {e}"))
+        })?;
 
         // 获取HTTP客户端实例
-        let http_client = client
-            .runtime
-            .block_on(async { HttpClient::instance().await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Failed to get HTTP client instance: {e}"
-                ))
-            })?;
+        let http_client = match client.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { HttpClient::instance().await }),
+            None => {
+                tokio::runtime::Handle::current().block_on(async { HttpClient::instance().await })
+            }
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to get HTTP client instance: {e}"
+            ))
+        })?;
 
         // 发送流式POST请求
-        let response = client
-            .runtime
-            .block_on(async {
+        let response = match client.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async {
                 http_client
                     .post_stream(
                         &url,
@@ -389,26 +427,39 @@ pub fn post_file(
                         Some(request_options),
                     )
                     .await
-            })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "POST stream request failed: {e}"
-                ))
-            })?;
+            }),
+            None => tokio::runtime::Handle::current().block_on(async {
+                http_client
+                    .post_stream(
+                        &url,
+                        file,
+                        Some(content_length),
+                        content_type.as_deref(),
+                        Some(request_options),
+                    )
+                    .await
+            }),
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "POST stream request failed: {e}"
+            ))
+        })?;
 
         // 保存状态码和响应头（在消耗response之前）
         let status = response.status().as_u16();
         let headers = response.headers().clone();
 
         // 读取响应内容
-        let body = client
-            .runtime
-            .block_on(async { response.bytes().await })
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Failed to read response body: {e}"
-                ))
-            })?;
+        let body = match client.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(async { response.bytes().await }),
+            None => tokio::runtime::Handle::current().block_on(async { response.bytes().await }),
+        }
+        .map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to read response body: {e}"
+            ))
+        })?;
 
         // 创建响应字典
         let response_dict = PyDict::new(py);

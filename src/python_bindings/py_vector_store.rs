@@ -124,9 +124,11 @@ impl PyVectorClient {
         let doc = Document::new(content, title, url, summary, embedding, Some(metadata));
 
         // 执行添加操作
-        self.runtime
-            .block_on(self.vector_store.add_document(doc))
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(self.vector_store.add_document(doc)),
+            None => tokio::runtime::Handle::current().block_on(self.vector_store.add_document(doc)),
+        }
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
     /// 批量添加或更新文档
@@ -183,9 +185,12 @@ impl PyVectorClient {
         }
 
         // 执行批量添加操作
-        self.runtime
-            .block_on(self.vector_store.batch_add_documents(docs))
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(self.vector_store.batch_add_documents(docs)),
+            None => tokio::runtime::Handle::current()
+                .block_on(self.vector_store.batch_add_documents(docs)),
+        }
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
     /// 搜索相似文档
@@ -229,10 +234,17 @@ impl PyVectorClient {
         };
 
         // 执行搜索
-        let results = self
-            .runtime
-            .block_on(self.vector_store.search(query_vector, limit, filter_value))
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let results = match self.runtime.as_ref() {
+            Some(runtime) => {
+                runtime.block_on(self.vector_store.search(query_vector, limit, filter_value))
+            }
+            None => tokio::runtime::Handle::current().block_on(self.vector_store.search(
+                query_vector,
+                limit,
+                filter_value,
+            )),
+        }
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
         // 转换结果为Python字典
         Python::attach(|py| {
@@ -257,13 +269,19 @@ impl PyVectorClient {
         });
 
         // 使用空向量进行搜索，实际会基于元数据过滤
-        let results = self
-            .runtime
-            .block_on(
-                self.vector_store
-                    .search(vec![0.0; 1536], limit, Some(filter)),
-            )
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let results = match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(self.vector_store.search(
+                vec![0.0; 1536],
+                limit,
+                Some(filter),
+            )),
+            None => tokio::runtime::Handle::current().block_on(self.vector_store.search(
+                vec![0.0; 1536],
+                limit,
+                Some(filter),
+            )),
+        }
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
         // 转换结果为Python字典
         Python::attach(|py| {
@@ -281,17 +299,20 @@ impl PyVectorClient {
 
     /// 删除文档
     pub fn delete_document(&self, id: &str) -> PyResult<()> {
-        self.runtime
-            .block_on(self.vector_store.delete(id))
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(self.vector_store.delete(id)),
+            None => tokio::runtime::Handle::current().block_on(self.vector_store.delete(id)),
+        }
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
     /// 获取文档
     pub fn get_document(&self, id: &str) -> PyResult<Option<Py<PyDict>>> {
-        let doc = self
-            .runtime
-            .block_on(self.vector_store.get(id))
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let doc = match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(self.vector_store.get(id)),
+            None => tokio::runtime::Handle::current().block_on(self.vector_store.get(id)),
+        }
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
         // 转换结果为Python字典
         Python::attach(|py| {
@@ -320,10 +341,11 @@ impl PyVectorClient {
 
     /// 获取向量数据库统计信息
     pub fn get_stats(&self) -> PyResult<Py<PyDict>> {
-        let stats = self
-            .runtime
-            .block_on(self.vector_store.get_stats())
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let stats = match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(self.vector_store.get_stats()),
+            None => tokio::runtime::Handle::current().block_on(self.vector_store.get_stats()),
+        }
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
         // 转换结果为Python字典
         Python::attach(|py| {
@@ -341,9 +363,11 @@ impl PyVectorClient {
 
     /// 关闭向量数据库连接
     pub fn close(&self) -> PyResult<()> {
-        self.runtime
-            .block_on(self.vector_store.close())
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        match self.runtime.as_ref() {
+            Some(runtime) => runtime.block_on(self.vector_store.close()),
+            None => tokio::runtime::Handle::current().block_on(self.vector_store.close()),
+        }
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 }
 
