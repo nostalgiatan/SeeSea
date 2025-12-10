@@ -1,616 +1,703 @@
-# API参数文档
+# API 参数详细说明
 
-## 概述
+本文档详细描述 SeeSea 所有 API 端点的参数。
 
-本文档详细描述了SeeSea Web服务的所有API端点，包括请求参数、响应格式和使用示例。
+## 目录
 
-## 公共端点（外部访问）
+- [搜索 API](#搜索-api)
+- [RSS API](#rss-api)  
+- [热点 API](#热点-api)
+- [缓存 API](#缓存-api)
+- [向量 API](#向量-api)
+- [系统 API](#系统-api)
 
-### 1. 健康检查
+---
 
-**方法**: GET
-**端点**: `/api/health`
-**描述**: 检查服务健康状态
+## 搜索 API
 
-#### 请求参数
-无
+### GET /api/search
 
-#### 响应格式
-```json
-{
-  "status": "ok",
-  "version": "1.0.0",
-  "available_engines": 5,
-  "total_engines": 8
-}
-```
+通过 URL 查询参数执行搜索。
 
-#### 示例
-```bash
-curl http://localhost:8080/api/health
-```
+#### 查询参数
 
-### 2. 版本信息
-
-**方法**: GET
-**端点**: `/api/version`
-**描述**: 获取服务版本信息
-
-#### 请求参数
-无
-
-#### 响应格式
-```json
-{
-  "description":"隐私保护型元搜索引擎",
-  "name":"SeeSea",
-  "version": "1.0.0"
-}
-```
+| 参数 | 类型 | 必需 | 默认值 | 说明 | 示例 |
+|------|------|------|--------|------|------|
+| q | string | 是 | - | 搜索查询关键词 | `q=rust+programming` |
+| engines | string | 否 | fast_engines | 逗号分隔的引擎列表 | `engines=bing,baidu` |
+| page | integer | 否 | 1 | 页码(从1开始) | `page=2` |
+| page_size | integer | 否 | 10 | 每页结果数(1-100) | `page_size=20` |
+| language | string | 否 | auto | 语言代码 | `language=zh` |
+| region | string | 否 | auto | 地区代码 | `region=CN` |
+| safe_search | string | 否 | moderate | 安全搜索: none/moderate/strict | `safe_search=strict` |
+| time_range | string | 否 | - | 时间范围: day/week/month/year | `time_range=week` |
+| force | boolean | 否 | false | 强制刷新缓存 | `force=true` |
+| cache_timeline | integer | 否 | 3600 | 缓存有效期(秒) | `cache_timeline=7200` |
+| include_deepweb | boolean | 否 | false | 包含深网引擎 | `include_deepweb=true` |
+| engine_count | integer | 否 | - | 使用的引擎数量 | `engine_count=5` |
+| n | integer | 否 | - | engine_count简写 | `n=3` |
 
 #### 示例
+
 ```bash
-curl http://localhost:8080/api/version
+# 基础搜索
+curl "http://localhost:8080/api/search?q=python"
+
+# 指定引擎和分页
+curl "http://localhost:8080/api/search?q=机器学习&engines=bing,baidu&page=1&page_size=20"
+
+# 带时间范围
+curl "http://localhost:8080/api/search?q=AI新闻&time_range=week&safe_search=strict"
+
+# 使用引擎数量限制
+curl "http://localhost:8080/api/search?q=深度学习&n=3"
 ```
 
-### 3. 统计信息
+### POST /api/search
 
-**方法**: GET
-**端点**: `/api/stats`
-**描述**: 获取服务统计信息
-
-#### 请求参数
-无
-
-#### 响应格式
-```json
-{
-  "total_searches": 1000,
-  "cache_hits": 300,
-  "cache_misses": 700,
-  "cache_hit_rate": 0.3,
-  "engine_failures": 50,
-  "timeouts": 20
-}
-```
-
-#### 示例
-```bash
-curl http://localhost:8080/api/stats
-```
-
-### 4. Prometheus指标
-
-**方法**: GET
-**端点**: `/api/metrics`
-**描述**: 获取Prometheus格式的指标
-
-#### 请求参数
-无
-
-#### 响应格式
-Prometheus文本格式
-
-#### 示例
-```bash
-curl http://localhost:8080/api/metrics
-```
-
-### 5. 实时JSON指标
-
-**方法**: GET
-**端点**: `/api/metrics/realtime`
-**描述**: 获取实时JSON格式的指标
-
-#### 请求参数
-无
-
-#### 响应格式
-```json
-{
-  "total_requests":0,
-  "successful_requests":0,
-  "failed_requests":0,
-  "avg_response_time_ms":0.0,
-  "active_connections":0,
-  "rate_limited":0,
-  "circuit_breaker_trips":0,
-  "ip_blocked":0,
-  "uptime_seconds":4590
-}
-```
-
-#### 示例
-```bash
-curl http://localhost:8080/api/metrics/realtime
-```
-
-### 6. 搜索（GET）
-
-**方法**: GET
-**端点**: `/api/search`
-**描述**: 执行搜索查询（GET方式）
-
-#### 请求参数
-| 参数名 | 类型 | 必须 | 默认值 | 描述 |
-|--------|------|------|--------|------|
-| `q` 或 `query` | string | 是 | - | 搜索查询字符串 |
-| `page` | integer | 否 | 1 | 页码（从1开始） |
-| `page_size` | integer | 否 | 10 | 每页结果数 |
-| `language` | string | 否 | - | 语言代码（如：en, zh） |
-| `region` | string | 否 | - | 地区代码（如：us, cn） |
-| `engines` | string | 否 | - | 引擎列表，用逗号分隔（如：bing,yandex） |
-| `n` 或 `engine_count` | integer | 否 | - | 引擎数量，根据引擎延迟选择低延迟的引擎 |
-| `safe_search` | string | 否 | - | 安全搜索级别 |
-| `time_range` | string | 否 | - | 时间范围 |
-| `include_deepweb` | boolean | 否 | false | 是否包含深网搜索 |
-| `magic_token` | string | 否 | - | 魔法链接令牌（用于外部访问） |
-
-#### 响应格式
-```json
-{
-  "query": "rust programming",
-  "results": [
-    {
-      "title": "Rust Programming Language",
-      "url": "https://www.rust-lang.org/",
-      "description": "A language empowering everyone to build reliable and efficient software.",
-      "engine": "bing",
-      "score": 0.95,
-      "published_date": "2023-01-01T00:00:00Z"
-    }
-  ],
-  "total_count": 100,
-  "page": 1,
-  "page_size": 10,
-  "cached": false,
-  "query_time_ms": 500,
-  "engines_used": ["bing", "yandex"]
-}
-```
-
-#### 示例
-```bash
-curl "http://localhost:8080/api/search?q=rust programming&page=1&page_size=10"
-```
-
-### 7. 搜索（POST）
-
-**方法**: POST
-**端点**: `/api/search`
-**描述**: 执行搜索查询（POST方式）
-
-#### 请求头
-| 头名 | 值 | 描述 |
-|------|-----|------|
-| `Content-Type` | `application/json` | 请求体格式 |
-| `Authorization` | `Bearer <jwt_token>` 或 `ApiKey <api_key>` | 认证令牌（可选，取决于配置） |
-
-#### 请求体
-```json
-{
-  "query": "rust programming",
-  "page": 1,
-  "page_size": 10,
-  "language": "en",
-  "region": "us",
-  "engines": "bing,yandex",
-  "engine_count": 2,
-  "safe_search": "moderate",
-  "time_range": "24h",
-  "include_deepweb": false
-}
-```
+通过请求体执行搜索，支持更复杂的参数。
 
 #### 请求体参数
-| 参数名 | 类型 | 必须 | 默认值 | 描述 |
-|--------|------|------|--------|------|
-| `query` 或 `q` | string | 是 | - | 搜索查询字符串 |
-| `page` | integer | 否 | 1 | 页码（从1开始） |
-| `page_size` | integer | 否 | 10 | 每页结果数 |
-| `language` | string | 否 | - | 语言代码（如：en, zh） |
-| `region` | string | 否 | - | 地区代码（如：us, cn） |
-| `engines` | string | 否 | - | 引擎列表，用逗号分隔（如：bing,yandex） |
-| `engine_count` 或 `n` | integer | 否 | - | 引擎数量，根据引擎延迟选择低延迟的引擎 |
-| `safe_search` | string | 否 | - | 安全搜索级别 |
-| `time_range` | string | 否 | - | 时间范围 |
-| `include_deepweb` | boolean | 否 | false | 是否包含深网搜索 |
 
-#### 响应格式
-同GET /api/search
+参见 [API 请求体文档](API_REQUEST_BODY.md#post-apisearch)
+
+---
+
+## RSS API
+
+### GET /api/rss/feeds
+
+获取所有 RSS 订阅源列表。
+
+#### 查询参数
+
+| 参数 | 类型 | 必需 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| category | string | 否 | - | 按分类过滤 |
+| limit | integer | 否 | 100 | 返回数量限制 |
+| offset | integer | 否 | 0 | 偏移量 |
 
 #### 示例
+
 ```bash
-curl -X POST http://localhost:8080/api/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "rust programming", "page": 1, "page_size": 10}'
+curl "http://localhost:8080/api/rss/feeds"
+curl "http://localhost:8080/api/rss/feeds?category=tech&limit=10"
 ```
 
-### 8. 可用引擎列表
+### GET /api/rss/templates
 
-**方法**: GET
-**端点**: `/api/engines`
-**描述**: 获取可用的搜索引擎列表
+获取所有 RSS 模板列表。
 
-#### 请求参数
+#### 查询参数
+
 无
 
-#### 响应格式
+#### 示例
+
+```bash
+curl "http://localhost:8080/api/rss/templates"
+```
+
+### POST /api/rss/fetch
+
+抓取指定 RSS 源。
+
+#### 请求体参数
+
+参见 [API 请求体文档](API_REQUEST_BODY.md#post-apirssfetch)
+
+---
+
+## 热点 API
+
+### GET /api/hot/platforms
+
+获取所有支持的热点平台列表。
+
+#### 查询参数
+
+| 参数 | 类型 | 必需 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| category | string | 否 | - | 按类别过滤: tech/finance/news/community |
+
+#### 示例
+
+```bash
+curl "http://localhost:8080/api/hot/platforms"
+curl "http://localhost:8080/api/hot/platforms?category=tech"
+```
+
+#### 响应示例
+
 ```json
 [
   {
-    "name": "bing",
-    "description": "Microsoft Bing Search",
-    "engine_type": "general",
-    "enabled": true,
-    "capabilities": ["web", "images", "videos"]
+    "id": "zhihu",
+    "name": "知乎",
+    "category": "tech",
+    "description": "知乎热榜"
   },
   {
-    "name": "yandex",
-    "description": "Yandex Search",
-    "engine_type": "general",
-    "enabled": true,
-    "capabilities": ["web", "news"]
+    "id": "weibo",
+    "name": "微博",
+    "category": "social",
+    "description": "微博热搜"
   }
 ]
 ```
 
+### GET /api/hot/fetch
+
+获取单个平台的热点数据。
+
+#### 查询参数
+
+| 参数 | 类型 | 必需 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| platform | string | 是 | - | 平台ID |
+| limit | integer | 否 | 50 | 返回条目数量 |
+
 #### 示例
+
 ```bash
-curl http://localhost:8080/api/engines
+curl "http://localhost:8080/api/hot/fetch?platform=zhihu"
+curl "http://localhost:8080/api/hot/fetch?platform=github-trending-today&limit=10"
 ```
 
-### 9. RSS订阅列表
+#### 响应示例
 
-**方法**: GET
-**端点**: `/api/rss/feeds`
-**描述**: 获取RSS订阅列表
-
-#### 请求参数
-无
-
-#### 响应格式
 ```json
 {
-  "feeds": [
+  "platform_id": "zhihu",
+  "platform_name": "知乎",
+  "update_time": "2024-01-01T12:00:00Z",
+  "items": [
     {
-      "id": "1",
-      "name": "Tech News",
-      "url": "https://example.com/tech.rss",
-      "category": "technology",
-      "last_fetched": "2023-10-01T12:00:00Z",
-      "item_count": 100
+      "rank": 1,
+      "title": "如何学习编程?",
+      "url": "https://www.zhihu.com/question/123456",
+      "hot_value": "1234万热度",
+      "extra": {
+        "answer_count": "1234",
+        "follower_count": "5678"
+      }
     }
   ]
 }
 ```
 
+### POST /api/hot/fetch/batch
+
+批量获取多个平台的热点。
+
+#### 请求体参数
+
+参见 [API 请求体文档](API_REQUEST_BODY.md#post-apihotfetchbatch)
+
+---
+
+## 缓存 API
+
+### GET /api/cache/stats
+
+获取缓存统计信息。
+
+#### 查询参数
+
+无
+
 #### 示例
+
 ```bash
-curl http://localhost:8080/api/rss/feeds
+curl "http://localhost:8080/api/cache/stats"
 ```
 
-### 10. 获取RSS订阅
+#### 响应示例
 
-**方法**: POST
-**端点**: `/api/rss/fetch`
-**描述**: 获取指定RSS订阅的内容
-
-#### 请求头
-| 头名 | 值 | 描述 |
-|------|-----|------|
-| `Content-Type` | `application/json` | 请求体格式 |
-
-#### 请求体
 ```json
 {
-  "url": "https://example.com/tech.rss",
-  "limit": 10,
-  "category": "technology"
+  "total_entries": 1234,
+  "cache_size_mb": 45.6,
+  "hit_count": 5678,
+  "miss_count": 1234,
+  "hit_rate": 0.821,
+  "oldest_entry": "2024-01-01T00:00:00Z",
+  "newest_entry": "2024-01-01T12:00:00Z"
 }
 ```
 
-| 参数名 | 类型 | 必须 | 默认值 | 描述 |
-|--------|------|------|--------|------|
-| `url` | string | 是 | - | RSS订阅URL |
-| `limit` | integer | 否 | 10 | 返回的条目数 |
-| `category` | string | 否 | - | 订阅分类 |
+### POST /api/cache/clear
 
-#### 响应格式
+清除所有缓存（仅内网）。
+
+#### 请求体参数
+
+参见 [API 请求体文档](API_REQUEST_BODY.md#post-apicacheclear)
+
+### POST /api/cache/cleanup
+
+清理过期缓存（仅内网）。
+
+#### 请求体参数
+
+参见 [API 请求体文档](API_REQUEST_BODY.md#post-apicachecleanup)
+
+---
+
+## 向量 API
+
+### POST /api/vector/search
+
+基于向量的语义搜索。
+
+#### 请求体参数
+
+参见 [API 请求体文档](API_REQUEST_BODY.md#post-apivectorsearch)
+
+### POST /api/vector/add
+
+添加文档到向量数据库。
+
+#### 请求体参数
+
+参见 [API 请求体文档](API_REQUEST_BODY.md#post-apivectoradd)
+
+### DELETE /api/vector/{id}
+
+删除指定文档。
+
+#### 路径参数
+
+| 参数 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| id | string | 是 | 文档ID |
+
+#### 示例
+
+```bash
+curl -X DELETE "http://localhost:8080/api/vector/doc123"
+```
+
+### GET /api/vector/stats
+
+获取向量数据库统计信息。
+
+#### 查询参数
+
+无
+
+#### 示例
+
+```bash
+curl "http://localhost:8080/api/vector/stats"
+```
+
+#### 响应示例
+
 ```json
 {
-  "feed": {
-    "title": "Tech News",
-    "url": "https://example.com/tech.rss",
-    "description": "Latest technology news",
-    "items": [
-      {
-        "title": "New Technology Released",
-        "url": "https://example.com/article1",
-        "content": "Description of the new technology...",
-        "published_date": "2023-10-01T12:00:00Z",
-        "category": "technology"
-      }
-    ]
+  "total_documents": 5678,
+  "total_vectors": 5678,
+  "collection_name": "seesea_docs",
+  "vector_size": 1536,
+  "indexed_vectors": 5678,
+  "points_count": 5678
+}
+```
+
+---
+
+## 系统 API
+
+### GET /api/health
+
+健康检查。
+
+#### 查询参数
+
+| 参数 | 类型 | 必需 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| detailed | boolean | 否 | false | 是否返回详细信息 |
+
+#### 示例
+
+```bash
+curl "http://localhost:8080/api/health"
+curl "http://localhost:8080/api/health?detailed=true"
+```
+
+#### 响应示例
+
+**简单模式**
+```json
+{
+  "status": "ok"
+}
+```
+
+**详细模式**
+```json
+{
+  "status": "ok",
+  "version": "2.0.1",
+  "uptime_seconds": 12345,
+  "available_engines": 12,
+  "total_engines": 13,
+  "cache_enabled": true,
+  "vector_store_enabled": true
+}
+```
+
+### GET /api/version
+
+获取版本信息。
+
+#### 查询参数
+
+无
+
+#### 示例
+
+```bash
+curl "http://localhost:8080/api/version"
+```
+
+#### 响应示例
+
+```json
+{
+  "name": "SeeSea",
+  "version": "2.0.1",
+  "description": "Privacy-focused data aggregation platform",
+  "rust_version": "1.75.0",
+  "build_date": "2024-01-01",
+  "git_commit": "abc123"
+}
+```
+
+### GET /api/stats
+
+获取系统统计信息。
+
+#### 查询参数
+
+| 参数 | 类型 | 必需 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| period | string | 否 | all | 统计周期: hour/day/week/month/all |
+
+#### 示例
+
+```bash
+curl "http://localhost:8080/api/stats"
+curl "http://localhost:8080/api/stats?period=day"
+```
+
+#### 响应示例
+
+```json
+{
+  "total_searches": 12345,
+  "total_rss_fetches": 678,
+  "total_hot_fetches": 234,
+  "cache_hit_rate": 0.75,
+  "average_response_time_ms": 234,
+  "active_connections": 5,
+  "uptime_seconds": 86400
+}
+```
+
+### GET /api/metrics
+
+Prometheus 格式的指标。
+
+#### 查询参数
+
+无
+
+#### 示例
+
+```bash
+curl "http://localhost:8080/api/metrics"
+```
+
+#### 响应格式
+
+Prometheus 文本格式
+
+### GET /api/metrics/realtime
+
+实时 JSON 格式指标。
+
+#### 查询参数
+
+无
+
+#### 示例
+
+```bash
+curl "http://localhost:8080/api/metrics/realtime"
+```
+
+#### 响应示例
+
+```json
+{
+  "timestamp": "2024-01-01T12:00:00Z",
+  "requests_per_second": 12.5,
+  "active_requests": 3,
+  "error_rate": 0.01,
+  "cache_hit_rate": 0.75,
+  "average_latency_ms": 123
+}
+```
+
+### GET /api/engines
+
+列出所有可用的搜索引擎。
+
+#### 查询参数
+
+| 参数 | 类型 | 必需 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| type | string | 否 | - | 按类型过滤: general/images/videos/news |
+| status | string | 否 | active | 按状态过滤: active/inactive/disabled |
+
+#### 示例
+
+```bash
+curl "http://localhost:8080/api/engines"
+curl "http://localhost:8080/api/engines?type=images"
+```
+
+#### 响应示例
+
+```json
+[
+  {
+    "name": "bing",
+    "description": "Bing Search",
+    "engine_type": "general",
+    "enabled": true,
+    "capabilities": ["web", "pagination", "time_range"]
+  },
+  {
+    "name": "bing_images",
+    "description": "Bing Images",
+    "engine_type": "images",
+    "enabled": true,
+    "capabilities": ["images", "pagination"]
+  }
+]
+```
+
+---
+
+## 认证相关
+
+### POST /api/magic-link/generate
+
+生成 Magic Link 令牌（仅内网）。
+
+#### 请求体参数
+
+参见 [API 请求体文档](API_REQUEST_BODY.md#post-apimagic-linkgenerate)
+
+---
+
+## 通用响应头
+
+所有 API 响应都包含以下响应头:
+
+| 响应头 | 说明 |
+|--------|------|
+| X-Request-ID | 请求唯一标识符 |
+| X-Response-Time | 响应时间(毫秒) |
+| X-RateLimit-Limit | 速率限制上限 |
+| X-RateLimit-Remaining | 剩余请求数 |
+| X-RateLimit-Reset | 限制重置时间戳 |
+
+示例:
+```
+X-Request-ID: 550e8400-e29b-41d4-a716-446655440000
+X-Response-Time: 234
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1640995200
+```
+
+---
+
+## 错误码说明
+
+| 错误码 | 说明 | 常见原因 |
+|--------|------|----------|
+| 400 | Bad Request | 参数格式错误、缺少必需参数 |
+| 401 | Unauthorized | 未提供认证凭据或凭据无效 |
+| 403 | Forbidden | IP 被封禁、权限不足 |
+| 404 | Not Found | 资源不存在 |
+| 429 | Too Many Requests | 触发限流 |
+| 500 | Internal Server Error | 服务器内部错误 |
+| 503 | Service Unavailable | 熔断器开启、服务维护 |
+
+---
+
+## 分页参数说明
+
+对于支持分页的 API，使用以下参数:
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| page | integer | 1 | 页码(从1开始) |
+| page_size | integer | 10 | 每页数量 |
+| limit | integer | - | 总数限制(部分API) |
+| offset | integer | 0 | 偏移量(部分API) |
+
+分页响应通常包含:
+
+```json
+{
+  "results": [...],
+  "page": 1,
+  "page_size": 20,
+  "total_count": 150,
+  "total_pages": 8
+}
+```
+
+---
+
+## 过滤参数说明
+
+部分 API 支持过滤参数:
+
+### 时间过滤
+
+```bash
+# URL 参数
+?time_range=week
+?start_date=2024-01-01
+?end_date=2024-01-31
+
+# 请求体
+{
+  "time_filter": {
+    "range": "week",
+    "start": "2024-01-01T00:00:00Z",
+    "end": "2024-01-31T23:59:59Z"
   }
 }
 ```
 
-#### 示例
+### 分类过滤
+
 ```bash
-curl -X POST http://localhost:8080/api/rss/fetch \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://example.com/tech.rss", "limit": 5}'
+?category=tech
+?categories=tech,news,finance
 ```
 
-## 内部端点（仅内部访问）
+### 状态过滤
 
-### 11. 生成魔法链接
-
-**方法**: POST
-**端点**: `/api/magic-link/generate`
-**描述**: 生成魔法链接令牌（仅内部访问）
-
-#### 请求头
-| 头名 | 值 | 描述 |
-|------|-----|------|
-| `Content-Type` | `application/json` | 请求体格式 |
-
-#### 请求体
-```json
-{
-  "purpose": "temporary access",
-  "expires_in": 300
-}
-```
-
-| 参数名 | 类型 | 必须 | 默认值 | 描述 |
-|--------|------|------|--------|------|
-| `purpose` | string | 否 | - | 令牌用途描述 |
-| `expires_in` | integer | 否 | 300 | 令牌有效期（秒），默认5分钟 |
-
-#### 响应格式
-```json
-{
-  "token": "abc123def456...",
-  "expires_in": 300,
-  "url": "/api/search?magic_token=abc123def456...",
-  "purpose": "temporary access"
-}
-```
-
-#### 示例
 ```bash
-curl -X POST http://localhost:8081/api/magic-link/generate \
-  -H "Content-Type: application/json" \
-  -d '{"purpose": "temporary access"}'
+?status=active
+?enabled=true
 ```
 
-### 12. 清除所有缓存
+---
 
-**方法**: POST
-**端点**: `/api/cache/clear`
-**描述**: 清除所有缓存（仅内部访问）
+## 排序参数说明
 
-#### 请求参数
-无
+部分 API 支持排序:
 
-#### 响应格式
-```json
-{
-  "status": "ok",
-  "cleared": true,
-  "message": "All cache cleared successfully"
-}
-```
-
-#### 示例
 ```bash
-curl -X POST http://localhost:8081/api/cache/clear
-```
+# 单字段排序
+?sort=created_at
+?sort=-score  # 降序
 
-### 13. 清理过期缓存
+# 多字段排序
+?sort=score,-created_at
 
-**方法**: POST
-**端点**: `/api/cache/cleanup`
-**描述**: 清理过期缓存（仅内部访问）
-
-#### 请求参数
-无
-
-#### 响应格式
-```json
+# 请求体
 {
-  "status": "ok",
-  "cleaned_up": true,
-  "items_removed": 100,
-  "message": "Expired cache cleaned up successfully"
+  "sort": [
+    {"field": "score", "order": "desc"},
+    {"field": "created_at", "order": "asc"}
+  ]
 }
 ```
 
-#### 示例
-```bash
-curl -X POST http://localhost:8081/api/cache/cleanup
-```
-
-### 14. 添加RSS模板
-
-**方法**: POST
-**端点**: `/api/rss/template/add`
-**描述**: 添加RSS模板（仅内部访问）
-
-#### 请求头
-| 头名 | 值 | 描述 |
-|------|-----|------|
-| `Content-Type` | `application/json` | 请求体格式 |
-
-#### 请求体
-```json
-{
-  "name": "custom_template",
-  "content": "<rss version=\"2.0\">...</rss>",
-  "category": "custom"
-}
-```
-
-| 参数名 | 类型 | 必须 | 默认值 | 描述 |
-|--------|------|------|--------|------|
-| `name` | string | 是 | - | 模板名称 |
-| `content` | string | 是 | - | 模板内容 |
-| `category` | string | 否 | - | 模板分类 |
-
-#### 响应格式
-```json
-{
-  "status": "ok",
-  "added": true,
-  "template_name": "custom_template",
-  "message": "RSS template added successfully"
-}
-```
-
-#### 示例
-```bash
-curl -X POST http://localhost:8081/api/rss/template/add \
-  -H "Content-Type: application/json" \
-  -d '{"name": "custom_template", "content": "<rss version=\"2.0\">...</rss>"}'
-```
-
-## 错误响应格式
-
-所有API端点在发生错误时都会返回统一的错误响应格式：
-
-```json
-{
-  "code": "SEARCH_ERROR",
-  "message": "搜索失败",
-  "details": "查询参数 'query' 或 'q' 是必需的"
-}
-```
-
-| 错误码 | 描述 |
-|--------|------|
-| SEARCH_ERROR | 搜索相关错误 |
-| PARAM_ERROR | 参数错误 |
-| AUTH_ERROR | 认证错误 |
-| RATE_LIMIT_ERROR | 请求频率过高 |
-| SERVER_ERROR | 服务器内部错误 |
-
-## 认证方式
-
-SeeSea API支持多种认证方式：
-
-1. **魔法链接**: 通过`magic_token`查询参数进行一次性访问
-2. **JWT令牌**: 通过`Authorization: Bearer <jwt_token>`头进行访问
-3. **API密钥**: 通过`Authorization: ApiKey <api_key>`头进行访问
-4. **内部访问**: 直接访问内部端口，无需认证
-
-## 网络模式
-
-SeeSea支持三种网络模式：
-
-1. **内网模式**: 仅监听本地地址，无安全限制
-2. **外网模式**: 监听配置的地址，启用完整安全功能
-3. **双模式**: 同时运行内网和外网服务器
-
-## 安全特性
-
-SeeSea API包含以下安全特性：
-
-- 魔法链接验证
-- JWT认证
-- IP过滤
-- 熔断机制
-- 速率限制
-- CORS处理
+---
 
 ## 最佳实践
 
-1. **使用POST请求**进行复杂查询，避免URL长度限制
-2. **指定引擎列表**以提高搜索速度和相关性
-3. **合理设置缓存时间**，平衡实时性和性能
-4. **监控API指标**，及时发现问题
-5. **使用魔法链接**进行临时外部访问，避免长期暴露API密钥
+### 1. 使用合适的分页大小
 
-## 示例应用
+```bash
+# 推荐: 10-50
+curl "http://localhost:8080/api/search?q=test&page_size=20"
 
-### 使用Python请求API
+# 避免: 过大的分页
+curl "http://localhost:8080/api/search?q=test&page_size=1000"  # 可能被拒绝
+```
+
+### 2. 利用缓存
+
+```bash
+# 使用缓存(默认)
+curl "http://localhost:8080/api/search?q=popular+query"
+
+# 强制刷新(仅必要时)
+curl "http://localhost:8080/api/search?q=popular+query&force=true"
+```
+
+### 3. 合理选择引擎
+
+```bash
+# 快速响应: 使用默认或指定快速引擎
+curl "http://localhost:8080/api/search?q=test&engines=bing,baidu"
+
+# 全面搜索: 使用更多引擎
+curl "http://localhost:8080/api/search?q=test&n=5"
+```
+
+### 4. 处理错误
 
 ```python
 import requests
 
-# 基本搜索
-def search(query):
-    url = "http://localhost:8080/api/search"
-    params = {
-        "q": query,
-        "page": 1,
-        "page_size": 10
-    }
-    response = requests.get(url, params=params)
-    return response.json()
+response = requests.get("http://localhost:8080/api/search", params={"q": "test"})
 
-# POST搜索
-def search_post(query):
-    url = "http://localhost:8080/api/search"
-    data = {
-        "query": query,
-        "page": 1,
-        "page_size": 10,
-        "engines": ["bing", "yandex"]
-    }
-    headers = {
-        "Content-Type": "application/json"
-    }
-    response = requests.post(url, json=data, headers=headers)
-    return response.json()
-
-# 获取RSS订阅
-def fetch_rss(url):
-    api_url = "http://localhost:8080/api/rss/fetch"
-    data = {
-        "url": url,
-        "limit": 5
-    }
-    headers = {
-        "Content-Type": "application/json"
-    }
-    response = requests.post(api_url, json=data, headers=headers)
-    return response.json()
+if response.status_code == 200:
+    data = response.json()
+elif response.status_code == 429:
+    # 触发限流，等待后重试
+    retry_after = int(response.headers.get('Retry-After', 60))
+    time.sleep(retry_after)
+else:
+    # 处理其他错误
+    error = response.json().get('error', {})
+    print(f"Error: {error.get('message')}")
 ```
 
-### 使用JavaScript请求API
+### 5. 批量操作
 
-```javascript
-// 基本搜索
-async function search(query) {
-    const url = new URL("http://localhost:8080/api/search");
-    url.searchParams.append("q", query);
-    url.searchParams.append("page", 1);
-    url.searchParams.append("page_size", 10);
-    
-    const response = await fetch(url);
-    return await response.json();
-}
-
-// POST搜索
-async function searchPost(query) {
-    const url = "http://localhost:8080/api/search";
-    const data = {
-        query: query,
-        page: 1,
-        page_size: 10,
-        engines: ["bing", "yandex"]
-    };
-    
-    const response = await fetch(url, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(data)
-    });
-    
-    return await response.json();
-}
+```bash
+# 批量获取热点
+curl -X POST http://localhost:8080/api/hot/fetch/batch \
+  -H "Content-Type: application/json" \
+  -d '{"platforms": ["zhihu", "weibo", "github-trending-today"]}'
 ```
+
+---
+
+## 相关文档
+
+- [API 参考](API.md) - API 总览
+- [API 请求体文档](API_REQUEST_BODY.md) - 请求体格式
+- [API 响应格式](API_RESPONSE_FORMAT.md) - 响应格式
+- [配置指南](CONFIGURATION.md) - 配置说明
+
+---
+
+**版权所有 © 2025 SeeSea Team**
+
+本文档根据 AGPL-3.0 许可证发布。

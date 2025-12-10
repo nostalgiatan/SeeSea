@@ -1,941 +1,1648 @@
-
-# SeeSea - 高质量的搜索解决方案
+# SeeSea - 私人部署的云端数据获取中心
 
 <img src="static/image/logo.png" alt="SeeSea Logo" width="100%">
 
 <div align="center">
 
-**🛡️ 基于 Rust 的隐私优先多模态搜索平台**
+**🌊 看海看得远，看得广 - 基于 Rust 的隐私优先数据聚合平台**
 
-[![Rust](https://img.shields.io/badge/rust-1.91.1+-orange.svg)](https://www.rust-lang.org)
-[![License](https://img.shields.io/badge/license-Apache2.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org)
+[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org)
 
-*整合网页搜索、RSS 聚合和浏览器自动化，提供隐私保护的多模态搜索体验*
+*一个功能完整的私有数据获取中心，整合搜索、RSS、热点资讯、向量检索与 AI 增强*
+
+[English](README.en.md) | [中文文档](docs/README.zh.md)
 
 </div>
 
 ---
 
-## 📋 中文索引
+## 📋 目录
 
-- [🌟 项目概述](#-项目概述)
-- [🚀 核心能力](#-核心能力)
+- [🌟 项目愿景](#-项目愿景)
+- [🎯 核心特性](#-核心特性)
 - [🏗️ 技术架构](#-技术架构)
-- [🎮 使用方式](#-使用方式)
+- [🚀 快速开始](#-快速开始)
+- [📖 详细功能](#-详细功能)
 - [⚙️ 配置与部署](#-配置与部署)
-- [📦 自包含安装程序](#-自包含安装程序)
-- [📊 性能特性](#-性能特性)
+- [🔌 API 接口](#-api-接口)
+- [🐍 Python SDK](#-python-sdk)
 - [🔧 开发与扩展](#-开发与扩展)
-- [🛡️ 隐私说明](#-隐私说明)
-- [📚 文档与资源](#-文档与资源)
-- [🤝 贡献](#-贡献)
-- [📄 许可证](#-许可证)
-- [🙏 致谢](#-致谢)
+- [🛡️ 隐私与安全](#-隐私与安全)
+- [📚 文档资源](#-文档资源)
+- [⚖️ 许可证](#️-许可证)
+- [🤝 贡献指南](#-贡献指南)
 
 ---
 
-## 🌟 项目概述
+## 🌟 项目愿景
 
-SeeSea 是一个以隐私保护为核心的多模态搜索平台，通过 Rust 构建高性能核心引擎，整合多种搜索源，支持智能缓存和语义匹配。平台提供网页搜索、RSS 聚合、浏览器自动化和增强搜索（Pro）功能，适合任何搜索场景的应用和数据分析的场景。
+**SeeSea 不仅仅是一个搜索引擎**。它是一个完整的私有数据获取和处理中心，旨在为个人和组织提供一个自主可控、隐私优先的数据聚合平台。
 
-### 🎯 核心价值
+### 为什么选择 SeeSea?
 
-- **🛡️ 隐私保护**：集成 Tor 网络、TLS 指纹混淆、DNS over HTTPS 等技术，保护用户搜索隐私
-- **🔍 多源整合**：结合网页搜索、RSS 订阅和浏览器自动化三种数据获取方式
-- **⚡ 高效性能**：基于 Rust 异步编程，支持多引擎并发查询
-- **🧠 智能缓存**：实现语义级缓存，支持向量相似性匹配和结果去重
-- **🚀 增强搜索（Pro）**：深入处理网页内容，提供基于向量的增强搜索结果
-- **🔧 实用工具**：提供完整的监控、配置管理和 REST API 接口
-- **🐍 Python 支持**：提供 Python SDK，支持灵活的引擎扩展和集成
+在当今的互联网环境中，我们面临着:
+- 📡 **数据孤岛**: 信息分散在搜索引擎、RSS 源、社交媒体、热点榜单等多个平台
+- 🔍 **隐私担忧**: 商业搜索引擎跟踪用户行为，收集个人数据
+- 🤖 **AI 依赖**: 需要整合向量检索和大语言模型来增强数据处理能力
+- ⚡ **实时需求**: 需要及时获取热点资讯、金融数据等实时信息
+- 🎯 **个性化**: 每个用户或组织都有独特的数据需求和处理流程
+
+SeeSea 正是为解决这些问题而生:
+- ✅ **统一聚合**: 一个平台整合搜索、RSS、热点、向量检索等多种数据源
+- ✅ **完全私有**: 自主部署，数据完全掌控在自己手中
+- ✅ **隐私优先**: 支持 Tor、代理链、TLS 指纹混淆等多重隐私保护
+- ✅ **AI 增强**: 内置向量数据库和 LLM 集成，支持语义搜索和内容增强
+- ✅ **可扩展**: 支持自定义搜索引擎、RSS 模板、浏览器引擎等
+- ✅ **高性能**: Rust 核心引擎，异步并发，智能缓存
 
 ---
 
-## 🚀 核心能力
+## 🎯 核心特性
 
-### 1. 多搜索引擎聚合
+### 1. 📚 多源数据聚合
 
-支持 12 种搜索引擎，覆盖不同搜索场景：
+#### 搜索引擎整合 (12+ 引擎)
 
-| 引擎类别 | 搜索引擎 | 功能说明 |
-|---------|---------|----------|
-| **通用搜索** | Bing、Yandex、百度、搜狗 | 支持多语言通用搜索 |
-| **图片搜索** | Unsplash、Bing Images | 提供高质量免费图片资源 |
-| **视频搜索** | Bilibili、Bing Videos | 覆盖中文视频平台 |
-| **新闻搜索** | Bing News | 提供实时新闻资讯 |
-| **社交搜索** | 搜狗微信 | 支持微信公众号内容搜索 |
+| 类别 | 引擎 | 说明 |
+|------|------|------|
+| **通用搜索** | Bing、Yandex、百度、搜狗、360搜索 | 主流搜索引擎 |
+| **图片搜索** | Unsplash、Bing Images、搜狗图片 | 高质量图片资源 |
+| **视频搜索** | Bilibili、Bing Videos、搜狗视频 | 中英文视频平台 |
+| **新闻搜索** | Bing News | 实时新闻资讯 |
+| **社交搜索** | 搜狗微信 | 微信公众号文章搜索 |
 
-### 2. 隐私保护机制
+#### RSS 订阅系统
 
-实现多层次隐私保护：
+- **多格式支持**: RSS 2.0、Atom、RDF 等
+- **模板系统**: 自定义 RSS 内容处理和输出格式
+- **自动更新**: 定时抓取和内容解析
+- **智能过滤**: 基于关键词的内容筛选和去重
 
-- **网络层保护**：TLS 指纹混淆、请求头伪造、User-Agent 轮换
-- **Tor 网络集成**：支持 SOCKS5 代理访问、控制端口管理、多种使用模式
-- **反指纹技术**：Canvas/WebGL 指纹屏蔽、浏览器指纹对抗
-- **流量混淆**：请求时序随机化、智能限流、流量特征混淆
-- **追踪防护**：DNS over HTTPS、请求去标识化、Cookie 隔离
+#### 热点资讯聚合 (39+ 平台)
 
-### 3. 智能缓存系统
+支持从以下平台获取实时热点:
 
-基于向量的语义缓存设计：
+**科技资讯**
+- 知乎、微博、今日头条、百度热搜
+- B站热搜、抖音、快手
+- GitHub Trending、Hacker News、Product Hunt
+- 稀土掘金、少数派、IT之家、Solidot
+- 酷安、V2EX、虫部落
 
-- **语义匹配**：结合 BM25 算法和向量相似性进行缓存命中判断
-- **时间管理**：支持可配置的缓存过期时间和自动清理
-- **分层存储**：分别缓存搜索结果、RSS 源和元数据
-- **性能监控**：提供缓存命中率、性能指标等监控数据
+**财经金融**
+- 华尔街见闻、财联社、金投网
+- 金十数据、格隆汇、雪球热门股票
+- 法布财经快讯
 
-### 4. RSS 内容聚合
+**新闻媒体**
+- 澎湃新闻、凤凰网、参考消息
+- 联合早报、卫星通讯社、腾讯新闻
 
-提供完整的 RSS 处理功能：
+**论坛社区**
+- 虎扑、牛客、豆瓣、百度贴吧
+- 36氪、远景论坛、Freebuf、Steam
 
-- **自动抓取**：支持定时更新和内容解析
-- **模板系统**：允许自定义 RSS 内容处理模板
-- **更新配置**：可设置更新频率和内容过滤规则
-- **内容关联**：与搜索结果进行语义关联
+### 2. 🤖 AI 增强功能
 
-### 5. 浏览器自动化
+#### 向量数据库集成 (Qdrant)
 
-集成 Playwright 浏览器自动化：
+- **文档向量化**: 支持文本内容的向量化存储
+- **语义搜索**: 基于向量相似度的语义检索
+- **智能缓存**: 向量级别的缓存匹配
+- **动态优化**: 自动调整批处理大小和 HNSW 参数
 
-- **复杂网站支持**：处理 JavaScript 重度依赖的网站
-- **并发执行**：支持多浏览器实例同时抓取
-- **精准提取**：提供精准的内容提取和数据清洗
+#### LLM 集成支持
 
-### 6. 增强搜索（Pro）
+- **多模型支持**: OpenAI API、本地 LLM (llama-cpp)
+- **功能装饰器**: 缓存、日志、重试等增强功能
+- **嵌入生成**: 支持文本向量化
+- **流式生成**: 支持流式文本生成
 
-提供深度内容处理和向量增强搜索：
-
-- **链接类型智能检测**：自动区分静态HTML和SPA页面
-- **HTML深度处理**：获取完整内容，提取元数据，转换为Markdown
-- **智能内容清洗**：基于蚁群算法的相关性分析，过滤低相关内容
-- **向量增强**：内容向量化存储，基于语义相似度调整结果信任值
-- **相似文档推荐**：支持基于内容的相似文档搜索
-- **完整流程**：
+#### Pro 增强搜索
 
 ```
-搜索请求 → 原始结果获取 → URL内容处理 → 向量存储 → 结果融合 → 返回增强结果
+搜索请求 → 原始结果获取 → URL内容处理 → 向量存储 → 结果融合 → 增强结果
 ```
 
-![SeeSea Pro 流程](static/image/pro_flow_screenshot.jpg)
+- **智能内容提取**: 基于 Crawl4AI 的深度内容抓取
+- **Markdown 转换**: HTML 到 Markdown 的高质量转换
+- **相关性分析**: 基于蚁群算法的内容清洗
+- **向量增强**: 基于语义相似度调整搜索结果信任值
+
+### 3. 🔒 隐私保护体系
+
+#### 网络层保护
+
+- **Tor 网络集成**: 支持 SOCKS5 代理，完整的 Tor 控制
+- **TLS 指纹混淆**: 随机化 TLS 客户端指纹
+- **代理链支持**: 支持多级代理链路
+- **DNS over HTTPS**: 加密 DNS 查询
+
+#### 反追踪技术
+
+- **请求头伪造**: User-Agent 轮换，Referer 随机化
+- **流量混淆**: 请求时序随机化，智能限流
+- **Canvas/WebGL 指纹屏蔽**: 浏览器指纹对抗
+- **Cookie 隔离**: 请求级别的 Cookie 隔离
+
+### 4. 💾 智能缓存系统
+
+- **语义匹配**: BM25 算法 + 向量相似性
+- **分层存储**: 搜索结果、RSS 源、元数据分层缓存
+- **自动清理**: 过期缓存自动清理
+- **性能监控**: 缓存命中率、性能指标实时监控
+
+### 5. 🎭 浏览器自动化
+
+- **Playwright 集成**: 支持 Chromium、Firefox、WebKit
+- **隐身模式**: Stealth 插件，反检测
+- **并发控制**: 浏览器实例池管理
+- **自定义引擎**: 支持 Python 编写浏览器引擎
+
+### 6. 🌐 完整的 API 服务
+
+#### 双模式网络架构
+
+- **内网模式**: 仅监听 localhost，无认证限制
+- **外网模式**: 监听配置地址，完整安全特性
+- **双模式**: 同时运行内外网服务器
+
+#### 安全中间件栈
+
+1. **Magic Link 认证**: 一次性使用令牌
+2. **JWT/API Key 认证**: 标准 Bearer Token 或 API Key
+3. **IP 过滤**: 黑白名单模式
+4. **熔断器**: 防止级联故障
+5. **限流**: 全局和 IP 级别限流
+6. **CORS**: 跨域请求处理
 
 ---
 
 ## 🏗️ 技术架构
 
-### 系统架构
+### 系统架构图
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     用户接口层                              │
+│                       用户接口层                            │
 ├─────────────────┬─────────────────┬─────────────────────────┤
-│   CLI 工具      │   REST API      │   Python 绑定           │
+│   CLI 工具      │   REST API      │   Python SDK            │
+│                 │   (内网/外网)   │   (Rust PyO3 绑定)      │
 └─────────────────┴─────────────────┴─────────────────────────┘
                             │
 ┌─────────────────────────────────────────────────────────────┐
-│                     核心服务层                              │
+│                       核心服务层                            │
 ├─────────────────┬─────────────────┬─────────────────────────┤
-│   搜索编排器    │   结果聚合器    │   查询处理器             │
+│   搜索编排器    │   结果聚合器    │   查询处理器            │
+│   EnginePool    │   Aggregator    │   QueryProcessor        │
 └─────────────────┴─────────────────┴─────────────────────────┘
                             │
 ┌─────────────────────────────────────────────────────────────┐
-│                    搜索引擎层                               │
+│                      数据获取层                             │
+├──────────────┬──────────────┬──────────────┬───────────────┤
+│  Web搜索引擎 │  RSS聚合器   │ 浏览器引擎   │  热点获取器   │
+│  12+ Engines │  RSS Parser  │  Playwright  │  39+ Platforms│
+└──────────────┴──────────────┴──────────────┴───────────────┘
+                            │
+┌─────────────────────────────────────────────────────────────┐
+│                      AI 增强层                              │
 ├─────────────────┬─────────────────┬─────────────────────────┤
-│   Web搜索引擎   │   RSS聚合器     │   浏览器引擎             │
+│  向量数据库     │   LLM 集成      │   内容处理              │
+│  Qdrant Store   │   OpenAI/Local  │   Cleaner/Parser        │
 └─────────────────┴─────────────────┴─────────────────────────┘
                             │
 ┌─────────────────────────────────────────────────────────────┐
-│                    基础设施层                               │
+│                      基础设施层                             │
 ├─────────────────┬─────────────────┬─────────────────────────┤
 │   隐私网络      │   缓存系统      │   配置管理              │
+│   Tor/Proxy     │   Sled DB       │   Config Manager        │
 └─────────────────┴─────────────────┴─────────────────────────┘
 ```
 
-### 技术栈
+### 核心技术栈
 
-- **Rust 2024**：高性能、内存安全的系统编程语言
-- **Tokio**：异步运行时，支持高并发处理
-- **Axum**：现代化的 Web 框架
-- **Sled**：高性能嵌入式数据库
-- **Playwright**：浏览器自动化框架
-- **PyO3**：Python-Rust 绑定
-- **NumPy**：Python 数值计算库
-- **Markitdown**：HTML 到 Markdown 转换
+**后端核心** (Rust)
+- **Rust 2024**: 内存安全，零成本抽象
+- **Tokio**: 异步运行时，高并发处理
+- **Axum**: 现代化 Web 框架
+- **Sled**: 嵌入式数据库
+- **PyO3**: Python-Rust 绑定
+
+**前端服务** (SvelteKit)
+- **Svelte 5**: 响应式 UI 框架
+- **SvelteKit 2**: 全栈框架
+- **TailwindCSS 4**: 实用优先的 CSS 框架
+- **TypeScript**: 类型安全
+
+**AI & 数据处理** (Python)
+- **Qdrant**: 向量数据库
+- **OpenAI**: LLM API
+- **llama-cpp-python**: 本地 LLM
+- **Playwright**: 浏览器自动化
+- **Crawl4AI**: 智能网页抓取
+- **Markitdown**: HTML 转 Markdown
 
 ---
 
-## 🎮 使用方式
+## 🚀 快速开始
 
-### 1. CLI 命令行工具
+### 安装
+
+#### 方式 1: 使用预编译包 (推荐)
+
+```bash
+# Windows
+# 下载 SeeSea-windows-amd64.exe
+# 双击运行即可
+
+# Linux / macOS
+# 下载对应平台的二进制文件
+chmod +x seesea
+./seesea --help
+```
+
+#### 方式 2: 使用 Python 包
+
+```bash
+# 安装核心库
+pip install seesea-core
+
+# 安装 Python SDK (包含 Pro 功能)
+pip install seesea
+
+# 安装浏览器支持 (可选)
+pip install seesea[browser]
+
+# 安装完整功能
+pip install seesea[full]
+```
+
+#### 方式 3: 从源码构建
+
+```bash
+# 克隆仓库
+git clone https://github.com/nostalgiatan/SeeSea.git
+cd SeeSea
+
+# 构建 Rust 核心
+cargo build --release
+
+# 构建 Python 绑定
+pip install maturin
+maturin develop --release
+
+# 运行
+./target/release/SeeSea --help
+```
+
+### 快速使用
+
+#### CLI 命令行
 
 ```bash
 # 基础搜索
-seesea search ＜关键词＞
+seesea search "Rust programming"
 
-# API 服务器
-seesea server --host 0.0.0.0 --port 3001 -c config/development.toml
+# 指定引擎
+seesea search "深度学习" --engines bing,baidu
+
+# 启动 API 服务器 (内网模式)
+seesea server --host 127.0.0.1 --port 3001
+
+# 启动 API 服务器 (外网模式，需配置文件)
+seesea server --host 0.0.0.0 --port 8080 -c config/production.toml
 ```
 
-### 2. REST API
-
-```bash
-# 启动 API 服务器
-cargo run --bin api-server
-
-# 搜索接口
-curl "http://localhost:8080/api/search?q=人工智能&engines=bing,baidu"
-
-# RSS 管理
-curl "http://localhost:8080/api/rss/feeds"
-curl "http://localhost:8080/api/rss/fetch?url=https://example.com/feed.xml"
-
-# 缓存统计
-curl "http://localhost:8080/api/cache/stats"
-
-# 健康检查
-curl "http://localhost:8080/api/health"
-```
-
-**注意事项**：
-- Python命令行默认启动的服务器为内网模式，**默认不启用认证**
-- 只有通过配置文件启动并设置 `mode = "external"` 或 `mode = "dual"` 时，才会启用外网模式
-- 外网模式可通过配置文件启用API密钥认证或JWT认证
-- 生产环境建议使用配置文件启用认证，确保服务安全
-- 配置文件示例：
-  ```toml
-  [api.auth]
-  enabled = true
-  auth_type = "api_key"
-  api_keys = ["your-secret-api-key"]
-  ```
-
-### 3. Python 集成
+#### Python SDK
 
 ```python
-import seesea
+from seesea import SearchClient, RssClient, HotClient
 
-# 基础搜索（使用内置 Rust 引擎）
-results = seesea.search("深度学习", engines=["bing", "baidu"])
+# 1. 搜索功能
+client = SearchClient()
 
-# 隐私搜索（启用 Tor）
-results = seesea.search_privacy("隐私技术",
-                               enable_tor=True,
-                               fingerprint_protection=True)
+# 基础搜索
+results = client.search("Python programming", engines=["bing", "baidu"])
+print(f"找到 {len(results)} 个结果")
 
-# RSS 订阅
-feeds = seesea.fetch_rss("https://example.com/feed.xml")
+# 全文搜索 (整合搜索 + RSS + 缓存)
+fulltext_results = client.search_fulltext("人工智能最新进展")
 
-# Pro 增强搜索
-from seesea.Pro import ContentProcessor, VectorUtils
+# 获取统计信息
+stats = client.get_stats()
+print(f"缓存命中率: {stats.cache_hit_rate:.2%}")
 
-# 创建内容处理器
-processor = ContentProcessor()
+# 2. RSS 订阅
+rss_client = RssClient()
 
-# 处理单个URL内容
-processed_data = await processor.process_url("https://example.com/article", keywords="深度学习")
+# 获取 RSS 源列表
+feeds = rss_client.list_feeds()
 
-# 创建向量工具
-vector_utils = VectorUtils()
+# 抓取单个 RSS 源
+feed = rss_client.fetch_feed("https://example.com/rss.xml")
+for item in feed.items:
+    print(f"{item.title}: {item.link}")
 
-# 添加文档到向量数据库
-vector_utils.add_document(
-    content=processed_data["cleaned_markdown"],
-    metadata={
-        "title": processed_data["metadata"]["title"],
-        "url": processed_data["url"]
-    }
+# 3. 热点资讯
+hot_client = HotClient()
+
+# 获取支持的平台
+platforms = hot_client.get_platforms()
+
+# 获取单个平台热点
+zhihu_hot = hot_client.fetch_platform("zhihu")
+for item in zhihu_hot.items:
+    print(f"{item.rank}. {item.title} - {item.hot_value}")
+
+# 批量获取多个平台
+hot_trends = hot_client.fetch_multiple(["zhihu", "weibo", "github-trending-today"])
+```
+
+#### Pro 增强功能
+
+```python
+from seesea.Pro import UrlToMarkdownConverter, Vectorizer, VectorDatabase
+
+# 1. URL 到 Markdown 转换
+converter = UrlToMarkdownConverter()
+result = await converter.convert("https://example.com/article")
+print(result.markdown)
+print(result.metadata)
+
+# 2. 向量化和语义搜索
+vectorizer = Vectorizer()
+vector_db = VectorDatabase()
+
+# 添加文档
+doc_id = vector_db.add_document(
+    content="这是一篇关于人工智能的文章...",
+    metadata={"title": "AI技术", "url": "https://example.com"}
 )
 
-# 向量相似搜索
-vector_results = vector_utils.search("深度学习", limit=10)
+# 语义搜索
+results = vector_db.search("机器学习", limit=10)
+for result in results:
+    print(f"{result.score:.2f} - {result.metadata['title']}")
 
-# 注册自定义搜索引擎
-from seesea import register_engine, BrowserEngine
+# 3. LLM 集成
+from seesea.Pro.llm import OpenAILLM
 
-# 方式1：使用装饰器注册 Python 引擎
-@seesea.register_engine(
-    name="custom_search",
-    engine_type="general",
-    description="自定义搜索引擎"
-)
-def custom_search_callback(query: str) -> list:
-    # 实现自定义搜索逻辑
-    return [{"title": "示例结果", "url": "https://example.com"}]
+llm = OpenAILLM(model_name="gpt-3.5-turbo", api_key="your-key")
+response = llm.generate_text("解释什么是量子计算")
+print(response)
 
-# 方式2：继承 BrowserEngine 创建浏览器引擎
-class MyBrowserEngine(BrowserEngine):
-    async def search(self, query: str, page: int = 1):
+# 生成嵌入
+embedding = llm.generate_embedding("这是一段文本")
+```
+
+---
+
+## 📖 详细功能
+
+### 搜索功能
+
+#### 支持的搜索引擎
+
+```python
+from seesea import list_engines
+
+# 列出所有可用引擎
+engines = list_engines()
+print(engines)
+# ['bing', 'bing_images', 'bing_videos', 'bing_news', 
+#  'baidu', 'sogou', 'sogou_wechat', 'sogou_images', 'sogou_videos',
+#  'yandex', 'so', 'unsplash', 'bilibili']
+```
+
+#### 搜索模式
+
+1. **快速搜索**: 仅使用快速引擎（bing, baidu 等）
+2. **全局搜索**: 使用所有引擎（包括较慢的引擎）
+3. **全文搜索**: 整合网络搜索、RSS 源和缓存
+
+#### 结果聚合
+
+- **去重**: 基于 URL 和标题的智能去重
+- **排序**: 混合排序算法（时间、相关性、来源可信度）
+- **分组**: 智能结果分组
+- **过滤**: 支持时间范围、语言、地区过滤
+
+### RSS 功能
+
+#### 模板系统
+
+在 `rss/template/` 目录下创建 `.see` 文件:
+
+```python
+# people.rss.see
+url = "https://example.com/people/feed.xml"
+title = "人物专访"
+categories = ["interview", "people"]
+update_interval = 3600  # 秒
+```
+
+#### RSS API
+
+```python
+from seesea import RssClient
+
+client = RssClient()
+
+# 列出所有模板
+templates = client.list_templates()
+
+# 使用模板添加源
+client.add_feed_from_template("people")
+
+# 手动添加源
+client.add_feed({
+    "url": "https://example.com/feed.xml",
+    "title": "示例源",
+    "categories": ["tech"],
+    "update_interval": 1800
+})
+
+# 更新所有源
+client.update_all_feeds()
+```
+
+### 热点功能
+
+#### 支持的平台分类
+
+**科技类**
+- 中文: 知乎、微博、B站、抖音、稀土掘金、IT之家、酷安
+- 英文: GitHub Trending、Hacker News、Product Hunt
+
+**财经类**
+- 华尔街见闻、财联社、金十数据、格隆汇、雪球
+
+**新闻类**
+- 澎湃新闻、凤凰网、参考消息、联合早报、腾讯新闻
+
+**社区类**
+- V2EX、虫部落、远景论坛、Freebuf、豆瓣
+
+#### 热点 API
+
+```python
+from seesea import HotClient
+
+client = HotClient()
+
+# 获取平台信息
+platforms = client.get_platforms()
+for platform_id, platform_name in platforms:
+    print(f"{platform_id}: {platform_name}")
+
+# 获取单个平台
+zhihu = client.fetch_platform("zhihu")
+print(f"平台: {zhihu.platform_name}")
+print(f"更新时间: {zhihu.update_time}")
+for item in zhihu.items[:10]:  # 前10条
+    print(f"{item.rank}. {item.title} ({item.hot_value})")
+
+# 批量获取
+trends = client.fetch_multiple([
+    "zhihu", "weibo", "github-trending-today"
+], max_concurrency=3)
+
+for trend in trends:
+    print(f"\n=== {trend.platform_name} ===")
+    for item in trend.items[:5]:
+        print(f"{item.rank}. {item.title}")
+```
+
+### 浏览器引擎
+
+#### 内置引擎
+
+- **XinhuaEngine**: 新华网搜索引擎
+
+#### 自定义浏览器引擎
+
+```python
+from seesea.browser import BaseBrowserEngine, BrowserConfig
+
+class MyBrowserEngine(BaseBrowserEngine):
+    def __init__(self, config: BrowserConfig = None):
+        super().__init__(config or BrowserConfig(
+            headless=True,
+            stealth=True,
+            timeout=30000
+        ))
+    
+    async def search(self, url: str, actions: list, params: dict):
+        """实现自定义搜索逻辑"""
+        results = []
+        
         async with self.get_browser() as browser:
             page = await browser.new_page()
-            await page.goto(f"https://example.com/search?q={query}")
-            results = await page.query_selector_all('.result')
-            return [self.parse_result(r) for r in results]
+            
+            # 执行自定义操作
+            await page.goto(url)
+            await page.wait_for_selector('.result')
+            
+            # 提取结果
+            elements = await page.query_selector_all('.result')
+            for elem in elements:
+                title = await elem.query_selector('.title')
+                link = await elem.query_selector('.link')
+                
+                results.append({
+                    "title": await title.inner_text(),
+                    "url": await link.get_attribute('href'),
+                    "engine": "my_browser"
+                })
+        
+        return results
 
-# 注册浏览器引擎
-seesea.register_engine(
+# 注册引擎
+from seesea import register_engine
+
+register_engine(
     name="my_browser",
     engine_type="browser",
-    description="自定义浏览器引擎",
-    callback=MyBrowserEngine().search
+    description="我的浏览器引擎",
+    categories=["general"],
+    callback=MyBrowserEngine().search_sync  # 使用同步包装器
 )
 
-# 使用混合引擎搜索
-results = seesea.search("查询", engines=["bing", "custom_search", "my_browser"])
+# 使用引擎
+from seesea import SearchClient
+
+client = SearchClient()
+results = client.search("test query", engines=["my_browser"])
+```
+
+### 向量增强搜索
+
+#### 配置 Qdrant
+
+```python
+from seesea_core import PyVectorClient, PyVectorConfig
+
+# 创建配置
+config = PyVectorConfig(
+    url="http://localhost:6333",
+    collection_name="seesea_docs",
+    vector_size=1536,  # OpenAI embedding size
+    distance="Cosine"
+)
+
+# 创建客户端
+vector_client = PyVectorClient(config)
+
+# 添加文档
+doc_id = await vector_client.add_document(
+    content="这是文档内容...",
+    metadata={"title": "示例", "url": "https://example.com"},
+    vector=embedding  # 从 LLM 获取
+)
+
+# 向量搜索
+results = await vector_client.search(
+    query_vector=query_embedding,
+    limit=10,
+    score_threshold=0.7
+)
+```
+
+#### Pro 增强搜索工作流
+
+```python
+from seesea import SearchClient
+from seesea.Pro import (
+    UrlToMarkdownConverter,
+    PyCleaner,
+    Vectorizer,
+    VectorDatabase
+)
+
+# 1. 执行基础搜索
+client = SearchClient()
+search_results = client.search("深度学习教程")
+
+# 2. 处理 URL 内容
+converter = UrlToMarkdownConverter()
+cleaner = PyCleaner()
+
+processed_docs = []
+for result in search_results[:5]:  # 处理前5个结果
+    # 转换为 Markdown
+    md_result = await converter.convert(result.url)
+    
+    # 清洗内容（基于蚁群算法）
+    cleaned = cleaner.clean(
+        md_result.markdown,
+        keywords="深度学习"
+    )
+    
+    processed_docs.append({
+        "url": result.url,
+        "title": result.title,
+        "content": cleaned.content,
+        "relevance": cleaned.relevance_score
+    })
+
+# 3. 向量化存储
+vectorizer = Vectorizer()
+vector_db = VectorDatabase()
+
+for doc in processed_docs:
+    vector = vectorizer.vectorize(doc["content"])
+    vector_db.add_document(
+        content=doc["content"],
+        metadata={
+            "url": doc["url"],
+            "title": doc["title"],
+            "relevance": doc["relevance"]
+        },
+        vector=vector
+    )
+
+# 4. 语义搜索
+semantic_results = vector_db.search(
+    "神经网络训练技巧",
+    limit=10
+)
+
+# 5. 融合结果
+final_results = []
+for result in semantic_results:
+    # 基于向量相似度调整信任值
+    adjusted_score = result.score * result.metadata["relevance"]
+    final_results.append({
+        "title": result.metadata["title"],
+        "url": result.metadata["url"],
+        "score": adjusted_score,
+        "snippet": result.content[:200]
+    })
+
+# 按分数排序
+final_results.sort(key=lambda x: x["score"], reverse=True)
 ```
 
 ---
 
 ## ⚙️ 配置与部署
 
-### 环境配置
+### 配置文件结构
 
-SeeSea 支持多环境配置，示例配置文件：
+SeeSea 支持多环境配置，配置文件位于 `config/` 目录:
+
+```
+config/
+├── default.toml       # 默认配置
+├── development.toml   # 开发环境
+├── testing.toml       # 测试环境
+├── staging.toml       # 预发布环境
+└── production.toml    # 生产环境
+```
+
+### 核心配置项
+
+#### 通用配置
 
 ```toml
-# config/development.toml
-# SeeSea 开发环境完整配置文件
-# 这是 SeeSea 元搜索引擎的完整配置，包含所有必要的设置
-
-# =============================================================================
-# 通用配置
-# =============================================================================
 [general]
-# 应用实例名称
 instance_name = "SeeSea"
-# 是否启用调试模式
-debug = true
-# 引擎加载模式: "global" 或 "settings"
-engine_loading_mode = "global"
-# 是否启用指标收集
+debug = false
+environment = "production"
 enable_metrics = true
-# 默认语言
 default_lang = "auto"
-# 运行环境: "development", "testing", "staging", "production"
-environment = "development"
+```
 
-# =============================================================================
-# 服务器配置
-# =============================================================================
+#### 服务器配置
+
+```toml
 [server]
-# 绑定地址
-bind_address = "127.0.0.1"
-# 端口号
-port = 3001
-# 是否启用限流
+bind_address = "0.0.0.0"
+port = 8080
+secret_key = "your-secret-key-change-in-production"
 limiter = true
-# 是否为公共实例
 public_instance = false
-# 服务密钥（生产环境请更改！）
-secret_key = "change-me-in-production-please-generate-a-strong-secret-key"
 
-# TLS 配置（HTTPS）
 [server.tls]
-enabled = false
-
-# =============================================================================
-# 搜索配置
-# =============================================================================
-[search]
-# 安全搜索级别: 0=无, 1=中等, 2=严格
-safe_search = "none"
-# 自动完成引擎
-autocomplete = ""
-# 支持的输出格式
-formats = ["json", "html", "csv", "rss"]
-# 默认每页结果数
-results_per_page = 10
-# 最大结果数
-max_results_per_page = 50
-# 搜索超时时间（秒）
-search_timeout = 15
-# 最大并发引擎数
-max_concurrent_engines = 3
-# 默认语言
-default_language = "auto"
-# 支持的语言
-supported_languages = ["en", "zh", "ja", "ko", "es", "fr", "de", "ru"]
-# 是否支持时间范围
-time_range_support = true
-
-# 结果聚合配置
-[search.aggregation]
-# 启用结果去重
-enable_deduplication = true
-# 去重算法
-deduplication_method = "url_and_title"
-# 启用结果排序
-enable_ranking = true
-# 排序算法
-ranking_algorithm = "hybrid"
-# 最大聚合结果数
-max_results = 100
-# 启用结果分组
-enable_grouping = true
-# 分组策略
-grouping_strategy = "smart"
-
-# 查询处理配置
-[search.query_processing]
-# 启用查询扩展
-enable_expansion = true
-# 启用查询纠正
-enable_correction = true
-# 纠正阈值
-correction_threshold = 0.8
-# 启用同义词扩展
-enable_synonyms = true
-# 启用停用词过滤
-enable_stop_words = true
-# 最大查询长度
-max_query_length = 200
-# 最小查询长度
-min_query_length = 1
-
-# =============================================================================
-# 隐私保护配置
-# =============================================================================
-[privacy]
-
-# User-Agent 轮换配置
-[privacy.user_agent_rotation]
-enabled = false
-# 轮换策略
-rotation_strategy = "random"
-# 轮换间隔（请求数）
-rotation_interval = 10
-# 是否包含移动端 UA
-include_mobile = false
-# 按浏览器类型分组
-group_by_browser = true
-
-# TLS 指纹保护配置
-[privacy.fingerprint_protection]
-# 保护级别: "none", "basic", "advanced", "maximum"
-protection_level = "none"
-# 随机化 TLS 扩展
-randomize_extensions = true
-# 随机化密码套件
-randomize_cipher_suites = true
-# 模拟常见浏览器
-emulate_browsers = true
-
-# 请求时序随机化配置
-[privacy.request_timing]
-# 时序策略
-timing_strategy = "light"
-# 最小延迟（毫秒）
-min_delay = 100
-# 最大延迟（毫秒）
-max_delay = 2000
-# 基于请求大小调整延迟
-size_based_delay = true
-# 基于引擎调整延迟
-engine_based_delay = true
-
-# DNS 配置
-[privacy.dns_config]
-# 是否启用 DNS over HTTPS
 enabled = true
-# DNS 服务器列表（包含国内外服务商）
-[[privacy.dns_config.servers]]
-name = "Cloudflare"
-url = "https://cloudflare-dns.com/dns-query"
-enabled = true
-weight = 1.0
+cert_file = "/path/to/cert.pem"
+key_file = "/path/to/key.pem"
+```
 
-[[privacy.dns_config.servers]]
-name = "Google"
-url = "https://dns.google/dns-query"
-enabled = true
-weight = 1.0
+#### API 认证配置
 
-[[privacy.dns_config.servers]]
-name = "阿里云"
-url = "https://dns.alidns.com/dns-query"
-enabled = true
-weight = 1.2
-
-[[privacy.dns_config.servers]]
-name = "腾讯 DNSPod"
-url = "https://doh.pub/dns-query"
-enabled = true
-weight = 1.2
-
-[[privacy.dns_config.servers]]
-name = "360 DoH"
-url = "https://doh.360.cn/dns-query"
-enabled = true
-weight = 1.1
-
-# DNS 超时时间（毫秒）
-timeout = 5000
-# 重试次数
-retry_count = 2
-# 是否启用 DNS 缓存
-enable_cache = true
-# 缓存过期时间（秒）
-cache_ttl = 300
-
-# 请求头配置
-[privacy.headers]
-# 移除隐私敏感头
-remove_privacy_headers = true
-# 标准化 Accept 头
-normalize_accept = true
-# 随机化其他头
-randomize_headers = false
-
-# Cookie 处理配置
-[privacy.cookie_handling]
-# 是否接受 Cookie
-accept_cookies = false
-# 是否发送 Cookie
-send_cookies = false
-# 过滤策略
-filter_policy = "disabled"
-
-# =============================================================================
-# 缓存配置
-# =============================================================================
-[cache]
-# 缓存后端: "sled", "redis", "memory", "hybrid"
-backend = "sled"
-# 数据库路径（使用 .seesea 目录）
-database_path = ".seesea/cache.db"
-# 缓存过期时间（秒）
-ttl = 3600
-# 最大缓存大小（字节）
-max_size = 1073741824  # 1GB
-# 是否启用结果缓存
-enable_result_cache = true
-# 是否启用元数据缓存
-enable_metadata_cache = true
-# 是否启用 DNS 缓存
-enable_dns_cache = true
-# 是否启用 RSS 缓存
-enable_rss_cache = true
-# 缓存刷新间隔（秒）
-refresh_interval = 300
-# 淘汰策略
-eviction_policy = "ttl"
-
-# 压缩配置
-[cache.compression]
-# 是否启用压缩
-enabled = true
-# 压缩算法
-algorithm = "lz4"
-# 压缩阈值（字节）
-threshold = 1024
-# 压缩级别
-level = 3
-
-# 监控配置
-[cache.monitoring]
-# 是否启用监控
-enabled = true
-# 指标收集间隔（秒）
-metrics_interval = 60
-# 是否启用慢查询日志
-enable_slow_query_log = true
-# 慢查询阈值（毫秒）
-slow_query_threshold = 1000
-
-# =============================================================================
-# API 配置
-# =============================================================================
-[api]
-# API 版本
-version = "v1"
-# 是否启用 CORS
-enable_cors = true
-
-# CORS 配置
-[api.cors]
-# 允许的源
-allowed_origins = ["*"]
-# 允许的方法
-allowed_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-# 是否允许凭证
-allow_credentials = false
-
-# 速率限制配置
-[api.rate_limit]
-# 是否启用速率限制
-enabled = true
-# 每秒请求数
-requests_per_second = 10
-# 每分钟请求数
-requests_per_minute = 100
-# 每小时请求数
-requests_per_hour = 1000
-# 每天请求数
-requests_per_day = 10000
-# 突发请求限制
-burst_size = 20
-
-# 认证配置
+```toml
 [api.auth]
-# 是否启用认证
-enabled = false
-# 认证类型: "none", "api_key", "jwt", "basic"
-auth_type = "none"
-
-# 响应格式配置
-[api.response_format]
-# 默认格式
-default_format = "json"
-# 支持的格式
-supported_formats = ["json", "xml", "csv"]
-# 是否包含调试信息
-include_debug_info = false
-# 是否包含性能指标
-include_metrics = true
-# 是否包含请求 ID
-include_request_id = true
-
-# 响应压缩配置
-[api.response_format.compression]
-# 是否启用
 enabled = true
-# 压缩算法
-algorithms = ["gzip", "deflate"]
-# 压缩阈值
-threshold = 1024
+auth_type = "jwt"  # 或 "api_key"
+jwt_secret = "your-jwt-secret"
+jwt_expiration = 3600  # 秒
+api_keys = ["key1", "key2"]  # API Key 模式
 
-# API 安全配置
-[api.security]
-# 是否强制 HTTPS
-force_https = false
+[api.network]
+mode = "dual"  # "internal", "external", 或 "dual"
+internal_host = "127.0.0.1"
+internal_port = 3001
+external_host = "0.0.0.0"
+external_port = 8080
+```
 
-# API 文档配置
-[api.documentation]
-# 是否启用
-enabled = true
-# 文档类型
-doc_type = "openapi3"
-# 文档路径
-path = "/docs"
-# 是否包含示例
-include_examples = true
+#### 搜索配置
 
-# =============================================================================
-# 引擎配置
-# =============================================================================
-[engines]
-
-# 全局引擎设置
-[engines.global_settings]
-# 默认超时时间（秒）
-default_timeout = 30
-# 默认重试次数
-default_retries = 3
-# 最大并发引擎数
+```toml
+[search]
 max_concurrent_engines = 5
-# 引擎失败阈值（0.0-1.0）
-failure_threshold = 0.5
-# 引擎恢复时间（秒）
-recovery_time = 300
-# 是否启用引擎监控
-enable_monitoring = true
-# 是否启用性能统计
-performance_stats = true
+search_timeout = 15
+results_per_page = 10
+max_results_per_page = 50
+safe_search = "moderate"
 
-# =============================================================================
-# 日志配置
-# =============================================================================
-[logging]
-# 日志级别: "error", "warn", "info", "debug", "trace"
-level = "debug"
-# 日志格式: "simple", "full", "json", "compact"
-format = "full"
-# 日志输出: "stdout", "stderr", "file", "both"
-output = "stdout"
-# 是否启用结构化日志
-structured = false
-# 是否启用彩色输出
-colored = true
-
-# =============================================================================
-# RSS Feed 配置
-# =============================================================================
-[rss]
-# 是否启用 RSS 功能
-enabled = true
-# RSS 模板目录
-template_dir = "rss/template"
-# 配置文件路径
-config_path = ".seesea/rss_config.toml"
-# 默认更新间隔（秒）
-default_update_interval = 3600  # 1 hour
-# 最大保留项目数
-max_items_per_feed = 1000
-# 是否启用自动更新
-auto_update = true
-# 启动时更新持久化 RSS
-update_on_startup = true
-
-# =============================================================================
-# 语义缓存配置
-# =============================================================================
-[cache.semantic]
-# 是否启用语义缓存
-enabled = true
-# 相似度阈值（0.0-1.0，建议0.7-0.85）
-similarity_threshold = 0.75
-# 每个查询最大返回结果数
-max_results_per_query = 50
-# 是否启用跨查询去重
+[search.aggregation]
 enable_deduplication = true
+enable_ranking = true
+ranking_algorithm = "hybrid"
 ```
 
-### 快速部署
+#### 缓存配置
+
+```toml
+[cache]
+enable_result_cache = true
+result_cache_ttl = 3600
+enable_semantic_cache = true
+semantic_threshold = 0.85
+db_path = "data/cache.db"
+max_cache_size_mb = 1024
+```
+
+#### 隐私配置
+
+```toml
+[privacy]
+enable_tor = false
+tor_socks_port = 9050
+tor_control_port = 9051
+
+enable_tls_fingerprint_randomization = true
+enable_request_header_randomization = true
+
+proxy_chain = [
+    "socks5://proxy1:1080",
+    "http://proxy2:8080"
+]
+
+[privacy.dns]
+enable_doh = true
+doh_providers = [
+    "https://cloudflare-dns.com/dns-query",
+    "https://dns.google/dns-query"
+]
+```
+
+#### 向量数据库配置
+
+```toml
+[vector_store]
+enabled = true
+provider = "qdrant"
+
+[vector_store.qdrant]
+url = "http://localhost:6333"
+api_key = ""
+collection_name = "seesea_docs"
+vector_size = 1536
+distance = "Cosine"
+```
+
+### Docker 部署
+
+#### 使用 Docker Compose
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  seesea:
+    build: .
+    ports:
+      - "8080:8080"
+      - "3001:3001"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+    environment:
+      - SEESEA_ENV=production
+      - RUST_LOG=info
+    depends_on:
+      - qdrant
+  
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./qdrant_data:/qdrant/storage
+  
+  svelte-frontend:
+    build: ./server
+    ports:
+      - "5173:5173"
+    environment:
+      - API_URL=http://seesea:8080
+```
+
+#### 启动服务
 
 ```bash
-# 1. 准备 Rust 环境
-rustup update stable
+# 构建并启动
+docker-compose up -d
 
-# 2. 构建项目
-git clone https://github.com/nostalgiatan/SeeSea.git
-cd SeeSea
-maturin build --release --strip
-cd seesea
-pip install .
-cd crates
-pip install markitdown tf
+# 查看日志
+docker-compose logs -f seesea
 
-# 3. 配置环境
-cp config/production.toml config/local.toml
-# 根据需要修改配置文件
-
-# 4. 启动服务
-seesea server --port 3001
+# 停止服务
+docker-compose down
 ```
+
+### 生产环境部署建议
+
+#### 安全配置
+
+1. **强制 HTTPS**
+```toml
+[api.security]
+force_https = true
+hsts_enabled = true
+```
+
+2. **启用认证**
+```toml
+[api.auth]
+enabled = true
+auth_type = "jwt"
+jwt_secret = "use-strong-random-secret-here"
+```
+
+3. **配置 IP 过滤**
+```toml
+[api.ip_filter]
+mode = "whitelist"
+whitelist = ["10.0.0.0/8", "172.16.0.0/12"]
+```
+
+4. **限流配置**
+```toml
+[api.rate_limit]
+global_rate = 100  # 请求/秒
+global_burst = 200
+per_ip_rate = 10
+per_ip_burst = 20
+```
+
+#### 性能优化
+
+1. **调整并发数**
+```toml
+[search]
+max_concurrent_engines = 10
+worker_threads = 8
+```
+
+2. **缓存优化**
+```toml
+[cache]
+max_cache_size_mb = 2048
+enable_cache_compression = true
+```
+
+3. **数据库优化**
+```toml
+[vector_store.qdrant]
+batch_size = 100
+indexing_threshold = 20000
+```
+
+#### 监控配置
+
+```toml
+[monitoring]
+enable_prometheus = true
+prometheus_port = 9090
+enable_health_check = true
+health_check_interval = 60
+```
+
 ---
 
-## 📦 自包含安装程序
+## 🔌 API 接口
 
-SeeSea 提供了跨平台的自包含安装程序，支持一键安装和卸载，无需手动配置环境。
+### 端点列表
 
-### 🖥️ 支持平台
+#### 公共端点 (外网)
 
-- **Windows 10/11** (x64)
-- **Linux** (x64, ARM64)
-- **macOS** (x64, ARM64)
-
-### 🚀 安装步骤
-
-1. **下载安装程序**
-   - 从 [GitHub Releases](https://github.com/yourusername/seesea/releases) 下载对应平台的安装程序
-   - 文件名格式：`seesea-installer-<platform>-<arch>.exe` (Windows) 或 `seesea-installer-<platform>-<arch>` (Linux/macOS)
-
-2. **运行安装程序**
-   
-   **Windows**：
-   - 双击 `seesea-installer-windows-x64.exe` 运行
-   - 按照安装向导完成安装
-   
-   **Linux/macOS**：
-   ```bash
-   # 赋予执行权限
-   chmod +x seesea-installer-<platform>-<arch>
-   # 运行安装程序
-   ./seesea-installer-<platform>-<arch>
-   ```
-
-3. **自定义安装选项**
-   - 安装目录：默认为系统标准安装目录
-   - 创建桌面快捷方式：默认启用
-   - 添加到 PATH 环境变量：默认启用
-   - 创建卸载程序：默认启用
-
-### 🗑️ 卸载步骤
-
-**Windows**：
-- 通过「控制面板 > 程序 > 卸载程序」找到 SeeSea 并卸载
-- 或使用开始菜单中的「卸载 SeeSea」快捷方式
-
-**Linux/macOS**：
-```bash
-# 使用卸载脚本
-seesea-installer uninstall
-```
-
-### ⚙️ 命令行安装选项
-
-```bash
-# 查看帮助
-seesea-installer --help
-
-# 自定义安装目录
-seesea-installer --install-dir /opt/seesea
-
-# 静默安装（无交互）
-seesea-installer --quiet
-
-# 正常安装
-seesea-installer install
-
-# 卸载
-seesea-installer uninstall
-```
-
----
-
-## 📊 性能特性
-
-### 测试数据
-
-| 指标 | 数值 | 说明 |
+| 方法 | 端点 | 说明 |
 |------|------|------|
-| **并发搜索** | 10+ 引擎同时查询 | 基于异步并发处理 |
-| **缓存命中率** | 85%+ | 语义缓存优化效果 |
-| **响应时间** | 11-17秒 | 多引擎并发搜索延迟 |
-| **内存使用** | 峰值132MB | 低内存占用，适合边缘部署 |
-| **隐私开销** | < 15% | 隐私保护功能的性能损耗 |
+| GET | `/api/health` | 健康检查 |
+| GET | `/api/version` | 版本信息 |
+| GET | `/api/stats` | 统计信息 |
+| GET/POST | `/api/search` | 搜索接口 |
+| GET | `/api/engines` | 列出引擎 |
+| GET | `/api/rss/feeds` | RSS 源列表 |
+| POST | `/api/rss/fetch` | 抓取 RSS |
+| GET | `/api/hot/platforms` | 热点平台列表 |
+| GET | `/api/hot/fetch` | 获取热点 |
+| GET | `/api/metrics` | Prometheus 指标 |
+
+#### 内部端点 (内网)
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| POST | `/api/cache/clear` | 清除缓存 |
+| POST | `/api/cache/cleanup` | 清理过期缓存 |
+| POST | `/api/magic-link/generate` | 生成魔法链接 |
+| POST | `/api/rss/template/add` | 添加 RSS 模板 |
+
+### API 请求示例
+
+#### 搜索请求
+
+**GET 方式**
+```bash
+curl "http://localhost:8080/api/search?q=rust+programming&engines=bing,baidu&page=1&page_size=20"
+```
+
+**POST 方式**
+```bash
+curl -X POST http://localhost:8080/api/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "q": "rust programming",
+    "engines": ["bing", "baidu"],
+    "page": 1,
+    "page_size": 20,
+    "language": "en",
+    "safe_search": "moderate",
+    "time_range": "week"
+  }'
+```
+
+**带认证**
+```bash
+# JWT 认证
+curl -X POST http://localhost:8080/api/search \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"q": "test"}'
+
+# API Key 认证
+curl -X POST http://localhost:8080/api/search \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"q": "test"}'
+```
+
+#### 响应格式
+
+```json
+{
+  "query": "rust programming",
+  "results": [
+    {
+      "title": "The Rust Programming Language",
+      "url": "https://www.rust-lang.org/",
+      "content": "A language empowering everyone...",
+      "engine": "bing",
+      "score": 0.95,
+      "publishedDate": "2024-01-01T00:00:00Z",
+      "thumbnail": null,
+      "metadata": {}
+    }
+  ],
+  "total_count": 150,
+  "page": 1,
+  "page_size": 20,
+  "engines_used": ["bing", "baidu"],
+  "search_time_ms": 1234,
+  "cached": false
+}
+```
+
+#### RSS 接口
+
+```bash
+# 列出所有 RSS 源
+curl http://localhost:8080/api/rss/feeds
+
+# 抓取指定 RSS 源
+curl -X POST http://localhost:8080/api/rss/fetch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com/feed.xml",
+    "force_update": false
+  }'
+```
+
+#### 热点接口
+
+```bash
+# 获取平台列表
+curl http://localhost:8080/api/hot/platforms
+
+# 获取单个平台热点
+curl "http://localhost:8080/api/hot/fetch?platform=zhihu"
+
+# 批量获取
+curl -X POST http://localhost:8080/api/hot/fetch/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "platforms": ["zhihu", "weibo", "github-trending-today"],
+    "max_concurrency": 3
+  }'
+```
+
+详细 API 文档请参阅: [docs/API.md](docs/API.md)
+
+---
+
+## 🐍 Python SDK
+
+### 安装
+
+```bash
+pip install seesea
+```
+
+### 基础使用
+
+```python
+from seesea import SearchClient
+
+client = SearchClient()
+
+# 简单搜索
+results = client.search("python")
+
+# 高级搜索
+results = client.search(
+    query="机器学习",
+    engines=["bing", "baidu", "sogou"],
+    page=1,
+    page_size=20,
+    language="zh",
+    region="CN",
+    safe_search="moderate",
+    time_range="month"
+)
+
+# 处理结果
+for item in results.results:
+    print(f"标题: {item.title}")
+    print(f"URL: {item.url}")
+    print(f"来源: {item.engine}")
+    print(f"分数: {item.score}")
+    print(f"摘要: {item.content}")
+    print("---")
+```
+
+### 高级功能
+
+```python
+from seesea import SearchClient, RssClient, HotClient
+from seesea.Pro import UrlToMarkdownConverter, VectorDatabase
+
+# 1. 全文搜索
+client = SearchClient()
+fulltext_results = client.search_fulltext("人工智能")
+
+# 2. RSS 订阅
+rss = RssClient()
+feeds = rss.list_feeds()
+tech_feed = rss.fetch_feed("https://techcrunch.com/feed/")
+
+# 3. 热点资讯
+hot = HotClient()
+zhihu_hot = hot.fetch_platform("zhihu")
+
+# 4. URL 内容提取
+converter = UrlToMarkdownConverter()
+article = await converter.convert("https://example.com/article")
+
+# 5. 向量搜索
+vector_db = VectorDatabase()
+vector_results = vector_db.search("查询文本", limit=10)
+```
+
+### 自定义引擎
+
+```python
+from seesea import register_engine
+
+# 注册 Python 引擎
+@register_engine(
+    name="my_engine",
+    engine_type="general",
+    description="My Custom Engine",
+    categories=["general"]
+)
+def my_search_callback(query: str) -> list:
+    # 实现搜索逻辑
+    results = []
+    # ... 你的代码
+    return results
+
+# 使用自定义引擎
+from seesea import SearchClient
+
+client = SearchClient()
+results = client.search("test", engines=["my_engine", "bing"])
+```
+
+完整 SDK 文档: [docs/PYTHON_SDK.md](docs/PYTHON_SDK.md)
 
 ---
 
 ## 🔧 开发与扩展
 
-### 添加新搜索引擎
-
-```rust
-use seesea_derive::search_engine;
-
-#[search_engine]
-pub struct MyCustomEngine {
-    name: "my_engine",
-    base_url: "https://api.example.com/search",
-    supports_images: true,
-    supports_news: false,
-}
-
-impl MyCustomEngine {
-    async fn search_impl(&self, query: &SearchQuery) -> Result<Vec<SearchResult>> {
-        // 实现自定义搜索逻辑
-    }
-}
-```
-
-### 自定义隐私策略
-
-```rust
-use seesea::privacy::PrivacyStrategy;
-
-struct CustomPrivacyStrategy;
-
-impl PrivacyStrategy for CustomPrivacyStrategy {
-    async fn apply_headers(&self) -> HeaderMap {
-        // 自定义请求头
-    }
-
-    async fn rotate_fingerprint(&self) -> Fingerprint {
-        // 自定义指纹轮换
-    }
-}
-```
-
----
-
-## 🛡️ 隐私说明
-
-### 已实现的隐私技术
-
-- **DNS over HTTPS**：防止 DNS 泄露
-- **TLS 指纹混淆**：避免流量分析
-- **浏览器指纹对抗**：防止设备识别
-- **Tor 网络集成**：支持匿名访问
-- **请求去标识化**：移除隐私敏感信息
-- **流量混淆**：对抗流量分析
-
-### 数据收集说明
-
-SeeSea 不收集或存储：
-- 用户搜索历史
-- 用户 IP 地址
-- 设备指纹信息
-- 用户行为数据
-
-### 开源透明
-
-- 所有代码公开可审计
-- 支持本地私有部署
-- 隐私保护效果可独立验证
-
----
-
-## 📚 文档与资源
-
-### 📖 详细文档
-
-- [API 参考](docs/API.md) - 完整的 API 文档
-- [搜索引擎开发](docs/ENGINE_CUSTOMIZATION.md) - 自定义引擎开发指南
-- [搜索使用指南](docs/SEARCH_USAGE.md) - 搜索 API 使用示例
-- [类型系统](docs/TYPE_SYSTEM.md) - Python 和 Rust 类型参考
-- [最佳实践](docs/BEST_PRACTICES.md) - 推荐使用模式和技巧
-- [目录结构](docs/DIRECTORY_STRUCTURE.md) - 项目组织结构
-- [全文搜索指南](docs/fulltext-search-guide.md) - 数据库和 RSS 集成
-
-### 🧪 示例项目
-
-- [examples/api_dual_network.rs](examples/api_dual_network.rs) - 双网络 API 服务器示例
-- [examples/api_server.rs](examples/api_server.rs) - 简单 API 服务器示例
-- [examples/api_simple_server.rs](examples/api_simple_server.rs) - 简单 API 服务器示例
-- [examples/browser_usage.py](examples/browser_usage.py) - 浏览器自动化示例
-- [examples/python_api_usage.py](examples/python_api_usage.py) - Python API 使用示例
-
-### 🔬 测试
+### 开发环境设置
 
 ```bash
-# 运行所有测试
+# 克隆仓库
+git clone https://github.com/nostalgiatan/SeeSea.git
+cd SeeSea
+
+# 安装 Rust 依赖
+cargo build
+
+# 安装 Python 依赖
+cd seesea
+pip install -e ".[dev,browser,full]"
+
+# 安装前端依赖
+cd server
+pnpm install
+
+# 运行测试
 cargo test
+pytest seesea/tests/
+```
 
-# 性能测试
-cargo bench
+### 项目结构
 
-# 集成测试
-cargo test --test integration
+```
+SeeSea/
+├── src/                    # Rust 核心代码
+│   ├── api/               # API 服务器
+│   ├── search/            # 搜索引擎
+│   ├── cache/             # 缓存系统
+│   ├── net/               # 网络层
+│   ├── rss/               # RSS 模块
+│   ├── hot/               # 热点模块
+│   ├── vector_store/      # 向量数据库
+│   ├── python_bindings/   # Python 绑定
+│   └── ...
+├── seesea/                # Python SDK
+│   ├── seesea/
+│   │   ├── search.py      # 搜索客户端
+│   │   ├── api.py         # API 服务器
+│   │   ├── rss.py         # RSS 客户端
+│   │   ├── browser/       # 浏览器引擎
+│   │   └── Pro/           # Pro 功能
+│   │       ├── llm/       # LLM 集成
+│   │       ├── vector_utils.py  # 向量工具
+│   │       └── url_to_markdown.py
+│   └── tests/
+├── server/                # SvelteKit 前端
+│   ├── src/
+│   └── package.json
+├── docs/                  # 文档
+├── config/                # 配置文件
+├── examples/              # 示例代码
+└── tests/                 # 集成测试
+```
+
+### 添加新搜索引擎
+
+#### Rust 引擎
+
+创建 `src/search/engines/my_engine.rs`:
+
+```rust
+use async_trait::async_trait;
+use crate::derive::{
+    SearchEngine, SearchQuery, SearchResult,
+    EngineInfo, EngineType, EngineStatus,
+};
+
+pub struct MyEngine {
+    info: EngineInfo,
+}
+
+impl MyEngine {
+    pub fn new() -> Self {
+        Self {
+            info: EngineInfo {
+                name: "MyEngine".to_string(),
+                engine_type: EngineType::General,
+                description: "My custom search engine".to_string(),
+                status: EngineStatus::Active,
+                // ... 其他配置
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl SearchEngine for MyEngine {
+    fn info(&self) -> &EngineInfo {
+        &self.info
+    }
+    
+    async fn search(&self, query: &SearchQuery) 
+        -> Result<SearchResult, Box<dyn std::error::Error + Send + Sync>> 
+    {
+        // 实现搜索逻辑
+        Ok(SearchResult::default())
+    }
+}
+```
+
+#### Python 引擎
+
+创建 `seesea/browser/my_engine.py`:
+
+```python
+from seesea.browser.base import BaseBrowserEngine
+from typing import List, Dict
+
+class MyEngine(BaseBrowserEngine):
+    async def search(self, url: str, actions: List[Dict], params: Dict):
+        results = []
+        
+        async with self.get_browser() as browser:
+            page = await browser.new_page()
+            await page.goto(url)
+            
+            # 实现搜索逻辑
+            # ...
+            
+        return results
+
+# 创建同步回调
+def create_my_engine_callback_sync(query: str, page: int = 1) -> list:
+    import asyncio
+    engine = MyEngine()
+    return asyncio.run(engine.search(...))
+
+# 设置引擎元数据
+ENGINE_TYPE = "general"
+ENGINE_DESCRIPTION = "My Browser Engine"
+ENGINE_CATEGORIES = ["general"]
+```
+
+### 添加新的热点平台
+
+编辑 `src/hot/mod.rs`:
+
+```rust
+pub const SUPPORTED_PLATFORMS: &[(&str, &str)] = &[
+    // ... 现有平台
+    ("my_platform", "我的平台"),
+];
+```
+
+API 会自动支持新平台，无需其他代码更改。
+
+### 贡献指南
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 开启 Pull Request
+
+**代码规范**:
+- Rust: 使用 `cargo fmt` 和 `cargo clippy`
+- Python: 使用 `black` 和 `ruff`
+- 提交信息: 遵循 [Conventional Commits](https://www.conventionalcommits.org/)
+
+---
+
+## 🛡️ 隐私与安全
+
+### 隐私保护特性
+
+#### 1. 网络层保护
+
+- **Tor 网络集成**: 完整的 Tor SOCKS5 代理支持
+- **TLS 指纹混淆**: 随机化 TLS 客户端指纹
+- **DNS over HTTPS**: 加密 DNS 查询
+- **代理链**: 支持多级代理
+
+#### 2. 反追踪技术
+
+- **User-Agent 轮换**: 随机化浏览器标识
+- **请求头随机化**: 随机化 HTTP 请求头
+- **Cookie 隔离**: 每个请求独立 Cookie jar
+- **Referer 控制**: 防止 Referer 泄露
+
+#### 3. 浏览器指纹对抗
+
+- **Canvas 指纹屏蔽**: 防止 Canvas 指纹识别
+- **WebGL 指纹屏蔽**: 防止 WebGL 指纹识别
+- **Stealth 模式**: Playwright stealth 插件
+
+### 安全特性
+
+#### 1. API 安全
+
+- **JWT 认证**: 标准 JSON Web Token
+- **API Key**: 简单的 API 密钥认证
+- **Magic Link**: 一次性使用令牌
+- **IP 过滤**: 黑白名单
+
+#### 2. 请求保护
+
+- **限流**: 全局和 IP 级别限流
+- **熔断器**: 防止级联故障
+- **超时控制**: 防止长时间占用资源
+- **CORS**: 跨域请求控制
+
+#### 3. 数据保护
+
+- **本地缓存**: 数据存储在本地
+- **无日志**: 不记录搜索历史（可配置）
+- **加密传输**: HTTPS/TLS 1.3
+- **敏感信息脱敏**: API Key 等自动脱敏
+
+### 使用隐私模式
+
+```python
+from seesea import SearchClient
+
+client = SearchClient()
+
+# 启用 Tor
+results = client.search(
+    "sensitive query",
+    privacy_mode="tor",
+    enable_fingerprint_protection=True
+)
+
+# 使用代理链
+results = client.search(
+    "query",
+    proxy_chain=[
+        "socks5://proxy1:1080",
+        "http://proxy2:8080"
+    ]
+)
 ```
 
 ---
 
-## 🤝 贡献
+## 📚 文档资源
 
-欢迎社区贡献，主要贡献方向包括：
+### 官方文档
 
-- 🔍 新增搜索引擎支持
-- 🛡️ 增强隐私保护能力
-- 🧠 改进搜索算法和结果排序
-- 📊 完善性能监控
-- 📚 提升文档质量
+- [API 参考](docs/API.md) - 完整的 API 文档
+- [API 参数文档](docs/API_PARAMS.md) - API 参数详细说明
+- [API 请求体文档](docs/API_REQUEST_BODY.md) - 请求体格式
+- [API 响应格式](docs/API_RESPONSE_FORMAT.md) - 响应格式说明
+- [Python SDK](docs/PYTHON_SDK.md) - Python SDK 完整文档
+- [配置指南](docs/CONFIGURATION.md) - 配置文件详解
+- [部署指南](docs/DEPLOYMENT.md) - 生产环境部署
+- [开发指南](docs/DEVELOPMENT.md) - 开发者文档
+- [FAQ](docs/FAQ.md) - 常见问题
+
+### 架构文档
+
+- [目录结构](docs/DIRECTORY_STRUCTURE.md) - 项目结构说明
+- [类型系统](docs/TYPE_SYSTEM.md) - 类型定义文档
+- [引擎定制](docs/ENGINE_CUSTOMIZATION.md) - 自定义引擎
+- [最佳实践](docs/BEST_PRACTICES.md) - 开发最佳实践
+
+### 示例代码
+
+- [基础搜索](examples/basic_search.py)
+- [浏览器引擎](examples/browser_usage.py)
+- [Python API](examples/python_api_usage.py)
+- [API 服务器](examples/api_server.rs)
 
 ---
 
-## 📄 许可证
+## ⚖️ 许可证
 
-本项目采用 [Apache-2.0 许可证](LICENSE)。
+本项目采用 **GNU Affero General Public License v3.0 (AGPL-3.0)** 许可证。
+
+### AGPL-3.0 许可证要点
+
+✅ **允许**:
+- 商业使用
+- 修改
+- 分发
+- 专利使用
+- 私人使用
+
+❗ **要求**:
+- **源码公开**: 如果您修改本软件并通过网络提供服务，必须公开修改后的源代码
+- **同样许可**: 衍生作品必须使用相同的 AGPL-3.0 许可证
+- **状态声明**: 必须说明对原始代码的重大修改
+- **版权声明**: 必须保留原始版权和许可证声明
+
+🚫 **禁止**:
+- 提供担保
+
+### 网络使用条款
+
+**重要提示**: AGPL-3.0 的关键特性是"网络使用"条款:
+
+> 如果您修改本程序并通过网络向用户提供服务（例如作为 SaaS 服务），您必须向这些用户提供修改后的源代码。
+
+这意味着:
+- ✅ 如果您只是在内部使用，不需要公开源码
+- ✅ 如果您只是部署供个人或组织内部使用，不需要公开源码
+- ❌ 如果您修改后作为网络服务提供给外部用户，必须公开源码
+- ❌ 如果您基于 SeeSea 构建 SaaS 服务，必须公开您的修改
+
+### 附加条款 (依据 AGPL-3.0 第7条)
+
+根据 AGPL-3.0 第7条，我们添加以下附加条款:
+
+1. **商标保护**: 未经明确书面许可，不得使用 "SeeSea" 名称或标志进行推广。
+
+2. **贡献者归属**: 所有衍生作品必须保留原始贡献者的署名。
+
+3. **免责声明增强**: 
+   - 本软件按"原样"提供，不提供任何形式的明示或暗示保证
+   - 使用本软件进行的搜索、数据抓取等行为，使用者需自行承担法律责任
+   - 作者和贡献者不对因使用本软件导致的任何直接或间接损失负责
+
+4. **服务终止**: 如果发现您违反 AGPL-3.0 许可证条款，您使用本软件的权利将自动终止。
+
+### 免责声明
+
+**重要法律声明**:
+
+1. **服务可用性**: 本软件不保证任何搜索引擎、RSS 源或热点平台的持续可用性。第三方服务可能随时更改或终止。
+
+2. **数据准确性**: 本软件不对通过搜索、RSS、热点等功能获取的数据的准确性、完整性或及时性做任何保证。
+
+3. **合法使用**: 使用者有责任确保其使用本软件的方式符合所在地区的法律法规，包括但不限于:
+   - 数据抓取的合法性
+   - 隐私保护法规
+   - 版权法
+   - 网络安全法
+
+4. **第三方服务**: 本软件集成的第三方服务（搜索引擎、RSS 源等）由各自的提供商管理，使用这些服务时需遵守其服务条款。
+
+5. **隐私工具**: Tor、代理等隐私保护工具的有效性取决于正确的配置和使用。作者不对隐私保护的有效性做任何保证。
+
+6. **AI 功能**: LLM 和向量数据库等 AI 功能的结果可能不准确，不应作为关键决策的唯一依据。
+
+### 第三方许可证
+
+本项目使用了以下开源软件:
+- Rust 标准库 (MIT/Apache-2.0)
+- Tokio (MIT)
+- Axum (MIT)
+- Sled (MIT/Apache-2.0)
+- Qdrant 客户端 (Apache-2.0)
+- Playwright (Apache-2.0)
+- 其他依赖见 `Cargo.toml` 和 `requirements.txt`
+
+完整的第三方许可证信息请参阅 [NOTICE](NOTICE) 文件。
+
+### 许可证全文
+
+完整的 AGPL-3.0 许可证文本请参阅 [LICENSE](LICENSE) 文件。
+
+如有许可证相关问题，请联系: nostalgiatan@example.com
+
+---
+
+## 🤝 贡献指南
+
+我们欢迎所有形式的贡献！
+
+### 如何贡献
+
+1. **报告问题**: 在 [Issues](https://github.com/nostalgiatan/SeeSea/issues) 中报告 bug 或提出功能建议
+2. **改进文档**: 修正错误、补充说明、翻译文档
+3. **提交代码**: 修复 bug、添加新功能、优化性能
+4. **分享经验**: 撰写教程、分享使用案例
+
+### 贡献流程
+
+1. Fork 本仓库
+2. 创建特性分支
+   ```bash
+   git checkout -b feature/your-feature
+   # 或
+   git checkout -b fix/your-bugfix
+   ```
+3. 提交更改
+   ```bash
+   git commit -m "feat: add amazing feature"
+   # 或
+   git commit -m "fix: resolve issue #123"
+   ```
+4. 推送到您的 Fork
+   ```bash
+   git push origin feature/your-feature
+   ```
+5. 创建 Pull Request
+
+### 代码规范
+
+**Rust**
+```bash
+# 格式化
+cargo fmt
+
+# Lint
+cargo clippy -- -D warnings
+
+# 测试
+cargo test
+```
+
+**Python**
+```bash
+# 格式化
+black seesea/
+ruff check seesea/
+
+# 类型检查
+mypy seesea/
+
+# 测试
+pytest seesea/tests/
+```
+
+**提交信息**
+
+遵循 [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+feat: 添加新功能
+fix: 修复 bug
+docs: 文档更新
+style: 代码格式调整
+refactor: 重构
+perf: 性能优化
+test: 测试相关
+chore: 构建工具或辅助工具的变动
+```
+
+### 行为准则
+
+请阅读并遵守我们的 [行为准则](CODE_OF_CONDUCT.md)。
+
+### 贡献者
+
+感谢所有贡献者的付出！
+
+<a href="https://github.com/nostalgiatan/SeeSea/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=nostalgiatan/SeeSea" />
+</a>
 
 ---
 
 ## 🙏 致谢
 
-感谢以下开源项目的支持：
+### 开源项目
 
+- [Rust](https://www.rust-lang.org/) - 系统编程语言
 - [Tokio](https://tokio.rs/) - 异步运行时
 - [Axum](https://github.com/tokio-rs/axum) - Web 框架
-- [Sled](https://github.com/spacejam/sled) - 嵌入式数据库
+- [Svelte](https://svelte.dev/) - UI 框架
+- [Qdrant](https://qdrant.tech/) - 向量数据库
 - [Playwright](https://playwright.dev/) - 浏览器自动化
-- [PyO3](https://pyo3.rs/) - Python 绑定
+
+### 灵感来源
+
+- [SearXNG](https://github.com/searxng/searxng) - 元搜索引擎
+- [Whoogle](https://github.com/benbusby/whoogle-search) - 隐私搜索
+- [Crawl4AI](https://github.com/unclecode/crawl4ai) - 智能爬虫
+
+### 数据源
+
+- 搜索引擎: Bing、百度、搜狗、Yandex 等
+- 热点数据: [newsnow.busiyi.world](https://newsnow.busiyi.world)
+- RSS 源: 各内容提供商
 
 ---
 
 <div align="center">
 
-**🌊 SeeSea - 隐私保护的多模态搜索平台**
+**SeeSea** - 看海看得远，看得广
 
-*保护隐私，自由搜索*
+Made with ❤️ by [SeeSea Team](https://github.com/nostalgiatan)
 
-[GitHub](https://github.com/your-org/seesea) | [文档](docs/) | [社区](https://qun.qq.com/universal-share/share?ac=1&authKey=MYqYYdBkXIIpLy53qACJ8UX8o5aA%2FcjbrdlGdIYGf1MAdUhnHySxbLkrmTJf8ae5&busi_data=eyJncm91cENvZGUiOiIxMDE0MTE3NjE1IiwidG9rZW4iOiJWcXNpVWc1RThoZEtRZTJ3dGE5UUR3bHEwMmxURjhUcTgyc25aZHF1SlU1Nkgyeko0MTdJT0pVY3M4d3h0M0JOIiwidWluIjoiMjk2NTMxMjA3NiJ9&data=efjbukPAWz15OdH4I6uhGOqu2ao4DmcL20OpLBA3zu9x-0Cv8cQvMaNh_NnaxHePTIT4DXeCyILo8cH4uvDVkw&svctype=4&tempid=h5_group_info)
+[⬆ 回到顶部](#seesea---私人部署的云端数据获取中心)
 
 </div>
