@@ -255,13 +255,9 @@ SeeSea 正是为解决这些问题而生:
 
 ```bash
 # Windows
-# 下载 SeeSea-windows-amd64.exe
-# 双击运行即可
-
-# Linux / macOS
-# 下载对应平台的二进制文件
-chmod +x seesea
-./seesea --help
+# 下载 SeeSea-windows-amd64-p310.py
+# python运行即可
+python3 SeeSea-windows-amd64-p310.py
 ```
 
 #### 方式 2: 使用 Python 包
@@ -286,16 +282,22 @@ pip install seesea[full]
 # 克隆仓库
 git clone https://github.com/nostalgiatan/SeeSea.git
 cd SeeSea
+python3 -m venv venv
+source venv/bin/activate
 
 # 构建 Rust 核心
 cargo build --release
 
-# 构建 Python 绑定
+# 安装核心模块
 pip install maturin
 maturin develop --release
 
+# 安装 Python SDK
+cd seesea
+pip install seesea
+
 # 运行
-./target/release/SeeSea --help
+seesea --help
 ```
 
 ### 快速使用
@@ -434,7 +436,7 @@ print(engines)
 
 #### 模板系统
 
-在 `rss/template/` 目录下创建 `.see` 文件:
+在 `rss/template/` 目录下创建 `.rss.see` 文件:
 
 ```python
 # people.rss.see
@@ -1626,7 +1628,6 @@ chore: 构建工具或辅助工具的变动
 ### 灵感来源
 
 - [SearXNG](https://github.com/searxng/searxng) - 元搜索引擎
-- [Whoogle](https://github.com/benbusby/whoogle-search) - 隐私搜索
 - [Crawl4AI](https://github.com/unclecode/crawl4ai) - 智能爬虫
 
 ### 数据源
