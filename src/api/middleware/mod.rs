@@ -23,6 +23,7 @@ pub mod cors;
 pub mod ipfilter;
 pub mod logging;
 pub mod magiclink;
+pub mod metrics_mw;
 pub mod ratelimit;
 
 pub use auth::*;
@@ -31,4 +32,5 @@ pub use cors::*;
 pub use ipfilter::*;
 pub use logging::*;
 pub use magiclink::*;
+pub use metrics_mw::*;
 pub use ratelimit::*;

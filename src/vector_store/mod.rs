@@ -107,8 +107,6 @@ pub trait VectorStore: Send + Sync {
 pub async fn create_vector_store(
     config: Option<VectorStoreConfig>,
 ) -> Result<Arc<dyn VectorStore>> {
-    // 确保系统调控中心已初始化
-    crate::ensure_init();
     // 如果提供了配置，则使用提供的配置，否则从全局配置读取
     let vector_config = match config {
         Some(cfg) => cfg,

@@ -36,7 +36,7 @@ use super::middleware::{
     AuthConfig, AuthState, CircuitBreakerConfig, CircuitBreakerState, IpFilterConfig,
     IpFilterState, MagicLinkConfig, MagicLinkState, RateLimitConfig, RateLimiterState,
     circuit_breaker_middleware, cors, ip_filter_middleware, jwt_auth_middleware,
-    magic_link_middleware, rate_limit_middleware,
+    magic_link_middleware, metrics_middleware, rate_limit_middleware,
 };
 use super::network::{NetworkConfig, NetworkMode};
 use crate::cache::CacheInterface;
@@ -203,45 +203,56 @@ impl ApiInterface {
     ///
     /// 返回配置好的 Axum Router
     pub fn build_internal_router(&self) -> Router {
-        Router::new()
-            // 首页路由
-            .route("/", get(handle_index))
-            .route("/favicon.ico", get(handle_favicon))
-            // 搜索相关路由
-            .route("/api/search", get(handle_search))
-            .route("/api/search", post(handle_search_post))
-            // 引擎信息路由
-            .route("/api/engines", get(handle_engines_list))
-            // 热门搜索路由
-            .route("/api/hot", get(handle_hot_all))
-            .route("/api/hot/all", get(handle_hot_all))
-            .route("/api/hot/platforms", get(handle_hot_platforms_list))
-            .route("/api/hot/multiple", get(handle_hot_multiple))
-            .route("/api/hot/{platform_id}", get(handle_hot_platform))
-            // RSS 相关路由
-            .route("/api/rss/feeds", get(rss::handle_rss_feeds_list))
-            .route("/api/rss/fetch", post(rss::handle_rss_fetch))
-            .route("/api/rss/templates", get(rss::handle_rss_templates_list))
-            .route("/api/rss/template/add", post(rss::handle_rss_template_add))
-            // 缓存管理路由
-            .route("/api/cache/stats", get(cache::handle_cache_stats))
-            .route("/api/cache/clear", post(cache::handle_cache_clear))
-            .route("/api/cache/cleanup", post(cache::handle_cache_cleanup))
-            // 统计信息路由
-            .route("/api/stats", get(handle_stats))
-            // 健康检查路由
-            .route("/api/health", get(handle_health))
+        use axum::middleware;
+        use axum::routing::get_service;
+        use tower_http::services::ServeDir;
+
+        // API 路由组
+        let api_router = Router::new()
+            .route("/search", get(handle_search))
+            .route("/search", post(handle_search_post))
+            .route("/engines", get(handle_engines_list))
+            .route("/hot", get(handle_hot_all))
+            .route("/hot/all", get(handle_hot_all))
+            .route("/hot/platforms", get(handle_hot_platforms_list))
+            .route("/hot/multiple", get(handle_hot_multiple))
+            .route("/hot/{platform_id}", get(handle_hot_platform))
+            .route("/rss/feeds", get(rss::handle_rss_feeds_list))
+            .route("/rss/fetch", post(rss::handle_rss_fetch))
+            .route("/rss/templates", get(rss::handle_rss_templates_list))
+            .route("/rss/template/add", post(rss::handle_rss_template_add))
+            .route("/cache/stats", get(cache::handle_cache_stats))
+            .route("/cache/clear", post(cache::handle_cache_clear))
+            .route("/cache/cleanup", post(cache::handle_cache_cleanup))
+            .route("/stats", get(handle_stats))
             .route("/health", get(handle_health))
-            // 版本信息路由
-            .route("/api/version", get(handle_version))
-            // 指标路由
-            .route("/api/metrics", get(handle_metrics))
-            .route("/api/metrics/realtime", get(handle_realtime_metrics))
-            // 魔法链接管理路由（仅内网）
-            .route("/api/magic-link/generate", post(handle_magic_link_generate))
-            // Pro API路由 - 匹配所有以/api/pro/开头的请求
-            .route("/api/pro/{*path}", any(handle_pro_api))
+            .route("/version", get(handle_version))
+            .route("/metrics", get(handle_metrics))
+            .route("/metrics/realtime", get(handle_realtime_metrics))
+            .route("/magic-link/generate", post(handle_magic_link_generate))
+            .route("/pro/{*path}", any(handle_pro_api));
+
+        Router::new()
+            .route("/favicon.ico", get(handle_favicon))
+            .route("/health", get(handle_health))
+            // API 路由组
+            .nest("/api", api_router)
+            // 静态资源目录
+            .nest_service("/_app", get_service(ServeDir::new("static/html/_app")))
+            // 根路径返回 index.html
+            .route("/", get(handle_index))
+            // robots.txt 等根目录文件
+            .nest_service("/robots.txt", get_service(ServeDir::new("static/html")))
+            // 所有其他路由（SPA 客户端路由）都返回 index.html
+            .fallback(get(handle_index))
             .with_state(self.state.clone())
+            // 应用指标收集中间件
+            .layer(middleware::from_fn_with_state(
+                self.state.metrics.clone(),
+                metrics_middleware,
+            ))
+            // 应用 CORS 中间件
+            .layer(cors::default_cors_layer())
     }
 
     /// 构建外网路由器（带安全限制）
@@ -251,36 +262,44 @@ impl ApiInterface {
     /// 返回配置好的 Axum Router
     pub fn build_external_router(&self) -> Router {
         use axum::middleware;
+        use axum::routing::get_service;
+        use tower_http::services::ServeDir;
+
+        // API 路由组
+        let api_router = Router::new()
+            .route("/search", get(handle_search))
+            .route("/search", post(handle_search_post))
+            .route("/engines", get(handle_engines_list))
+            .route("/hot", get(handle_hot_all))
+            .route("/hot/all", get(handle_hot_all))
+            .route("/hot/platforms", get(handle_hot_platforms_list))
+            .route("/hot/multiple", get(handle_hot_multiple))
+            .route("/hot/{platform_id}", get(handle_hot_platform))
+            .route("/rss/feeds", get(rss::handle_rss_feeds_list))
+            .route("/rss/fetch", post(rss::handle_rss_fetch))
+            .route("/stats", get(handle_stats))
+            .route("/health", get(handle_health))
+            .route("/version", get(handle_version))
+            .route("/metrics", get(handle_metrics))
+            .route("/cache/stats", get(cache::handle_cache_stats))
+            .route("/cache/clear", post(cache::handle_cache_clear))
+            .route("/cache/cleanup", post(cache::handle_cache_cleanup))
+            .route("/metrics/realtime", get(handle_realtime_metrics))
+            .route("/pro/{*path}", any(handle_pro_api));
 
         Router::new()
-            // 首页路由
-            .route("/", get(handle_index))
             .route("/favicon.ico", get(handle_favicon))
-            // 搜索相关路由
-            .route("/api/search", get(handle_search))
-            .route("/api/search", post(handle_search_post))
-            // 引擎信息路由
-            .route("/api/engines", get(handle_engines_list))
-            // 热门搜索路由
-            .route("/api/hot", get(handle_hot_all))
-            .route("/api/hot/all", get(handle_hot_all))
-            .route("/api/hot/platforms", get(handle_hot_platforms_list))
-            .route("/api/hot/multiple", get(handle_hot_multiple))
-            .route("/api/hot/{platform_id}", get(handle_hot_platform))
-            // RSS 相关路由（可能需要认证）
-            .route("/api/rss/feeds", get(rss::handle_rss_feeds_list))
-            .route("/api/rss/fetch", post(rss::handle_rss_fetch))
-            // 统计信息路由
-            .route("/api/stats", get(handle_stats))
-            // 健康检查路由
-            .route("/api/health", get(handle_health))
             .route("/health", get(handle_health))
-            // 版本信息路由
-            .route("/api/version", get(handle_version))
-            // 指标路由（只读）
-            .route("/api/metrics", get(handle_metrics))
-            // Pro API路由 - 匹配所有以/api/pro/开头的请求
-            .route("/api/pro/{*path}", any(handle_pro_api))
+            // API 路由组
+            .nest("/api", api_router)
+            // 静态资源目录 - 优先级最高
+            .nest_service("/_app", get_service(ServeDir::new("static/html/_app")))
+            // 根路径返回 index.html
+            .route("/", get(handle_index))
+            // robots.txt 等根目录文件
+            .nest_service("/robots.txt", get_service(ServeDir::new("static/html")))
+            // 所有其他路由（SPA 客户端路由）都返回 index.html
+            .fallback(get(handle_index))
             .with_state(self.state.clone())
             // 应用中间件（顺序很重要）
             // 1. 魔法链接（最先检查，可以绕过认证）
@@ -308,8 +327,15 @@ impl ApiInterface {
                 self.rate_limiter.clone(),
                 rate_limit_middleware,
             ))
-            // 6. CORS
-            .layer(cors::create_cors_layer())
+            // 6. 指标收集
+            .layer(middleware::from_fn_with_state(
+                self.state.metrics.clone(),
+                metrics_middleware,
+            ))
+            // 7. CORS
+            .layer(cors::create_cors_layer(
+                self.network_config.external.cors_origins.clone(),
+            ))
     }
 
     /// 启动服务器

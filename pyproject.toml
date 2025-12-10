@@ -52,7 +52,9 @@ features = ["python"]
 module-name = "seesea_core"
 include = [
     "rss/template/*.see",  # RSS模板文件
-    "static/html/*.html"
+    "static/html/*",
+    "static/html/**/*",
+    "static/app/**/*"  # 前端SPA构建产物
 ]
 
 [tool.black]
