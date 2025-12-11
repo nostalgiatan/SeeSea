@@ -239,7 +239,7 @@ jobs:
     - name: Install build dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install jinja2 zstandard astor
+        pip install zstandard astor
 
     - name: Generate installation scripts
       run: |
@@ -267,17 +267,30 @@ jobs:
     - name: Download All Artifacts
       uses: actions/download-artifact@v4
       with:
-        path: building
-        pattern: seesea-*
-        merge-multiple: true
+        path: artifacts
+        merge-multiple: false
+
+    - name: Collect All Build Files
+      run: |
+        mkdir -p building
+        # 复制所有平台的产物到 building 目录
+        find artifacts -name "*.whl" -exec cp {} building/ \;
+        find artifacts -name "*.py" -exec cp {} building/ \;
+        # 去重（不同平台可能有相同的 seesea-*.whl 文件）
+        cd building
+        # 列出所有文件
+        echo "=== All collected files ==="
+        ls -la
 
     - name: List Release Files
-      run: ls -la building/
+      run: |
+        echo "=== Files to be released ==="
+        ls -la building/
 
     - name: Install build dependencies for generating seesea-up.py
       run: |
         python -m pip install --upgrade pip
-        pip install jinja2 zstandard astor
+        pip install zstandard jinja2
 
     - name: Generate seesea-up.py with actual platform information
       run: |
@@ -292,7 +305,7 @@ jobs:
           building/*.py
         draft: false
         prerelease: false
-        overwrite_files: true
+        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

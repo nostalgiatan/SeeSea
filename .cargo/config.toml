@@ -1,0 +1,14 @@
+# Cargo configuration for cross-compilation
+# This file configures linkers for different target platforms
+
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+
+[target.x86_64-unknown-linux-gnu]
+linker = "gcc"
+
+# Windows targets use default MSVC linker
+# macOS targets use default clang linker

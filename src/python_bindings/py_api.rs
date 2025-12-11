@@ -91,18 +91,11 @@ impl PyApiServer {
                 runtime.block_on(async {
                     // Load configuration if provided
                     let config_path = config_file.map(std::path::PathBuf::from);
-                    println!("Loading config from: {:?}", config_path);
                     let config_manager =
                         ConfigManager::with_environment(config_path, "development")
                             .await
                             .map_err(|e| format!("Failed to load config: {}", e))?;
                     let config = config_manager.get_config().await;
-
-                    // Print config values for debugging
-                    println!("Config loaded successfully:");
-                    println!("  Server port: {}", config.server.port);
-                    println!("  Server bind address: {}", config.server.bind_address);
-                    println!("  Environment: {:?}", config.general.environment);
 
                     // Create API interface with network configuration
                     // Note: network and cache are created by the ApiInterface internally
@@ -126,10 +119,11 @@ impl PyApiServer {
                         },
                     };
 
-                    let api = ApiInterface::with_network_config(
+                    let api = ApiInterface::with_full_config(
                         search,
                         env!("CARGO_PKG_VERSION").to_string(),
                         api_network_config,
+                        config.server.frontend_api_url.clone(),
                     );
 
                     // Calculate actual host and port to use for binding
@@ -143,18 +137,11 @@ impl PyApiServer {
                 tokio::runtime::Handle::current().block_on(async {
                     // Load configuration if provided
                     let config_path = config_file.map(std::path::PathBuf::from);
-                    println!("Loading config from: {:?}", config_path);
                     let config_manager =
                         ConfigManager::with_environment(config_path, "development")
                             .await
                             .map_err(|e| format!("Failed to load config: {}", e))?;
                     let config = config_manager.get_config().await;
-
-                    // Print config values for debugging
-                    println!("Config loaded successfully:");
-                    println!("  Server port: {}", config.server.port);
-                    println!("  Server bind address: {}", config.server.bind_address);
-                    println!("  Environment: {:?}", config.general.environment);
 
                     // Create API interface with network configuration
                     // Note: network and cache are created by the ApiInterface internally
@@ -178,10 +165,11 @@ impl PyApiServer {
                         },
                     };
 
-                    let api = ApiInterface::with_network_config(
+                    let api = ApiInterface::with_full_config(
                         search,
                         env!("CARGO_PKG_VERSION").to_string(),
                         api_network_config,
+                        config.server.frontend_api_url.clone(),
                     );
 
                     // Calculate actual host and port to use for binding
@@ -234,16 +222,18 @@ impl PyApiServer {
     pub fn start(&self) -> PyResult<()> {
         let app = self.api.build_router();
         let addr = self.address.clone();
-
-        println!("🌊 Starting SeeSea API Server");
-        println!("   Address: {}", addr);
-        println!("   Mode: {}", self.network_mode);
-        println!("   Version: {}", env!("CARGO_PKG_VERSION"));
-        println!("   Press Ctrl+C to stop");
-        println!();
+        let network_mode = self.network_mode.clone();
+        let version = env!("CARGO_PKG_VERSION").to_string();
 
         // 定义异步任务
         let async_task = async move {
+            // 仅打印简洁的启动信息
+            println!("🌊 Starting SeeSea API Server");
+            println!("   Address: {}", addr);
+            println!("   Mode: {}", network_mode);
+            println!("   Version: {}", version);
+            println!("   Press Ctrl+C to stop");
+
             let listener = tokio::net::TcpListener::bind(&addr)
                 .await
                 .map_err(|e| format!("Failed to bind: {}", e))?;
@@ -272,15 +262,14 @@ impl PyApiServer {
         let app = self.api.build_internal_router();
         let addr = self.address.clone();
 
-        println!("🔒 Starting SeeSea API Server (Internal Mode)");
-        println!("   Address: {}", addr);
-        println!("   Security: Disabled (local access only)");
-        println!("   Press Ctrl+C to stop");
-        println!();
-
         // 根据runtime是否存在来执行异步任务
         match self.runtime.as_ref() {
             Some(runtime) => runtime.block_on(async {
+                println!("🔒 Starting SeeSea API Server (Internal Mode)");
+                println!("   Address: {}", addr);
+                println!("   Security: Disabled (local access only)");
+                println!("   Press Ctrl+C to stop");
+
                 let listener = tokio::net::TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;
@@ -290,6 +279,11 @@ impl PyApiServer {
                     .map_err(|e| format!("Server error: {}", e))
             }),
             None => tokio::runtime::Handle::current().block_on(async {
+                println!("🔒 Starting SeeSea API Server (Internal Mode)");
+                println!("   Address: {}", addr);
+                println!("   Security: Disabled (local access only)");
+                println!("   Press Ctrl+C to stop");
+
                 let listener = tokio::net::TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;
@@ -310,15 +304,14 @@ impl PyApiServer {
         let app = self.api.build_external_router();
         let addr = self.address.clone();
 
-        println!("🌐 Starting SeeSea API Server (External Mode)");
-        println!("   Address: {}", addr);
-        println!("   Security: Enabled");
-        println!("   Press Ctrl+C to stop");
-        println!();
-
         // 根据runtime是否存在来执行异步任务
         match self.runtime.as_ref() {
             Some(runtime) => runtime.block_on(async {
+                println!("🌐 Starting SeeSea API Server (External Mode)");
+                println!("   Address: {}", addr);
+                println!("   Security: Enabled");
+                println!("   Press Ctrl+C to stop");
+
                 let listener = tokio::net::TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;
@@ -328,6 +321,11 @@ impl PyApiServer {
                     .map_err(|e| format!("Server error: {}", e))
             }),
             None => tokio::runtime::Handle::current().block_on(async {
+                println!("🌐 Starting SeeSea API Server (External Mode)");
+                println!("   Address: {}", addr);
+                println!("   Security: Enabled");
+                println!("   Press Ctrl+C to stop");
+
                 let listener = tokio::net::TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;

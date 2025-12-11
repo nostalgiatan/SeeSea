@@ -22,17 +22,15 @@ from typing import Dict, List, Optional, Union, BinaryIO
 # Template metadata dictionary (will be replaced by build script)
 metadata: Dict[str, str] = {}
 
-# Base64-encoded compressed data (will be replaced by build script)
-bin_seesea_b64: str = ''
-bin_seesea_core_b64: str = ''
-
-# Decode base64 to bytes at runtime
-import base64
-bin_seesea: bytes = base64.b64decode(bin_seesea_b64) if bin_seesea_b64 else b''
-bin_seesea_core: bytes = base64.b64decode(bin_seesea_core_b64) if bin_seesea_core_b64 else b''
+# Wheel filenames (will be replaced by build script)
+seesea_whl_filename: str = ''
+seesea_core_whl_filename: str = ''
 
 # Template requirements list (will be replaced by build script)
 requirements: List[str] = []
+
+# Base download URL (seesea-up provides base URL)
+BASE_DOWNLOAD_URL: str = 'https://github.com/nostalgiatan/SeeSea/releases/latest/download'
 
 INSTALL_DIR: str = "/etc/seesea"
 VENV_DIR: str = os.path.join(INSTALL_DIR, "venv")

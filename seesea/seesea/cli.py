@@ -506,48 +506,6 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
 @click.option("--pro", is_flag=True, help="启用 Pro 功能 (LLM、向量搜索等)")
 def server(host, port, config, pro):
     """启动 API 服务器"""
-    # 使用默认值或配置文件中的值
-    default_host = host if host is not None else "127.0.0.1"
-    default_port = port if port is not None else 8080
-
-    # 显示启动前的配置信息
-    server_info = Table(box=box.ROUNDED, show_header=False)
-    server_info.add_column("属性", style="cyan bold", width=20)
-    server_info.add_column("值", style="white")
-
-    server_info.add_row("📡 服务", "SeeSea API 服务器")
-    server_info.add_row("🌐 监听地址", f"{default_host}:{default_port}")
-
-    # Pro 功能状态显示
-    if pro:
-        pro_status = "[bold green]✅ 已启用[/bold green]"
-        pro_features = "LLM 分析、向量搜索、语义缓存"
-    else:
-        pro_status = "[bold yellow]⚠️  未启用[/bold yellow]"
-        pro_features = "使用 --pro 参数启用"
-
-    server_info.add_row("⚡ Pro 功能", pro_status)
-    server_info.add_row("   功能详情", f"[dim]{pro_features}[/dim]")
-
-    if config:
-        server_info.add_row("⚙️  配置文件", config)
-
-    console.print(
-        Panel(
-            server_info,
-            title="[bold white]🚀 API 服务器配置[/bold white]",
-            border_style="cyan",
-            padding=(1, 2),
-        )
-    )
-
-    if pro:
-        console.print("  [dim]提示: Pro 功能需要额外的依赖和模型,首次使用时会自动下载[/dim]\n")
-    else:
-        console.print("  [dim]提示: 使用 'seesea server --pro' 启用 LLM 和向量搜索功能[/dim]\n")
-
-    console.print("[bold green]⏳ 服务器启动中...[/bold green] [dim]按 Ctrl+C 停止[/dim]\n")
-
     try:
         # 如果提供了配置文件，传递给ApiServer，不传递host和port
         if config:
@@ -555,11 +513,51 @@ def server(host, port, config, pro):
             api_server = ApiServer(config_file=config, enable_pro=pro)
         else:
             # 没有配置文件时，使用默认值
+            default_host = host if host is not None else "127.0.0.1"
+            default_port = port if port is not None else 8080
             api_server = ApiServer(host=default_host, port=default_port, enable_pro=pro)
 
         # 获取实际使用的地址
         actual_address = api_server.address
         actual_host, actual_port = actual_address.split(":")
+
+        # 显示启动前的配置信息
+        server_info = Table(box=box.ROUNDED, show_header=False)
+        server_info.add_column("属性", style="cyan bold", width=20)
+        server_info.add_column("值", style="white")
+
+        server_info.add_row("📡 服务", "SeeSea API 服务器")
+        server_info.add_row("🌐 监听地址", f"{actual_host}:{actual_port}")
+
+        # Pro 功能状态显示
+        if pro:
+            pro_status = "[bold green]✅ 已启用[/bold green]"
+            pro_features = "LLM 分析、向量搜索、语义缓存"
+        else:
+            pro_status = "[bold yellow]⚠️  未启用[/bold yellow]"
+            pro_features = "使用 --pro 参数启用"
+
+        server_info.add_row("⚡ Pro 功能", pro_status)
+        server_info.add_row("   功能详情", f"[dim]{pro_features}[/dim]")
+
+        if config:
+            server_info.add_row("⚙️  配置文件", config)
+
+        console.print(
+            Panel(
+                server_info,
+                title="[bold white]🚀 API 服务器配置[/bold white]",
+                border_style="cyan",
+                padding=(1, 2),
+            )
+        )
+
+        if pro:
+            console.print("  [dim]提示: Pro 功能需要额外的依赖和模型,首次使用时会自动下载[/dim]\n")
+        else:
+            console.print("  [dim]提示: 使用 'seesea server --pro' 启用 LLM 和向量搜索功能[/dim]\n")
+
+        console.print("[bold green]⏳ 服务器启动中...[/bold green] [dim]按 Ctrl+C 停止[/dim]\n")
 
         # 启动成功后显示详细信息
         endpoint_table = Table(box=box.SIMPLE, show_header=True, header_style="bold magenta")
@@ -607,9 +605,6 @@ def server(host, port, config, pro):
             console.print("  [dim]• 支持 12+ 搜索引擎聚合[/dim]")
             console.print("  [dim]• 需要 LLM 功能? 使用 'seesea server --pro'[/dim]\n")
 
-        # 启动服务器
-        api_server.start()
-    except KeyboardInterrupt:
         # 启动服务器
         api_server.start()
     except KeyboardInterrupt:
