@@ -69,8 +69,8 @@ def setup_jinja_env():
     env = Environment(
         loader=FileSystemLoader(STATIC_INSTALL_DIR),
         autoescape=False,
-        trim_blocks=True,
-        lstrip_blocks=True,
+        trim_blocks=False,
+        lstrip_blocks=False,
     )
     return env
 
