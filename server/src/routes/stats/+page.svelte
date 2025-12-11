@@ -510,10 +510,20 @@
 
 		.page-header {
 			flex-direction: column;
+			margin-bottom: 1.5rem;
 		}
 
 		.page-title {
 			font-size: 1.5rem;
+			gap: 0.375rem;
+		}
+
+		.title-icon {
+			font-size: 1.375rem;
+		}
+
+		.page-description {
+			font-size: 0.875rem;
 		}
 
 		.header-actions {
@@ -521,8 +531,69 @@
 			justify-content: space-between;
 		}
 
+		.refresh-btn {
+			padding: 0.4375rem 0.875rem;
+			font-size: 0.8125rem;
+		}
+
+		.section {
+			margin-bottom: 1.5rem;
+		}
+
+		.section-title {
+			font-size: 1.0625rem;
+			margin-bottom: 0.75rem;
+		}
+
 		.stats-grid {
 			grid-template-columns: repeat(2, 1fr);
+			gap: 0.75rem;
+		}
+
+		.status-card {
+			padding: 0.75rem;
+			border-radius: 10px;
+		}
+
+		.status-item {
+			padding: 0.625rem 0;
+			gap: 0.5rem;
+		}
+
+		.status-label {
+			font-size: 0.875rem;
+		}
+
+		.status-value {
+			font-size: 0.8125rem;
+		}
+	}
+
+	/* 超小屏适配 */
+	@media (max-width: 380px) {
+		.stats-page {
+			padding: 0.75rem 0 2.5rem;
+		}
+
+		.page-title {
+			font-size: 1.25rem;
+		}
+
+		.stats-grid {
+			gap: 0.5rem;
+		}
+
+		.status-indicator {
+			width: 8px;
+			height: 8px;
+		}
+
+		.status-label {
+			font-size: 0.8125rem;
+		}
+
+		.status-value {
+			font-size: 0.75rem;
 		}
 	}
 </style>

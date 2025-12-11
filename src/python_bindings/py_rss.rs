@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -21,6 +21,7 @@ use pyo3::types::PyDict;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::api::handlers::static_files::get_rss_template_dir;
 use crate::cache::{CacheInterface, types::CacheImplConfig};
 use crate::net::{client::HttpClient, config::NetworkConfig};
 use crate::rss::{RssFeedQuery, RssInterface};
@@ -62,7 +63,11 @@ impl PyRssClient {
             let rss_cache = Arc::new(RwLock::new(cache_interface.rss()));
 
             let mut rss_interface = RssInterface::with_cache(client, rss_cache);
-            rss_interface.set_template_dir("rss/template");
+
+            // 使用统一的资源路径查找
+            let template_dir = get_rss_template_dir();
+            rss_interface.set_template_dir(template_dir.to_string_lossy().as_ref());
+            tracing::debug!("RSS template directory set to: {}", template_dir.display());
 
             Arc::new(RwLock::new(rss_interface))
         };

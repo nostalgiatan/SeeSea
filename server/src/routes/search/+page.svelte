@@ -246,8 +246,53 @@
 			padding: 1rem 0 3rem;
 		}
 
+		.search-header {
+			gap: 0.75rem;
+		}
+
+		.option-btn {
+			padding: 0.4375rem 0.875rem;
+			font-size: 0.8125rem;
+		}
+
+		.option-icon {
+			font-size: 0.875rem;
+		}
+
 		.search-meta {
 			gap: 0.5rem;
+			font-size: 0.75rem;
+			padding: 0.625rem 0.75rem;
+			margin-top: 0.75rem;
+		}
+
+		.cache-badge {
+			font-size: 0.6875rem;
+		}
+
+		.results-section {
+			min-height: 300px;
+		}
+
+		.results-list {
+			gap: 0.75rem;
+		}
+	}
+
+	/* 超小屏适配 */
+	@media (max-width: 380px) {
+		.search-page {
+			padding: 0.75rem 0 2.5rem;
+		}
+
+		.search-meta {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.375rem;
+		}
+
+		.option-btn {
+			padding: 0.375rem 0.75rem;
 			font-size: 0.75rem;
 		}
 	}

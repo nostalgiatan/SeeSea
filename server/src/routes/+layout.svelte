@@ -25,6 +25,7 @@
 		min-height: 100vh;
 		display: flex;
 		flex-direction: column;
+		overflow-x: hidden;
 	}
 
 	.main-content {
@@ -33,11 +34,18 @@
 		max-width: 1280px;
 		margin: 0 auto;
 		padding: 0 1.5rem;
+		overflow-x: hidden;
 	}
 
 	@media (max-width: 640px) {
 		.main-content {
 			padding: 0 1rem;
+		}
+	}
+
+	@media (max-width: 380px) {
+		.main-content {
+			padding: 0 0.75rem;
 		}
 	}
 </style>
