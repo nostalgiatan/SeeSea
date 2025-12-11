@@ -3,9 +3,9 @@
 SeeSea Build Script
 Module Name: build.py
 Responsibility: Generate installation scripts from templates
-Expected Implementation: Process templates with AST, compress whl files, generate platform-specific installers
-Implemented Features: AST-based code injection, zstandard compression, platform detection, command-line arguments
-Usage Dependencies: Python 3.10-3.14, ast, zstandard
+Expected Implementation: Process templates with text replacement, compress whl files, generate platform-specific installers
+Implemented Features: Text-based template injection, zstandard compression, platform detection, command-line arguments
+Usage Dependencies: Python 3.10-3.14, zstandard
 Main Interfaces: Command-line interface for generating installers
   - Default: Generate platform-specific installer for current platform
   - -up: Generate seesea-up.py script based on actual files in building directory
@@ -16,9 +16,8 @@ import sys
 import os
 import glob
 import json
-import ast
-import zstandard
 import argparse
+import zstandard
 from typing import Dict, List, Tuple
 
 # Configuration
@@ -132,8 +131,8 @@ def inject_data_to_template(
     requirements: List[str]
 ) -> str:
     """
-    Read template file and inject data using AST manipulation
-    This ensures proper Python syntax without formatting issues
+    Read template file and inject data using text replacement
+    This is simpler and more reliable than AST manipulation
     
     Args:
         template_path: Path to the template file
@@ -149,129 +148,38 @@ def inject_data_to_template(
     with open(template_path, "r", encoding="utf-8") as f:
         template_content = f.read()
     
-    # Parse the template as AST
-    tree = ast.parse(template_content)
+    # Convert data to Python literal strings
+    metadata_str = repr(metadata)
+    bin_seesea_str = repr(bin_seesea)
+    bin_seesea_core_str = repr(bin_seesea_core)
+    requirements_str = repr(requirements)
     
-    # Find and replace the placeholder assignments
-    class DataInjector(ast.NodeTransformer):
-        def visit_Assign(self, node):
-            # Check if this is a single target assignment
-            if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
-                return node
-            
-            target_name = node.targets[0].id
-            
-            # Replace metadata assignment
-            if target_name == 'metadata':
-                # Create a proper dict AST node
-                new_node = ast.Assign(
-                    targets=[ast.Name(id='metadata', ctx=ast.Store())],
-                    value=ast.Dict(
-                        keys=[ast.Constant(value=k) for k in metadata.keys()],
-                        values=[ast.Constant(value=v) for v in metadata.values()]
-                    )
-                )
-                return ast.copy_location(new_node, node)
-            
-            # Replace bin_seesea assignment
-            elif target_name == 'bin_seesea':
-                new_node = ast.Assign(
-                    targets=[ast.Name(id='bin_seesea', ctx=ast.Store())],
-                    value=ast.Constant(value=bin_seesea)
-                )
-                return ast.copy_location(new_node, node)
-            
-            # Replace bin_seesea_core assignment
-            elif target_name == 'bin_seesea_core':
-                new_node = ast.Assign(
-                    targets=[ast.Name(id='bin_seesea_core', ctx=ast.Store())],
-                    value=ast.Constant(value=bin_seesea_core)
-                )
-                return ast.copy_location(new_node, node)
-            
-            # Replace requirements assignment
-            elif target_name == 'requirements':
-                new_node = ast.Assign(
-                    targets=[ast.Name(id='requirements', ctx=ast.Store())],
-                    value=ast.List(
-                        elts=[ast.Constant(value=req) for req in requirements],
-                        ctx=ast.Load()
-                    )
-                )
-                return ast.copy_location(new_node, node)
-            
-            return node
-        
-        def visit_AnnAssign(self, node):
-            # Handle annotated assignments (e.g., metadata: Dict[str, str] = {})
-            if not isinstance(node.target, ast.Name):
-                return node
-            
-            target_name = node.target.id
-            
-            # Replace metadata assignment
-            if target_name == 'metadata':
-                new_node = ast.AnnAssign(
-                    target=node.target,
-                    annotation=node.annotation,
-                    value=ast.Dict(
-                        keys=[ast.Constant(value=k) for k in metadata.keys()],
-                        values=[ast.Constant(value=v) for v in metadata.values()]
-                    ),
-                    simple=1
-                )
-                return ast.copy_location(new_node, node)
-            
-            # Replace bin_seesea assignment
-            elif target_name == 'bin_seesea':
-                new_node = ast.AnnAssign(
-                    target=node.target,
-                    annotation=node.annotation,
-                    value=ast.Constant(value=bin_seesea),
-                    simple=1
-                )
-                return ast.copy_location(new_node, node)
-            
-            # Replace bin_seesea_core assignment
-            elif target_name == 'bin_seesea_core':
-                new_node = ast.AnnAssign(
-                    target=node.target,
-                    annotation=node.annotation,
-                    value=ast.Constant(value=bin_seesea_core),
-                    simple=1
-                )
-                return ast.copy_location(new_node, node)
-            
-            # Replace requirements assignment
-            elif target_name == 'requirements':
-                new_node = ast.AnnAssign(
-                    target=node.target,
-                    annotation=node.annotation,
-                    value=ast.List(
-                        elts=[ast.Constant(value=req) for req in requirements],
-                        ctx=ast.Load()
-                    ),
-                    simple=1
-                )
-                return ast.copy_location(new_node, node)
-            
-            return node
+    # Replace placeholders with actual data using text substitution
+    # Replace metadata
+    template_content = template_content.replace(
+        "metadata: Dict[str, str] = {}",
+        f"metadata: Dict[str, str] = {metadata_str}"
+    )
     
-    # Apply the transformation
-    injector = DataInjector()
-    new_tree = injector.visit(tree)
-    ast.fix_missing_locations(new_tree)
+    # Replace bin_seesea
+    template_content = template_content.replace(
+        "bin_seesea: bytes = b''",
+        f"bin_seesea: bytes = {bin_seesea_str}"
+    )
     
-    # Convert back to source code using ast.unparse (Python 3.9+)
-    # This avoids astor's formatting issues with parentheses
-    try:
-        output_content = ast.unparse(new_tree)
-    except AttributeError:
-        # Fallback to astor for Python < 3.9
-        import astor
-        output_content = astor.to_source(new_tree)
+    # Replace bin_seesea_core
+    template_content = template_content.replace(
+        "bin_seesea_core: bytes = b''",
+        f"bin_seesea_core: bytes = {bin_seesea_core_str}"
+    )
     
-    return output_content
+    # Replace requirements
+    template_content = template_content.replace(
+        "requirements: List[str] = []",
+        f"requirements: List[str] = {requirements_str}"
+    )
+    
+    return template_content
 
 
 def generate_platform_scripts(seesea_whl, seesea_core_whl):
@@ -313,7 +221,7 @@ def generate_platform_scripts(seesea_whl, seesea_core_whl):
     # Get template path
     template_path = os.path.join(STATIC_INSTALL_DIR, f"{current_platform}.py.tmpl")
     
-    # Inject data using AST
+    # Inject data using text replacement (simpler than AST)
     output_content = inject_data_to_template(
         template_path, metadata, bin_seesea, bin_seesea_core, requirements
     )
