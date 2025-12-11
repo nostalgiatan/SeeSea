@@ -17,25 +17,56 @@ import shutil
 import subprocess
 import io
 from pathlib import Path
+from typing import Dict, List, Optional, Any, BinaryIO
 
-# Template metadata dictionary
-metadata = {{ metadata }}
+# Template metadata dictionary (will be replaced by build script)
+metadata: Dict[str, str] = {}
 
-# Template compressed data
-bin_seesea = {{ bin_seesea }}
-bin_seesea_core = {{ bin_seesea_core }}
+# Template compressed data (will be replaced by build script)
+bin_seesea: bytes = b''
+bin_seesea_core: bytes = b''
 
-# Template requirements list
-import json
-requirements = json.loads('{{ requirements }}')
+# Template requirements list (will be replaced by build script)
+requirements: List[str] = []
 
 # Global variables
-INSTALL_DIR = os.path.join(os.environ.get('PROGRAMDATA', 'C:\\ProgramData'), 'SeeSea')
-VENV_DIR = os.path.join(INSTALL_DIR, 'venv')
-USE_VENV = None  # Will be set by user choice
+# Default installation directory
+DEFAULT_INSTALL_DIR: str = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~\\AppData\\Local')), 'SeeSea')
+INSTALL_DIR: str = DEFAULT_INSTALL_DIR
+VENV_DIR: str = ""
+USE_VENV: Optional[bool] = None  # Will be set by user choice
 
 
-def run_command(cmd, cwd=None, shell=True, show_progress=True):
+def ask_install_location() -> str:
+    """Ask user where to install SeeSea"""
+    print("\n" + "="*60)
+    print("📁 Installation Location")
+    print("="*60)
+    print("Choose installation directory:")
+    print(f"  [1] Default - {DEFAULT_INSTALL_DIR}")
+    print(f"  [2] D: drive - D:\\SeeSea")
+    print(f"  [3] Custom location")
+    print("="*60)
+    
+    while True:
+        choice = input("\nYour choice (1/2/3): ").strip()
+        if choice == '1' or choice == '':
+            return DEFAULT_INSTALL_DIR
+        elif choice == '2':
+            return "D:\\SeeSea"
+        elif choice == '3':
+            custom_path = input("Enter custom installation path: ").strip()
+            if custom_path:
+                # Expand environment variables
+                custom_path = os.path.expandvars(custom_path)
+                return custom_path
+            else:
+                print("❌ Invalid path. Please try again.")
+        else:
+            print("❌ Invalid input. Please enter 1, 2, or 3.")
+
+
+def run_command(cmd: str, cwd: Optional[str] = None, shell: bool = True, show_progress: bool = True) -> subprocess.CompletedProcess[str]:
     """Run a command with user-friendly progress display"""
     if show_progress:
         print(f"\n📦 {cmd.split()[0].capitalize()} {cmd.split()[1] if len(cmd.split()) > 1 else ''}...")
@@ -51,13 +82,14 @@ def run_command(cmd, cwd=None, shell=True, show_progress=True):
     return result
 
 
-def ask_use_venv():
+def ask_use_venv() -> None:
     """Ask user whether to use virtual environment"""
     global USE_VENV
     print("\n" + "="*60)
     print("🤔 Virtual Environment Setup")
     print("="*60)
-    print("Do you want to use a virtual environment?")
+    print(f"Installation directory: {INSTALL_DIR}")
+    print("\nDo you want to use a virtual environment?")
     print("  [Y] Yes - Install in isolated environment (Recommended)")
     print("  [N] No  - Install globally (Requires admin privileges)")
     print("="*60)
@@ -76,35 +108,34 @@ def ask_use_venv():
             print("❌ Invalid input. Please enter Y or N.")
 
 
-def setup_environment():
+def setup_environment() -> None:
     """Setup installation environment"""
+    global VENV_DIR
+    VENV_DIR = os.path.join(INSTALL_DIR, 'venv')
+    
     if USE_VENV:
         # Create install directory
+        print(f"\n📁 Installing to: {INSTALL_DIR}")
         os.makedirs(INSTALL_DIR, exist_ok=True)
         
         # Create virtual environment
         print("\n📦 Creating virtual environment...")
-        run_command(f"python -m venv {VENV_DIR}", show_progress=False)
+        # Use sys.executable to ensure we use the current Python interpreter
+        # Quote paths in case they contain spaces
+        run_command(f'"{sys.executable}" -m venv "{VENV_DIR}"', show_progress=False)
         print("✅ Virtual environment created")
 
 
-def get_pip_prefix():
+def get_pip_prefix() -> str:
     """Return pip command prefix based on venv choice"""
     if USE_VENV:
-        # Windows activation uses .bat file
+        # Windows activation uses .bat file - quote the path in case it contains spaces
         activate_script = os.path.join(VENV_DIR, 'Scripts', 'activate.bat')
-        return f"{activate_script} && "
+        return f'"{activate_script}" && '
     return ""
 
 
-def decompress_whl(compressed_data, output_path):
-    """Decompress zstandard compressed whl file"""
-    dctx = zstandard.ZstdDecompressor()
-    with open(output_path, 'wb') as f:
-        dctx.copy_stream(compressed_data, f)
-
-
-def install_dependencies():
+def install_dependencies() -> None:
     """Install dependencies"""
     print("\n" + "="*60)
     print("📦 Installing Dependencies...")
@@ -140,14 +171,14 @@ def install_dependencies():
     print("✅ crawl4ai configured")
 
 
-def decompress_whl(compressed_data, output_path):
+def decompress_whl(compressed_data: BinaryIO, output_path: str) -> None:
     """Decompress zstandard compressed whl file"""
     dctx = zstandard.ZstdDecompressor()
     with open(output_path, 'wb') as f:
         dctx.copy_stream(compressed_data, f)
 
 
-def install_seesea():
+def install_seesea() -> None:
     """Install SeeSea packages"""
     print("\n" + "="*60)
     print("📦 Installing SeeSea...")
@@ -171,11 +202,11 @@ def install_seesea():
         
         # Decompress whl files
         print("\n[2/5] Decompressing seesea-core package...")
-        decompress_whl(seesea_stream, seesea_path)
+        decompress_whl(seesea_core_stream, seesea_core_path)
         print("✅ seesea-core decompressed")
         
         print("\n[3/5] Decompressing seesea package...")
-        decompress_whl(seesea_core_stream, seesea_core_path)
+        decompress_whl(seesea_stream, seesea_path)
         print("✅ seesea decompressed")
         
         # Install whl files
@@ -190,27 +221,75 @@ def install_seesea():
         # Clean up temp directory if not using venv
         if not USE_VENV and work_dir != INSTALL_DIR:
             shutil.rmtree(work_dir, ignore_errors=True)
-        
-        print("\n[5/5] Installing seesea...")
-        run_command(f"pip install {seesea_path}", show_progress=False)
-        print("✅ seesea installed")
     
     print("\n" + "="*60)
     print("🎉 SeeSea installed successfully!")
     print("="*60)
 
 
-def uninstall_seesea():
+def uninstall_seesea() -> None:
     """Uninstall SeeSea"""
-    run_command("pip uninstall -y seesea seesea-core")
+    run_command(f"{get_pip_prefix()}pip uninstall -y seesea seesea-core")
 
 
-def update_seesea():
+def update_seesea() -> None:
     """Update SeeSea"""
+    # Uninstall old version
+    uninstall_seesea()
+    # Install new version
+    install_dependencies()
+    install_seesea()
+
+
+def ask_install_pro() -> Optional[str]:
+    """Ask user if they want to install Pro features"""
+    print("\n" + "="*60)
+    print("🌟 Optional Pro Features")
+    print("="*60)
+    print("SeeSea Pro provides advanced features like:")
+    print("  • Advanced AI capabilities")
+    print("  • Enhanced search algorithms")
+    print("  • Premium support")
+    print("\nWould you like to configure Pro features?")
+    print("  [1] Configure now")
+    print("  [2] Skip (can configure later)")
+    print("="*60)
+    
+    while True:
+        response = input("\nYour choice (1/2): ").strip()
+        if response == '1':
+            return 'now'
+        elif response in ['2', '']:
+            return None
+        else:
+            print("❌ Invalid input. Please enter 1 or 2.")
+
+
+def install_pro_features(method: str) -> None:
+    """Install or configure Pro features"""
+    if method == 'now':
+        print("\n📝 Pro features can be configured in the config file:")
+        print(f"   %USERPROFILE%\\.seesea\\config.toml")
+        print("\n💡 See documentation for Pro setup instructions:")
+        print("   https://github.com/zwtesttt/SeeSea#pro-features")
+
+
+def main(command: str) -> None:
+    """Main installation entry point"""
+    global INSTALL_DIR
+    
+    print("\n" + "="*60)
+    print("🌊 SeeSea Windows Installer")
+    print("="*60)
+    print(f"Command: {command}")
+    print(f"Version: {metadata['seesea_version']}")
     print("="*60)
     
     if command == 'install':
-        # Ask about virtual environment first
+        # Ask about installation location first
+        INSTALL_DIR = ask_install_location()
+        
+        # Ask about virtual environment
         ask_use_venv()
         
         print("\n[Step 1/4] Setting up environment...")
@@ -232,13 +311,23 @@ def update_seesea():
         print("\n" + "="*60)
         print("✨ Installation Complete! ✨")
         print("="*60)
-        print("\n📚 Quick Start:")
-        print("  seesea --help")
+        
+        if USE_VENV:
+            print("\n� Installation Location:")
+            print(f"  {INSTALL_DIR}")
+            print("\n�📚 Quick Start:")
+            print(f"  {os.path.join(VENV_DIR, 'Scripts', 'seesea.exe')} --help")
+            print("\n💡 To use 'seesea' command anywhere, add to PATH:")
+            print(f"  {os.path.join(VENV_DIR, 'Scripts')}")
+            print("\n  Or create an alias in PowerShell profile:")
+            print(f'  Set-Alias seesea "{os.path.join(VENV_DIR, "Scripts", "seesea.exe")}"')
+        else:
+            print("\n📚 Quick Start:")
+            print("  seesea --help")
+        
         print("\n🔧 Configuration:")
         print(f"  Config file: %USERPROFILE%\\.seesea\\config.toml")
         print("\n📖 Documentation:")
-        print("  https://github.com/zwtesttt/SeeSea")
-        print("="*60 + "\n")
         print("  https://github.com/zwtesttt/SeeSea")
         print("="*60 + "\n")
         
