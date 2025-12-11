@@ -292,7 +292,7 @@ jobs:
           building/*.py
         draft: false
         prerelease: false
-        overwrite: true
+        overwrite_files: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
