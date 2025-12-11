@@ -2,6 +2,7 @@ name: CI/CD Pipeline
 
 permissions:
   contents: write
+  id-token: write  # Required for trusted publishing to PyPI
 
 on:
   push:
@@ -236,15 +237,6 @@ jobs:
         python -m build --wheel
         cp dist/*.whl ../building/
 
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install zstandard astor
-
-    - name: Generate installation scripts
-      run: |
-        python build.py
-
     - name: List generated files
       shell: bash
       run: ls -la building/
@@ -275,7 +267,6 @@ jobs:
         mkdir -p building
         # 复制所有平台的产物到 building 目录
         find artifacts -name "*.whl" -exec cp {} building/ \;
-        find artifacts -name "*.py" -exec cp {} building/ \;
         # 去重（不同平台可能有相同的 seesea-*.whl 文件）
         cd building
         # 列出所有文件
@@ -287,27 +278,75 @@ jobs:
         echo "=== Files to be released ==="
         ls -la building/
 
-    - name: Install build dependencies for generating seesea-up.py
-      run: |
-        python -m pip install --upgrade pip
-        pip install zstandard jinja2
-
-    - name: Generate seesea-up.py with actual platform information
-      run: |
-        python build.py -up
-        ls -la building/
-
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         files: |
           building/*.whl
-          building/*.py
         draft: false
         prerelease: false
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # PyPI 发布 seesea-core（Rust 核心库）
+  pypi-publish-core:
+    name: Publish seesea-core to PyPI
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    environment:
+      name: pypi
+      url: https://pypi.org/p/seesea-core
+
+    steps:
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        merge-multiple: false
+
+    - name: Collect seesea-core wheels
+      run: |
+        mkdir -p dist
+        find artifacts -name "seesea_core-*.whl" -exec cp {} dist/ \;
+        echo "=== seesea-core wheels ==="
+        ls -la dist/
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        packages-dir: dist/
+
+  # PyPI 发布 seesea（Python SDK）
+  pypi-publish-sdk:
+    name: Publish seesea to PyPI
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    environment:
+      name: pypi
+      url: https://pypi.org/p/seesea
+
+    steps:
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        merge-multiple: false
+
+    - name: Collect seesea SDK wheel (only need one copy)
+      run: |
+        mkdir -p dist
+        # seesea SDK 是纯 Python，所以所有平台的 wheel 相同，只需要一个
+        find artifacts -name "seesea-*.whl" ! -name "seesea_core-*" | head -1 | xargs -I {} cp {} dist/
+        echo "=== seesea SDK wheel ==="
+        ls -la dist/
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        packages-dir: dist/
 
   lint:
     name: Rust Linting

@@ -17,6 +17,7 @@
 //!
 //! 处理 RSS feed 相关的 API 请求
 
+use crate::api::handlers::static_files::get_rss_template_dir;
 use crate::api::on::ApiState;
 use crate::api::types::ApiErrorResponse;
 use axum::{
@@ -188,10 +189,12 @@ pub async fn handle_rss_fetch(
 /// 处理获取RSS模板列表请求
 pub async fn handle_rss_templates_list(State(_state): State<ApiState>) -> Response {
     // 动态读取 rss/template 目录下的所有 .see 文件
-    let template_dir = "rss/template";
+    let template_dir = get_rss_template_dir();
     let mut templates = Vec::new();
 
-    match std::fs::read_dir(template_dir) {
+    tracing::debug!("Looking for RSS templates in: {}", template_dir.display());
+
+    match std::fs::read_dir(&template_dir) {
         Ok(entries) => {
             for entry in entries.flatten() {
                 if let Ok(file_type) = entry.file_type()
@@ -205,9 +208,18 @@ pub async fn handle_rss_templates_list(State(_state): State<ApiState>) -> Respon
                     }
                 }
             }
+            tracing::info!(
+                "Found {} RSS templates in {}",
+                templates.len(),
+                template_dir.display()
+            );
         }
         Err(e) => {
-            tracing::warn!("Failed to read RSS template directory: {}", e);
+            tracing::warn!(
+                "Failed to read RSS template directory {}: {}",
+                template_dir.display(),
+                e
+            );
             // 如果读取失败，返回空列表
         }
     }
@@ -224,15 +236,21 @@ pub async fn handle_rss_template_add(
     Json(request): Json<TemplateAddRequest>,
 ) -> Response {
     // 读取模板文件
-    let template_path = format!("rss/template/{}.rss.see", request.name);
+    let template_dir = get_rss_template_dir();
+    let template_path = template_dir.join(format!("{}.rss.see", request.name));
+
+    tracing::debug!("Looking for RSS template at: {}", template_path.display());
 
     let template_content = match std::fs::read_to_string(&template_path) {
-        Ok(content) => content,
+        Ok(content) => {
+            tracing::info!("Loaded RSS template from: {}", template_path.display());
+            content
+        }
         Err(e) => {
             let error = ApiErrorResponse {
                 code: "TEMPLATE_NOT_FOUND".to_string(),
                 message: format!("Template '{}' not found", request.name),
-                details: Some(e.to_string()),
+                details: Some(format!("Path: {}, Error: {}", template_path.display(), e)),
             };
             return (StatusCode::NOT_FOUND, Json(error)).into_response();
         }

@@ -172,6 +172,7 @@
 		padding: 1rem 1.25rem;
 		margin-bottom: 1.5rem;
 		border: 1px solid #e5e7eb;
+		overflow: hidden;
 	}
 
 	.filter-header {
@@ -179,6 +180,7 @@
 		align-items: center;
 		gap: 0.75rem;
 		margin-bottom: 0.75rem;
+		flex-wrap: wrap;
 	}
 
 	.filter-label {
@@ -223,6 +225,7 @@
 		border-radius: 9999px;
 		cursor: pointer;
 		transition: all 0.2s;
+		white-space: nowrap;
 	}
 
 	.platform-tag:hover {
@@ -243,6 +246,7 @@
 		margin-bottom: 1.5rem;
 		font-size: 0.875rem;
 		color: #6b7280;
+		flex-wrap: wrap;
 	}
 
 	.stat strong {
@@ -255,30 +259,116 @@
 		grid-template-columns: repeat(1, 1fr);
 	}
 
+	/* 平板端 (640px+) */
 	@media (min-width: 640px) {
 		.hot-grid {
 			grid-template-columns: repeat(2, 1fr);
+			gap: 1.25rem;
 		}
 	}
 
+	/* 桌面端 (1024px+) */
 	@media (min-width: 1024px) {
 		.hot-grid {
 			grid-template-columns: repeat(3, 1fr);
 		}
 	}
 
-	/* 移动端适配 */
+	/* 大桌面端 (1280px+) */
+	@media (min-width: 1280px) {
+		.hot-grid {
+			grid-template-columns: repeat(4, 1fr);
+		}
+	}
+
+	/* 移动端适配 (640px-) */
 	@media (max-width: 640px) {
 		.hot-page {
 			padding: 1rem 0 3rem;
 		}
 
+		.page-header {
+			margin-bottom: 1.5rem;
+		}
+
 		.page-title {
 			font-size: 1.5rem;
+			gap: 0.375rem;
+		}
+
+		.title-icon {
+			font-size: 1.375rem;
+		}
+
+		.page-description {
+			font-size: 0.875rem;
 		}
 
 		.filter-section {
 			padding: 0.75rem 1rem;
+			border-radius: 10px;
+			margin-bottom: 1rem;
+		}
+
+		.filter-header {
+			margin-bottom: 0.625rem;
+			gap: 0.5rem;
+		}
+
+		.filter-label {
+			font-size: 0.8125rem;
+		}
+
+		.filter-btn {
+			padding: 0.3125rem 0.625rem;
+			font-size: 0.75rem;
+		}
+
+		.platform-tags {
+			gap: 0.375rem;
+		}
+
+		.platform-tag {
+			padding: 0.3125rem 0.625rem;
+			font-size: 0.75rem;
+		}
+
+		.stats-bar {
+			gap: 0.75rem;
+			margin-bottom: 1rem;
+			font-size: 0.8125rem;
+		}
+
+		.hot-grid {
+			gap: 0.875rem;
+		}
+	}
+
+	/* 超小屏适配 (380px-) */
+	@media (max-width: 380px) {
+		.hot-page {
+			padding: 0.75rem 0 2.5rem;
+		}
+
+		.page-title {
+			font-size: 1.25rem;
+		}
+
+		.filter-section {
+			padding: 0.625rem 0.75rem;
+		}
+
+		.platform-tags {
+			gap: 0.25rem;
+		}
+
+		.platform-tag {
+			padding: 0.25rem 0.5rem;
+			font-size: 0.6875rem;
+		}
+
+		.hot-grid {
+			gap: 0.75rem;
 		}
 	}
 </style>

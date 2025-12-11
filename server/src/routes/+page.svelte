@@ -398,8 +398,17 @@
 
 	/* 移动端适配 */
 	@media (max-width: 640px) {
+		.home-page {
+			padding-bottom: 3rem;
+		}
+
 		.hero {
-			padding: 2rem 0;
+			padding: 2rem 0 1.5rem;
+		}
+
+		.hero-title {
+			margin-bottom: 0.75rem;
+			gap: 0.375rem;
 		}
 
 		.gradient-text {
@@ -411,11 +420,161 @@
 		}
 
 		.hero-description {
-			font-size: 1rem;
+			font-size: 0.9375rem;
+			margin-bottom: 1.5rem;
+		}
+
+		.search-wrapper {
+			margin-bottom: 1rem;
+		}
+
+		.quick-tags {
+			gap: 0.375rem;
+		}
+
+		.tag-label {
+			font-size: 0.8125rem;
+			width: 100%;
+			text-align: center;
+			margin-bottom: 0.25rem;
+		}
+
+		.quick-tag {
+			padding: 0.3125rem 0.625rem;
+			font-size: 0.75rem;
+		}
+
+		.blob-1 {
+			width: 250px;
+			height: 250px;
+			top: -80px;
+			right: -80px;
+		}
+
+		.blob-2 {
+			width: 200px;
+			height: 200px;
+			bottom: -80px;
+			left: -80px;
+		}
+
+		.blob-3 {
+			width: 120px;
+			height: 120px;
+		}
+
+		.hot-section,
+		.features-section {
+			padding: 1.5rem 0;
 		}
 
 		.section-title {
 			font-size: 1.25rem;
+			margin-bottom: 1rem;
+			gap: 0.375rem;
+		}
+
+		.title-icon {
+			font-size: 1.125rem;
+		}
+
+		.hot-grid,
+		.features-grid {
+			gap: 0.875rem;
+		}
+
+		.view-all {
+			margin-top: 1.5rem;
+		}
+
+		.view-all-btn {
+			padding: 0.625rem 1.25rem;
+			font-size: 0.875rem;
+		}
+
+		.view-all-btn:hover {
+			transform: none;
+		}
+
+		.feature-card {
+			padding: 1.25rem;
+			border-radius: 12px;
+		}
+
+		.feature-card:hover {
+			transform: none;
+		}
+
+		.feature-icon {
+			font-size: 1.75rem;
+			margin-bottom: 0.5rem;
+		}
+
+		.feature-card h3 {
+			font-size: 1rem;
+			margin-bottom: 0.375rem;
+		}
+
+		.feature-card p {
+			font-size: 0.875rem;
+		}
+
+		.no-data {
+			padding: 2rem 0;
+			font-size: 0.875rem;
+		}
+	}
+
+	/* 超小屏适配 */
+	@media (max-width: 380px) {
+		.hero {
+			padding: 1.5rem 0 1rem;
+		}
+
+		.gradient-text {
+			font-size: 2rem;
+		}
+
+		.subtitle {
+			font-size: 0.875rem;
+		}
+
+		.hero-description {
+			font-size: 0.875rem;
+		}
+
+		.quick-tags {
+			gap: 0.25rem;
+		}
+
+		.quick-tag {
+			padding: 0.25rem 0.5rem;
+			font-size: 0.6875rem;
+		}
+
+		.section-title {
+			font-size: 1.125rem;
+		}
+
+		.hot-grid,
+		.features-grid {
+			gap: 0.75rem;
+		}
+
+		.feature-card {
+			padding: 1rem;
+		}
+
+		.feature-icon {
+			font-size: 1.5rem;
+		}
+
+		.feature-card h3 {
+			font-size: 0.9375rem;
+		}
+
+		.feature-card p {
+			font-size: 0.8125rem;
 		}
 	}
 </style>

@@ -487,24 +487,160 @@
 			padding: 1rem 0 3rem;
 		}
 
+		.page-header {
+			margin-bottom: 1.5rem;
+		}
+
 		.page-title {
 			font-size: 1.5rem;
+			gap: 0.375rem;
+		}
+
+		.title-icon {
+			font-size: 1.375rem;
+		}
+
+		.page-description {
+			font-size: 0.875rem;
+		}
+
+		.input-section {
+			margin-bottom: 1.5rem;
 		}
 
 		.input-wrapper {
 			flex-direction: column;
+			padding: 0.375rem;
+			border-radius: 10px;
+		}
+
+		.feed-input {
+			padding: 0.5rem 0.75rem;
+			font-size: 0.9375rem;
 		}
 
 		.fetch-btn {
 			width: 100%;
+			padding: 0.75rem 1rem;
+		}
+
+		.recent-feeds,
+		.templates {
+			font-size: 0.8125rem;
+			gap: 0.375rem;
+		}
+
+		.recent-list,
+		.template-list {
+			gap: 0.25rem;
+		}
+
+		.recent-item,
+		.template-tag {
+			padding: 0.1875rem 0.5rem;
+			font-size: 0.75rem;
+		}
+
+		.feed-content {
+			border-radius: 12px;
 		}
 
 		.feed-meta {
 			padding: 1rem;
 		}
 
+		.feed-title {
+			font-size: 1.0625rem;
+		}
+
+		.feed-description {
+			font-size: 0.8125rem;
+			margin-bottom: 0.5rem;
+		}
+
+		.item-count {
+			font-size: 0.75rem;
+		}
+
 		.feed-item {
 			padding: 1rem;
+		}
+
+		.item-title {
+			font-size: 0.9375rem;
+			margin-bottom: 0.375rem;
+		}
+
+		.item-description {
+			font-size: 0.8125rem;
+			margin-bottom: 0.5rem;
+			-webkit-line-clamp: 3;
+			line-clamp: 3;
+		}
+
+		.item-meta {
+			gap: 0.5rem;
+			font-size: 0.6875rem;
+		}
+
+		.categories {
+			gap: 0.25rem;
+		}
+
+		.category {
+			padding: 0.0625rem 0.375rem;
+			font-size: 0.625rem;
+		}
+	}
+
+	/* 超小屏适配 */
+	@media (max-width: 380px) {
+		.rss-page {
+			padding: 0.75rem 0 2.5rem;
+		}
+
+		.page-title {
+			font-size: 1.25rem;
+		}
+
+		.page-description {
+			font-size: 0.8125rem;
+		}
+
+		.input-wrapper {
+			padding: 0.25rem;
+		}
+
+		.feed-input {
+			padding: 0.4375rem 0.625rem;
+			font-size: 0.875rem;
+		}
+
+		.fetch-btn {
+			padding: 0.625rem 0.75rem;
+			font-size: 0.875rem;
+		}
+
+		.feed-meta {
+			padding: 0.75rem;
+		}
+
+		.feed-item {
+			padding: 0.75rem;
+		}
+
+		.item-title {
+			font-size: 0.875rem;
+		}
+
+		.item-description {
+			font-size: 0.75rem;
+		}
+
+		.item-meta {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.25rem;
 		}
 	}
 </style>

@@ -21,33 +21,177 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use crate::api::on::ApiState;
 
-/// 获取静态文件根目录
+/// 缓存的包根目录路径
+static PACKAGE_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// 获取 seesea-core 包的根目录
 ///
-/// 优先使用二进制文件所在目录的 static 目录，如果不存在则使用当前工作目录的 static 目录
-fn get_static_root() -> PathBuf {
-    // 尝试获取二进制文件所在目录
-    if let Ok(exe_path) = std::env::current_exe()
-        && let Some(exe_dir) = exe_path.parent()
-    {
-        // 尝试二进制文件同级目录
-        let static_path = exe_dir.join("static");
-        if static_path.exists() {
-            return static_path;
-        }
-        // 尝试父目录
-        if let Some(parent_dir) = exe_dir.parent() {
-            let parent_static = parent_dir.join("static");
-            if parent_static.exists() {
-                return parent_static;
+/// 对于 maturin 构建的 wheel 包，结构如下：
+/// ```
+/// site-packages/
+/// ├── seesea_core/          # Python 模块 (.pyd/.so 文件所在位置)
+/// ├── static/               # 静态文件目录（与 seesea_core 同级）
+/// │   └── html/
+/// └── rss/                  # RSS 模板目录（与 seesea_core 同级）
+///     └── template/
+/// ```
+///
+/// 查找顺序：
+/// 1. 环境变量 SEESEA_ROOT（最高优先级，用于自定义部署）
+/// 2. seesea_core 模块所在目录的父目录（site-packages 目录）
+/// 3. 二进制文件所在目录
+/// 4. 当前工作目录（开发时使用）
+fn get_package_root() -> &'static PathBuf {
+    PACKAGE_ROOT.get_or_init(|| {
+        // 1. 检查环境变量
+        if let Ok(root_path) = std::env::var("SEESEA_ROOT") {
+            let path = PathBuf::from(&root_path);
+            if path.exists() {
+                tracing::info!("Using SEESEA_ROOT: {}", path.display());
+                return path;
             }
         }
-    }
 
-    // 回退到当前工作目录
-    PathBuf::from("static")
+        // 2. 尝试通过 seesea_core 模块位置查找
+        // 对于 Python 包，seesea_core.pyd/.so 在 site-packages/seesea_core/ 目录下
+        // static 和 rss 目录在 site-packages/ 目录下（与 seesea_core 同级）
+
+        // 尝试从当前可执行文件路径推断
+        if let Ok(exe_path) = std::env::current_exe() {
+            // 对于 Python 调用，exe_path 可能是 python.exe
+            // 我们需要通过其他方式找到 seesea_core 模块位置
+
+            if let Some(exe_dir) = exe_path.parent() {
+                // 方法1: 检查 exe_dir/Lib/site-packages（Windows Python 安装）
+                let site_packages = exe_dir.join("Lib").join("site-packages");
+                if site_packages.join("seesea_core").exists() {
+                    tracing::info!(
+                        "Found seesea_core in Python site-packages: {}",
+                        site_packages.display()
+                    );
+                    return site_packages;
+                }
+
+                // 方法2: 检查 exe_dir/../lib/pythonX.Y/site-packages（Unix Python 安装）
+                if let Some(parent) = exe_dir.parent() {
+                    for python_ver in &[
+                        "python3.10",
+                        "python3.11",
+                        "python3.12",
+                        "python3.13",
+                        "python3.14",
+                    ] {
+                        let site_packages =
+                            parent.join("lib").join(python_ver).join("site-packages");
+                        if site_packages.join("seesea_core").exists() {
+                            tracing::info!(
+                                "Found seesea_core in Python site-packages: {}",
+                                site_packages.display()
+                            );
+                            return site_packages;
+                        }
+                    }
+                }
+
+                // 方法3: 直接在 exe_dir 查找（独立二进制）
+                if exe_dir.join("static").exists() {
+                    tracing::info!("Found static in exe directory: {}", exe_dir.display());
+                    return exe_dir.to_path_buf();
+                }
+
+                // 方法4: 在 exe_dir 父目录查找
+                if let Some(parent) = exe_dir.parent()
+                    && parent.join("static").exists()
+                {
+                    tracing::info!("Found static in parent directory: {}", parent.display());
+                    return parent.to_path_buf();
+                }
+            }
+        }
+
+        // 3. 尝试通过 Python 模块路径查找（运行时环境）
+        // 检查常见的虚拟环境和 site-packages 位置
+        if let Ok(current_dir) = std::env::current_dir() {
+            // 检查当前目录下的 venv
+            for venv_name in &[".venv", "venv", ".env", "env"] {
+                #[cfg(target_os = "windows")]
+                let site_packages = current_dir
+                    .join(venv_name)
+                    .join("Lib")
+                    .join("site-packages");
+                #[cfg(not(target_os = "windows"))]
+                let site_packages = {
+                    // 在 Unix 上尝试多个 Python 版本
+                    let mut found = None;
+                    for ver in &[
+                        "python3.10",
+                        "python3.11",
+                        "python3.12",
+                        "python3.13",
+                        "python3.14",
+                    ] {
+                        let path = current_dir
+                            .join(venv_name)
+                            .join("lib")
+                            .join(ver)
+                            .join("site-packages");
+                        if path.exists() {
+                            found = Some(path);
+                            break;
+                        }
+                    }
+                    found.unwrap_or_else(|| {
+                        current_dir
+                            .join(venv_name)
+                            .join("lib")
+                            .join("python3.12")
+                            .join("site-packages")
+                    })
+                };
+
+                if site_packages.join("seesea_core").exists() {
+                    tracing::info!(
+                        "Found seesea_core in venv site-packages: {}",
+                        site_packages.display()
+                    );
+                    return site_packages;
+                }
+            }
+
+            // 检查当前目录
+            if current_dir.join("static").exists() {
+                tracing::info!(
+                    "Found static in current directory: {}",
+                    current_dir.display()
+                );
+                return current_dir;
+            }
+        }
+
+        // 4. 回退到当前工作目录
+        let fallback = PathBuf::from(".");
+        tracing::warn!(
+            "Could not find seesea_core package root, using current directory: {}",
+            fallback.display()
+        );
+        fallback
+    })
+}
+
+/// 获取静态文件根目录
+pub fn get_static_root() -> PathBuf {
+    let root = get_package_root();
+    root.join("static")
+}
+
+/// 获取 RSS 模板目录
+pub fn get_rss_template_dir() -> PathBuf {
+    let root = get_package_root();
+    root.join("rss").join("template")
 }
 
 /// 处理首页请求
@@ -55,28 +199,34 @@ pub async fn handle_index(State(state): State<ApiState>) -> impl IntoResponse {
     // 获取 index.html 文件路径
     let static_root = get_static_root();
     let index_path = static_root.join("html/index.html");
-    let mut content = match File::open(index_path) {
+
+    tracing::debug!("Looking for index.html at: {}", index_path.display());
+
+    let mut content = match File::open(&index_path) {
         Ok(mut file) => {
             let mut content = String::new();
             if file.read_to_string(&mut content).is_err() {
-                // 如果读取失败，使用内嵌的默认内容
+                tracing::warn!("Failed to read index.html, using embedded fallback");
                 include_str!("../../../static/html/index.html").to_string()
             } else {
+                tracing::info!("Loaded index.html from: {}", index_path.display());
                 content
             }
         }
-        Err(_) => {
-            // 如果文件不存在，使用内嵌的默认内容
+        Err(e) => {
+            tracing::warn!(
+                "index.html not found at {}: {}, using embedded fallback",
+                index_path.display(),
+                e
+            );
             include_str!("../../../static/html/index.html").to_string()
         }
     };
 
     // 从配置中获取前端 API 地址
-    // 如果为空，表示使用同源（前端会自动使用 window.location.origin）
-    // 如果有值，则注入该 URL（用于 nginx 反向代理等场景）
     let api_base_url = &state.frontend_api_url;
 
-    // 在 HTML 中注入配置脚本，使前端可以访问 API 地址
+    // 在 HTML 中注入配置脚本
     let config_script = format!(
         r#"<script>
 window.__SEESEA_CONFIG__ = {{
@@ -86,19 +236,15 @@ window.__SEESEA_CONFIG__ = {{
         api_base_url
     );
 
-    // 在 </head> 之前插入配置脚本
     content = content.replace("</head>", &format!("{}\n</head>", config_script));
 
-    // 返回 Html 响应
     axum::response::Html(content)
 }
 
 /// 处理 favicon 请求
 pub async fn handle_favicon() -> impl IntoResponse {
-    // 获取静态文件根目录
     let static_root = get_static_root();
 
-    // 尝试读取 ICO 文件，按优先级顺序
     let favicon_paths = [
         static_root.join("image/favicon.ico"),
         static_root.join("html/favicon.ico"),
@@ -119,7 +265,6 @@ pub async fn handle_favicon() -> impl IntoResponse {
         }
     }
 
-    // 如果找不到 ICO 文件，返回一个简单的海浪 emoji SVG
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🌊</text></svg>"#;
     (
         StatusCode::OK,
