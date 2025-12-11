@@ -17,25 +17,25 @@ import shutil
 import subprocess
 import io
 from pathlib import Path
+from typing import Dict, List, Optional, Union, BinaryIO
 
-# Template metadata dictionary
-metadata = {{ metadata }}
+# Template metadata dictionary (will be replaced by build script)
+metadata: Dict[str, str] = {}
 
-# Template compressed data
-bin_seesea = {{ bin_seesea }}
-bin_seesea_core = {{ bin_seesea_core }}
+# Template compressed data (will be replaced by build script)
+bin_seesea: bytes = b''
+bin_seesea_core: bytes = b''
 
-# Template requirements list
-import json
-requirements = json.loads('{{ requirements }}')
+# Template requirements list (will be replaced by build script)
+requirements: List[str] = []
 
-INSTALL_DIR = "/etc/seesea"
-VENV_DIR = os.path.join(INSTALL_DIR, "venv")
-BIN_DIR = "/usr/local/bin"
-USE_VENV = None  # Will be set by user choice
+INSTALL_DIR: str = "/etc/seesea"
+VENV_DIR: str = os.path.join(INSTALL_DIR, "venv")
+BIN_DIR: str = "/usr/local/bin"
+USE_VENV: Optional[bool] = None  # Will be set by user choice
 
 
-def run_command(cmd, cwd=None, shell=True, show_progress=True):
+def run_command(cmd: str, cwd: Optional[str] = None, shell: bool = True, show_progress: bool = True) -> subprocess.CompletedProcess[str]:
     """Run a command with user-friendly progress display"""
     if show_progress:
         print(f"\n📦 {cmd.split()[0].capitalize()} {cmd.split()[1] if len(cmd.split()) > 1 else ''}...")
@@ -51,7 +51,7 @@ def run_command(cmd, cwd=None, shell=True, show_progress=True):
     return result
 
 
-def ask_use_venv():
+def ask_use_venv() -> None:
     """Ask user whether to use virtual environment"""
     global USE_VENV
     print("\n" + "="*60)
@@ -76,7 +76,7 @@ def ask_use_venv():
             print("❌ Invalid input. Please enter Y or N.")
 
 
-def setup_environment():
+def setup_environment() -> None:
     """Setup installation environment"""
     if USE_VENV:
         # Create install directory
@@ -88,14 +88,14 @@ def setup_environment():
         print("✅ Virtual environment created")
 
 
-def get_pip_prefix():
+def get_pip_prefix() -> str:
     """Return pip command prefix based on venv choice"""
     if USE_VENV:
         return f"source {VENV_DIR}/bin/activate && "
     return ""
 
 
-def install_dependencies():
+def install_dependencies() -> None:
     """Install dependencies"""
     print("\n" + "="*60)
     print("🔧 Installing dependencies...")
@@ -130,7 +130,7 @@ def install_dependencies():
     run_command(f"{get_pip_prefix()} crawl4ai-setup")
 
 
-def ask_install_pro():
+def ask_install_pro() -> Union[bool, str]:
     """Ask user whether to install Pro features"""
     print("\n" + "="*60)
     print("🚀 Pro Features (Optional)")
@@ -173,7 +173,7 @@ def ask_install_pro():
             print("❌ Invalid input. Please enter 1 or 2.")
 
 
-def install_pro_features(method):
+def install_pro_features(method: str) -> None:
     """Install Pro features including LLM support"""
     print("\n" + "="*60)
     print("🚀 Installing Pro Features...")
@@ -197,14 +197,14 @@ def install_pro_features(method):
     print("="*60)
 
 
-def decompress_whl(compressed_data, output_path):
+def decompress_whl(compressed_data: BinaryIO, output_path: str) -> None:
     """Decompress zstandard compressed whl file"""
     dctx = zstandard.ZstdDecompressor()
     with open(output_path, 'wb') as f:
         dctx.copy_stream(compressed_data, f)
 
 
-def install_seesea():
+def install_seesea() -> None:
     """Install SeeSea packages"""
     print("\n" + "="*60)
     print("📦 Installing SeeSea...")
@@ -226,11 +226,11 @@ def install_seesea():
     
     # Decompress whl files
     print("\n[1/4] Decompressing seesea-core package...")
-    decompress_whl(seesea_stream, seesea_path)
+    decompress_whl(seesea_core_stream, seesea_core_path)
     print("✅ seesea-core decompressed")
     
     print("\n[2/4] Decompressing seesea package...")
-    decompress_whl(seesea_core_stream, seesea_core_path)
+    decompress_whl(seesea_stream, seesea_path)
     print("✅ seesea decompressed")
     
     # Install whl files
@@ -264,7 +264,7 @@ def install_seesea():
     print("="*60)
 
 
-def uninstall_seesea():
+def uninstall_seesea() -> None:
     """Uninstall SeeSea"""
     # Remove symlink
     seesea_link_path = os.path.join(BIN_DIR, "seesea")
@@ -276,7 +276,7 @@ def uninstall_seesea():
         run_command(f"rm -rf {INSTALL_DIR}")
 
 
-def update_seesea():
+def update_seesea() -> None:
     """Update SeeSea"""
     # For update, we just reinstall
     uninstall_seesea()
@@ -285,7 +285,7 @@ def update_seesea():
     install_seesea()
 
 
-def main(command):
+def main(command: str) -> None:
     """Main function"""
     print("\n" + "="*60)
     print("🌊 SeeSea Linux Installer")

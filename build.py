@@ -3,9 +3,9 @@
 SeeSea Build Script
 Module Name: build.py
 Responsibility: Generate installation scripts from templates
-Expected Implementation: Process templates with jinja2, compress whl files, generate platform-specific installers
-Implemented Features: Template rendering, zstandard compression, platform detection, command-line arguments
-Usage Dependencies: Python 3.10-3.12, jinja2, zstandard
+Expected Implementation: Process templates with AST, compress whl files, generate platform-specific installers
+Implemented Features: AST-based code injection, zstandard compression, platform detection, command-line arguments
+Usage Dependencies: Python 3.10-3.14, ast, zstandard
 Main Interfaces: Command-line interface for generating installers
   - Default: Generate platform-specific installer for current platform
   - -up: Generate seesea-up.py script based on actual files in building directory
@@ -16,9 +16,10 @@ import sys
 import os
 import glob
 import json
+import ast
 import zstandard
-from jinja2 import Environment, FileSystemLoader
 import argparse
+from typing import Dict, List, Tuple
 
 # Configuration
 BUILD_DIR = "building"
@@ -65,7 +66,8 @@ def get_current_python_version():
 
 
 def setup_jinja_env():
-    """Setup Jinja2 environment"""
+    """Setup Jinja2 environment - deprecated, kept for seesea-up.py generation"""
+    from jinja2 import Environment, FileSystemLoader
     env = Environment(
         loader=FileSystemLoader(STATIC_INSTALL_DIR),
         autoescape=False,
@@ -105,7 +107,7 @@ def get_whl_files():
     return seesea_files[0], seesea_core_files[0]
 
 
-def compress_file(file_path):
+def compress_file(file_path: str) -> bytes:
     """Compress a file using zstandard"""
     cctx = zstandard.ZstdCompressor(level=10)
     with open(file_path, "rb") as f_in:
@@ -122,13 +124,166 @@ def cleanup_build_dir():
             print(f"Removed: {item_path}")
 
 
+def inject_data_to_template(
+    template_path: str, 
+    metadata: Dict[str, str], 
+    bin_seesea: bytes, 
+    bin_seesea_core: bytes, 
+    requirements: List[str]
+) -> str:
+    """
+    Read template file and inject data using AST manipulation
+    This ensures proper Python syntax without formatting issues
+    
+    Args:
+        template_path: Path to the template file
+        metadata: Dictionary with seesea filenames
+        bin_seesea: Compressed seesea wheel as bytes
+        bin_seesea_core: Compressed seesea-core wheel as bytes
+        requirements: List of requirement strings
+        
+    Returns:
+        Generated Python script as string
+    """
+    # Read template file
+    with open(template_path, "r", encoding="utf-8") as f:
+        template_content = f.read()
+    
+    # Parse the template as AST
+    tree = ast.parse(template_content)
+    
+    # Find and replace the placeholder assignments
+    class DataInjector(ast.NodeTransformer):
+        def visit_Assign(self, node):
+            # Check if this is a single target assignment
+            if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+                return node
+            
+            target_name = node.targets[0].id
+            
+            # Replace metadata assignment
+            if target_name == 'metadata':
+                # Create a proper dict AST node
+                new_node = ast.Assign(
+                    targets=[ast.Name(id='metadata', ctx=ast.Store())],
+                    value=ast.Dict(
+                        keys=[ast.Constant(value=k) for k in metadata.keys()],
+                        values=[ast.Constant(value=v) for v in metadata.values()]
+                    )
+                )
+                return ast.copy_location(new_node, node)
+            
+            # Replace bin_seesea assignment
+            elif target_name == 'bin_seesea':
+                new_node = ast.Assign(
+                    targets=[ast.Name(id='bin_seesea', ctx=ast.Store())],
+                    value=ast.Constant(value=bin_seesea)
+                )
+                return ast.copy_location(new_node, node)
+            
+            # Replace bin_seesea_core assignment
+            elif target_name == 'bin_seesea_core':
+                new_node = ast.Assign(
+                    targets=[ast.Name(id='bin_seesea_core', ctx=ast.Store())],
+                    value=ast.Constant(value=bin_seesea_core)
+                )
+                return ast.copy_location(new_node, node)
+            
+            # Replace requirements assignment
+            elif target_name == 'requirements':
+                new_node = ast.Assign(
+                    targets=[ast.Name(id='requirements', ctx=ast.Store())],
+                    value=ast.List(
+                        elts=[ast.Constant(value=req) for req in requirements],
+                        ctx=ast.Load()
+                    )
+                )
+                return ast.copy_location(new_node, node)
+            
+            return node
+        
+        def visit_AnnAssign(self, node):
+            # Handle annotated assignments (e.g., metadata: Dict[str, str] = {})
+            if not isinstance(node.target, ast.Name):
+                return node
+            
+            target_name = node.target.id
+            
+            # Replace metadata assignment
+            if target_name == 'metadata':
+                new_node = ast.AnnAssign(
+                    target=node.target,
+                    annotation=node.annotation,
+                    value=ast.Dict(
+                        keys=[ast.Constant(value=k) for k in metadata.keys()],
+                        values=[ast.Constant(value=v) for v in metadata.values()]
+                    ),
+                    simple=1
+                )
+                return ast.copy_location(new_node, node)
+            
+            # Replace bin_seesea assignment
+            elif target_name == 'bin_seesea':
+                new_node = ast.AnnAssign(
+                    target=node.target,
+                    annotation=node.annotation,
+                    value=ast.Constant(value=bin_seesea),
+                    simple=1
+                )
+                return ast.copy_location(new_node, node)
+            
+            # Replace bin_seesea_core assignment
+            elif target_name == 'bin_seesea_core':
+                new_node = ast.AnnAssign(
+                    target=node.target,
+                    annotation=node.annotation,
+                    value=ast.Constant(value=bin_seesea_core),
+                    simple=1
+                )
+                return ast.copy_location(new_node, node)
+            
+            # Replace requirements assignment
+            elif target_name == 'requirements':
+                new_node = ast.AnnAssign(
+                    target=node.target,
+                    annotation=node.annotation,
+                    value=ast.List(
+                        elts=[ast.Constant(value=req) for req in requirements],
+                        ctx=ast.Load()
+                    ),
+                    simple=1
+                )
+                return ast.copy_location(new_node, node)
+            
+            return node
+    
+    # Apply the transformation
+    injector = DataInjector()
+    new_tree = injector.visit(tree)
+    ast.fix_missing_locations(new_tree)
+    
+    # Convert back to source code using ast.unparse (Python 3.9+)
+    # This avoids astor's formatting issues with parentheses
+    try:
+        output_content = ast.unparse(new_tree)
+    except AttributeError:
+        # Fallback to astor for Python < 3.9
+        import astor
+        output_content = astor.to_source(new_tree)
+    
+    return output_content
+
+
 def generate_platform_scripts(seesea_whl, seesea_core_whl):
     """Generate platform-specific installation scripts for current platform only"""
-    env = setup_jinja_env()
-
     # Get filenames
     seesea_filename = os.path.basename(seesea_whl)
     seesea_core_filename = os.path.basename(seesea_core_whl)
+
+    # Extract version from filename (e.g., seesea-1.2.0-py3-none-any.whl)
+    # Format: seesea-{version}-py3-none-any.whl
+    version_match = seesea_filename.split('-')
+    seesea_version = version_match[1] if len(version_match) > 1 else "unknown"
 
     # Compress whl files
     print(f"Compressing {seesea_filename}...")
@@ -136,8 +291,12 @@ def generate_platform_scripts(seesea_whl, seesea_core_whl):
     print(f"Compressing {seesea_core_filename}...")
     bin_seesea_core = compress_file(seesea_core_whl)
 
-    # Create metadata
-    metadata = {"seesea_filename": seesea_filename, "seesea_core_filename": seesea_core_filename}
+    # Create metadata with version
+    metadata = {
+        "seesea_filename": seesea_filename, 
+        "seesea_core_filename": seesea_core_filename,
+        "seesea_version": seesea_version
+    }
 
     # Read requirements from pyproject.toml or requirements.txt
     requirements = []
@@ -151,17 +310,12 @@ def generate_platform_scripts(seesea_whl, seesea_core_whl):
     current_arch = get_current_architecture()
     current_py_version = get_current_python_version()
 
-    # Generate script for current platform only
-    # Get template based on platform
-    template_name = f"{current_platform}.py.tmpl"
-    template = env.get_template(template_name)
-
-    # Render template
-    output_content = template.render(
-        metadata=json.dumps(metadata),
-        bin_seesea=bin_seesea,
-        bin_seesea_core=bin_seesea_core,
-        requirements=json.dumps(requirements),
+    # Get template path
+    template_path = os.path.join(STATIC_INSTALL_DIR, f"{current_platform}.py.tmpl")
+    
+    # Inject data using AST
+    output_content = inject_data_to_template(
+        template_path, metadata, bin_seesea, bin_seesea_core, requirements
     )
 
     # Write to building directory

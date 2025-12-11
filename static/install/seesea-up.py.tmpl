@@ -27,13 +27,13 @@ import tempfile
 import urllib.request
 import importlib.util
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from urllib.error import URLError, HTTPError
 
 # Template placeholder for available platforms
 available_platforms: Dict[str, List[str]] = {{ available_platforms }}
 
-VERSION = "{{ version }}"
+VERSION: str = "{{ version }}"
 
 # Color codes for terminal output
 class Colors:
@@ -56,7 +56,7 @@ class Colors:
     BRIGHT_CYAN = '\033[96m'
 
     @staticmethod
-    def strip():
+    def strip() -> None:
         """Disable colors on Windows without colorama or when piping"""
         if sys.platform.startswith('win') or not sys.stdout.isatty():
             for attr in dir(Colors):
@@ -74,7 +74,7 @@ elif not sys.stdout.isatty():
     Colors.strip()
 
 
-def check_python_version():
+def check_python_version() -> None:
     """Check if Python version is compatible (3.10-3.12)"""
     major, minor, _ = sys.version_info
     if not (major == 3 and 10 <= minor <= 12):
@@ -82,7 +82,7 @@ def check_python_version():
         sys.exit(1)
 
 
-def get_current_platform():
+def get_current_platform() -> Tuple[str, str]:
     """Get current platform and architecture"""
     # Get platform
     plat = sys.platform
@@ -111,13 +111,13 @@ def get_current_platform():
     return platform_name, arch
 
 
-def get_python_version_string():
+def get_python_version_string() -> str:
     """Get Python version as string without dots (e.g., 3.10 -> 310)"""
     major, minor, _ = sys.version_info
     return f"{major}{minor}"
 
 
-def main():
+def main() -> None:
     """Main function"""
     print(f"SeeSea Updater v{VERSION}")
     
