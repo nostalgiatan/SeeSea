@@ -26,10 +26,11 @@ use tokio::sync::RwLock;
 
 use super::dynamic_router::{ThreadSafeDynamicRouter, new_dynamic_router};
 use super::handlers::{
-    cache, handle_engines_list, handle_favicon, handle_health, handle_hot_all, handle_hot_multiple,
-    handle_hot_platform, handle_hot_platforms_list, handle_index, handle_magic_link_generate,
-    handle_metrics, handle_pro_api, handle_realtime_metrics, handle_search, handle_search_post,
-    handle_stats, handle_version, rss,
+    cache, get_static_app_path, get_static_html_path, handle_engines_list, handle_favicon,
+    handle_health, handle_hot_all, handle_hot_multiple, handle_hot_platform,
+    handle_hot_platforms_list, handle_index, handle_magic_link_generate, handle_metrics,
+    handle_pro_api, handle_realtime_metrics, handle_search, handle_search_post, handle_stats,
+    handle_version, rss,
 };
 use super::metrics::{MetricsCollector, MetricsConfig};
 use super::middleware::{
@@ -84,6 +85,8 @@ pub struct ApiState {
     pub magic_link: Arc<MagicLinkState>,
     /// 动态路由匹配器
     pub dynamic_router: ThreadSafeDynamicRouter,
+    /// 前端 API 地址（空字符串表示使用同源）
+    pub frontend_api_url: String,
 }
 
 /// API 接口
@@ -120,6 +123,16 @@ impl ApiInterface {
         version: String,
         network_config: NetworkConfig,
     ) -> Self {
+        Self::with_full_config(search, version, network_config, String::new())
+    }
+
+    /// 使用完整配置创建 API 接口
+    pub fn with_full_config(
+        search: Arc<SearchInterface>,
+        version: String,
+        network_config: NetworkConfig,
+        frontend_api_url: String,
+    ) -> Self {
         let metrics = Arc::new(MetricsCollector::new(MetricsConfig::default()));
         let magic_link = Arc::new(MagicLinkState::new(MagicLinkConfig::default()));
         let dynamic_router = new_dynamic_router();
@@ -135,6 +148,7 @@ impl ApiInterface {
             metrics,
             magic_link,
             dynamic_router,
+            frontend_api_url,
         };
 
         // 根据网络配置初始化中间件
@@ -207,6 +221,10 @@ impl ApiInterface {
         use axum::routing::get_service;
         use tower_http::services::ServeDir;
 
+        // 获取静态文件路径
+        let static_app_path = get_static_app_path();
+        let static_html_path = get_static_html_path();
+
         // API 路由组
         let api_router = Router::new()
             .route("/search", get(handle_search))
@@ -238,11 +256,14 @@ impl ApiInterface {
             // API 路由组
             .nest("/api", api_router)
             // 静态资源目录
-            .nest_service("/_app", get_service(ServeDir::new("static/html/_app")))
+            .nest_service("/_app", get_service(ServeDir::new(static_app_path)))
             // 根路径返回 index.html
             .route("/", get(handle_index))
             // robots.txt 等根目录文件
-            .nest_service("/robots.txt", get_service(ServeDir::new("static/html")))
+            .nest_service(
+                "/robots.txt",
+                get_service(ServeDir::new(static_html_path.clone())),
+            )
             // 所有其他路由（SPA 客户端路由）都返回 index.html
             .fallback(get(handle_index))
             .with_state(self.state.clone())
@@ -264,6 +285,10 @@ impl ApiInterface {
         use axum::middleware;
         use axum::routing::get_service;
         use tower_http::services::ServeDir;
+
+        // 获取静态文件路径
+        let static_app_path = get_static_app_path();
+        let static_html_path = get_static_html_path();
 
         // API 路由组
         let api_router = Router::new()
@@ -293,11 +318,14 @@ impl ApiInterface {
             // API 路由组
             .nest("/api", api_router)
             // 静态资源目录 - 优先级最高
-            .nest_service("/_app", get_service(ServeDir::new("static/html/_app")))
+            .nest_service("/_app", get_service(ServeDir::new(static_app_path)))
             // 根路径返回 index.html
             .route("/", get(handle_index))
             // robots.txt 等根目录文件
-            .nest_service("/robots.txt", get_service(ServeDir::new("static/html")))
+            .nest_service(
+                "/robots.txt",
+                get_service(ServeDir::new(static_html_path.clone())),
+            )
             // 所有其他路由（SPA 客户端路由）都返回 index.html
             .fallback(get(handle_index))
             .with_state(self.state.clone())

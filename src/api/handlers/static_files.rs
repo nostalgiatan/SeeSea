@@ -17,15 +17,44 @@
 //!
 //! 提供首页和静态资源服务
 
-use axum::{http::StatusCode, response::IntoResponse};
+use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
+use std::path::PathBuf;
+
+use crate::api::on::ApiState;
+
+/// 获取静态文件根目录
+///
+/// 优先使用二进制文件所在目录的 static 目录，如果不存在则使用当前工作目录的 static 目录
+fn get_static_root() -> PathBuf {
+    // 尝试获取二进制文件所在目录
+    if let Ok(exe_path) = std::env::current_exe()
+        && let Some(exe_dir) = exe_path.parent()
+    {
+        // 尝试二进制文件同级目录
+        let static_path = exe_dir.join("static");
+        if static_path.exists() {
+            return static_path;
+        }
+        // 尝试父目录
+        if let Some(parent_dir) = exe_dir.parent() {
+            let parent_static = parent_dir.join("static");
+            if parent_static.exists() {
+                return parent_static;
+            }
+        }
+    }
+
+    // 回退到当前工作目录
+    PathBuf::from("static")
+}
 
 /// 处理首页请求
-pub async fn handle_index() -> impl IntoResponse {
-    // 读取 index.html 文件
-    let index_path = Path::new("static/html/index.html");
+pub async fn handle_index(State(state): State<ApiState>) -> impl IntoResponse {
+    // 获取 index.html 文件路径
+    let static_root = get_static_root();
+    let index_path = static_root.join("html/index.html");
     let mut content = match File::open(index_path) {
         Ok(mut file) => {
             let mut content = String::new();
@@ -42,8 +71,10 @@ pub async fn handle_index() -> impl IntoResponse {
         }
     };
 
-    // 从环境变量读取 API 基础 URL，默认为空字符串（同源，前端会自动拼接 /api）
-    let api_base_url = std::env::var("SEESEA_API_BASE_URL").unwrap_or_else(|_| "".to_string());
+    // 从配置中获取前端 API 地址
+    // 如果为空，表示使用同源（前端会自动使用 window.location.origin）
+    // 如果有值，则注入该 URL（用于 nginx 反向代理等场景）
+    let api_base_url = &state.frontend_api_url;
 
     // 在 HTML 中注入配置脚本，使前端可以访问 API 地址
     let config_script = format!(
@@ -64,8 +95,15 @@ window.__SEESEA_CONFIG__ = {{
 
 /// 处理 favicon 请求
 pub async fn handle_favicon() -> impl IntoResponse {
-    // 尝试读取 ICO 文件
-    let favicon_paths = ["static/image/favicon.ico", "server/static/favicon.ico"];
+    // 获取静态文件根目录
+    let static_root = get_static_root();
+
+    // 尝试读取 ICO 文件，按优先级顺序
+    let favicon_paths = [
+        static_root.join("image/favicon.ico"),
+        static_root.join("html/favicon.ico"),
+        PathBuf::from("server/static/favicon.ico"),
+    ];
 
     for path in &favicon_paths {
         if let Ok(content) = std::fs::read(path) {
@@ -92,6 +130,16 @@ pub async fn handle_favicon() -> impl IntoResponse {
         svg.as_bytes().to_vec(),
     )
         .into_response()
+}
+
+/// 获取静态文件目录路径（供外部使用）
+pub fn get_static_html_path() -> PathBuf {
+    get_static_root().join("html")
+}
+
+/// 获取静态文件 _app 目录路径（供外部使用）
+pub fn get_static_app_path() -> PathBuf {
+    get_static_root().join("html/_app")
 }
 
 #[cfg(test)]

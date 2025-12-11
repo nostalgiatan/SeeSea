@@ -38,4 +38,4 @@ pub use metrics::{
 };
 pub use pro::handle_pro_api;
 pub use search::{handle_search, handle_search_post};
-pub use static_files::{handle_favicon, handle_index};
+pub use static_files::{get_static_app_path, get_static_html_path, handle_favicon, handle_index};

@@ -1,7 +1,6 @@
-
 [package]
 name = "SeeSea"
-version = "2.0.1"
+version = "2.0.4"
 edition = "2024"
 
 description = "SeeSea - A privacy-focused data aggregation platform with search, RSS, hot trends, and AI enhancement"
@@ -43,7 +42,7 @@ idna = "1.1.0"
 qdrant-client = { version = "1.16.0", features = ["reqwest"] }
 
 # 跨平台SIMD和零拷贝依赖
-wide = "0.7.13"  # 跨平台SIMD库
+wide = "1.0.2"  # 跨平台SIMD库
 simd-adler32 = "0.3.5"  # SIMD优化的Adler32算法
 memmap2 = "0.9.4"  # 跨平台内存映射，用于零拷贝
 bytemuck = { version = "1.17.0", features = ["derive"] }  # 安全的字节转换

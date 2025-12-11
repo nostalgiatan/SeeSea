@@ -38,6 +38,11 @@ pub struct ServerConfig {
     /// 基础URL
     #[serde(default)]
     pub base_url: Option<String>,
+    /// 前端 API 地址配置
+    /// 留空表示使用同源（默认，后端驱动前端时使用）
+    /// 设置后会覆盖同源配置，适用于 nginx 反向代理等场景
+    #[serde(default)]
+    pub frontend_api_url: String,
     /// 静态文件路径
     #[serde(default)]
     pub static_path: Option<PathBuf>,
@@ -87,6 +92,7 @@ impl Default for ServerConfig {
             public_instance: false,
             secret_key: "change-me-in-production".to_string(),
             base_url: None,
+            frontend_api_url: String::new(), // 默认为空，使用同源
             static_path: None,
             tls: None,
             worker_threads: None,

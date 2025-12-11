@@ -18,7 +18,7 @@ import glob
 import json
 import argparse
 import zstandard
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 # Configuration
 BUILD_DIR = "building"
@@ -67,6 +67,7 @@ def get_current_python_version():
 def setup_jinja_env():
     """Setup Jinja2 environment - deprecated, kept for seesea-up.py generation"""
     from jinja2 import Environment, FileSystemLoader
+
     env = Environment(
         loader=FileSystemLoader(STATIC_INSTALL_DIR),
         autoescape=False,
@@ -124,63 +125,33 @@ def cleanup_build_dir():
 
 
 def inject_data_to_template(
-    template_path: str, 
-    metadata: Dict[str, str], 
-    bin_seesea: bytes, 
-    bin_seesea_core: bytes, 
-    requirements: List[str]
+    template_path: str,
+    metadata: Dict[str, str],
+    bin_seesea: bytes,
+    bin_seesea_core: bytes,
+    requirements: List[str],
 ) -> str:
     """
-    Read template file and inject data using Base64 encoding for binaries.
-    This avoids raw \\x escape issues in generated Python scripts.
-    
-    Args:
-        template_path: Path to the template file
-        metadata: Dictionary with seesea filenames
-        bin_seesea: Compressed seesea wheel as bytes
-        bin_seesea_core: Compressed seesea-core wheel as bytes
-        requirements: List of requirement strings
-        
-    Returns:
-        Generated Python script as string
+    Read template file and inject metadata and requirements as Python literals.
+    Binaries are no longer embedded into the script; templates will download whl files by name.
     """
-    import base64
-
     # Read template file
     with open(template_path, "r", encoding="utf-8") as f:
         template_content = f.read()
-    
+
     # Convert data to Python literal strings
     metadata_str = repr(metadata)
-    # Encode binaries as base64 text (safe ASCII)
-    bin_seesea_b64 = base64.b64encode(bin_seesea).decode('ascii')
-    bin_seesea_core_b64 = base64.b64encode(bin_seesea_core).decode('ascii')
     requirements_str = repr(requirements)
-    
+
     # Replace placeholders with actual data using text substitution
-    # Replace metadata
     template_content = template_content.replace(
-        "metadata: Dict[str, str] = {}",
-        f"metadata: Dict[str, str] = {metadata_str}"
-    )
-    
-    # Replace base64 placeholders (templates now expect *_b64 variables)
-    template_content = template_content.replace(
-        "bin_seesea_b64: str = ''",
-        f"bin_seesea_b64: str = '{bin_seesea_b64}'"
+        "metadata: Dict[str, str] = {}", f"metadata: Dict[str, str] = {metadata_str}"
     )
 
     template_content = template_content.replace(
-        "bin_seesea_core_b64: str = ''",
-        f"bin_seesea_core_b64: str = '{bin_seesea_core_b64}'"
+        "requirements: List[str] = []", f"requirements: List[str] = {requirements_str}"
     )
-    
-    # Replace requirements
-    template_content = template_content.replace(
-        "requirements: List[str] = []",
-        f"requirements: List[str] = {requirements_str}"
-    )
-    
+
     return template_content
 
 
@@ -192,7 +163,7 @@ def generate_platform_scripts(seesea_whl, seesea_core_whl):
 
     # Extract version from filename (e.g., seesea-1.2.0-py3-none-any.whl)
     # Format: seesea-{version}-py3-none-any.whl
-    version_match = seesea_filename.split('-')
+    version_match = seesea_filename.split("-")
     seesea_version = version_match[1] if len(version_match) > 1 else "unknown"
 
     # Compress whl files
@@ -203,9 +174,9 @@ def generate_platform_scripts(seesea_whl, seesea_core_whl):
 
     # Create metadata with version
     metadata = {
-        "seesea_filename": seesea_filename, 
+        "seesea_filename": seesea_filename,
         "seesea_core_filename": seesea_core_filename,
-        "seesea_version": seesea_version
+        "seesea_version": seesea_version,
     }
 
     # Read requirements from pyproject.toml or requirements.txt
@@ -222,7 +193,7 @@ def generate_platform_scripts(seesea_whl, seesea_core_whl):
 
     # Get template path
     template_path = os.path.join(STATIC_INSTALL_DIR, f"{current_platform}.py.tmpl")
-    
+
     # Inject data using text replacement (simpler than AST)
     output_content = inject_data_to_template(
         template_path, metadata, bin_seesea, bin_seesea_core, requirements

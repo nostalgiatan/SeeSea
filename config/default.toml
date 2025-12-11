@@ -18,7 +18,7 @@ default_lang = "auto"
 # 时区
 timezone = "UTC"
 # 应用版本
-version = "2.0.0"
+version = "2.0.4"
 # 运行环境: "development", "testing", "staging", "production"
 environment = "production"
 
@@ -38,6 +38,12 @@ public_instance = false
 secret_key = "change-me-in-production-please-generate-a-strong-secret-key"
 # 基础 URL
 # base_url = "https://your-seesea-domain.com"
+
+# 前端 API 地址配置
+# 留空表示使用同源（默认，后端驱动前端时使用）
+# 设置后会覆盖同源配置，适用于 nginx 反向代理等场景
+# 例如: frontend_api_url = "https://api.example.com"
+frontend_api_url = ""
 
 # TLS 配置（HTTPS）
 [server.tls]

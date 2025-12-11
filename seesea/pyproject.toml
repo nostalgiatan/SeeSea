@@ -9,7 +9,7 @@ include = ["*"]
 
 [project]
 name = "seesea"
-version = "2.0.0"
+version = "2.0.4"
 description = "SeeSea Python SDK - Privacy-focused metasearch engine"
 readme = "README.md"
 requires-python = ">=3.8"
