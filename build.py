@@ -131,8 +131,8 @@ def inject_data_to_template(
     requirements: List[str]
 ) -> str:
     """
-    Read template file and inject data using text replacement
-    This is simpler and more reliable than AST manipulation
+    Read template file and inject data using Base64 encoding for binaries.
+    This avoids raw \\x escape issues in generated Python scripts.
     
     Args:
         template_path: Path to the template file
@@ -144,14 +144,17 @@ def inject_data_to_template(
     Returns:
         Generated Python script as string
     """
+    import base64
+
     # Read template file
     with open(template_path, "r", encoding="utf-8") as f:
         template_content = f.read()
     
     # Convert data to Python literal strings
     metadata_str = repr(metadata)
-    bin_seesea_str = repr(bin_seesea)
-    bin_seesea_core_str = repr(bin_seesea_core)
+    # Encode binaries as base64 text (safe ASCII)
+    bin_seesea_b64 = base64.b64encode(bin_seesea).decode('ascii')
+    bin_seesea_core_b64 = base64.b64encode(bin_seesea_core).decode('ascii')
     requirements_str = repr(requirements)
     
     # Replace placeholders with actual data using text substitution
@@ -161,16 +164,15 @@ def inject_data_to_template(
         f"metadata: Dict[str, str] = {metadata_str}"
     )
     
-    # Replace bin_seesea
+    # Replace base64 placeholders (templates now expect *_b64 variables)
     template_content = template_content.replace(
-        "bin_seesea: bytes = b''",
-        f"bin_seesea: bytes = {bin_seesea_str}"
+        "bin_seesea_b64: str = ''",
+        f"bin_seesea_b64: str = '{bin_seesea_b64}'"
     )
-    
-    # Replace bin_seesea_core
+
     template_content = template_content.replace(
-        "bin_seesea_core: bytes = b''",
-        f"bin_seesea_core: bytes = {bin_seesea_core_str}"
+        "bin_seesea_core_b64: str = ''",
+        f"bin_seesea_core_b64: str = '{bin_seesea_core_b64}'"
     )
     
     # Replace requirements
