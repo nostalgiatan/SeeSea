@@ -409,7 +409,7 @@ jobs:
         pip install numpy
 
     - name: Run Black
-      working-directory: ./seesea
+      working-directory: .
       run: black --check .
 
     - name: Run Ruff
