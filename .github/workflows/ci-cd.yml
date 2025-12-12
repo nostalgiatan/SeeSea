@@ -39,11 +39,12 @@ jobs:
             arch: x64
             maturin-target: x86_64-unknown-linux-gnu
             python-version: '3.13'
-          - os: ubuntu-latest
-            platform: linux
-            arch: x64
-            maturin-target: x86_64-unknown-linux-gnu
-            python-version: '3.14'
+          # Temporarily commented out due to build issues with Python 3.14
+          # - os: ubuntu-latest
+          #   platform: linux
+          #   arch: x64
+          #   maturin-target: x86_64-unknown-linux-gnu
+          #   python-version: '3.14'
           # Linux arm64 builds for Python 3.10-3.14
           - os: ubuntu-latest
             platform: linux
@@ -65,11 +66,12 @@ jobs:
             arch: arm64
             maturin-target: aarch64-unknown-linux-gnu
             python-version: '3.13'
-          - os: ubuntu-latest
-            platform: linux
-            arch: arm64
-            maturin-target: aarch64-unknown-linux-gnu
-            python-version: '3.14'
+          # Temporarily commented out due to build issues with Python 3.14
+          # - os: ubuntu-latest
+          #   platform: linux
+          #   arch: arm64
+          #   maturin-target: aarch64-unknown-linux-gnu
+          #   python-version: '3.14'
           # Linux armv7 builds for Python 3.10-3.14
           - os: ubuntu-latest
             platform: linux
@@ -91,11 +93,12 @@ jobs:
             arch: armv7
             maturin-target: armv7-unknown-linux-gnueabihf
             python-version: '3.13'
-          - os: ubuntu-latest
-            platform: linux
-            arch: armv7
-            maturin-target: armv7-unknown-linux-gnueabihf
-            python-version: '3.14'
+          # Temporarily commented out due to build issues with Python 3.14
+          # - os: ubuntu-latest
+          #   platform: linux
+          #   arch: armv7
+          #   maturin-target: armv7-unknown-linux-gnueabihf
+          #   python-version: '3.14'
           # Windows x64 builds for Python 3.10-3.14
           - os: windows-latest
             platform: windows
@@ -117,11 +120,12 @@ jobs:
             arch: x64
             maturin-target: x86_64-pc-windows-msvc
             python-version: '3.13'
-          - os: windows-latest
-            platform: windows
-            arch: x64
-            maturin-target: x86_64-pc-windows-msvc
-            python-version: '3.14'
+          # Temporarily commented out due to build issues with Python 3.14
+          # - os: windows-latest
+          #   platform: windows
+          #   arch: x64
+          #   maturin-target: x86_64-pc-windows-msvc
+          #   python-version: '3.14'
           # Windows arm64 builds for Python 3.10-3.14
           - os: windows-latest
             platform: windows
@@ -143,11 +147,12 @@ jobs:
             arch: arm64
             maturin-target: aarch64-pc-windows-msvc
             python-version: '3.13'
-          - os: windows-latest
-            platform: windows
-            arch: arm64
-            maturin-target: aarch64-pc-windows-msvc
-            python-version: '3.14'
+          # Temporarily commented out due to build issues with Python 3.14
+          # - os: windows-latest
+          #   platform: windows
+          #   arch: arm64
+          #   maturin-target: aarch64-pc-windows-msvc
+          #   python-version: '3.14'
           # macOS x64 builds for Python 3.10-3.14
           - os: macos-latest
             platform: macos
@@ -169,11 +174,12 @@ jobs:
             arch: x64
             maturin-target: x86_64-apple-darwin
             python-version: '3.13'
-          - os: macos-latest
-            platform: macos
-            arch: x64
-            maturin-target: x86_64-apple-darwin
-            python-version: '3.14'
+          # Temporarily commented out due to build issues with Python 3.14
+          # - os: macos-latest
+          #   platform: macos
+          #   arch: x64
+          #   maturin-target: x86_64-apple-darwin
+          #   python-version: '3.14'
           # macOS arm64 builds for Python 3.10-3.14
           - os: macos-latest
             platform: macos
@@ -195,11 +201,12 @@ jobs:
             arch: arm64
             maturin-target: aarch64-apple-darwin
             python-version: '3.13'
-          - os: macos-latest
-            platform: macos
-            arch: arm64
-            maturin-target: aarch64-apple-darwin
-            python-version: '3.14'
+          # Temporarily commented out due to build issues with Python 3.14
+          # - os: macos-latest
+          #   platform: macos
+          #   arch: arm64
+          #   maturin-target: aarch64-apple-darwin
+          #   python-version: '3.14'
 
     steps:
     - uses: actions/checkout@v4
