@@ -186,7 +186,9 @@ class XinhuaEngine(BaseBrowserEngine):
 
         return True
 
-    async def extract_data(self, page: Page, params: Dict[str, Any]) -> List[SearchResultItem]:
+    async def extract_data(
+        self, page: Page, params: Dict[str, Any]
+    ) -> List[SearchResultItem]:
         """
         Extract search results from Xinhua page
 
@@ -296,7 +298,11 @@ class XinhuaEngine(BaseBrowserEngine):
         actions: List[BrowserActionDict] = [{"type": "navigate", "url": url}]
 
         # Define parameters with multiple wait times
-        params = {"query": query, "max_results": max_results, "wait_times": DEFAULT_WAIT_TIMES}
+        params = {
+            "query": query,
+            "max_results": max_results,
+            "wait_times": DEFAULT_WAIT_TIMES,
+        }
 
         # Execute search
         return await self.search(url, actions, params)
@@ -339,7 +345,11 @@ def create_xinhua_callback_sync(params: Dict[str, Any]) -> Dict[str, Any]:
             return asyncio.run(create_xinhua_callback(params))
     except Exception as e:
         # 降级到同步处理
-        return {"results": [], "elapsed_ms": 0, "error": f"Failed to run async callback: {str(e)}"}
+        return {
+            "results": [],
+            "elapsed_ms": 0,
+            "error": f"Failed to run async callback: {str(e)}",
+        }
 
 
 async def create_xinhua_callback(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -386,7 +396,9 @@ async def create_xinhua_callback(params: Dict[str, Any]) -> Dict[str, Any]:
         category = params.get("category", "0")
 
         # Create engine with default config (from get_xinhua_results.py)
-        config = BrowserConfig(headless=True, stealth=True, user_agent=DEFAULT_USER_AGENT)
+        config = BrowserConfig(
+            headless=True, stealth=True, user_agent=DEFAULT_USER_AGENT
+        )
 
         # Execute search using the validated approach
         async with XinhuaEngine(config) as engine:

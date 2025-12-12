@@ -183,7 +183,9 @@ async def process_search_results(results: Dict, query: str, page: int, page_size
 
             # 检查转换是否成功
             if not convert_result.get("success", False):
-                print(f"❌ URL转换失败 {url}: {convert_result.get('error', '未知错误')}")
+                print(
+                    f"❌ URL转换失败 {url}: {convert_result.get('error', '未知错误')}"
+                )
                 return
 
             # 提取markdown内容
@@ -314,7 +316,9 @@ async def processing_worker():
 
                 # 使用嵌入模型生成向量
                 vectors = embedder.encode(block_contents)
-                print(f"🔢 生成向量: {len(vectors)}个向量，每个维度: {embedder.get_dimension()}")
+                print(
+                    f"🔢 生成向量: {len(vectors)}个向量，每个维度: {embedder.get_dimension()}"
+                )
 
                 # 10. 使用cleaner的蚁群算法进行进一步处理
                 # 注意：cleaner已经在cleaning过程中完成了蚁群算法处理
@@ -398,7 +402,9 @@ async def handle_pro_search(req: Dict) -> Dict:
         if not query:
             return {"status": 400, "body": json.dumps({"error": "Query is required"})}
 
-        print(f"🔍 收到Pro搜索请求: query='{query}', page={page}, page_size={page_size}")
+        print(
+            f"🔍 收到Pro搜索请求: query='{query}', page={page}, page_size={page_size}"
+        )
 
         # 1. 使用正常搜索函数进行搜索
         search_client = SearchClient()

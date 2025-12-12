@@ -154,7 +154,9 @@ class TestSearchParameters:
         params = list(sig.parameters.keys())
 
         # Should have: query, page, page_size, language, region, engines, force, cache_timeline
-        assert len(params) >= 6, f"Expected at least 6 parameters, got {len(params)}: {params}"
+        assert (
+            len(params) >= 6
+        ), f"Expected at least 6 parameters, got {len(params)}: {params}"
         assert "query" in params, "query parameter should be present"
         assert "engines" in params, "engines parameter should be present"
 

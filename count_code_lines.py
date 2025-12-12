@@ -35,7 +35,9 @@ def count_lines(file_path):
                     if "*/" in line:
                         in_multiline_comment = False
                         # 检查是否有代码在同一行
-                        code_part = line.split("/*")[0].strip() + line.split("*/")[1].strip()
+                        code_part = (
+                            line.split("/*")[0].strip() + line.split("*/")[1].strip()
+                        )
                         if code_part:
                             effective_lines += 1
                     continue

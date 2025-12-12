@@ -45,7 +45,9 @@ class StandardEmbedder(BaseEmbedder):
             from llama_cpp import Llama
             from seesea_core import get_file
         except ImportError as e:
-            raise ImportError("请先安装依赖: pip install llama-cpp-python seesea_core") from e
+            raise ImportError(
+                "请先安装依赖: pip install llama-cpp-python seesea_core"
+            ) from e
 
         # 模型目录
         llm_dir = ".llm"
@@ -113,7 +115,11 @@ class StandardEmbedder(BaseEmbedder):
             return 0
         else:
             # 自动检测
-            gpu_env_vars = ["CUDA_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES", "CUDA_PATH"]
+            gpu_env_vars = [
+                "CUDA_VISIBLE_DEVICES",
+                "NVIDIA_VISIBLE_DEVICES",
+                "CUDA_PATH",
+            ]
             for var in gpu_env_vars:
                 if os.environ.get(var):
                     return -1
@@ -142,7 +148,8 @@ class StandardEmbedder(BaseEmbedder):
         # 限制文本长度
         max_chars = 2048  # 标准模型上下文较小
         truncated_texts = [
-            text[:max_chars] if len(text) > max_chars else text for text in texts_to_process
+            text[:max_chars] if len(text) > max_chars else text
+            for text in texts_to_process
         ]
 
         all_embeddings = []
@@ -150,7 +157,9 @@ class StandardEmbedder(BaseEmbedder):
             try:
                 result = self.embedder.create_embedding(input=[text])
                 if result and "data" in result and result["data"]:
-                    embedding = cast(List[float], result["data"][0].get("embedding", []))
+                    embedding = cast(
+                        List[float], result["data"][0].get("embedding", [])
+                    )
                     if embedding:
                         all_embeddings.append(embedding)
             except Exception:

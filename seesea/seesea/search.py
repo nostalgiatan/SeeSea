@@ -256,7 +256,9 @@ class SearchClient:
             ...         print(f"{name}: 临时禁用 (失败: {state.consecutive_failures})")
         """
         states_dict = self._client.get_engine_states()
-        return {name: EngineState.from_dict(state) for name, state in states_dict.items()}
+        return {
+            name: EngineState.from_dict(state) for name, state in states_dict.items()
+        }
 
     def get_cache_info(self) -> CacheInfo:
         """

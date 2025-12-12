@@ -20,6 +20,16 @@ SeeSea API Handlers - 处理API请求的处理器函数
 """
 
 # 导出处理器函数
-from .pro import handle_pro_search, add_pro_routes, initialize_pro_handlers, cleanup_command_line
+from .pro import (
+    handle_pro_search,
+    add_pro_routes,
+    initialize_pro_handlers,
+    cleanup_command_line,
+)
 
-__all__ = ["handle_pro_search", "add_pro_routes", "initialize_pro_handlers", "cleanup_command_line"]
+__all__ = [
+    "handle_pro_search",
+    "add_pro_routes",
+    "initialize_pro_handlers",
+    "cleanup_command_line",
+]

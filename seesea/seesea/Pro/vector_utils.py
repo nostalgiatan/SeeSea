@@ -54,7 +54,9 @@ class Vectorizer:
         except ImportError as e:
             raise ImportError("未安装Pro特性，不开放Pro功能") from e
 
-    def embed_text(self, text: Union[str, List[str]]) -> Union[List[float], List[List[float]]]:
+    def embed_text(
+        self, text: Union[str, List[str]]
+    ) -> Union[List[float], List[List[float]]]:
         """
         将文本转换为向量表示
 
@@ -170,9 +172,13 @@ class VectorDatabase:
             for doc in documents:
                 # 确保文档有id和content字段，并且不为空
                 if "id" not in doc or not doc["id"]:
-                    raise ValueError(f"Document must have a non-empty 'id' field: {doc}")
+                    raise ValueError(
+                        f"Document must have a non-empty 'id' field: {doc}"
+                    )
                 if "content" not in doc or not doc["content"]:
-                    raise ValueError(f"Document must have a non-empty 'content' field: {doc}")
+                    raise ValueError(
+                        f"Document must have a non-empty 'content' field: {doc}"
+                    )
 
                 doc_dict = {"id": doc["id"], "content": doc["content"]}
                 # 添加可选元数据
@@ -188,7 +194,9 @@ class VectorDatabase:
         except Exception as e:
             raise RuntimeError(f"批量添加文档失败: {str(e)}") from e
 
-    def search(self, query: str, k: int = 5, return_objects: bool = False) -> List[Dict[str, Any]]:
+    def search(
+        self, query: str, k: int = 5, return_objects: bool = False
+    ) -> List[Dict[str, Any]]:
         """
         在向量数据库中搜索相似文档
 
@@ -419,7 +427,9 @@ class BatchProcessor:
         # 用于估计内存使用量
         self.estimated_memory_mb = 0.0
         # 向量数据库实例（Rust层已实现线程安全）
-        self.database = VectorDatabase(model_path=model_path, device=device, store_path=store_path)
+        self.database = VectorDatabase(
+            model_path=model_path, device=device, store_path=store_path
+        )
         # 用于去重的集合，存储已处理的URL和内容哈希
         self.processed_urls: set[str] = set()
         self.processed_content_hashes: set[str] = set()
@@ -465,7 +475,10 @@ class BatchProcessor:
         self.estimated_memory_mb += estimated_size
 
         # 7. 检查是否需要触发批处理
-        if len(self.batch) >= self.batch_size or self.estimated_memory_mb >= self.max_memory_mb:
+        if (
+            len(self.batch) >= self.batch_size
+            or self.estimated_memory_mb >= self.max_memory_mb
+        ):
             self.process_batch()
 
     def add_documents(self, documents: List[Dict[str, Any]]) -> None:
@@ -480,7 +493,9 @@ class BatchProcessor:
             if "id" not in doc or not doc["id"]:
                 raise ValueError(f"Document must have a non-empty 'id' field: {doc}")
             if "content" not in doc or not doc["content"]:
-                raise ValueError(f"Document must have a non-empty 'content' field: {doc}")
+                raise ValueError(
+                    f"Document must have a non-empty 'content' field: {doc}"
+                )
             # 使用add_document方法添加，这样可以共享去重逻辑
             self.add_document(
                 doc_id=doc["id"],
@@ -511,7 +526,8 @@ class BatchProcessor:
             # 如果处理失败，将文档重新添加到队列
             self.batch.extend(batch_to_process)
             self.estimated_memory_mb += sum(
-                len(str(doc).encode("utf-8")) / (1024 * 1024) for doc in batch_to_process
+                len(str(doc).encode("utf-8")) / (1024 * 1024)
+                for doc in batch_to_process
             )
             return 0
 
@@ -580,7 +596,9 @@ class VectorUtils:
     def database(self):
         """延迟初始化向量数据库"""
         if self._database is None:
-            self._database = VectorDatabase(self.model_path, self.device, self.store_path)
+            self._database = VectorDatabase(
+                self.model_path, self.device, self.store_path
+            )
         return self._database
 
     @property
@@ -597,7 +615,10 @@ class VectorUtils:
         return self._batch_processor
 
     def add_document(
-        self, content: str, metadata: Optional[Dict[str, Any]] = None, doc_id: Optional[str] = None
+        self,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        doc_id: Optional[str] = None,
     ) -> None:
         """
         添加文档到向量数据库（支持批处理）
@@ -636,7 +657,9 @@ class VectorUtils:
 
                 doc["id"] = str(uuid4())
             if "content" not in doc or not doc["content"]:
-                raise ValueError(f"Document must have a non-empty 'content' field: {doc}")
+                raise ValueError(
+                    f"Document must have a non-empty 'content' field: {doc}"
+                )
             processed_docs.append(doc)
 
         # 使用批处理处理器添加文档

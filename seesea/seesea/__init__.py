@@ -191,7 +191,9 @@ def _auto_register_engines() -> None:
 
         try:
             # 动态导入模块
-            module = importlib.import_module(f".browser.{module_name}", package="seesea")
+            module = importlib.import_module(
+                f".browser.{module_name}", package="seesea"
+            )
 
             # 查找回调函数（通常命名为create_<module>_callback_sync）
             callback_name = f"create_{module_name}_callback_sync"
@@ -223,7 +225,9 @@ def _auto_register_engines() -> None:
                 # 如果没有找到标准回调函数，尝试其他可能的名称
                 # 例如：create_callback_sync, search_callback等
                 for attr_name in dir(module):
-                    if "callback" in attr_name.lower() and callable(getattr(module, attr_name)):
+                    if "callback" in attr_name.lower() and callable(
+                        getattr(module, attr_name)
+                    ):
                         # 找到了一个可能的回调函数
                         callback = getattr(module, attr_name)
 
@@ -232,9 +236,13 @@ def _auto_register_engines() -> None:
                         if len(sig.parameters) == 1:
                             engine_type = getattr(module, "ENGINE_TYPE", "general")
                             description = getattr(
-                                module, "ENGINE_DESCRIPTION", f"{module_name.title()} Search Engine"
+                                module,
+                                "ENGINE_DESCRIPTION",
+                                f"{module_name.title()} Search Engine",
                             )
-                            categories = getattr(module, "ENGINE_CATEGORIES", ["general"])
+                            categories = getattr(
+                                module, "ENGINE_CATEGORIES", ["general"]
+                            )
 
                             register_engine(
                                 name=module_name,

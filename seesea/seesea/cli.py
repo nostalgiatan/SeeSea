@@ -57,7 +57,9 @@ def cli(ctx):
 @click.option("-j", "--json", is_flag=True, help="JSON 格式输出")
 @click.option("-v", "--verbose", is_flag=True, help="详细输出")
 @click.option("-e", "--engines", help="指定搜索引擎列表，用逗号分隔")
-@click.option("-c", "--count", type=int, help="使用的引擎数量（按延迟排序，选择低延迟引擎）")
+@click.option(
+    "-c", "--count", type=int, help="使用的引擎数量（按延迟排序，选择低延迟引擎）"
+)
 def search(query, pro, page, page_size, limit, json, verbose, engines, count):
     """执行搜索"""
     with Progress(
@@ -73,7 +75,10 @@ def search(query, pro, page, page_size, limit, json, verbose, engines, count):
                 # Pro 功能需要显式启用才会加载
                 try:
                     # 直接调用本地的 Pro handlers 函数
-                    from seesea.handlers.pro import handle_pro_search, initialize_pro_handlers
+                    from seesea.handlers.pro import (
+                        handle_pro_search,
+                        initialize_pro_handlers,
+                    )
                     import asyncio
 
                     from seesea_core import init_config
@@ -85,7 +90,11 @@ def search(query, pro, page, page_size, limit, json, verbose, engines, count):
                     req = {
                         "path": "/search",
                         "method": "GET",
-                        "query_params": {"q": query, "page": page, "page_size": page_size},
+                        "query_params": {
+                            "q": query,
+                            "page": page,
+                            "page_size": page_size,
+                        },
                         "body": {},
                     }
 
@@ -138,7 +147,9 @@ def search(query, pro, page, page_size, limit, json, verbose, engines, count):
                 elif count:
                     # If count is specified but no engines, get all engines and take first N
                     all_engines = client.list_engines()
-                    engines_list = all_engines[:count] if count < len(all_engines) else None
+                    engines_list = (
+                        all_engines[:count] if count < len(all_engines) else None
+                    )
 
                 results = client.search(
                     query=query, page=page, page_size=page_size, engines=engines_list
@@ -224,7 +235,9 @@ def engines(json):
             sys.exit(1)
 
     if json:
-        console.print(json_module.dumps({"engines": engine_list}, ensure_ascii=False, indent=2))
+        console.print(
+            json_module.dumps({"engines": engine_list}, ensure_ascii=False, indent=2)
+        )
     else:
         if engine_list:
             table = Table(title="可用搜索引擎", box=box.ROUNDED)
@@ -442,7 +455,10 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
             feed_urls = urls.split(",") if urls else []
 
             ranking = client.create_ranking(
-                feed_urls=feed_urls, keywords=keyword_list, min_score=min_score, max_results=limit
+                feed_urls=feed_urls,
+                keywords=keyword_list,
+                min_score=min_score,
+                max_results=limit,
             )
 
             progress.update(task, description="榜单创建完成")
@@ -501,7 +517,9 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
 
 @cli.command()
 @click.option("--host", default=None, help="监听地址 (默认: 配置文件中的地址)")
-@click.option("--port", type=int, default=None, help="监听端口 (默认: 配置文件中的端口)")
+@click.option(
+    "--port", type=int, default=None, help="监听端口 (默认: 配置文件中的端口)"
+)
 @click.option("-c", "--config", default=None, help="配置文件路径")
 @click.option("--pro", is_flag=True, help="启用 Pro 功能 (LLM、向量搜索等)")
 def server(host, port, config, pro):
@@ -553,14 +571,22 @@ def server(host, port, config, pro):
         )
 
         if pro:
-            console.print("  [dim]提示: Pro 功能需要额外的依赖和模型,首次使用时会自动下载[/dim]\n")
+            console.print(
+                "  [dim]提示: Pro 功能需要额外的依赖和模型,首次使用时会自动下载[/dim]\n"
+            )
         else:
-            console.print("  [dim]提示: 使用 'seesea server --pro' 启用 LLM 和向量搜索功能[/dim]\n")
+            console.print(
+                "  [dim]提示: 使用 'seesea server --pro' 启用 LLM 和向量搜索功能[/dim]\n"
+            )
 
-        console.print("[bold green]⏳ 服务器启动中...[/bold green] [dim]按 Ctrl+C 停止[/dim]\n")
+        console.print(
+            "[bold green]⏳ 服务器启动中...[/bold green] [dim]按 Ctrl+C 停止[/dim]\n"
+        )
 
         # 启动成功后显示详细信息
-        endpoint_table = Table(box=box.SIMPLE, show_header=True, header_style="bold magenta")
+        endpoint_table = Table(
+            box=box.SIMPLE, show_header=True, header_style="bold magenta"
+        )
         endpoint_table.add_column("端点", style="cyan", width=30)
         endpoint_table.add_column("方法", style="yellow", width=10)
         endpoint_table.add_column("说明", style="white")
@@ -568,8 +594,12 @@ def server(host, port, config, pro):
         endpoint_table.add_row(
             f"http://{actual_host}:{actual_port}/api/search", "GET/POST", "搜索接口"
         )
-        endpoint_table.add_row(f"http://{actual_host}:{actual_port}/api/health", "GET", "健康检查")
-        endpoint_table.add_row(f"http://{actual_host}:{actual_port}/api/stats", "GET", "统计信息")
+        endpoint_table.add_row(
+            f"http://{actual_host}:{actual_port}/api/health", "GET", "健康检查"
+        )
+        endpoint_table.add_row(
+            f"http://{actual_host}:{actual_port}/api/stats", "GET", "统计信息"
+        )
 
         if pro:
             endpoint_table.add_row(
@@ -666,7 +696,9 @@ def stats(json):
 
 
 @cli.command()
-@click.option("-c", "--count", type=int, help="使用的引擎数量（按延迟排序，选择低延迟引擎）")
+@click.option(
+    "-c", "--count", type=int, help="使用的引擎数量（按延迟排序，选择低延迟引擎）"
+)
 def interactive(count):
     """交互式搜索模式"""
     console.print("SeeSea 交互式搜索")
@@ -718,7 +750,9 @@ def interactive(count):
                     else:
                         console.print(f"[green]已设置引擎数量为 {engine_count}[/green]")
                 else:
-                    console.print("[yellow]用法: count N (N为引擎数量，0表示全部)[/yellow]")
+                    console.print(
+                        "[yellow]用法: count N (N为引擎数量，0表示全部)[/yellow]"
+                    )
                 continue
 
             # 执行搜索
@@ -736,10 +770,14 @@ def interactive(count):
                     if engine_count:
                         all_engines = client.list_engines()
                         engines_list = (
-                            all_engines[:engine_count] if engine_count < len(all_engines) else None
+                            all_engines[:engine_count]
+                            if engine_count < len(all_engines)
+                            else None
                         )
 
-                    results = client.search(query=query, page=1, page_size=10, engines=engines_list)
+                    results = client.search(
+                        query=query, page=1, page_size=10, engines=engines_list
+                    )
                     progress.update(task, description="搜索完成")
 
                 except Exception as e:
@@ -749,7 +787,9 @@ def interactive(count):
 
             # 显示结果
             console.print("\n搜索结果:")
-            console.print(f"总结果: {results.total_count}, 耗时: {results.query_time_ms}ms")
+            console.print(
+                f"总结果: {results.total_count}, 耗时: {results.query_time_ms}ms"
+            )
             console.print(f"引擎: {', '.join(results.engines_used)}")
 
             formatted = format_results(results.results, max_description_length=120)

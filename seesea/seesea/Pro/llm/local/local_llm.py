@@ -157,7 +157,9 @@ class LocalLLM(LLMBase):
         try:
             from llama_cpp import Llama
         except ImportError:
-            raise ImportError("未安装llama-cpp-python模块，请先安装: pip install llama-cpp-python")
+            raise ImportError(
+                "未安装llama-cpp-python模块，请先安装: pip install llama-cpp-python"
+            )
 
         # 创建Llama实例
         self.llama = Llama(model_path=model_path, **self.auto_config)
@@ -263,7 +265,9 @@ class LocalLLM(LLMBase):
 
         try:
             # 调用Llama实例生成文本
-            output = self.llama(prompt=prompt, max_tokens=max_tokens, stop=stop, **sampling_params)
+            output = self.llama(
+                prompt=prompt, max_tokens=max_tokens, stop=stop, **sampling_params
+            )
 
             # 处理不同类型的输出
             if isinstance(output, dict) and "choices" in output:
@@ -315,7 +319,9 @@ class LocalLLM(LLMBase):
             result = self.llama.create_embedding(input=texts)
             from typing import cast
 
-            return cast(List[List[float]], [item["embedding"] for item in result["data"]])
+            return cast(
+                List[List[float]], [item["embedding"] for item in result["data"]]
+            )
         except Exception as e:
             raise RuntimeError(f"本地LLM批量生成嵌入失败: {str(e)}") from e
 
