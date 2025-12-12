@@ -81,7 +81,7 @@ pub struct HotTrendItem {
 }
 
 /// 处理后的热点数据结果
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HotTrendResult {
     /// 平台ID
     pub platform_id: String,

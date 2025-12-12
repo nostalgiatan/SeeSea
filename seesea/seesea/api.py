@@ -27,6 +27,7 @@ SeeSea API Server - API 服务器
 - 支持多种网络模式（内网、外网、双模式）
 - 安全机制（CORS、IP过滤、速率限制、熔断）
 - Pro API 扩展支持
+- 嵌入向量化支持（标准模式和Pro模式）
 
 API 端点分类:
 - 搜索相关: /api/search, /api/engines
@@ -41,10 +42,12 @@ API 端点分类:
 - 共享连接池
 - 智能路由匹配
 - 完整的指标监控
+- 向量化相关性评分（标准模式使用轻量级模型）
 """
 
 from typing import Optional, Dict, List
 from seesea_core import PyApiServer  # type: ignore[import-untyped]
+from .embeddings.manager import EmbeddingManager
 
 
 class ApiServer:
@@ -113,6 +116,13 @@ class ApiServer:
         self.network_mode = network_mode
         self.config_file = config_file
         self.enable_pro = enable_pro
+        self._embedding_manager: Optional[EmbeddingManager] = None
+
+        # 初始化嵌入模型并注册回调
+        self._init_embedding(enable_pro)
+
+        # 初始化调控中心守护进程
+        self._init_system_controller()
 
         # 仅在显式启用时初始化Pro API路由和处理器
         if enable_pro:
@@ -138,7 +148,62 @@ class ApiServer:
 
                 print(f"   Detailed error: {traceback.format_exc()}")
         else:
-            print("ℹ️  Pro features disabled. Use enable_pro=True to enable advanced features.")
+            print("ℹ️  Running in standard mode with lightweight embedding model.")
+
+    def _init_embedding(self, enable_pro: bool) -> None:
+        """
+        初始化嵌入模型并注册回调
+
+        Args:
+            enable_pro: 是否启用 Pro 模式
+        """
+        try:
+            from seesea.embeddings import EmbeddingManager, EmbeddingMode
+            from seesea_core import register_embedding_callback
+
+            # 根据模式选择嵌入器
+            mode = EmbeddingMode.PRO if enable_pro else EmbeddingMode.STANDARD
+            mode_name = "Pro (Qwen3-Q8_0)" if enable_pro else "Standard (MiniLM-Q4)"
+
+            print(f"🔄 初始化嵌入模型 ({mode_name})...")
+
+            # 创建嵌入管理器
+            self._embedding_manager = EmbeddingManager.get_instance(mode=mode)
+
+            # 注册回调到 Rust
+            callback = self._embedding_manager.register_callback()
+            dimension = self._embedding_manager.get_dimension()
+
+            register_embedding_callback(
+                callback, dimension, "pro" if enable_pro else "standard", 4  # 最大并发数
+            )
+
+            print(f"✅ 嵌入模型已加载，维度: {dimension}")
+
+        except ImportError as e:
+            print(f"⚠️  嵌入模型初始化跳过: {e}")
+            print("   提示: 安装 llama-cpp-python 以启用向量化功能")
+        except Exception as e:
+            print(f"⚠️  嵌入模型初始化失败: {e}")
+
+    def _init_system_controller(self) -> None:
+        """
+        初始化调控中心守护进程
+
+        确保系统控制器在后台运行，监控资源使用和动态调整并发。
+        """
+        try:
+            from seesea_core import start_system_controller_daemon
+
+            print("🔄 启动调控中心守护进程...")
+            start_system_controller_daemon()
+            print("✅ 调控中心守护进程已启动")
+
+        except ImportError:
+            # 如果 seesea_core 不支持此功能，静默跳过
+            pass
+        except Exception as e:
+            print(f"⚠️  调控中心守护进程启动失败: {e}")
 
     def start(self):
         """

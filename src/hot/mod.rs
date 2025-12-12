@@ -17,6 +17,7 @@
 //!
 //! 该模块用于从newsnow.busiyi.world API获取热点数据，并进行解析和处理。
 //! 支持多平台并发获取，使用项目的HTTP客户端请求数据。
+//! 包含5分钟缓存机制以减少重复请求。
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,8 +28,11 @@ use tracing::{debug, error, info};
 use crate::errors::{ErrorInfo, Result};
 use crate::net::client::HttpClient;
 
+pub mod cache;
 pub mod client;
 pub mod types;
+
+pub use cache::{HotTrendCache, HotTrendCacheStats, get_hot_trend_cache};
 
 use types::{HotTrendResponse, HotTrendResult};
 

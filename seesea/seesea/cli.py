@@ -785,8 +785,24 @@ def interactive(count):
 cli.add_command(rss)
 
 
+def _init_standard_embedding():
+    """初始化标准模式嵌入模型并注册回调"""
+    try:
+        from .embeddings import EmbeddingManager
+
+        # 使用标准模式（轻量级）
+        manager = EmbeddingManager(pro_mode=False)
+        manager.register_rust_callback()
+        console.print("[dim]✓ 标准嵌入模型已初始化[/dim]")
+    except Exception as e:
+        # 嵌入模型初始化失败不应该阻止 CLI 正常运行
+        console.print(f"[dim yellow]⚠ 嵌入模型初始化失败: {e}[/dim yellow]")
+
+
 def main():
     """主入口函数，供 __main__.py 调用"""
+    # 初始化标准模式嵌入模型
+    _init_standard_embedding()
     cli()
 
 

@@ -240,9 +240,39 @@ fn seesea_core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
         python_bindings::py_system_controller::adjust_pro_processor_concurrency,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_system_controller::start_system_controller_daemon,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_system_controller::stop_system_controller_daemon,
+        m
+    )?)?;
 
     // 向量数据库绑定
     m.add_class::<python_bindings::py_vector_store::PyVectorClient>()?;
+
+    // 嵌入回调绑定
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_embedding_callback::register_embedding_callback,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_embedding_callback::unregister_embedding_callback,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_embedding_callback::is_embedding_callback_registered,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_embedding_callback::get_embedding_mode,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        python_bindings::py_embedding_callback::get_embedding_dimension,
+        m
+    )?)?;
 
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add(
