@@ -1,6 +1,6 @@
 [package]
 name = "SeeSea"
-version = "2.0.4"
+version = "2.1.0"
 edition = "2024"
 
 description = "SeeSea - A privacy-focused data aggregation platform with search, RSS, hot trends, and AI enhancement"
