@@ -245,22 +245,19 @@ SeeSea 正是为解决这些问题而生:
 - **Crawl4AI**: 智能网页抓取
 - **Markitdown**: HTML 转 Markdown
 
+### 实测数据
+
+#### 标准模式
+- **常驻内存**：54MB
+- **峰值内存**：69MB
+
 ---
 
 ## 🚀 快速开始
 
 ### 安装
 
-#### 方式 1: 使用预编译包 (推荐)
-
-```bash
-# Windows
-# 下载 SeeSea-windows-amd64-p310.py
-# python运行即可
-python3 SeeSea-windows-amd64-p310.py
-```
-
-#### 方式 2: 使用 Python 包
+#### 方式 1: 使用 Python 包
 
 ```bash
 # 安装核心库
@@ -276,7 +273,7 @@ pip install seesea[browser]
 pip install seesea[full]
 ```
 
-#### 方式 3: 从源码构建
+#### 方式 2: 从源码构建
 
 ```bash
 # 克隆仓库
@@ -817,57 +814,6 @@ api_key = ""
 collection_name = "seesea_docs"
 vector_size = 1536
 distance = "Cosine"
-```
-
-### Docker 部署
-
-#### 使用 Docker Compose
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-
-services:
-  seesea:
-    build: .
-    ports:
-      - "8080:8080"
-      - "3001:3001"
-    volumes:
-      - ./config:/app/config
-      - ./data:/app/data
-    environment:
-      - SEESEA_ENV=production
-      - RUST_LOG=info
-    depends_on:
-      - qdrant
-  
-  qdrant:
-    image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"
-    volumes:
-      - ./qdrant_data:/qdrant/storage
-  
-  svelte-frontend:
-    build: ./server
-    ports:
-      - "5173:5173"
-    environment:
-      - API_URL=http://seesea:8080
-```
-
-#### 启动服务
-
-```bash
-# 构建并启动
-docker-compose up -d
-
-# 查看日志
-docker-compose logs -f seesea
-
-# 停止服务
-docker-compose down
 ```
 
 ### 生产环境部署建议
