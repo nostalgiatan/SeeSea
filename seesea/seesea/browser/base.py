@@ -356,7 +356,9 @@ class BaseBrowserEngine(ABC):
         """
         await page.set_extra_http_headers({"User-Agent": user_agent})
 
-    async def execute_actions(self, page: Page, actions: List[BrowserActionDict]) -> None:
+    async def execute_actions(
+        self, page: Page, actions: List[BrowserActionDict]
+    ) -> None:
         """
         Execute a sequence of browser actions
 
@@ -392,7 +394,8 @@ class BaseBrowserEngine(ABC):
 
         elif action_type == "wait_selector":
             await page.wait_for_selector(
-                action["selector"], timeout=action.get("timeout_ms", self.config.timeout)
+                action["selector"],
+                timeout=action.get("timeout_ms", self.config.timeout),
             )
 
         elif action_type == "click":
@@ -422,7 +425,9 @@ class BaseBrowserEngine(ABC):
             raise ValueError(f"Unknown action type: {action_type}")
 
     @abstractmethod
-    async def extract_data(self, page: Page, params: Dict[str, Any]) -> List[SearchResultItem]:
+    async def extract_data(
+        self, page: Page, params: Dict[str, Any]
+    ) -> List[SearchResultItem]:
         """
         Extract structured data from the page
 
@@ -442,7 +447,10 @@ class BaseBrowserEngine(ABC):
         raise NotImplementedError("Subclasses must implement extract_data")
 
     async def search(
-        self, url: str, actions: List[BrowserActionDict], params: Optional[Dict[str, Any]] = None
+        self,
+        url: str,
+        actions: List[BrowserActionDict],
+        params: Optional[Dict[str, Any]] = None,
     ) -> List[SearchResultItem]:
         """
         Execute a search operation

@@ -44,7 +44,9 @@ class ProEmbedder(BaseEmbedder):
         try:
             from seesea_core import get_file
         except ImportError as e:
-            raise ImportError("请先安装依赖: pip install llama-cpp-python seesea_core") from e
+            raise ImportError(
+                "请先安装依赖: pip install llama-cpp-python seesea_core"
+            ) from e
 
         # 模型目录
         llm_dir = ".llm"
@@ -86,7 +88,9 @@ class ProEmbedder(BaseEmbedder):
         print("🔄 [Pro] 加载高质量嵌入模型...")
         self._load_model(model_path, n_gpu_layers, n_threads)
 
-    def _load_model(self, model_path: str, n_gpu_layers: int, n_threads: int, retry: bool = True):
+    def _load_model(
+        self, model_path: str, n_gpu_layers: int, n_threads: int, retry: bool = True
+    ):
         """加载模型，支持重试"""
         from llama_cpp import Llama
 
@@ -135,7 +139,11 @@ class ProEmbedder(BaseEmbedder):
             return 0
         else:
             # 自动检测
-            gpu_env_vars = ["CUDA_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES", "CUDA_PATH"]
+            gpu_env_vars = [
+                "CUDA_VISIBLE_DEVICES",
+                "NVIDIA_VISIBLE_DEVICES",
+                "CUDA_PATH",
+            ]
             for var in gpu_env_vars:
                 if os.environ.get(var):
                     return -1
@@ -164,7 +172,8 @@ class ProEmbedder(BaseEmbedder):
         # 限制文本长度（32K tokens ≈ 8K chars保守估计）
         max_chars = 8192
         truncated_texts = [
-            text[:max_chars] if len(text) > max_chars else text for text in texts_to_process
+            text[:max_chars] if len(text) > max_chars else text
+            for text in texts_to_process
         ]
 
         all_embeddings = []
@@ -172,7 +181,9 @@ class ProEmbedder(BaseEmbedder):
             try:
                 result = self.embedder.create_embedding(input=[text])
                 if result and "data" in result and result["data"]:
-                    embedding = cast(List[float], result["data"][0].get("embedding", []))
+                    embedding = cast(
+                        List[float], result["data"][0].get("embedding", [])
+                    )
                     if embedding:
                         all_embeddings.append(embedding)
             except Exception:

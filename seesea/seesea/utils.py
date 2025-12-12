@@ -71,7 +71,8 @@ QueryDict = Dict[str, Any]
 
 
 def format_results(
-    results: Union[List[SearchResultItem], ResultsList], max_description_length: int = 200
+    results: Union[List[SearchResultItem], ResultsList],
+    max_description_length: int = 200,
 ) -> FormattedResults:
     """
     格式化搜索结果

@@ -168,9 +168,7 @@ class SearchResponse:
         )
 
     def __repr__(self) -> str:
-        return (
-            f"<SearchResponse query='{self.query}' total={self.total_count} cached={self.cached}>"
-        )
+        return f"<SearchResponse query='{self.query}' total={self.total_count} cached={self.cached}>"
 
     def __len__(self) -> int:
         """返回结果数量"""
@@ -211,7 +209,9 @@ class EngineState:
 
     def __repr__(self) -> str:
         status = (
-            "disabled" if self.temporarily_disabled else ("enabled" if self.enabled else "inactive")
+            "disabled"
+            if self.temporarily_disabled
+            else ("enabled" if self.enabled else "inactive")
         )
         return f"<EngineState {status} failures={self.consecutive_failures}>"
 

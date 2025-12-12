@@ -31,7 +31,9 @@ class OpenAILLM(LLMBase):
     OpenAI LLM实现类，使用openai库调用OpenAI的API
     """
 
-    def __init__(self, model_name: str = "gpt-3.5-turbo", api_key: Optional[str] = None, **kwargs):
+    def __init__(
+        self, model_name: str = "gpt-3.5-turbo", api_key: Optional[str] = None, **kwargs
+    ):
         """
         初始化OpenAI LLM
 

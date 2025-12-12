@@ -89,10 +89,14 @@ class LlamaCppEmbedder:
                         print(f"📋 下载结果: {download_result}")
 
                         if status != 200:
-                            raise RuntimeError(f"Failed to download model. Status code: {status}")
+                            raise RuntimeError(
+                                f"Failed to download model. Status code: {status}"
+                            )
 
                         print("✅ 模型下载成功！")
-                        print(f"📁 下载的模型文件大小: {os.path.getsize(local_model_file)} bytes")
+                        print(
+                            f"📁 下载的模型文件大小: {os.path.getsize(local_model_file)} bytes"
+                        )
                     except Exception as download_error:
                         print(f"❌ 模型下载失败: {download_error}")
                         raise
@@ -173,7 +177,10 @@ class LlamaCppEmbedder:
                     current_attempt += 1
 
                     # 检查是否是模型加载失败，且是第一次尝试
-                    if "Failed to load model" in error_msg and current_attempt <= max_attempts:
+                    if (
+                        "Failed to load model" in error_msg
+                        and current_attempt <= max_attempts
+                    ):
                         print("❌ 模型加载失败，开始清理并重新下载")
                         # 删除可能损坏的模型文件
                         if os.path.exists(model_path):

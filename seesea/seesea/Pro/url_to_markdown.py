@@ -249,7 +249,9 @@ class UrlToMarkdownConverter:
         self.current_concurrent: int = self.min_concurrent
 
         # 并发调整间隔
-        self.concurrency_adjust_interval: float = kwargs.get("concurrency_adjust_interval", 5.0)
+        self.concurrency_adjust_interval: float = kwargs.get(
+            "concurrency_adjust_interval", 5.0
+        )
         self.last_adjust_time: float = 0.0
 
         # 长运行模式标志
@@ -264,7 +266,9 @@ class UrlToMarkdownConverter:
         )
 
         # 初始化爬虫池，使用优化的默认配置
-        self.crawler_pool_size: int = kwargs.get("crawler_pool_size", self.max_concurrent)
+        self.crawler_pool_size: int = kwargs.get(
+            "crawler_pool_size", self.max_concurrent
+        )
         # 设置默认crawl4ai配置，优化性能和结果质量
         self.crawl_config: Dict[str, Any] = {
             "headless": True,
@@ -274,7 +278,9 @@ class UrlToMarkdownConverter:
             "timeout": 30,
             **kwargs.get("crawl_config", {}),
         }
-        self.crawler_pool: CrawlerPool = CrawlerPool(self.crawler_pool_size, **self.crawl_config)
+        self.crawler_pool: CrawlerPool = CrawlerPool(
+            self.crawler_pool_size, **self.crawl_config
+        )
 
         # 初始化URL缓存
         self.cache_size: int = kwargs.get("cache_size", 1000)
@@ -283,7 +289,9 @@ class UrlToMarkdownConverter:
 
         # 任务状态
         self.running: bool = False
-        self.task_semaphore: asyncio.Semaphore = asyncio.Semaphore(self.current_concurrent)
+        self.task_semaphore: asyncio.Semaphore = asyncio.Semaphore(
+            self.current_concurrent
+        )
 
     async def _initialize(self) -> None:
         """
@@ -453,7 +461,9 @@ class UrlToMarkdownConverter:
             # 一次性模式，直接处理
             return await self._process_url(url, **kwargs)
 
-    async def batch_convert(self, urls: List[str], **kwargs: Any) -> List[Dict[str, Any]]:
+    async def batch_convert(
+        self, urls: List[str], **kwargs: Any
+    ) -> List[Dict[str, Any]]:
         """
         批量转换URL为Markdown
 
@@ -471,7 +481,10 @@ class UrlToMarkdownConverter:
             # 长运行模式，添加所有URL到任务队列
             for url in urls:
                 await self.task_queue.put((url, kwargs))
-            return [{"success": True, "message": "URL added to queue", "url": url} for url in urls]
+            return [
+                {"success": True, "message": "URL added to queue", "url": url}
+                for url in urls
+            ]
         else:
             # 一次性模式，并发处理所有URL
             # 先检查缓存，减少不必要的请求
@@ -494,8 +507,10 @@ class UrlToMarkdownConverter:
                     result: Dict[str, Any] = await self._process_url(url, **kwargs)
                     return (url, result)
 
-                uncached_results: List[tuple[str, Dict[str, Any]]] = await asyncio.gather(
-                    *[process_uncached(url) for url in uncached_urls]
+                uncached_results: List[tuple[str, Dict[str, Any]]] = (
+                    await asyncio.gather(
+                        *[process_uncached(url) for url in uncached_urls]
+                    )
                 )
                 results.extend(uncached_results)
 

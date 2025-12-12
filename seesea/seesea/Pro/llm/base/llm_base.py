@@ -208,7 +208,9 @@ def llm_retry(max_retries: int = 3, delay: int = 1) -> Callable:
                     # 调用原始函数
                     return func(self, *args, **kwargs)
                 except Exception as e:
-                    print(f"[LLM Retry] 调用失败，正在重试 ({retry + 1}/{max_retries}): {str(e)}")
+                    print(
+                        f"[LLM Retry] 调用失败，正在重试 ({retry + 1}/{max_retries}): {str(e)}"
+                    )
                     if retry < max_retries - 1:
                         time.sleep(delay)
                     else:
@@ -312,7 +314,9 @@ class LLMBase(ABC):
         return {"model_name": self.model_name, "config": self.config}
 
     @classmethod
-    def create(cls, model_name: str, api_key: Optional[str] = None, **kwargs) -> "LLMBase":
+    def create(
+        cls, model_name: str, api_key: Optional[str] = None, **kwargs
+    ) -> "LLMBase":
         """
         创建LLM实例
 

@@ -1,6 +1,11 @@
 try:
     # 导出Pro功能
-    from .vector_utils import Vectorizer, VectorDatabase, compute_similarity, normalize_vector
+    from .vector_utils import (
+        Vectorizer,
+        VectorDatabase,
+        compute_similarity,
+        normalize_vector,
+    )
     from .llm import LLMBase, OpenAILLM, llm_cache, llm_log, llm_retry
     from .url_to_markdown import UrlToMarkdownConverter
 

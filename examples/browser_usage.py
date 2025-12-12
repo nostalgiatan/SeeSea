@@ -127,7 +127,9 @@ async def example_custom_engine():
     class CustomEngine(BaseBrowserEngine):
         """Example custom engine for a hypothetical website"""
 
-        async def extract_data(self, page: Page, params: Dict[str, Any]) -> List[SearchResultItem]:
+        async def extract_data(
+            self, page: Page, params: Dict[str, Any]
+        ) -> List[SearchResultItem]:
             """Extract data using custom selectors"""
             results = []
 
