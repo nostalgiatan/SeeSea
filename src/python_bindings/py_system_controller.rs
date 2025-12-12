@@ -319,6 +319,65 @@ pub fn adjust_pro_processor_concurrency(py: Python, concurrency: usize) -> PyRes
     adjust_component_concurrency(py, "pro_processor", "default", concurrency)
 }
 
+/// 启动系统控制器守护进程
+///
+/// 在后台启动系统控制器，持续监控资源使用和动态调整组件并发。
+/// 确保 SeeSea 高性能稳定运行。
+#[pyfunction]
+pub fn start_system_controller_daemon(_py: Python) -> PyResult<()> {
+    use tracing::info;
+
+    // 获取全局系统控制器（会自动启动）
+    let controller = crate::sys::controller::get_global_system_controller();
+
+    // 启动守护进程
+    let controller_clone = controller.clone();
+    std::thread::spawn(move || {
+        // 创建tokio运行时
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create tokio runtime for daemon");
+
+        rt.block_on(async move {
+            // 启动系统控制器（如果尚未运行）
+            if !controller_clone.is_running().await {
+                controller_clone.start().await;
+            }
+
+            info!("系统调控中心守护进程已启动");
+
+            // 持续运行，监控系统状态
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+
+                // 检查是否需要终止
+                if controller_clone.should_terminate().await {
+                    info!("系统调控中心守护进程收到终止信号");
+                    break;
+                }
+            }
+        });
+    });
+
+    Ok(())
+}
+
+/// 停止系统控制器守护进程
+#[pyfunction]
+pub fn stop_system_controller_daemon(py: Python) -> PyResult<()> {
+    let controller = get_system_controller()?;
+
+    py.detach(|| {
+        tokio::runtime::Handle::current().block_on(async move {
+            controller.set_should_terminate(true).await;
+            controller.stop().await;
+        })
+    });
+
+    Ok(())
+}
+
 /// 导出Python模块
 #[pymodule]
 pub fn sys_controller(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -342,6 +401,10 @@ pub fn sys_controller(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // 快捷函数
     m.add_function(wrap_pyfunction!(adjust_crawl4ai_concurrency, m)?)?;
     m.add_function(wrap_pyfunction!(adjust_pro_processor_concurrency, m)?)?;
+
+    // 守护进程函数
+    m.add_function(wrap_pyfunction!(start_system_controller_daemon, m)?)?;
+    m.add_function(wrap_pyfunction!(stop_system_controller_daemon, m)?)?;
 
     Ok(())
 }

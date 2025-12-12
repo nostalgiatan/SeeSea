@@ -98,6 +98,9 @@ pub mod utils;
 /// 搜索结果可视化模块，负责将搜索结果以二维方式排列
 pub mod result_visualization;
 
+/// 向量化相关性评分模块，使用嵌入向量进行语义相关性计算
+pub mod vector_scoring;
+
 /// 主要接口定义，提供统一的搜索服务接口
 pub mod on;
 
@@ -128,3 +131,8 @@ pub use on::{SearchInterface, SearchStats, SearchStatsResult};
 
 /// 搜索结果可视化相关组件，用于将结果以二维方式排列
 pub use result_visualization::{ResultVisualizer, TwoDimensionalConfig, TwoDimensionalResult};
+
+/// 向量化评分相关组件，使用 SIMD 加速的语义相关性计算
+pub use vector_scoring::{
+    VectorScorer, VectorScoringWeights, get_vector_cache, is_vector_scoring_available,
+};

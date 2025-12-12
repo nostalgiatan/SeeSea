@@ -28,6 +28,8 @@ pub mod py_config;
 #[cfg(feature = "python")]
 pub mod py_date_page;
 #[cfg(feature = "python")]
+pub mod py_embedding_callback;
+#[cfg(feature = "python")]
 pub mod py_engine_registry;
 #[cfg(feature = "python")]
 pub mod py_hot;

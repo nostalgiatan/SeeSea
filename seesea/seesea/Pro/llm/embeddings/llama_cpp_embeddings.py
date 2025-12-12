@@ -6,7 +6,10 @@ Embeddings module for text vectorization using Qwen3-Embedding model with llama-
 已实现功能: 文本嵌入、批量处理、回调函数支持、模型自动下载
 使用依赖: llama-cpp-python, seesea_core
 主要接口: LlamaCppEmbedder类，包含encode、get_dimension、encode_callback方法
-注意事项: 首次使用时会自动下载模型到.llm/models目录
+注意事项:
+- 首次使用时会自动下载模型到.llm/models目录
+- 使用 Q8_0 量化版本以获得更好的质量/大小比
+- 推荐使用 seesea.embeddings.EmbeddingManager 获取统一接口
 """
 
 from typing import List, Union, Optional
@@ -43,8 +46,8 @@ class LlamaCppEmbedder:
             # Import seesea_core functions for model download
             from seesea_core import get_file
 
-            # Model settings
-            model_filename = "Qwen3-Embedding-0.6B-f16.gguf"
+            # Model settings - 使用 Q8_0 量化版本（更好的质量/大小比）
+            model_filename = "Qwen3-Embedding-0.6B-Q8_0.gguf"
             # Use fixed directory for models
             llm_dir = ".llm"
             models_dir = os.path.join(llm_dir, "models")
@@ -64,7 +67,8 @@ class LlamaCppEmbedder:
                     print(f"📁 创建模型目录: {models_dir}")
 
                     # Download model using seesea_core get_file function with zero-copy
-                    model_url = "https://hf-mirror.com/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-f16.gguf?download=true"
+                    # 使用 Q8_0 量化版本
+                    model_url = "https://hf-mirror.com/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf?download=true"
 
                     # Set custom headers for faster download
                     headers = {
@@ -180,11 +184,11 @@ class LlamaCppEmbedder:
                         print("📁 重新创建模型目录")
                         os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
-                        # 重新下载模型
+                        # 重新下载模型 - 使用 Q8_0 量化版本
                         print("🔄 开始重新下载模型")
                         from seesea_core import get_file
 
-                        model_url = "https://hf-mirror.com/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-f16.gguf?download=true"
+                        model_url = "https://hf-mirror.com/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf?download=true"
                         headers = {
                             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                         }
