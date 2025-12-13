@@ -49,9 +49,27 @@ class StandardEmbedder(BaseEmbedder):
                 "请先安装依赖: pip install llama-cpp-python seesea_core"
             ) from e
 
-        # 模型目录
-        llm_dir = ".llm"
-        models_dir = os.path.join(llm_dir, "models")
+        # 模型目录 - 使用用户主目录下的固定位置
+        import platform
+
+        system = platform.system()
+        if system == "Windows":
+            llm_dir = os.path.join(
+                os.path.expanduser("~"), "AppData", "Local", "SeeSea", "models"
+            )
+        elif system == "Darwin":  # macOS
+            llm_dir = os.path.join(
+                os.path.expanduser("~"),
+                "Library",
+                "Application Support",
+                "SeeSea",
+                "models",
+            )
+        else:  # Linux and other Unix-like systems
+            llm_dir = os.path.join(
+                os.path.expanduser("~"), ".local", "share", "seesea", "models"
+            )
+        models_dir = llm_dir
         local_model_file = os.path.join(models_dir, self.MODEL_FILENAME)
 
         # 确定模型路径

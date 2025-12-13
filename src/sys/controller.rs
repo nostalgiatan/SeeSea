@@ -36,7 +36,47 @@ use tracing::{debug, info, warn};
 /// 全局系统控制器实例 - 自动初始化单例
 static GLOBAL_SYSTEM_CONTROLLER: OnceCell<Arc<SystemController>> = OnceCell::new();
 
+/// 全局 Tokio 运行时实例 - 供系统控制器使用
+static GLOBAL_RUNTIME: OnceCell<tokio::runtime::Runtime> = OnceCell::new();
+
+/// 获取或创建全局 Tokio 运行时
+///
+/// 确保在没有运行时上下文的情况下也能正常工作
+pub fn get_or_create_runtime() -> &'static tokio::runtime::Runtime {
+    GLOBAL_RUNTIME.get_or_init(|| {
+        info!("创建全局 Tokio 运行时");
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_name("seesea-global-runtime")
+            .build()
+            .expect("Failed to create global Tokio runtime")
+    })
+}
+
+/// 在适当的运行时上下文中执行异步任务
+///
+/// 如果当前已有 Tokio 运行时，则使用当前运行时
+/// 否则使用全局运行时
+pub fn spawn_runtime_task<F>(future: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            // 已在 Tokio 运行时中，直接 spawn
+            handle.spawn(future);
+        }
+        Err(_) => {
+            // 不在运行时中，使用全局运行时
+            let runtime = get_or_create_runtime();
+            runtime.spawn(future);
+        }
+    }
+}
+
 /// 获取全局系统控制器实例，自动初始化
+///
+/// 此函数可以在任何上下文中安全调用，无论是否存在 Tokio 运行时
 pub fn get_global_system_controller() -> Arc<SystemController> {
     GLOBAL_SYSTEM_CONTROLLER
         .get_or_init(|| {
@@ -45,9 +85,9 @@ pub fn get_global_system_controller() -> Arc<SystemController> {
             let config = SystemControllerConfig::default();
             let controller = Arc::new(SystemController::new(config));
 
-            // 在后台启动系统控制器
+            // 在后台启动系统控制器（使用安全的运行时上下文）
             let controller_clone = controller.clone();
-            tokio::spawn(async move {
+            spawn_runtime_task(async move {
                 controller_clone.start().await;
             });
 

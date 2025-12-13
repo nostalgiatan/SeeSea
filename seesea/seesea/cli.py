@@ -825,14 +825,218 @@ def interactive(count):
 cli.add_command(rss)
 
 
+# stock 相关的代码
+@cli.command()
+@click.argument("code", required=False)
+@click.option("--realtime", "-r", is_flag=True, help="获取实时行情数据")
+@click.option("--history", "-h", is_flag=True, help="获取历史K线数据")
+@click.option("--technical", "-t", is_flag=True, help="显示技术指标")
+@click.option("--financial", "-f", is_flag=True, help="显示财务指标")
+@click.option("--market", "-m", is_flag=True, help="显示市场概况")
+@click.option(
+    "--period",
+    default="daily",
+    type=click.Choice(["daily", "weekly", "monthly"]),
+    help="K线周期",
+)
+@click.option("--start-date", help="开始日期 (YYYY-MM-DD)")
+@click.option("--end-date", help="结束日期 (YYYY-MM-DD)")
+def stock(
+    code, realtime, history, technical, financial, market, period, start_date, end_date
+):
+    """股票数据查询工具"""
+    import sys
+    import asyncio
+
+    # 使用seesea包内的股票模块
+    try:
+        from seesea.stock import get_stock_service
+        from seesea.models import PeriodType
+    except ImportError:
+        console.print("[red]❌ 无法导入股票数据模块，请检查依赖安装[/red]")
+        console.print("提示：运行 pip install akshare 安装股票数据依赖")
+        sys.exit(1)
+
+    async def run_stock_command():
+        # 获取股票服务实例
+        stock_service = get_stock_service()
+        await stock_service.initialize()
+
+        # 显示市场概况
+        if market or not code:
+            console.print("[bold blue]📊 市场概况[/bold blue]")
+
+            try:
+                # 获取所有指数数据
+                index_quotes = await stock_service.get_index_quotes()
+
+                # 筛选主要指数
+                main_indices = ["000001", "399001", "399006"]
+                filtered_quotes = [q for q in index_quotes if q.code in main_indices]
+
+                if filtered_quotes:
+                    table = Table(title="主要指数", box=box.ROUNDED)
+                    table.add_column("指数", style="cyan")
+                    table.add_column("代码", style="magenta")
+                    table.add_column("价格", style="green")
+                    table.add_column("涨跌幅", style="red")
+                    table.add_column("涨跌额", style="yellow")
+
+                    for quote in filtered_quotes:
+                        change_color = "green" if quote.change_pct >= 0 else "red"
+                        table.add_row(
+                            quote.name,
+                            quote.code,
+                            f"{quote.price:.2f}",
+                            f"[{change_color}]{quote.change_pct:+.2f}%[/{change_color}]",
+                            f"[{change_color}]{quote.change:+.2f}[/{change_color}]",
+                        )
+                    console.print(table)
+                else:
+                    console.print("[yellow]⚠️ 获取市场数据失败[/yellow]")
+            except Exception as e:
+                console.print(f"[yellow]⚠️ 获取市场数据失败: {e}[/yellow]")
+
+        # 如果没有指定股票代码，只显示市场概况
+        if not code:
+            return
+
+        console.print(f"[bold green]🔍 查询股票: {code}[/bold green]")
+
+        # 获取实时数据
+        if realtime or not any([history, technical, financial]):
+            with console.status("[bold green]获取实时数据..."):
+                try:
+                    quote = await stock_service.get_quote(code)
+                except Exception as e:
+                    quote = None
+                    console.print(f"[dim yellow]获取实时数据失败: {e}[/dim yellow]")
+
+            if quote:
+                console.print(
+                    f"\n[bold blue]📈 {quote.name} ({quote.code}) 实时行情[/bold blue]"
+                )
+
+                table = Table(box=box.ROUNDED)
+                table.add_column("项目", style="cyan")
+                table.add_column("数值", style="white")
+
+                change_color = "green" if quote.change_pct >= 0 else "red"
+                table.add_row("最新价", f"¥{quote.price:.2f}")
+                table.add_row(
+                    "涨跌幅",
+                    f"[{change_color}]{quote.change_pct:+.2f}%[/{change_color}]",
+                )
+                table.add_row(
+                    "涨跌额", f"[{change_color}]{quote.change:+.2f}[/{change_color}]"
+                )
+                table.add_row("今开", f"¥{quote.open:.2f}")
+                table.add_row("昨收", f"¥{quote.prev_close:.2f}")
+                table.add_row("最高", f"¥{quote.high:.2f}")
+                table.add_row("最低", f"¥{quote.low:.2f}")
+                table.add_row("成交量", f"{quote.volume:,}")
+                table.add_row("成交额", f"¥{quote.turnover:,.2f}")
+
+                console.print(table)
+            else:
+                console.print("[yellow]⚠️ 获取实时数据失败[/yellow]")
+
+        # 获取历史数据
+        if history:
+            with console.status("[bold green]获取历史数据..."):
+                try:
+                    # 转换period参数
+                    period_map = {
+                        "daily": PeriodType.DAILY,
+                        "weekly": PeriodType.WEEKLY,
+                        "monthly": PeriodType.MONTHLY,
+                    }
+                    period_type = period_map.get(period, PeriodType.DAILY)
+
+                    klines = await stock_service.get_klines(
+                        code, period=period_type, limit=10
+                    )
+                except Exception as e:
+                    klines = []
+                    console.print(f"[dim yellow]获取历史数据失败: {e}[/dim yellow]")
+
+            if klines:
+                console.print(f"\n[bold blue]📊 历史K线数据 ({period})[/bold blue]")
+
+                table = Table(title=f"最近10个{period}数据", box=box.ROUNDED)
+                table.add_column("日期", style="cyan")
+                table.add_column("开盘", style="white")
+                table.add_column("最高", style="green")
+                table.add_column("最低", style="red")
+                table.add_column("收盘", style="yellow")
+                table.add_column("成交量", style="magenta")
+
+                for kline in klines[-10:]:  # 显示最近10个
+                    table.add_row(
+                        kline.date.strftime("%Y-%m-%d"),
+                        f"¥{kline.open:.2f}",
+                        f"¥{kline.high:.2f}",
+                        f"¥{kline.low:.2f}",
+                        f"¥{kline.close:.2f}",
+                        f"{kline.volume:,}",
+                    )
+
+                console.print(table)
+            else:
+                console.print("[yellow]⚠️ 获取历史数据失败[/yellow]")
+
+        # 获取技术指标（简化版）
+        if technical:
+            console.print("\n[bold blue]📈 技术指标[/bold blue]")
+            console.print("[yellow]💡 技术指标计算功能开发中，敬请期待[/yellow]")
+
+        # 获取财务指标
+        if financial:
+            with console.status("[bold green]获取财务数据..."):
+                try:
+                    financial_data = await stock_service.get_financial(code)
+                except Exception as e:
+                    financial_data = None
+                    console.print(f"[dim yellow]获取财务数据失败: {e}[/dim yellow]")
+
+            if financial_data:
+                console.print("\n[bold blue]� 财务指标[/bold blue]")
+
+                table = Table(box=box.ROUNDED)
+                table.add_column("指标", style="cyan")
+                table.add_column("数值", style="white")
+
+                # 显示主要财务指标
+                if hasattr(financial_data, "total_revenue"):
+                    table.add_row("总营收", f"¥{financial_data.total_revenue:,.2f}万")
+                if hasattr(financial_data, "net_profit"):
+                    table.add_row("净利润", f"¥{financial_data.net_profit:,.2f}万")
+                if hasattr(financial_data, "roe"):
+                    table.add_row("ROE", f"{financial_data.roe:.2f}%")
+                if hasattr(financial_data, "pe_ratio"):
+                    table.add_row("市盈率", f"{financial_data.pe_ratio:.2f}")
+
+                console.print(table)
+            else:
+                console.print("[yellow]⚠️ 获取财务数据失败[/yellow]")
+
+    # 运行异步函数
+    try:
+        asyncio.run(run_stock_command())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]操作已取消[/yellow]")
+    except Exception as e:
+        console.print(f"[red]❌ 错误: {e}[/red]")
+
+
 def _init_standard_embedding():
     """初始化标准模式嵌入模型并注册回调"""
     try:
-        from .embeddings import EmbeddingManager
+        from .embeddings import EmbeddingManager, EmbeddingMode
 
         # 使用标准模式（轻量级）
-        manager = EmbeddingManager(pro_mode=False)
-        manager.register_rust_callback()
+        manager = EmbeddingManager(mode=EmbeddingMode.STANDARD)
+        manager.register_callback()
         console.print("[dim]✓ 标准嵌入模型已初始化[/dim]")
     except Exception as e:
         # 嵌入模型初始化失败不应该阻止 CLI 正常运行

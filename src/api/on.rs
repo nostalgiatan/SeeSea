@@ -30,7 +30,7 @@ use super::handlers::{
     handle_health, handle_hot_all, handle_hot_multiple, handle_hot_platform,
     handle_hot_platforms_list, handle_index, handle_magic_link_generate, handle_metrics,
     handle_pro_api, handle_realtime_metrics, handle_search, handle_search_post, handle_stats,
-    handle_version, rss,
+    handle_stock_api, handle_version, rss,
 };
 use super::metrics::{MetricsCollector, MetricsConfig};
 use super::middleware::{
@@ -248,7 +248,8 @@ impl ApiInterface {
             .route("/metrics", get(handle_metrics))
             .route("/metrics/realtime", get(handle_realtime_metrics))
             .route("/magic-link/generate", post(handle_magic_link_generate))
-            .route("/pro/{*path}", any(handle_pro_api));
+            .route("/pro/{*path}", any(handle_pro_api))
+            .route("/stock/{*path}", any(handle_stock_api));
 
         Router::new()
             .route("/favicon.ico", get(handle_favicon))
@@ -310,7 +311,8 @@ impl ApiInterface {
             .route("/cache/clear", post(cache::handle_cache_clear))
             .route("/cache/cleanup", post(cache::handle_cache_cleanup))
             .route("/metrics/realtime", get(handle_realtime_metrics))
-            .route("/pro/{*path}", any(handle_pro_api));
+            .route("/pro/{*path}", any(handle_pro_api))
+            .route("/stock/{*path}", any(handle_stock_api));
 
         Router::new()
             .route("/favicon.ico", get(handle_favicon))

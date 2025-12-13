@@ -26,6 +26,7 @@ pub mod pro;
 pub mod rss;
 pub mod search;
 pub mod static_files;
+pub mod stock;
 
 // Re-export handlers for convenient use
 pub use config::handle_magic_link_generate;
@@ -39,3 +40,4 @@ pub use metrics::{
 pub use pro::handle_pro_api;
 pub use search::{handle_search, handle_search_post};
 pub use static_files::{get_static_app_path, get_static_html_path, handle_favicon, handle_index};
+pub use stock::handle_stock_api;

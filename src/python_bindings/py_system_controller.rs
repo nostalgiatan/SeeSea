@@ -21,10 +21,24 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::sync::Arc;
 
-use crate::sys::controller::SystemController;
+use crate::sys::controller::{SystemController, get_or_create_runtime};
 use crate::sys::types::{
     AdjustmentRequest, AdjustmentType, ComponentConfig, ComponentId, ComponentType,
 };
+
+/// 在适当的运行时上下文中执行异步操作
+///
+/// 如果当前已有 Tokio 运行时，则使用当前运行时
+/// 否则使用全局运行时
+fn block_on_async<F, T>(future: F) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => handle.block_on(future),
+        Err(_) => get_or_create_runtime().block_on(future),
+    }
+}
 
 /// 初始化系统控制器
 ///
@@ -88,11 +102,9 @@ pub fn register_component(
         adjustment_params: serde_json::Value::Null,
     };
 
-    // 发送调整请求
-    let result = py.detach(|| {
-        tokio::runtime::Handle::current()
-            .block_on(async move { controller.register_component(config).await })
-    });
+    // 发送调整请求（使用安全的运行时上下文）
+    let result =
+        py.detach(|| block_on_async(async move { controller.register_component(config).await }));
 
     match result {
         Ok(_) => Ok(()),
@@ -141,9 +153,9 @@ pub fn adjust_component_concurrency(
         }),
     };
 
-    // 发送调整请求
+    // 发送调整请求（使用安全的运行时上下文）
     let result = py.detach(|| {
-        tokio::runtime::Handle::current().block_on(async move {
+        block_on_async(async move {
             let response = controller.handle_adjustment_request(request).await;
             if response.success {
                 Ok(())
@@ -200,9 +212,9 @@ pub fn adjust_component_priority(
         }),
     };
 
-    // 发送调整请求
+    // 发送调整请求（使用安全的运行时上下文）
     let result = py.detach(|| {
-        tokio::runtime::Handle::current().block_on(async move {
+        block_on_async(async move {
             let response = controller.handle_adjustment_request(request).await;
             if response.success {
                 Ok(())
@@ -228,11 +240,9 @@ pub fn adjust_component_priority(
 pub fn should_terminate(py: Python) -> PyResult<bool> {
     let controller = get_system_controller()?;
 
-    // 检查终止标志
-    let terminate = py.detach(|| {
-        tokio::runtime::Handle::current()
-            .block_on(async move { controller.should_terminate().await })
-    });
+    // 检查终止标志（使用安全的运行时上下文）
+    let terminate =
+        py.detach(|| block_on_async(async move { controller.should_terminate().await }));
 
     Ok(terminate)
 }
@@ -243,20 +253,18 @@ pub fn should_terminate(py: Python) -> PyResult<bool> {
 ///     Dict: 系统状态信息
 #[pyfunction]
 pub fn get_system_status(py: Python) -> PyResult<Py<PyDict>> {
-    // 获取系统状态
+    // 获取系统状态（使用安全的运行时上下文）
     let status = py.detach(|| {
         // 直接获取控制器，不需要处理错误（内部已处理）
         let controller = crate::sys::controller::get_global_system_controller();
-        tokio::runtime::Handle::current()
-            .block_on(async move { controller.get_system_status().await })
+        block_on_async(async move { controller.get_system_status().await })
     });
 
-    // 检查终止标志
+    // 检查终止标志（使用安全的运行时上下文）
     let terminate = py.detach(|| {
         // 直接获取控制器，不需要处理错误（内部已处理）
         let controller = crate::sys::controller::get_global_system_controller();
-        tokio::runtime::Handle::current()
-            .block_on(async move { controller.should_terminate().await })
+        block_on_async(async move { controller.should_terminate().await })
     });
 
     // 转换为Python字典
@@ -327,19 +335,17 @@ pub fn adjust_pro_processor_concurrency(py: Python, concurrency: usize) -> PyRes
 pub fn start_system_controller_daemon(_py: Python) -> PyResult<()> {
     use tracing::info;
 
-    // 获取全局系统控制器（会自动启动）
+    // 获取全局系统控制器（会自动启动，使用全局运行时）
+    // 此调用是安全的，即使在没有 Tokio 运行时的上下文中
     let controller = crate::sys::controller::get_global_system_controller();
 
-    // 启动守护进程
+    // 启动守护进程监控循环
     let controller_clone = controller.clone();
     std::thread::spawn(move || {
-        // 创建tokio运行时
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create tokio runtime for daemon");
+        // 使用全局运行时而不是创建新的
+        let runtime = get_or_create_runtime();
 
-        rt.block_on(async move {
+        runtime.block_on(async move {
             // 启动系统控制器（如果尚未运行）
             if !controller_clone.is_running().await {
                 controller_clone.start().await;
@@ -368,8 +374,9 @@ pub fn start_system_controller_daemon(_py: Python) -> PyResult<()> {
 pub fn stop_system_controller_daemon(py: Python) -> PyResult<()> {
     let controller = get_system_controller()?;
 
+    // 使用安全的运行时上下文
     py.detach(|| {
-        tokio::runtime::Handle::current().block_on(async move {
+        block_on_async(async move {
             controller.set_should_terminate(true).await;
             controller.stop().await;
         })
