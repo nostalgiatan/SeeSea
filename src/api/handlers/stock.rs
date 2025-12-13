@@ -30,7 +30,6 @@
 //! - 正确的资源管理
 
 use crate::api::on::ApiState;
-use crate::config::get_platform_paths;
 use axum::body::Body;
 use axum::{
     extract::Path,
@@ -38,10 +37,15 @@ use axum::{
     extract::Request,
     extract::State,
     http::{Method, Response, StatusCode, header},
-    response::{
-        IntoResponse,
-        sse::{Event, KeepAlive, Sse},
-    },
+};
+
+// 下面这些导入仅在启用 python feature 时需要
+#[cfg(feature = "python")]
+use crate::config::get_platform_paths;
+#[cfg(feature = "python")]
+use axum::response::{
+    IntoResponse,
+    sse::{Event, KeepAlive, Sse},
 };
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -50,11 +54,14 @@ use pyo3::types::IntoPyDict;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
+#[cfg(feature = "python")]
 use std::convert::Infallible;
 use std::sync::OnceLock;
+#[cfg(feature = "python")]
 use std::time::Duration;
 
 /// Python 桥接是否已配置
+#[cfg(feature = "python")]
 static PYTHON_CONFIGURED: OnceLock<bool> = OnceLock::new();
 
 /// 股票搜索请求参数
@@ -562,6 +569,7 @@ fn json_response<T: serde::Serialize>(status: StatusCode, body: T) -> Response<B
 }
 
 /// 构建带缓存控制的 JSON 响应
+#[cfg(feature = "python")]
 fn build_json_response(
     status: StatusCode,
     body: String,

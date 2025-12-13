@@ -32,6 +32,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+// 'dirs' crate provides platform user directories. Make sure dependency exists in Cargo.toml.
+// The code below uses dirs::* only inside platform-specific cfg blocks.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use dirs as _dirs;
+
 /// 环境变量名
 pub const ENV_DATA_DIR: &str = "SEESEA_DATA_DIR";
 pub const ENV_CACHE_DIR: &str = "SEESEA_CACHE_DIR";
@@ -114,11 +119,11 @@ impl PlatformPaths {
         #[cfg(target_os = "macos")]
         {
             // macOS: ~/Library/Application Support/seesea
-            dirs::data_dir()
-                .map(|p| p.join("seesea"))
+            _dirs::data_dir()
+                .map(|p: std::path::PathBuf| p.join("seesea"))
                 .unwrap_or_else(|| {
-                    dirs::home_dir()
-                        .map(|p| p.join("Library/Application Support/seesea"))
+                    _dirs::home_dir()
+                        .map(|p: std::path::PathBuf| p.join("Library/Application Support/seesea"))
                         .unwrap_or_else(|| PathBuf::from("/tmp/seesea"))
                 })
         }
@@ -138,11 +143,11 @@ impl PlatformPaths {
             }
 
             // 回退到用户目录
-            dirs::data_local_dir()
-                .map(|p| p.join("seesea"))
+            _dirs::data_local_dir()
+                .map(|p: std::path::PathBuf| p.join("seesea"))
                 .unwrap_or_else(|| {
-                    dirs::home_dir()
-                        .map(|p| p.join(".local/share/seesea"))
+                    _dirs::home_dir()
+                        .map(|p: std::path::PathBuf| p.join(".local/share/seesea"))
                         .unwrap_or_else(|| PathBuf::from("/tmp/seesea"))
                 })
         }
