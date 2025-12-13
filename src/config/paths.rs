@@ -134,12 +134,8 @@ impl PlatformPaths {
             let var_lib = PathBuf::from("/var/lib/seesea");
 
             // 检查是否有写权限
-            if std::fs::metadata("/var/lib").is_ok() {
-                if let Ok(meta) = std::fs::metadata("/var/lib") {
-                    if !meta.permissions().readonly() {
-                        return var_lib;
-                    }
-                }
+            if let Ok(meta) = std::fs::metadata("/var/lib") && !meta.permissions().readonly() {
+                return var_lib;
             }
 
             // 回退到用户目录
