@@ -16,12 +16,12 @@
 //! # 错误派生宏
 //!
 //! 这个crate提供了 `#[derive(Error)]` 过程宏，用于自动为错误枚举实现错误处理能力。
-//! 
+//!
 //! ## 使用方法
-//! 
+//!
 //! ```rust,ignore
 //! use error::Error;
-//! 
+//!
 //! #[derive(Debug, Error)]
 //! enum MyError {
 //!     #[error("IO错误: {0}")]
@@ -36,7 +36,7 @@
 //! ```
 //!
 //! ## 功能说明
-//! 
+//!
 //! - 自动实现 `Display` trait
 //! - 自动实现 `ErrorKind` trait
 //! - 支持格式化字符串的错误消息
@@ -44,20 +44,20 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Lit};
+use syn::{Data, DeriveInput, Fields, Lit, parse_macro_input};
 
 /// Error 派生宏
-/// 
+///
 /// 自动为错误枚举实现 `Display` 和 `ErrorKind` trait。
-/// 
+///
 /// # 属性
-/// 
+///
 /// - `#[error("消息")]` - 指定错误消息，支持格式化占位符
 ///   - `{0}`, `{1}`, ... - 位置参数（用于元组变体）
 ///   - `{field}` - 命名字段（用于结构体变体）
-/// 
+///
 /// # 示例
-/// 
+///
 /// ```rust,ignore
 /// #[derive(Debug, Error)]
 /// enum FileError {
@@ -75,26 +75,25 @@ use syn::{parse_macro_input, Data, DeriveInput, Fields, Lit};
 pub fn derive_error(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
-    
+
     // 只支持枚举类型
     let variants = match &input.data {
         Data::Enum(data) => &data.variants,
         _ => {
-            return syn::Error::new_spanned(
-                &input,
-                "Error 派生宏只能用于枚举类型"
-            )
-            .to_compile_error()
-            .into();
+            return syn::Error::new_spanned(&input, "Error 派生宏只能用于枚举类型")
+                .to_compile_error()
+                .into();
         }
     };
-    
+
     // 为每个变体生成 Display 实现的匹配分支
     let display_arms = variants.iter().map(|variant| {
         let variant_name = &variant.ident;
-        
+
         // 获取 #[error("...")] 属性中的错误消息
-        let error_msg = variant.attrs.iter()
+        let error_msg = variant
+            .attrs
+            .iter()
             .find_map(|attr| {
                 if attr.path().is_ident("error") {
                     // 尝试解析为 #[error("...")] 格式
@@ -105,18 +104,20 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
                 None
             })
             .unwrap_or_else(|| format!("错误: {variant_name}"));
-        
+
         // 根据字段类型生成不同的匹配模式和格式化字符串
         match &variant.fields {
             Fields::Named(fields) => {
-                let field_names: Vec<_> = fields.named.iter()
+                let field_names: Vec<_> = fields
+                    .named
+                    .iter()
                     .map(|f| f.ident.as_ref().unwrap())
                     .collect();
-                
+
                 // 替换格式化字符串中的命名字段
                 let mut format_str = error_msg.clone();
                 let mut format_args = Vec::new();
-                
+
                 for field_name in &field_names {
                     let pattern = format!("{{{field_name}}}");
                     if format_str.contains(&pattern) {
@@ -124,7 +125,7 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
                         format_args.push(quote! { #field_name });
                     }
                 }
-                
+
                 if format_args.is_empty() {
                     quote! {
                         Self::#variant_name { .. } => write!(f, #format_str)
@@ -142,11 +143,11 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
                 let field_names: Vec<_> = (0..field_count)
                     .map(|i| syn::Ident::new(&format!("_field{i}"), proc_macro2::Span::call_site()))
                     .collect();
-                
+
                 // 替换格式化字符串中的位置参数
                 let mut format_str = error_msg.clone();
                 let mut format_args = Vec::new();
-                
+
                 for (i, field_name) in field_names.iter().enumerate() {
                     let pattern = format!("{{{i}}}");
                     if format_str.contains(&pattern) {
@@ -154,7 +155,7 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
                         format_args.push(quote! { #field_name });
                     }
                 }
-                
+
                 if format_args.is_empty() {
                     quote! {
                         Self::#variant_name(..) => write!(f, #format_str)
@@ -174,12 +175,12 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
             }
         }
     });
-    
+
     // 为每个变体生成错误码（使用枚举判别值）
     let error_code_arms = variants.iter().enumerate().map(|(idx, variant)| {
         let variant_name = &variant.ident;
         let code = idx as u32 + 1; // 错误码从1开始
-        
+
         match &variant.fields {
             Fields::Named(_) => quote! {
                 Self::#variant_name { .. } => #code
@@ -192,11 +193,11 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
             },
         }
     });
-    
+
     // 为每个变体生成错误消息（与Display相同）
     let error_message_arms = variants.iter().map(|variant| {
         let variant_name = &variant.ident;
-        
+
         match &variant.fields {
             Fields::Named(_) => quote! {
                 Self::#variant_name { .. } => format!("{}", self)
@@ -209,7 +210,7 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
             },
         }
     });
-    
+
     // 生成完整的实现代码
     let expanded = quote! {
         impl std::fmt::Display for #name {
@@ -219,14 +220,14 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
                 }
             }
         }
-        
+
         impl error::ErrorKind for #name {
             fn error_code(&self) -> u32 {
                 match self {
                     #(#error_code_arms,)*
                 }
             }
-            
+
             fn error_message(&self) -> String {
                 match self {
                     #(#error_message_arms,)*
@@ -234,6 +235,6 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
             }
         }
     };
-    
+
     TokenStream::from(expanded)
 }

@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -25,11 +25,11 @@ enum ConfigError {
     /// 配置文件未找到
     #[error("配置文件未找到: {path}")]
     NotFound { path: String },
-    
+
     /// 配置格式错误
     #[error("配置格式错误: {reason}")]
     InvalidFormat { reason: String },
-    
+
     /// 必需字段缺失
     #[error("必需字段缺失: {field}")]
     MissingField { field: String },
@@ -54,12 +54,9 @@ struct Config {
 fn load_config(path: &str) -> Result<Config> {
     // 验证路径
     if path.is_empty() {
-        return Err(ErrorInfo::new(
-            400,
-            "配置文件路径不能为空".to_string()
-        ));
+        return Err(ErrorInfo::new(400, "配置文件路径不能为空".to_string()));
     }
-    
+
     // 模拟加载配置
     if path == "/invalid/path" {
         return Err(ErrorInfo::with_source(
@@ -67,10 +64,10 @@ fn load_config(path: &str) -> Result<Config> {
             "配置加载失败".to_string(),
             ConfigError::NotFound {
                 path: path.to_string(),
-            }
+            },
         ));
     }
-    
+
     // 成功返回配置
     Ok(Config {
         host: "localhost".to_string(),
@@ -95,20 +92,20 @@ fn validate_config(config: &Config) -> Result<()> {
             "配置验证失败".to_string(),
             ConfigError::MissingField {
                 field: "host".to_string(),
-            }
+            },
         ));
     }
-    
+
     if config.port == 0 {
         return Err(ErrorInfo::with_source(
             400,
             "配置验证失败".to_string(),
             ConfigError::InvalidFormat {
                 reason: "端口号不能为0".to_string(),
-            }
+            },
         ));
     }
-    
+
     Ok(())
 }
 
@@ -124,21 +121,21 @@ fn validate_config(config: &Config) -> Result<()> {
 fn init_app(config_path: &str) -> Result<()> {
     // 加载配置
     let config = load_config(config_path)?;
-    
+
     // 验证配置
     validate_config(&config)?;
-    
+
     println!("应用程序初始化成功:");
     println!("  主机: {}", config.host);
     println!("  端口: {}", config.port);
     println!("  超时: {}秒", config.timeout);
-    
+
     Ok(())
 }
 
 fn main() {
     println!("=== Result 类型示例 ===\n");
-    
+
     // 示例 1: 成功场景
     println!("示例 1: 成功加载配置");
     match load_config("/etc/app.conf") {
@@ -153,7 +150,7 @@ fn main() {
         }
     }
     println!();
-    
+
     // 示例 2: 路径为空
     println!("示例 2: 空路径错误");
     match load_config("") {
@@ -163,7 +160,7 @@ fn main() {
         }
     }
     println!();
-    
+
     // 示例 3: 文件未找到
     println!("示例 3: 文件未找到错误");
     match load_config("/invalid/path") {
@@ -176,7 +173,7 @@ fn main() {
         }
     }
     println!();
-    
+
     // 示例 4: 使用 ? 操作符
     println!("示例 4: 应用程序初始化");
     match init_app("/etc/app.conf") {
@@ -184,13 +181,13 @@ fn main() {
         Err(e) => println!("  ✗ 初始化失败: {}", e),
     }
     println!();
-    
+
     println!("示例 5: 初始化失败");
     match init_app("") {
         Ok(()) => println!("  不应该执行到这里"),
         Err(e) => println!("  ✗ 初始化失败: {}", e),
     }
     println!();
-    
+
     println!("=== 示例完成 ===");
 }

@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -27,15 +27,15 @@ enum AppError {
     /// IO错误，包含错误描述
     #[error("IO错误: {0}")]
     Io(String),
-    
+
     /// 解析错误，包含详细的错误信息
     #[error("解析错误: {msg}")]
     Parse { msg: String },
-    
+
     /// 网络错误，包含主机和端口信息
     #[error("网络错误: 无法连接到 {host}:{port}")]
     Network { host: String, port: u16 },
-    
+
     /// 未知错误
     #[error("未知错误")]
     Unknown,
@@ -43,7 +43,7 @@ enum AppError {
 
 fn main() {
     println!("=== 基本错误处理示例 ===\n");
-    
+
     // 示例 1: IO错误
     println!("示例 1: IO错误");
     let io_error = AppError::Io("文件未找到: /tmp/test.txt".to_string());
@@ -51,7 +51,7 @@ fn main() {
     println!("  错误码: {}", io_error.error_code());
     println!("  错误消息: {}", io_error.error_message());
     println!();
-    
+
     // 示例 2: 解析错误
     println!("示例 2: 解析错误");
     let parse_error = AppError::Parse {
@@ -61,7 +61,7 @@ fn main() {
     println!("  错误码: {}", parse_error.error_code());
     println!("  错误消息: {}", parse_error.error_message());
     println!();
-    
+
     // 示例 3: 网络错误
     println!("示例 3: 网络错误");
     let network_error = AppError::Network {
@@ -72,7 +72,7 @@ fn main() {
     println!("  错误码: {}", network_error.error_code());
     println!("  错误消息: {}", network_error.error_message());
     println!();
-    
+
     // 示例 4: 未知错误
     println!("示例 4: 未知错误");
     let unknown_error = AppError::Unknown;
@@ -80,11 +80,11 @@ fn main() {
     println!("  错误码: {}", unknown_error.error_code());
     println!("  错误消息: {}", unknown_error.error_message());
     println!();
-    
+
     // 示例 5: 使用 Debug trait
     println!("示例 5: Debug 输出");
     println!("  {:?}", io_error);
     println!();
-    
+
     println!("=== 示例完成 ===");
 }

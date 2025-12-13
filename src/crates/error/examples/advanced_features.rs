@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -43,11 +43,13 @@ fn read_config(path: &str) -> error::Result<String> {
         .with_category(ErrorCategory::Io);
 
     // 包装为高级错误并添加上下文
-    Err(ErrorInfo::with_source(2001, "读取配置文件失败".to_string(), io_error)
-        .with_context(format!("文件路径: {}", path))
-        .with_context("应用初始化阶段".to_string())
-        .with_severity(ErrorSeverity::Critical)
-        .with_category(ErrorCategory::Configuration))
+    Err(
+        ErrorInfo::with_source(2001, "读取配置文件失败".to_string(), io_error)
+            .with_context(format!("文件路径: {}", path))
+            .with_context("应用初始化阶段".to_string())
+            .with_severity(ErrorSeverity::Critical)
+            .with_category(ErrorCategory::Configuration),
+    )
 }
 
 /// 模拟数据库连接
@@ -57,19 +59,23 @@ fn connect_database(host: &str, port: u16) -> error::Result<String> {
         .with_severity(ErrorSeverity::Error)
         .with_category(ErrorCategory::Network);
 
-    Err(ErrorInfo::with_source(4001, "数据库初始化失败".to_string(), net_error)
-        .with_context("尝试连接主数据库".to_string())
-        .with_severity(ErrorSeverity::Critical)
-        .with_category(ErrorCategory::Database))
+    Err(
+        ErrorInfo::with_source(4001, "数据库初始化失败".to_string(), net_error)
+            .with_context("尝试连接主数据库".to_string())
+            .with_severity(ErrorSeverity::Critical)
+            .with_category(ErrorCategory::Database),
+    )
 }
 
 /// 模拟权限检查
 fn check_permission(user: &str) -> error::Result<()> {
     if user != "admin" {
-        return Err(ErrorInfo::new(5001, format!("用户 '{}' 无权限执行此操作", user))
-            .with_context("需要管理员权限".to_string())
-            .with_severity(ErrorSeverity::Warning)
-            .with_category(ErrorCategory::Permission));
+        return Err(
+            ErrorInfo::new(5001, format!("用户 '{}' 无权限执行此操作", user))
+                .with_context("需要管理员权限".to_string())
+                .with_severity(ErrorSeverity::Warning)
+                .with_category(ErrorCategory::Permission),
+        );
     }
     Ok(())
 }
@@ -162,13 +168,13 @@ fn main() {
     println!("错误: {}", app_error);
     println!("错误码: {}", app_error.error_code());
     println!("错误消息: {}", app_error.error_message());
-    
+
     let db_error = AppError::DatabaseError {
         host: "localhost".to_string(),
         port: 5432,
     };
     println!("数据库错误: {}", db_error);
-    
+
     let perm_error = AppError::PermissionDenied;
     println!("权限错误: {}", perm_error);
 
