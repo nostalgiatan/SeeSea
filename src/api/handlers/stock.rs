@@ -56,6 +56,7 @@ use serde_json::json;
 use std::collections::HashMap;
 #[cfg(feature = "python")]
 use std::convert::Infallible;
+#[cfg(feature = "python")]
 use std::sync::OnceLock;
 #[cfg(feature = "python")]
 use std::time::Duration;
