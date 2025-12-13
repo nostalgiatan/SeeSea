@@ -233,6 +233,9 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install maturin setuptools wheel build
+        # 安装用于静态类型检查的类型存根（仅安装项目中需要的几个）
+        pip install types-PyYAML types-decorator types-tabulate
+        # 如遇到其它第三方库缺失类型时，可按需添加相应的 types-* 包，例如 pandas-stubs、types-psutil 等
 
     - name: Build seesea-core with maturin
       shell: bash

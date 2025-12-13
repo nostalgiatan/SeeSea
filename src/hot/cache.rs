@@ -244,6 +244,10 @@ mod tests {
                 url: "https://example.com".to_string(),
                 mobile_url: None,
                 rank: Some(1),
+                hot_value: None,
+                hot_index: None,
+                source: None,
+                publish_time: None,
             }],
         };
 

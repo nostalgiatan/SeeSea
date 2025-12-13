@@ -63,6 +63,7 @@ lazy_static = "1.5.0"
 html5ever = { version = "0.36.1", optional = true }
 select = { version = "0.6.1", optional = true }
 futures = "0.3.31"
+async-stream = "0.3.6"
 clap = { version = "4.5.51", features = ["derive"] }
 colored = "3.0.0"
 indicatif = "0.17.7"

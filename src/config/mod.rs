@@ -100,6 +100,9 @@ pub mod engines;
 /// 向量数据库配置模块，包括向量数据库的配置
 pub mod vector_store;
 
+/// 平台路径配置模块
+pub mod paths;
+
 /// 核心类型定义模块，包括环境类型等
 pub mod types;
 
@@ -157,6 +160,9 @@ pub use types::Environment;
 
 /// 向量数据库配置
 pub use vector_store::{DynamicAdjustmentConfig, VectorStoreConfig, VectorStoreStatsConfig};
+
+/// 平台路径配置
+pub use paths::{PlatformPaths, get_platform_paths, init_platform_paths};
 
 /// 主配置类型和相关结果类型
 pub use config::{

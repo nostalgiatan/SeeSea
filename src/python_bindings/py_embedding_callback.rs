@@ -29,18 +29,13 @@ use tracing::info;
 static EMBEDDING_CALLBACK: RwLock<Option<Arc<EmbeddingCallback>>> = RwLock::new(None);
 
 /// 嵌入模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EmbeddingMode {
     /// 标准模式 - 使用轻量级模型
+    #[default]
     Standard,
     /// Pro模式 - 使用高质量模型
     Pro,
-}
-
-impl Default for EmbeddingMode {
-    fn default() -> Self {
-        EmbeddingMode::Standard
-    }
 }
 
 /// 嵌入回调封装
