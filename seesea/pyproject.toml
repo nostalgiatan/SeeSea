@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "seesea"
-version = "2.1.0"
+version = "2.1.1"
 description = "SeeSea Python SDK - Privacy-focused metasearch engine"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,6 +36,7 @@ dependencies = [
     'pandas>=2.0.0',
     'numpy>=1.24.0',
     'pypinyin>=0.50.0',
+    'llama-cpp-python',
 ]
 
 [project.scripts]
