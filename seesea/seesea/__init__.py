@@ -146,6 +146,7 @@ from .browser import (
 )
 from .utils import format_results, parse_query
 from .cli import cli as cli_main
+from .hot import *
 
 # 类型定义（提供类型安全）
 from .search_types import (
