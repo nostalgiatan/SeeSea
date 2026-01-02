@@ -93,7 +93,6 @@ class CacheScope:
     STOCK_INFO = "stock.info"
     STOCK_DETAIL = "stock.detail"
     STOCK_LIST = "stock.list"
-    STOCK_ANNOUNCEMENT = "stock.announcements"
     STOCK_ANNOUNCEMENTS = "stock.announcements"
 
 
@@ -153,24 +152,19 @@ class StockCacheManager:
     - 序列化/反序列化
     - 缓存预热
     - 过期数据回退
+
+    注意：
+    - 自动使用全局缓存实例，确保跨语言（Rust/Python）数据共享
+    - 缓存路径由系统自动管理，无需手动指定
     """
 
-    def __init__(self, cache_path: Optional[str] = None):
+    def __init__(self):
         """
         初始化缓存管理器
 
-        Args:
-            cache_path: 缓存数据库路径，None 则使用后备默认路径
+        内部使用全局缓存实例，确保 Rust 端和 Python 端访问同一份数据。
         """
-        from pathlib import Path
-        
-        if cache_path is None:
-            cache_path = _get_default_cache_path()
-
-        self._cache_path = Path(cache_path)
-        
-        # 统一缓存系统，不再使用JSON文件回退
-        
+        # 统一缓存系统，使用全局缓存实例
         self._cache: Optional[Any] = None
         self._initialized = False
 
@@ -178,8 +172,8 @@ class StockCacheManager:
         self._memory_cache: Dict[str, Dict[str, Any]] = {}
         self._memory_cache_time: Dict[str, datetime] = {}
         self._memory_cache_ttl: Dict[str, int] = {}
-        
-        # 变动历史记录 - 新增
+
+        # 变动历史记录
         self._change_history: Dict[str, List[HistoricalRecord]] = {}
         self._max_history_size = 100  # 每个缓存键最多保留100条历史记录
 
@@ -212,22 +206,18 @@ class StockCacheManager:
 
         if CACHE_AVAILABLE and PyCacheInterface:
             try:
-                # 创建缓存接口，提供必需的参数
-                self._cache = PyCacheInterface(
-                    db_path=str(self._cache_path),
-                    ttl_secs=CacheTTL.QUOTE,  # 默认5分钟TTL
-                    max_size_mb=100,  # 最大100MB缓存
-                )
+                # 创建缓存接口实例（内部自动使用全局缓存实例）
+                self._cache = PyCacheInterface()
                 self._initialized = True
-                logger.info(f"股票缓存初始化成功: {self._cache_path}")
+                logger.info("✅ 股票缓存初始化成功（使用全局缓存实例，支持跨语言访问）")
                 return True
             except Exception as e:
                 logger.warning(f"缓存初始化失败: {e}")
                 self._cache = None
-        
+
         # 即使缓存不可用，也标记为已初始化，不影响主服务
         self._initialized = True
-        logger.warning("缓存不可用，使用内存缓存模式")
+        logger.warning("⚠️ 缓存不可用，使用内存缓存模式")
         return True
 
     def initialize_sync(self) -> bool:
@@ -235,9 +225,20 @@ class StockCacheManager:
         if self._initialized:
             return True
 
-        # 同步模式下只初始化内存缓存，避免异步操作
+        if CACHE_AVAILABLE and PyCacheInterface:
+            try:
+                # 创建缓存接口实例（内部自动使用全局缓存实例）
+                self._cache = PyCacheInterface()
+                self._initialized = True
+                logger.info("✅ 股票缓存同步初始化成功（使用全局缓存实例）")
+                return True
+            except Exception as e:
+                logger.warning(f"缓存初始化失败: {e}")
+                self._cache = None
+
+        # 降级为内存缓存模式
         self._initialized = True
-        logger.info("缓存同步初始化完成（内存模式）")
+        logger.warning("⚠️ 缓存同步初始化完成（内存模式）")
         return True
 
     def _get_cache_key(self, scope: str, key: str) -> str:
@@ -266,7 +267,7 @@ class StockCacheManager:
             CacheScope.STOCK_FUND_FLOW: CacheTTL.FUND_FLOW,
             
             # 公告数据 - 按小时更新
-            CacheScope.STOCK_ANNOUNCEMENT: CacheTTL.ANNOUNCEMENT,
+            CacheScope.STOCK_ANNOUNCEMENTS: CacheTTL.ANNOUNCEMENT,
             
             # 中期数据 - 30分钟
             CacheScope.STOCK_KLINE_INTRADAY: CacheTTL.KLINE_INTRADAY,
@@ -701,13 +702,13 @@ class StockCacheManager:
         """设置行业数据缓存"""
         return await self.set(CacheScope.STOCK_INDUSTRY, code, data)
 
-    async def get_announcement(self, code: str) -> Optional[Dict]:
+    async def get_announcements(self, code: str) -> Optional[Dict]:
         """获取公告数据缓存"""
-        return await self.get(CacheScope.STOCK_ANNOUNCEMENT, code)
+        return await self.get(CacheScope.STOCK_ANNOUNCEMENTS, code)
 
-    async def set_announcement(self, code: str, data: Any) -> bool:
+    async def set_announcements(self, code: str, data: Any) -> bool:
         """设置公告数据缓存"""
-        return await self.set(CacheScope.STOCK_ANNOUNCEMENT, code, data)
+        return await self.set(CacheScope.STOCK_ANNOUNCEMENTS, code, data)
 
     async def get_stock_list(self, market: str) -> Optional[List[Dict]]:
         """获取股票列表缓存"""
@@ -821,26 +822,36 @@ _global_cache_manager: Optional[StockCacheManager] = None
 
 
 async def get_cache_manager() -> StockCacheManager:
-    """获取全局缓存管理器实例"""
+    """
+    获取全局缓存管理器实例
+
+    Returns:
+        StockCacheManager: 缓存管理器实例（使用全局缓存）
+    """
     global _global_cache_manager
-    
+
     if _global_cache_manager is None:
         _global_cache_manager = StockCacheManager()
         await _global_cache_manager.initialize()
-    
+
     return _global_cache_manager
 
 
-async def initialize_cache(cache_path: Optional[str] = None) -> StockCacheManager:
-    """初始化缓存系统"""
+async def initialize_cache() -> StockCacheManager:
+    """
+    初始化缓存系统
+
+    Returns:
+        StockCacheManager: 初始化后的缓存管理器实例
+    """
     global _global_cache_manager
-    
+
     if _global_cache_manager is not None:
         await _global_cache_manager.close()
-    
-    _global_cache_manager = StockCacheManager(cache_path)
+
+    _global_cache_manager = StockCacheManager()
     await _global_cache_manager.initialize()
-    
+
     return _global_cache_manager
 
 
