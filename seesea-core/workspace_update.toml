@@ -1,0 +1,6 @@
+    "crates/seesea-cleaner",
+    "crates/seesea-python-bindings",
+    "crates/seesea-raming",
+    "crates/error",
+    "crates/error-derive",
+]

@@ -1,0 +1,42 @@
+[package]
+name = "seesea-core"
+version = "2.1.0"
+edition = "2024"
+
+[lib]
+name = "seesea_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+seesea-errors = { path = "../seesea-errors" }
+seesea-config = { path = "../seesea-config" }
+seesea-cache = { path = "../seesea-cache" }
+seesea-search = { path = "../seesea-search" }
+seesea-api = { path = "../seesea-api", features = ["python"] }
+seesea-net = { path = "../seesea-net" }
+seesea-rss = { path = "../seesea-rss" }
+seesea-hot = { path = "../seesea-hot" }
+seesea-sys = { path = "../seesea-sys" }
+seesea-cleaner = { path = "../seesea-cleaner" }
+seesea-vector-store = { path = "../seesea-vector-store" }
+seesea-derive = { path = "../seesea-derive" }
+seesea-event = { path = "../seesea-event" }
+pyo3 = { version = "0.27.2", features = ["extension-module", "abi3-py39"] }
+pyo3-async-runtimes = { version = "0.27.0", features = ["tokio-runtime"] }
+tokio = { version = "1.48.0", features = ["full"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+once_cell = "1.21.3"
+tracing = "0.1.41"
+dirs = "6.0.0"
+axum = { version = "0.8.7", features = ["json"] }
+reqwest = { version = "0.12.25", features = ["brotli", "cookies", "deflate", "gzip", "json", "rustls-tls", "stream"] }
+async-trait = "0.1"
+futures = "0.3"
+
+[dev-dependencies]
+tokio-test = "0.4.4"
+
+[features]
+default = ["python"]
+python = []

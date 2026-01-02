@@ -1,0 +1,23 @@
+[package]
+name = "seesea-event"
+version = "0.1.0"
+edition = "2021"
+authors = ["nostalgiatan"]
+description = "SeeSea通用事件管理系统"
+license = "AGPL-3.0"
+
+[dependencies]
+seesea-errors = { path = "../seesea-errors" }
+tokio = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros", "time"] }
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+tracing = "0.1"
+once_cell = "1.19"
+
+[dev-dependencies]
+serde_json = "1.0"
+futures = "0.3"
+
+[lib]
+name = "seesea_event"
+crate-type = ["cdylib", "rlib"]

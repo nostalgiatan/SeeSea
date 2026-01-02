@@ -1,0 +1,290 @@
+// Copyright (C) 2025 nostalgiatan
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+use async_trait::async_trait;
+use std::collections::HashMap;
+use std::error::Error;
+use std::sync::Arc;
+
+use super::utils::{build_query_string_owned, time_extractor};
+use seesea_derive::{
+    AboutInfo, EngineCapabilities, EngineInfo, EngineStatus, EngineType, RequestParams,
+    RequestResponseEngine, ResultType, SearchResultItem,
+};
+
+// 使用宏定义引擎结构体和基本方法
+define_engine! {
+    BingImagesEngine,
+    EngineInfo {
+        name: "Bing Images".to_string(),
+        engine_type: EngineType::Image,
+        description: "Bing Images - Microsoft's image search engine".to_string(),
+        status: EngineStatus::Active,
+        categories: vec!["images".to_string(), "web".to_string()],
+        capabilities: EngineCapabilities {
+            result_types: vec![ResultType::Image],
+            supported_params: vec!["page".to_string(), "time_range".to_string()],
+            max_page_size: 35,
+            supports_pagination: true,
+            supports_time_range: true,
+            supports_language_filter: false,
+            supports_region_filter: false,
+            supports_safe_search: true,
+            rate_limit: Some(30),
+        },
+        about: AboutInfo {
+            website: Some("https://www.bing.com/images".to_string()),
+            wikidata_id: Some("Q182496".to_string()),
+            official_api_documentation: Some("https://www.microsoft.com/en-us/bing/apis/bing-image-search-api".to_string()),
+            use_official_api: false,
+            require_api_key: false,
+            results: "HTML".to_string(),
+        },
+        shortcut: Some("bing img".to_string()),
+        timeout: Some(10),
+        disabled: false,
+        inactive: false,
+        version: Some("1.0.0".to_string()),
+        last_checked: None,
+        using_tor_proxy: false,
+        display_error_messages: true,
+        tokens: Vec::new(),
+        max_page: 10,
+    }
+}
+
+impl BingImagesEngine {
+    fn parse_html_results(
+        html: &str,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+        use scraper::{Html, Selector};
+        use serde_json;
+
+        if html.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let document = Html::parse_document(html);
+        let mut items = Vec::with_capacity(35);
+
+        let result_selector = Selector::parse("ul.dgControl_list li")
+            .or_else(|_| Selector::parse("ul[class*=\"dgControl_list\"] li"))
+            .expect("valid selector");
+
+        for result in document.select(&result_selector) {
+            let metadata_elem = result
+                .select(&Selector::parse("a.iusc").expect("valid selector"))
+                .next();
+
+            if metadata_elem.is_none() {
+                continue;
+            }
+
+            let metadata_elem = metadata_elem.unwrap();
+            let metadata_str = metadata_elem.value().attr("m").unwrap_or("");
+
+            if metadata_str.is_empty() {
+                continue;
+            }
+
+            // Parse metadata JSON
+            let metadata: HashMap<String, serde_json::Value> =
+                serde_json::from_str(metadata_str).unwrap_or_else(|_| HashMap::new());
+
+            let title = result
+                .select(&Selector::parse("div.infnmpt a").expect("valid selector"))
+                .map(|a| a.text().collect::<String>().trim().to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+                .trim()
+                .to_string();
+
+            let img_format = result
+                .select(&Selector::parse("div.imgpt div span").expect("valid selector"))
+                .map(|span| span.text().collect::<String>().trim().to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+                .trim()
+                .to_string();
+
+            let source = result
+                .select(&Selector::parse("div.imgpt div.lnkw a").expect("valid selector"))
+                .map(|a| a.text().collect::<String>().trim().to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+                .trim()
+                .to_string();
+
+            let img_src = metadata
+                .get("murl")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let thumbnail_src = metadata
+                .get("turl")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let page_url = metadata
+                .get("purl")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let content = metadata
+                .get("desc")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if img_src.is_empty() {
+                continue;
+            }
+
+            let mut meta = HashMap::new();
+            meta.insert("source".to_string(), source);
+            meta.insert("format".to_string(), img_format.clone());
+            if !img_format.is_empty() {
+                let parts: Vec<&str> = img_format.split(" · ").collect();
+                if let Some(resolution) = parts.first() {
+                    meta.insert("resolution".to_string(), resolution.to_string());
+                }
+                if let Some(format) = parts.get(1) {
+                    meta.insert("img_format".to_string(), format.to_string());
+                }
+            }
+
+            // 提取时间
+            let mut published_date = None;
+
+            // 尝试从结果卡片中提取时间
+            let time_selectors = [
+                "div.imgpt div[class*=\"date\"]",
+                "div.imgpt span[class*=\"date\"]",
+                "div.imgpt div[class*=\"info\"]",
+                "div.imgpt span[class*=\"info\"]",
+            ];
+
+            for selector_str in time_selectors {
+                if let Ok(selector) = Selector::parse(selector_str) {
+                    for elem in result.select(&selector) {
+                        let text = elem.text().collect::<String>().trim().to_string();
+                        if !text.is_empty() {
+                            // 使用时间提取器提取时间
+                            let time_result = time_extractor::extract_time(
+                                &text,
+                                time_extractor::TimeSource::ResultCard,
+                            );
+                            if time_result.datetime.is_some() {
+                                published_date = time_result.datetime;
+                                break;
+                            }
+                        }
+                    }
+                    if published_date.is_some() {
+                        break;
+                    }
+                }
+            }
+
+            items.push(SearchResultItem {
+                title,
+                url: page_url.clone(),
+                content,
+                display_url: if !page_url.is_empty() {
+                    Some(page_url)
+                } else {
+                    Some(img_src.clone())
+                },
+                site_name: None,
+                score: 1.0,
+                result_type: ResultType::Image,
+                thumbnail: if !thumbnail_src.is_empty() {
+                    Some(thumbnail_src)
+                } else {
+                    Some(img_src.clone())
+                },
+                published_date,
+                template: Some("images.html".to_string()),
+                metadata: {
+                    let mut final_meta = meta;
+                    final_meta.insert("image_url".to_string(), img_src);
+                    final_meta
+                },
+            });
+        }
+
+        Ok(items)
+    }
+}
+
+#[async_trait]
+impl RequestResponseEngine for BingImagesEngine {
+    type Response = String;
+
+    fn request(
+        &self,
+        query: &str,
+        params: &mut RequestParams,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let base_url = "https://www.bing.com/images/async";
+
+        let time_map = HashMap::from([
+            ("day", 60 * 24),
+            ("week", 60 * 24 * 7),
+            ("month", 60 * 24 * 31),
+            ("year", 60 * 24 * 365),
+        ]);
+
+        let mut query_params = vec![
+            ("q", query.to_string()),
+            ("async", "1".to_string()),
+            ("first", ((params.page - 1) * 35 + 1).to_string()),
+            ("count", "35".to_string()),
+        ];
+
+        // Add time range filter if specified
+        if let Some(ref tr) = params.time_range
+            && let Some(minutes) = time_map.get(tr.as_str())
+        {
+            query_params.push(("qft", format!("filterui:age-lt{minutes}")));
+        }
+
+        // Build URL with optimized query string
+        let query_string = build_query_string_owned(query_params);
+
+        params.url = Some(format!("{base_url}?{query_string}"));
+        params.method = "GET".to_string();
+
+        Ok(())
+    }
+
+    async fn fetch(
+        &self,
+        params: &RequestParams,
+    ) -> Result<Self::Response, Box<dyn Error + Send + Sync>> {
+        // 使用通用引擎的fetch方法
+        self.generic.fetch(params).await
+    }
+
+    fn response(
+        &self,
+        resp: Self::Response,
+    ) -> Result<Vec<SearchResultItem>, Box<dyn Error + Send + Sync>> {
+        Self::parse_html_results(&resp)
+    }
+}

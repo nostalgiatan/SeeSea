@@ -1,0 +1,20 @@
+[package]
+name = "seesea-errors"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "seesea_errors"
+path = "src/mod.rs"
+
+[dependencies]
+error = { path = "../error" }
+
+# 只有在实际错误处理中使用的依赖
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+chrono = "0.4"
+
+[dev-dependencies]
+# 测试依赖
+serde_json = "1.0.145"

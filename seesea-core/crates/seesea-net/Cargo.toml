@@ -1,0 +1,48 @@
+[package]
+name = "seesea-net"
+version = "0.1.0"
+edition = "2021"
+authors = ["nostalgiatan"]
+description = "网络模块 - 提供隐私优先的网络通信功能"
+license = "AGPL-3.0"
+
+[dependencies]
+# HTTP客户端 - 实际在client/http.rs中使用
+reqwest = { version = "0.12.9", features = ["json", "rustls-tls", "stream"] }
+
+# 异步运行时 - 实际在多处使用
+tokio = { version = "1.48.0", features = ["sync", "net", "time", "io-util"] }
+tokio-util = { version = "0.7.13", features = ["io"] }
+
+# 序列化 - 实际在config.rs中使用
+serde = { version = "1.0.228", features = ["derive"] }
+
+# 随机数生成 - 实际在privacy模块中使用
+rand = "0.8.5"
+
+# JSON序列化 - 实际在resolver/doh.rs中使用
+serde_json = "1.0.145"
+
+# URL解析 - 实际在client/http.rs中使用
+url = "2.5"
+
+# 错误处理 - 实际在多处使用
+seesea-errors = { path = "../seesea-errors" }
+
+# 配置管理 - 实际在client/http.rs中使用
+seesea-config = { path = "../seesea-config" }
+
+# 异步trait支持 - 实际在client/http.rs中使用
+async-trait = "0.1.83"
+
+# 异步流处理 - 实际在client/http.rs中使用
+futures = "0.3.31"
+
+# 单次初始化 - 实际在client/http.rs中使用
+once_cell = "1.20.2"
+
+# 测试支持 - 实际在测试代码中使用
+tokio-test = "0.4.4"
+
+[dev-dependencies]
+tokio-test = "0.4.4"

@@ -103,9 +103,6 @@ try:
         post,
         get_file,
         post_file,
-        # HTML解析器函数
-        determine_page_type,
-        get_html_meta_info,
     )
 except ImportError as e:
     import warnings
@@ -128,8 +125,6 @@ except ImportError as e:
     has_engine = None
     get = None
     post = None
-    determine_page_type = None
-    get_html_meta_info = None
 
 # Python 高层接口
 from .search import SearchClient
@@ -320,9 +315,6 @@ __all__ = [
     "post",
     "get_file",
     "post_file",
-    # HTML解析器函数
-    "determine_page_type",
-    "get_html_meta_info",
     # 工具函数
     "format_results",
     "parse_query",

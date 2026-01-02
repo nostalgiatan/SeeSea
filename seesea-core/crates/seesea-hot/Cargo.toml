@@ -1,0 +1,28 @@
+[package]
+name = "seesea-hot"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "seesea_hot"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait = "0.1.89"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+chrono = { version = "0.4.42", features = ["serde"] }
+tokio = { version = "1.48.0", features = ["full"] }
+tracing = "0.1.43"
+once_cell = "1.20.2"
+seesea-errors = { path = "../seesea-errors" }
+seesea-net = { path = "../seesea-net" }
+seesea-cache = { path = "../seesea-cache" }
+
+[dev-dependencies]
+tokio = { version = "1.48.0", features = ["full", "test-util"] }
+serde_json = "1.0.145"
+tempfile = "3.23.0"
+mockall = "0.13.0"
+pretty_assertions = "1.4.1"
+futures = "0.3.31"
