@@ -1,0 +1,55 @@
+[package]
+name = "seesea-raming"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# 内部依赖
+seesea-errors = { path = "../seesea-errors" }
+seesea-config = { path = "../seesea-config" }
+seesea-event = { path = "../seesea-event" }
+
+# 核心依赖
+tokio = { version = "1.48.0", features = ["full", "sync", "rt-multi-thread"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+tracing = "0.1.43"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+
+# 并发和内存管理
+dashmap = "6.1"
+parking_lot = "0.12"
+crossbeam = "0.8.4"
+once_cell = "1.21.3"
+
+# 错误处理
+thiserror = "1.0"
+anyhow = "1.0"
+
+# 序列化和零拷贝
+bincode = { version = "2.0.1", features = ["serde"] }
+bytemuck = { version = "1.24.0", features = ["derive"] }
+memmap2 = "0.9.9"
+
+# 跨平台SIMD
+wide = "1.1.0"
+simd-adler32 = "0.3.8"
+
+# 时间处理
+chrono = { version = "0.4.42", features = ["serde"] }
+
+# UUID生成
+uuid = { version = "1.19", features = ["v4", "serde"] }
+
+# 正则表达式
+regex = "1.12.2"
+
+# 异步通道
+async-channel = "2.3"
+futures = "0.3.31"
+async-trait = "0.1"
+
+[dev-dependencies]
+tempfile = "3.23.0"
+tokio-test = "0.4.4"
+serial_test = "3.2.0"

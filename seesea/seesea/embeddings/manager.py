@@ -43,7 +43,10 @@ class BaseEmbedder(ABC):
 
     def encode_callback(self, text: str) -> List[float]:
         """
-        Rust回调接口
+        Rust回调接口（已废弃）
+        
+        注意: 回调机制已被废弃，当前使用缓存优先模式。
+        此函数仅保留用于向后兼容性。
 
         Args:
             text: 要编码的文本
@@ -171,7 +174,10 @@ class EmbeddingManager:
 
     def register_callback(self) -> Callable[[str], List[float]]:
         """
-        获取用于注册到Rust的回调函数
+        获取用于注册到Rust的回调函数（已废弃）
+        
+        注意: 回调机制已被废弃，当前使用缓存优先模式。
+        此函数仅保留用于向后兼容性，实际不会执行回调注册。
 
         Returns:
             回调函数

@@ -122,11 +122,14 @@ class ApiServer:
         self.enable_pro = enable_pro
         self._embedding_manager: Optional[EmbeddingManager] = None
 
-        # 初始化嵌入模型并注册回调
+        # 初始化嵌入模型（回调机制已废弃，使用缓存优先模式）
         self._init_embedding(enable_pro)
 
         # 初始化调控中心守护进程
         self._init_system_controller()
+
+        # 初始化股票服务（已废弃回调机制，使用缓存优先模式）
+        self._initialize_stock_service()
 
         # 仅在显式启用时初始化Pro API路由和处理器
         if enable_pro:
@@ -156,7 +159,7 @@ class ApiServer:
 
     def _init_embedding(self, enable_pro: bool) -> None:
         """
-        初始化嵌入模型并注册回调
+        初始化嵌入模型（回调机制已废弃，使用缓存优先模式）
 
         Args:
             enable_pro: 是否启用 Pro 模式
@@ -174,7 +177,7 @@ class ApiServer:
             # 创建嵌入管理器
             self._embedding_manager = EmbeddingManager.get_instance(mode=mode)
 
-            # 注册回调到 Rust
+            # 注册回调到 Rust（已废弃，仅保留兼容性）
             callback = self._embedding_manager.register_callback()
             dimension = self._embedding_manager.get_dimension()
 
@@ -211,6 +214,53 @@ class ApiServer:
             pass
         except Exception as e:
             print(f"⚠️  调控中心守护进程启动失败: {e}")
+
+    def _initialize_stock_service(self) -> None:
+        """
+        初始化股票服务
+        
+        在服务器启动前初始化股票服务，预加载股票数据到缓存中。
+        使用共享的初始化函数，确保CLI和web服务器使用相同的初始化逻辑。
+        
+        注意: 此方法原名为 _register_stock_callbacks，现已重命名以反映其真实功能。
+        回调机制已被废弃，当前使用缓存优先模式。
+        """
+        try:
+            from seesea.stock import initialize_stock_service, get_stock_service
+            
+            print("🔄 初始化股票服务...")
+            success = initialize_stock_service()
+            
+            if success:
+                # 获取服务实例并显示详细预加载状态
+                stock_service = get_stock_service()
+                if stock_service and stock_service.is_preload_complete():
+                    print("✅ 股票服务初始化成功，预加载已完成")
+                    
+                    # 显示预加载状态详情
+                    preload_status = stock_service.get_preload_status()
+                    if preload_status:
+                        print("📊 预加载状态详情：")
+                        success_count = sum(1 for v in preload_status.values() if v)
+                        total_count = len(preload_status)
+                        for key, status in preload_status.items():
+                            status_icon = "✅" if status else "❌"
+                            status_color = "green" if status else "red"
+                            print(f"    {status_icon} {key}: {'完成' if status else '失败'}")
+                        print(f"    📈 成功率: {success_count}/{total_count} ({success_count/total_count*100:.1f}%)")
+                else:
+                    print("⚠️  股票服务初始化完成，但预加载尚未完成")
+                    print("   数据可能不完整，服务启动后继续后台加载...")
+            else:
+                print("⚠️  股票服务初始化失败")
+                print("   股票功能将不可用，但其他功能正常")
+            
+        except ImportError as e:
+            print(f"⚠️  股票模块导入失败: {e}")
+            print("   股票功能将不可用")
+        except Exception as e:
+            print(f"⚠️  股票服务初始化失败: {e}")
+            print("   股票功能将不可用，但其他功能正常")
 
     def start(self):
         """

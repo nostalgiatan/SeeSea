@@ -1,0 +1,31 @@
+[package]
+name = "seesea-rss"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "seesea_rss"
+path = "src/lib.rs"
+
+[dependencies]
+# Core serialization/deserialization - 实际在template.rs中使用
+serde = { version = "1.0.228", features = ["derive"] }
+
+# Async runtime support - 实际在on.rs中使用
+tokio = { version = "1.48.0", features = ["sync"] }
+
+# TOML serialization support - 实际在template.rs中使用
+toml = "0.8.19"
+
+# Internal dependencies - 实际使用
+seesea-derive = { path = "../seesea-derive" }
+seesea-errors = { path = "../seesea-errors" }
+seesea-net = { path = "../seesea-net" }
+seesea-cache = { path = "../seesea-cache" }
+error = { path = "../error" }
+
+# Async utilities
+futures = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1.48.0", features = ["full", "test-util"] }

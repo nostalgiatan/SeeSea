@@ -1,0 +1,19 @@
+[workspace]
+members = [
+    "crates/seesea-derive",
+    "crates/seesea-errors", 
+    "crates/seesea-rss",
+    "crates/seesea-net",
+    "crates/seesea-config",
+    "crates/seesea-cache",
+    "crates/seesea-search",
+    "crates/seesea-api",
+    "crates/seesea-sys",
+    "crates/seesea-hot",
+    "crates/seesea-vector-store",
+    "crates/seesea-cleaner",
+    "crates/seesea-python-bindings",
+    "crates/seesea-raming",
+    "crates/error",
+    "crates/error-derive",
+]

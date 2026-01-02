@@ -123,7 +123,45 @@ class StandardEmbedder(BaseEmbedder):
             print(f"✅ [Standard] 模型加载完成，维度: {self.dimension}")
 
         except Exception as e:
-            raise RuntimeError(f"模型加载失败: {e}") from e
+            # 如果是本地文件且加载失败，尝试重新下载
+            if model_path == local_model_file and os.path.exists(local_model_file):
+                print(f"⚠️ [Standard] 本地模型文件损坏，尝试重新下载...")
+                try:
+                    os.remove(local_model_file)
+                    print("⬇️  [Standard] 重新下载模型...")
+                    
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    }
+                    
+                    result = get_file(self.MODEL_URL, local_model_file, headers)
+                    if result.get("status") != 200:
+                        raise RuntimeError(f"下载失败，状态码: {result.get('status')}")
+                    
+                    print(f"✅ [Standard] 模型重新下载完成: {local_model_file}")
+                    
+                    # 重新加载模型
+                    print("🔄 [Standard] 重新加载嵌入模型...")
+                    self.embedder = Llama(
+                        model_path=local_model_file,
+                        embedding=True,
+                        n_gpu_layers=n_gpu_layers,
+                        n_ctx=512,
+                        n_threads=n_threads,
+                        verbose=False,
+                        use_mmap=True,
+                        use_mlock=False,
+                    )
+                    
+                    # 测试获取维度
+                    test_result = self.embedder.create_embedding(input="test")
+                    self.dimension = len(test_result["data"][0]["embedding"])
+                    print(f"✅ [Standard] 模型加载完成，维度: {self.dimension}")
+                    
+                except Exception as download_e:
+                    raise RuntimeError(f"模型重新下载后仍然加载失败: {download_e}") from download_e
+            else:
+                raise RuntimeError(f"模型加载失败: {e}") from e
 
     def _detect_gpu(self, device: Optional[str]) -> int:
         """检测GPU配置"""

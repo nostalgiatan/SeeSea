@@ -850,25 +850,49 @@ def stock(
 
     # 使用seesea包内的股票模块
     try:
-        from seesea.stock import get_stock_service
-        from seesea.models import PeriodType
+        from seesea.stock import get_stock_service, initialize_stock_service
+        from seesea.stock.models import PeriodType
     except ImportError:
         console.print("[red]❌ 无法导入股票数据模块，请检查依赖安装[/red]")
         console.print("提示：运行 pip install akshare 安装股票数据依赖")
         sys.exit(1)
 
     async def run_stock_command():
-        # 获取股票服务实例
+        # 确保股票服务已初始化
         stock_service = get_stock_service()
-        await stock_service.initialize()
+        if stock_service is None:
+            console.print("[yellow]🔄 正在初始化股票服务...[/yellow]")
+            if not initialize_stock_service():
+                console.print("[red]❌ 股票服务初始化失败[/red]")
+                sys.exit(1)
+            stock_service = get_stock_service()
+            if stock_service is None:
+                console.print("[red]❌ 无法获取股票服务实例[/red]")
+                sys.exit(1)
+        
+        # 检查预加载是否完成
+        if not stock_service.is_preload_complete():
+            console.print("[yellow]⏳ 股票数据预加载尚未完成...[/yellow]")
+            
+            # 显示预加载状态详情
+            preload_status = stock_service.get_preload_status()
+            if preload_status:
+                console.print("[dim]当前预加载状态：[/dim]")
+                for key, status in preload_status.items():
+                    status_icon = "✅" if status else "❌"
+                    status_color = "green" if status else "red"
+                    console.print(f"  {status_icon} [dim]{key}: [{status_color}]{'完成' if status else '失败'}[/{status_color}][/dim]")
+            
+            console.print("[dim]提示：运行 'seesea stock-refresh' 强制刷新缓存[/dim]")
+            return
 
         # 显示市场概况
         if market or not code:
             console.print("[bold blue]📊 市场概况[/bold blue]")
 
             try:
-                # 获取所有指数数据
-                index_quotes = await stock_service.get_index_quotes()
+                # 从缓存获取所有指数数据（缓存优先）
+                index_quotes = await stock_service.get_index_quotes_from_cache()
 
                 # 筛选主要指数
                 main_indices = ["000001", "399001", "399006"]
@@ -1030,7 +1054,7 @@ def stock(
 
 
 def _init_standard_embedding():
-    """初始化标准模式嵌入模型并注册回调"""
+    """初始化标准模式嵌入模型（回调机制已废弃）"""
     try:
         from .embeddings import EmbeddingManager, EmbeddingMode
 
@@ -1048,6 +1072,57 @@ def main():
     # 初始化标准模式嵌入模型
     _init_standard_embedding()
     cli()
+
+
+@cli.command("stock-refresh")
+@click.option("--force", "-f", is_flag=True, help="强制刷新缓存")
+@click.option("--cache-path", help="自定义缓存路径")
+def stock_refresh(force, cache_path):
+    """刷新股票数据缓存
+    
+    重新从数据源获取所有股票数据并更新缓存。
+    此操作会覆盖现有的缓存数据。
+    """
+    import sys
+    
+    try:
+        from seesea.stock import refresh_stock_cache
+    except ImportError:
+        console.print("[red]❌ 无法导入股票数据模块，请检查依赖安装[/red]")
+        console.print("提示：运行 pip install akshare 安装股票数据依赖")
+        sys.exit(1)
+    
+    console.print("[bold blue]🔄 开始刷新股票数据缓存...[/bold blue]")
+    
+    try:
+        # 调用刷新函数
+        success = refresh_stock_cache()
+        
+        if success:
+            console.print("[bold green]✅ 股票数据缓存刷新成功！[/bold green]")
+            
+            # 获取服务实例并显示预加载状态
+            from seesea.stock import get_stock_service
+            stock_service = get_stock_service()
+            if stock_service:
+                preload_status = stock_service.get_preload_status()
+                if preload_status:
+                    console.print("[dim]预加载状态详情：[/dim]")
+                    for key, status in preload_status.items():
+                        status_icon = "✅" if status else "❌"
+                        status_color = "green" if status else "red"
+                        console.print(f"  {status_icon} [dim]{key}: [{status_color}]{'完成' if status else '失败'}[/{status_color}][/dim]")
+            
+            console.print("[dim]缓存已更新，可以正常使用股票查询功能[/dim]")
+        else:
+            console.print("[bold red]❌ 股票数据缓存刷新失败！[/bold red]")
+            console.print("[dim]请检查网络连接和数据源状态[/dim]")
+            sys.exit(1)
+            
+    except Exception as e:
+        console.print(f"[bold red]❌ 刷新缓存时发生错误: {e}[/bold red]")
+        console.print("[dim]请检查日志获取详细信息[/dim]")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
