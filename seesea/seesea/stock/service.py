@@ -101,7 +101,6 @@ class StockService:
         self,
         enable_cache: bool = True,
         enable_scheduler: bool = True,
-        cache_path: Optional[str] = None,
     ):
         """
         初始化股票服务
@@ -109,22 +108,17 @@ class StockService:
         Args:
             enable_cache: 是否启用缓存
             enable_scheduler: 是否启用调度器
-            cache_path: 缓存路径，None 则使用平台默认路径
         """
         self._enable_cache = enable_cache
         self._enable_scheduler = enable_scheduler
 
-        # 缓存路径：优先使用传入值，否则使用后备默认路径
-        if cache_path is None:
-            cache_path = _get_default_cache_path()
-
         # 数据客户端
         self._client: Optional[StockDataClient] = None
 
-        # 缓存管理器
+        # 缓存管理器（自动使用全局缓存实例）
         self._cache: Optional[StockCacheManager] = None
         if enable_cache:
-            self._cache = StockCacheManager(cache_path)
+            self._cache = StockCacheManager()
 
         # 预加载服务
         self._preload_service: Optional[StockPreloadService] = None
@@ -782,7 +776,7 @@ class StockService:
             # 缓存
             if self._cache and announcements:
                 await self._cache.set(
-                    CacheScope.STOCK_ANNOUNCEMENT,
+                    CacheScope.STOCK_ANNOUNCEMENTS,
                     "latest",
                     [a.to_dict() for a in announcements],
                 )
