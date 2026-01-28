@@ -24,22 +24,17 @@ jobs:
             arch: x64
             maturin-target: x86_64-unknown-linux-gnu
           # Linux arm64 build (ABI3 supports Python 3.9+)
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             platform: linux
             arch: arm64
             maturin-target: aarch64-unknown-linux-gnu
-          # Linux armv7 build (ABI3 supports Python 3.9+)
-          - os: ubuntu-latest
-            platform: linux
-            arch: armv7
-            maturin-target: armv7-unknown-linux-gnueabihf
           # Windows x64 build (ABI3 supports Python 3.9+)
           - os: windows-latest
             platform: windows
             arch: x64
             maturin-target: x86_64-pc-windows-msvc
           # Windows arm64 build (ABI3 supports Python 3.9+)
-          - os: windows-latest
+          - os: windows-11-arm
             platform: windows
             arch: arm64
             maturin-target: aarch64-pc-windows-msvc
@@ -65,13 +60,13 @@ jobs:
         targets: ${{ matrix.maturin-target }}
 
     - name: Install system dependencies (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
       run: |
         sudo apt-get update
         sudo apt-get install -y libxml2-dev libxslt1-dev wget gnupg pkg-config libssl-dev
 
     - name: Install LLVM
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
       run: |
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
@@ -84,12 +79,12 @@ jobs:
         brew install llvm@21 nasm pkg-config openssl@3
 
     - name: Install LLVM (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest' || matrix.os == 'windows-11-arm'
       run: |
         winget install LLVM.LLVM --accept-source-agreements --accept-package-agreements -e
 
     - name: Install vcpkg and OpenSSL (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest' || matrix.os == 'windows-11-arm'
       shell: bash
       run: |
         git clone https://github.com/Microsoft/vcpkg.git
@@ -134,7 +129,7 @@ jobs:
         echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
 
     - name: Set LLVM environment variables (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest' || matrix.os == 'windows-11-arm'
       run: |
         echo "C:\Program Files\LLVM\bin" >> $env:GITHUB_PATH
 
@@ -152,45 +147,13 @@ jobs:
         # 安装用于静态类型检查的类型存根
         pip install types-PyYAML types-decorator types-tabulate
 
-    - name: Install cross-compilation toolchain
-      if: (matrix.platform == 'linux' && matrix.arch != 'x64') || (matrix.platform == 'windows' && matrix.arch == 'arm64')
-      shell: bash
-      run: |
-        if [ "${{ matrix.platform }}" = "linux" ]; then
-          case "${{ matrix.maturin-target }}" in
-            aarch64-unknown-linux-gnu)
-              sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu pkg-config
-              sudo dpkg --add-architecture arm64
-              sudo apt-get update && sudo apt-get install -y libssl-dev:arm64
-              echo "OPENSSL_DIR=/usr" >> $GITHUB_ENV
-              echo "OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu" >> $GITHUB_ENV
-              echo "OPENSSL_INCLUDE_DIR=/usr/include" >> $GITHUB_ENV
-              echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
-              ;;
-            armv7-unknown-linux-gnueabihf)
-              sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf pkg-config
-              sudo dpkg --add-architecture armhf
-              sudo apt-get update && sudo apt-get install -y libssl-dev:armhf
-              echo "OPENSSL_DIR=/usr" >> $GITHUB_ENV
-              echo "OPENSSL_LIB_DIR=/usr/lib/arm-linux-gnueabihf" >> $GITHUB_ENV
-              echo "OPENSSL_INCLUDE_DIR=/usr/include" >> $GITHUB_ENV
-              echo "PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
-              ;;
-          esac
-          # LLVM 21 已经在前面的步骤中安装
-        elif [ "${{ matrix.platform }}" = "windows" ]; then
-          # Windows ARM64 交叉编译需要设置环境变量
-          echo "Setting up Windows ARM64 cross-compilation"
-          # vcpkg 已经在前面安装了对应的 OpenSSL
-        fi
-
     - name: Build seesea-core with maturin
       shell: bash
       run: |
         # 为特定目标架构构建（使用ABI3，支持Python 3.9+）
         cd seesea-core && maturin build --release --strip --target ${{ matrix.maturin-target }}
         mkdir -p ../building
-        # 复制wheel文件（根据target参数，wheel会在target/{target}/wheels/目录下）
+        # 复制wheel文件（wheel可能在 target/{target}/wheels/ 或 target/wheels/ 目录下）
         find . -name "*.whl" -path "*/wheels/*" -exec cp {} ../building/ \;
 
     - name: Build seesea Python package
