@@ -1,11 +1,11 @@
 //! 事件系统单元测试
 
 use seesea_event::{EventListener, EventType};
+use seesea_raming::RamingResult;
 use seesea_raming::events::*;
 use seesea_raming::types::{BindingType, EventConfig};
-use seesea_raming::RamingResult;
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 /// 测试RamingEventType枚举
 #[test]
@@ -89,7 +89,7 @@ fn test_event_data_conversion() {
 #[tokio::test]
 async fn test_event_adapter() {
     let config = EventConfig::default();
-    let event_bus = Arc::new(RamingEventBus::new(config));
+    let _event_bus = Arc::new(RamingEventBus::new(config));
 
     // 创建测试监听器
     let test_listener = Arc::new(TestEventListener::new());
@@ -344,7 +344,7 @@ async fn test_event_type_matching() {
 
     let share_listener = Arc::new(TestEventListener::new());
     let update_listener = Arc::new(TestEventListener::new());
-    let all_listener = Arc::new(TestEventListener::new());
+    let _all_listener = Arc::new(TestEventListener::new());
 
     // 订阅不同类型的监听器
     let _ = event_bus

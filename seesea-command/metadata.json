@@ -1,0 +1,5 @@
+{
+  "name": "SeeSea Command Center",
+  "description": "A high-end, responsive administrative dashboard for managing the SeeSea search engine API, featuring real-time metrics, engine control, and hot configuration management.",
+  "requestFramePermissions": []
+}

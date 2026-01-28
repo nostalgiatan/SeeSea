@@ -107,47 +107,28 @@ impl PlatformPaths {
     fn platform_default_data_dir() -> PathBuf {
         #[cfg(target_os = "windows")]
         {
-            // Windows: 优先 D:\seesea，否则 C:\seesea
-            let d_drive = PathBuf::from("D:\\");
-            if d_drive.exists() {
-                PathBuf::from("D:\\seesea")
-            } else {
-                PathBuf::from("C:\\seesea")
-            }
+            // Windows: D:\Program Files\SeeSea
+            PathBuf::from("D:\\Program Files\\SeeSea")
         }
 
         #[cfg(target_os = "macos")]
         {
-            // macOS: ~/Library/Application Support/seesea
+            // macOS: ~/Library/Application Support/SeeSea
             _dirs::data_dir()
-                .map(|p: std::path::PathBuf| p.join("seesea"))
+                .map(|p: std::path::PathBuf| p.join("SeeSea"))
                 .unwrap_or_else(|| {
                     _dirs::home_dir()
-                        .map(|p: std::path::PathBuf| p.join("Library/Application Support/seesea"))
+                        .map(|p: std::path::PathBuf| p.join("Library/Application Support/SeeSea"))
                         .unwrap_or_else(|| PathBuf::from("/tmp/seesea"))
                 })
         }
 
         #[cfg(target_os = "linux")]
         {
-            // Linux: /var/lib/seesea 或 ~/.local/share/seesea
-            let var_lib = PathBuf::from("/var/lib/seesea");
-
-            // 检查是否有写权限
-            if let Ok(meta) = std::fs::metadata("/var/lib")
-                && !meta.permissions().readonly()
-            {
-                return var_lib;
-            }
-
-            // 回退到用户目录
-            _dirs::data_local_dir()
-                .map(|p: std::path::PathBuf| p.join("seesea"))
-                .unwrap_or_else(|| {
-                    _dirs::home_dir()
-                        .map(|p: std::path::PathBuf| p.join(".local/share/seesea"))
-                        .unwrap_or_else(|| PathBuf::from("/tmp/seesea"))
-                })
+            // Linux: ~/.seesea
+            _dirs::home_dir()
+                .map(|p: std::path::PathBuf| p.join(".seesea"))
+                .unwrap_or_else(|| PathBuf::from("/tmp/seesea"))
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -232,6 +213,29 @@ impl Default for PlatformPaths {
 /// 获取全局平台路径配置
 pub fn get_platform_paths() -> &'static PlatformPaths {
     PLATFORM_PATHS.get_or_init(PlatformPaths::new)
+}
+
+/// 获取缓存目录路径（字符串形式）
+pub fn get_cache_dir() -> String {
+    get_platform_paths().cache_dir.to_string_lossy().to_string()
+}
+
+/// 获取数据目录路径（字符串形式）
+pub fn get_data_dir() -> String {
+    get_platform_paths().data_dir.to_string_lossy().to_string()
+}
+
+/// 获取配置目录路径（字符串形式）
+pub fn get_config_dir() -> String {
+    get_platform_paths()
+        .config_dir
+        .to_string_lossy()
+        .to_string()
+}
+
+/// 获取日志目录路径（字符串形式）
+pub fn get_log_dir() -> String {
+    get_platform_paths().log_dir.to_string_lossy().to_string()
 }
 
 /// 初始化平台路径配置（带自定义配置）

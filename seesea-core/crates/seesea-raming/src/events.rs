@@ -29,6 +29,12 @@ pub enum RamingEventType {
     BindingCreated,
     /// 绑定删除事件
     BindingDeleted,
+    /// 引擎注册事件
+    EngineRegister,
+    /// 搜索请求事件
+    SearchRequest,
+    /// 搜索响应事件
+    SearchResponse,
     /// 系统事件
     System,
     /// 自定义事件
@@ -43,6 +49,9 @@ impl std::fmt::Display for RamingEventType {
             RamingEventType::MemoryDelete => write!(f, "MemoryDelete"),
             RamingEventType::BindingCreated => write!(f, "BindingCreated"),
             RamingEventType::BindingDeleted => write!(f, "BindingDeleted"),
+            RamingEventType::EngineRegister => write!(f, "EngineRegister"),
+            RamingEventType::SearchRequest => write!(f, "SearchRequest"),
+            RamingEventType::SearchResponse => write!(f, "SearchResponse"),
             RamingEventType::System => write!(f, "System"),
             RamingEventType::Custom(s) => write!(f, "{}", s),
         }
@@ -58,6 +67,9 @@ impl RamingEventType {
             RamingEventType::MemoryDelete => BaseEventType::Data,
             RamingEventType::BindingCreated => BaseEventType::Data,
             RamingEventType::BindingDeleted => BaseEventType::Data,
+            RamingEventType::EngineRegister => BaseEventType::Data,
+            RamingEventType::SearchRequest => BaseEventType::Data,
+            RamingEventType::SearchResponse => BaseEventType::Data,
             RamingEventType::System => BaseEventType::Data,
             RamingEventType::Custom(_) => BaseEventType::Data,
         }
@@ -71,6 +83,9 @@ impl RamingEventType {
             RamingEventType::MemoryDelete => "memory_delete".to_string(),
             RamingEventType::BindingCreated => "binding_created".to_string(),
             RamingEventType::BindingDeleted => "binding_deleted".to_string(),
+            RamingEventType::EngineRegister => "engine_register".to_string(),
+            RamingEventType::SearchRequest => "search_request".to_string(),
+            RamingEventType::SearchResponse => "search_response".to_string(),
             RamingEventType::System => "system".to_string(),
             RamingEventType::Custom(s) => format!("custom_{}", s),
         }
@@ -215,15 +230,13 @@ impl EventListener for RamingEventAdapter {
     async fn on_event(&self, event: &Event) -> seesea_event::RamingResult<()> {
         match event {
             Event::Data(data_event) => {
-                if let Ok(raming_event) = RamingEventData::from_data_event(data_event) {
-                    if self.inner.supports_event_type(&raming_event.event_type) {
-                        self.inner
-                            .handle_raming_event(raming_event)
-                            .await
-                            .map_err(|e| {
-                                seesea_event::RamingError::EventSystemError(e.to_string())
-                            })?;
-                    }
+                if let Ok(raming_event) = RamingEventData::from_data_event(data_event)
+                    && self.inner.supports_event_type(&raming_event.event_type)
+                {
+                    self.inner
+                        .handle_raming_event(raming_event)
+                        .await
+                        .map_err(|e| seesea_event::RamingError::EventSystemError(e.to_string()))?;
                 }
                 Ok(())
             }
@@ -393,10 +406,7 @@ impl RamingEventBus {
         self.base_bus.subscribe(adapter).await?;
 
         // 存储监听器引用
-        let mut listeners_list = self
-            .listeners
-            .entry(event_type.clone())
-            .or_insert_with(Vec::new);
+        let mut listeners_list = self.listeners.entry(event_type.clone()).or_default();
         listeners_list.push(listener);
 
         info!("已订阅Raming事件类型: {:?}", event_type);

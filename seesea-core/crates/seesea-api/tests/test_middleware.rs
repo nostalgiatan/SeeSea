@@ -58,82 +58,10 @@ async fn test_cors_with_wildcard_origins() {
 }
 
 #[tokio::test]
-async fn test_rate_limit_middleware_creation() {
-    // 测试速率限制中间件创建
-    // 注意：速率限制中间件函数尚未实现，此测试为占位符
-    // let max_requests = 100;
-    // let window_duration = Duration::from_secs(60);
-    // let rate_limit_layer = create_rate_limit_layer(max_requests, window_duration);
-
-    // 暂时跳过具体实现测试
-    assert!(true);
-}
-
-#[tokio::test]
-async fn test_auth_middleware_creation() {
-    // 测试认证中间件创建
-    // 注意：认证中间件函数尚未实现，此测试为占位符
-    // let api_keys = vec!["test-key-1".to_string(), "test-key-2".to_string()];
-    // let auth_layer = create_auth_layer(api_keys);
-
-    // 暂时跳过具体实现测试
-    assert!(true);
-}
-
-#[tokio::test]
-async fn test_logging_middleware_creation() {
-    // 测试日志中间件创建
-    // 注意：日志中间件函数尚未实现，此测试为占位符
-    // let log_level = "info".to_string();
-    // let logging_layer = create_logging_layer(log_level);
-
-    // 暂时跳过具体实现测试
-    assert!(true);
-}
-
-#[tokio::test]
-async fn test_circuit_breaker_middleware_creation() {
-    // 测试熔断器中间件创建
-    // 注意：熔断器中间件函数尚未实现，此测试为占位符
-    // let failure_threshold = 5;
-    // let recovery_timeout = Duration::from_secs(30);
-    // let circuit_breaker_layer = create_circuit_breaker_layer(failure_threshold, recovery_timeout);
-
-    // 暂时跳过具体实现测试
-    assert!(true);
-}
-
-#[tokio::test]
-async fn test_ip_filter_middleware_creation() {
-    // 测试 IP 过滤中间件创建
-    // 注意：IP 过滤中间件函数尚未实现，此测试为占位符
-    // let allowed_ips = vec!["192.168.1.0/24".to_string(), "10.0.0.0/8".to_string()];
-    // let blocked_ips = vec!["192.168.1.100".to_string()];
-    // let ip_filter_layer = create_ip_filter_layer(allowed_ips, blocked_ips);
-
-    // 暂时跳过具体实现测试
-    assert!(true);
-}
-
-#[tokio::test]
-async fn test_metrics_middleware_creation() {
-    // 测试指标收集中间件创建
-    // 注意：指标收集中间件函数尚未实现，此测试为占位符
-    // let metrics_endpoint = "/metrics".to_string();
-    // let metrics_layer = create_metrics_layer(metrics_endpoint);
-
-    // 暂时跳过具体实现测试
-    assert!(true);
-}
-
-#[tokio::test]
 async fn test_middleware_combination() {
     // 测试多个中间件的组合使用
     let allowed_origins = vec!["https://example.com".to_string()];
     let _cors_layer = create_cors_layer(allowed_origins);
-
-    // 这里可以测试中间件的组合使用
-    // let combined_layer = cors_layer.and_then(rate_limit_layer);
 
     // 验证中间件可以组合使用
     assert!(true);

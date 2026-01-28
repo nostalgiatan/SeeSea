@@ -70,6 +70,10 @@ pub struct ExternalNetworkConfig {
 
     /// 是否启用限流
     pub enable_rate_limit: bool,
+    /// 限流配置：每秒请求数
+    pub rate_limit_per_second: u32,
+    /// 限流配置：突发大小
+    pub rate_limit_burst_size: u32,
 
     /// 是否启用熔断
     pub enable_circuit_breaker: bool,
@@ -82,6 +86,18 @@ pub struct ExternalNetworkConfig {
 
     /// 是否启用魔法链接
     pub enable_magic_link: bool,
+
+    /// 认证类型
+    pub auth_type: String,
+
+    /// API 密钥
+    pub api_key: String,
+
+    /// 密钥来源
+    pub key_source: String,
+
+    /// 密钥参数名
+    pub key_name: String,
 }
 
 impl Default for ExternalNetworkConfig {
@@ -92,10 +108,16 @@ impl Default for ExternalNetworkConfig {
             port: 8080,
             cors_origins: vec!["*".to_string()],
             enable_rate_limit: true,
+            rate_limit_per_second: 100,
+            rate_limit_burst_size: 200,
             enable_circuit_breaker: true,
             enable_ip_filter: true,
             enable_jwt_auth: false, // 默认不启用JWT，避免影响现有用户
             enable_magic_link: true,
+            auth_type: "none".to_string(),
+            api_key: "".to_string(),
+            key_source: "query".to_string(),
+            key_name: "magic_token".to_string(),
         }
     }
 }

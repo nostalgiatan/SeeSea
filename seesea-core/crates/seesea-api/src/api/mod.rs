@@ -102,10 +102,28 @@ pub mod network;
 /// 动态路由模块，实现基于前缀树的高效动态路由匹配机制
 pub mod dynamic_router;
 
+/// OpenAPI 文档模块
+pub mod openapi;
+
+/// Swagger UI 路由模块
+pub mod swagger;
+
+/// 内部管理 API 类型定义模块
+pub mod internal_types;
+
+/// 运行时配置管理模块
+pub mod runtime_config;
+
 // 导出核心类型和功能，方便外部使用
 
 /// API 核心类型，包括请求、响应和配置等
 pub use types::*;
+
+/// 内部管理 API 类型
+pub use internal_types::*;
+
+/// 运行时配置
+pub use runtime_config::{RuntimeConfig, RuntimeConfigManager};
 
 /// API 主要接口，包括 API 服务器和相关功能
 pub use on::*;

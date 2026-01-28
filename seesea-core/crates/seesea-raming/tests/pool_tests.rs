@@ -1,7 +1,7 @@
 //! 内存池模块单元测试
 
+use seesea_config::raming::MemoryConfig;
 use seesea_raming::pool::*;
-use seesea_raming::types::MemoryConfig;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -110,7 +110,7 @@ fn test_memory_pool_allocation() {
     let pool = Arc::new(MemoryPool::new("test_pool".to_string(), 512, 5, config));
 
     // 分配内存
-    let mut pooled_memory = pool.allocate_from_arc().unwrap();
+    let pooled_memory = pool.allocate_from_arc().unwrap();
     assert!(pooled_memory.is_valid());
     assert_eq!(pooled_memory.size(), Some(512));
 
@@ -219,8 +219,7 @@ fn test_memory_pool_cleanup() {
     std::thread::sleep(Duration::from_millis(100));
 
     // 执行清理
-    let cleaned = pool.cleanup_expired_blocks().unwrap();
-    assert!(cleaned >= 0);
+    let _cleaned = pool.cleanup_expired_blocks().unwrap();
 }
 
 /// 测试内存池管理器创建
@@ -310,7 +309,7 @@ fn test_memory_pool_statistics() {
     assert_eq!(initial_stats.used_blocks, 0);
 
     // 分配内存
-    let mut pooled_memory = pool.allocate_from_arc().unwrap();
+    let pooled_memory = pool.allocate_from_arc().unwrap();
     let after_allocation_stats = pool.stats();
 
     assert_eq!(after_allocation_stats.used_blocks, 1);
@@ -372,8 +371,7 @@ fn test_memory_pool_manager_cleanup() {
     drop(allocations);
 
     // 执行清理
-    let cleaned = manager.cleanup_all().unwrap();
-    assert!(cleaned >= 0);
+    let _cleaned = manager.cleanup_all().unwrap();
 }
 
 /// 测试池化内存生命周期管理

@@ -101,6 +101,9 @@ pub mod result_visualization;
 /// 向量化相关性评分模块，使用嵌入向量进行语义相关性计算
 pub mod vector_scoring;
 
+/// Python引擎桥接模块，通过raming系统与Python引擎通信
+pub mod python_engine_bridge;
+
 /// 主要接口定义，提供统一的搜索服务接口
 pub mod on;
 
@@ -112,13 +115,13 @@ pub use query::{ParsedQuery, QueryParser};
 /// 搜索请求、响应和配置的数据类型
 pub use types::{SearchConfig, SearchRequest, SearchResponse};
 
-/// 结果评分相关组件，包括 BM25 参数、评分权重和评分函数
-pub use scoring::{
-    BM25Params, ScoringWeights, get_engine_authority, score_and_sort_results, score_results,
-};
+/// 结果评分相关辅助函数，包括引擎权威度和精确匹配
+pub use scoring::{exact_match_bonus, exact_match_bonus_optimized, get_engine_authority};
 
 /// 结果标准化相关函数，包括文本清洗、结果标准化和去重
-pub use standardization::{clean_text, deduplicate_by_url, standardize_item, standardize_results};
+pub use standardization::{
+    clean_text, deduplicate_by_url, standardize_item, standardize_items, standardize_results,
+};
 
 /// 引擎配置相关类型，包括引擎列表配置和引擎模式
 pub use engine_config::{EngineListConfig, EngineMode};
@@ -129,10 +132,13 @@ pub use engine_manager::{EngineManager, EngineState};
 /// 主要搜索接口，提供统一的搜索服务
 pub use on::{SearchInterface, SearchStats, SearchStatsResult};
 
-/// 搜索结果可视化相关组件，用于将结果以二维方式排列
-pub use result_visualization::{ResultVisualizer, TwoDimensionalConfig, TwoDimensionalResult};
+/// 搜索结果时间排序相关组件
+pub use result_visualization::{TimeSortStats, TimeSortedResult, TimeSorter};
 
 /// 向量化评分相关组件，使用 SIMD 加速的语义相关性计算
 pub use vector_scoring::{
     VectorScorer, VectorScoringWeights, get_vector_cache, is_vector_scoring_available,
 };
+
+/// Python引擎桥接相关组件，用于与Python引擎通信
+pub use python_engine_bridge::{PythonEngineInfo, PythonEngineProxy, PythonEngineRegistry};

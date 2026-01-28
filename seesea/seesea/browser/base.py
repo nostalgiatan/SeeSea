@@ -330,13 +330,11 @@ class BaseBrowserEngine(ABC):
         # Apply stealth if enabled
         if self.config.stealth:
             # Basic stealth: hide webdriver property
-            await context.add_init_script(
-                """
+            await context.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', {
                     get: () => undefined
                 });
-            """
-            )
+            """)
 
         page = await context.new_page()
 

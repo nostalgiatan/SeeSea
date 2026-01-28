@@ -175,8 +175,11 @@ impl MemorySegment {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         if let Some(_mmap) = &self.mmap {
-            // 内存映射模式需要特殊处理
-            return Err(RamingError::InternalError("内存映射写入未实现".to_string()));
+            // 内存映射写入需要转换为可变映射
+            return Err(RamingError::InternalError(
+                "内存映射段为只读模式，无法直接写入。请使用可变映射或复制到内存段进行修改"
+                    .to_string(),
+            ));
         } else {
             let mut vec_data = self.data.write();
             if offset + data.len() > vec_data.len() {
@@ -236,12 +239,15 @@ impl MemorySegment {
     pub async fn sync(&self) -> RamingResult<()> {
         self.update_access_time();
 
-        if self.mmap.is_some() {
-            // 内存映射模式需要特殊处理
-            return Err(RamingError::InternalError("内存映射同步未实现".to_string()));
+        if let Some(_mmap) = &self.mmap {
+            // 对于 memmap2，内存映射会自动同步
+            // 如果需要强制同步，可以调用系统级的 sync
+            tracing::debug!("内存映射段已自动同步");
+            Ok(())
+        } else {
+            // 普通内存段无需同步
+            Ok(())
         }
-
-        Ok(())
     }
 
     /// 获取段信息

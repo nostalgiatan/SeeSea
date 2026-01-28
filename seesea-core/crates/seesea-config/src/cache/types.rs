@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2025 nostalgiatan
+// Copyright (C) 2025 nostalgiatan
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -55,9 +55,9 @@ pub struct CacheConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CacheBackend {
-    /// Sled 嵌入式数据库
+    /// RocksDB 嵌入式数据库
     #[default]
-    Sled,
+    RocksDB,
     /// Redis 缓存
     Redis,
     /// 内存缓存
@@ -334,7 +334,7 @@ pub enum CacheKeyStrategy {
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
-            backend: CacheBackend::Sled,
+            backend: CacheBackend::RocksDB,
             database_path: PathBuf::from("./cache/seesea.db"),
             ttl: 3600,                    // 1 hour
             max_size: 1024 * 1024 * 1024, // 1GB

@@ -18,7 +18,7 @@ use rand::Rng;
 // 指纹对抗模块
 //
 /// 提供浏览器指纹识别的对抗功能
-use seesea_config::FingerprintLevel;
+use crate::FingerprintLevel;
 
 /// 指纹保护器
 pub struct FingerprintProtector {

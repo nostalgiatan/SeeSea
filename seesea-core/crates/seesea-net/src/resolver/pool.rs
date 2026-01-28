@@ -76,10 +76,10 @@ impl DnsPool {
     pub async fn get(&self, hostname: &str) -> Option<Vec<IpAddr>> {
         let cache = self.cache.read().await;
 
-        if let Some(entry) = cache.get(hostname) {
-            if !entry.is_expired() {
-                return Some(entry.ips.clone());
-            }
+        if let Some(entry) = cache.get(hostname)
+            && !entry.is_expired()
+        {
+            return Some(entry.ips.clone());
         }
 
         None
@@ -149,7 +149,7 @@ pub struct DnsPoolStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // Removed self-reference: use seesea_net::Ipv4Addr;
+    use std::net::Ipv4Addr;
 
     #[tokio::test]
     async fn test_dns_pool_new() {

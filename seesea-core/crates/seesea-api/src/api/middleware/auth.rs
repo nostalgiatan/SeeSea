@@ -42,10 +42,19 @@ pub struct AuthConfig {
 
     /// API 密钥列表
     pub api_keys: Vec<String>,
+
+    /// Query 参数名称
+    pub query_param_name: String,
 }
 
 impl From<Config> for AuthConfig {
     fn from(config: Config) -> Self {
+        let query_param_name = if !config.api_key.query_param.is_empty() {
+            config.api_key.query_param.clone()
+        } else {
+            "magic_token".to_string()
+        };
+
         Self {
             enabled: config.enabled,
             jwt_secret: config.jwt.secret,
@@ -56,6 +65,7 @@ impl From<Config> for AuthConfig {
                 .iter()
                 .map(|k| k.key_hash.clone())
                 .collect(),
+            query_param_name,
         }
     }
 }
@@ -70,6 +80,7 @@ impl Default for AuthConfig {
             jwt_secret: format!("jwt_default_secret_{}", Uuid::new_v4()),
             jwt_expiration: 3600, // 1 hour
             api_keys: Vec::new(),
+            query_param_name: "magic_token".to_string(),
         }
     }
 }
@@ -176,6 +187,50 @@ pub async fn jwt_auth_middleware(
         return next.run(req).await;
     }
 
+    // 首先检查 query 参数中的 API key
+    let uri = req.uri();
+    let query_params: Vec<(String, String)> = uri
+        .query()
+        .map(|q| {
+            q.split('&')
+                .filter_map(|pair| {
+                    let mut parts = pair.splitn(2, '=');
+                    Some((
+                        parts.next()?.to_string(),
+                        parts.next().unwrap_or("").to_string(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // 从配置中获取 query 参数名（默认为 "magic_token"）
+    let query_param_name = &state.config.query_param_name;
+
+    // 查找 API key 参数
+    let api_key = query_params
+        .iter()
+        .find(|(k, _)| k == query_param_name)
+        .map(|(_, v)| v.clone());
+
+    if let Some(key) = api_key {
+        // 验证 API key
+        if state.config.api_keys.contains(&key) {
+            // 认证成功，继续处理请求
+            return next.run(req).await;
+        } else {
+            return (
+                StatusCode::UNAUTHORIZED,
+                serde_json::json!({
+                    "code": "AUTH_FAILED",
+                    "message": "无效的 API 密钥"
+                })
+                .to_string(),
+            )
+                .into_response();
+        }
+    }
+
     // 检查Authorization头
     let auth_header = req
         .headers()
@@ -202,12 +257,12 @@ pub async fn jwt_auth_middleware(
         }
     }
 
-    // 没有Authorization头
+    // 没有Authorization头或API key
     (
         StatusCode::UNAUTHORIZED,
         serde_json::json!({
             "code": "AUTH_REQUIRED",
-            "message": "需要认证"
+            "message": format!("需要认证（提供 {} 参数或 Authorization 头）", query_param_name)
         })
         .to_string(),
     )

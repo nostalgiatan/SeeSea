@@ -17,23 +17,35 @@
 """
 SeeSea 命令行接口
 
-提供现代化的命令行工具来使用 SeeSea 搜索引擎和RSS功能
+提供服务器管理功能
 """
 
 import click
-import json as json_module
 import sys
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.text import Text
 from rich import box
 
-from .search import SearchClient
-from .rss import RssClient
-from .api import ApiServer
-from .utils import format_results
+try:
+    from ..sdk.server import ApiServerManager
+    from ..sdk.stock import StockScheduler
+except ImportError:
+    from seesea.sdk.server import ApiServerManager
+    from seesea.sdk.stock import StockScheduler
+
+# 检查 MCP 依赖
+try:
+    from ..mcp import create_mcp_server
+
+    _MCP_AVAILABLE = True
+except ImportError:
+    try:
+        from seesea.mcp import create_mcp_server
+
+        _MCP_AVAILABLE = True
+    except ImportError:
+        _MCP_AVAILABLE = False
 
 # 初始化 Rich Console
 console = Console()
@@ -42,477 +54,13 @@ console = Console()
 @click.group(invoke_without_command=True, help="SeeSea - 隐私保护型元搜索引擎")
 @click.pass_context
 def cli(ctx):
-    """SeeSea - 隐私保护型元搜索引擎"""
+    """SeeSea - 隐私保护型元搜索引擎服务器管理"""
     if ctx.invoked_subcommand is None:
-        # 默认启动交互式模式
-        interactive()
-
-
-@cli.command()
-@click.argument("query")
-@click.option("-p", "--pro", is_flag=True, help="使用 Pro API 进行搜索")
-@click.option("--page", default=1, help="页码 (默认: 1)")
-@click.option("-n", "--page-size", default=10, help="每页结果数 (默认: 10)")
-@click.option("-l", "--limit", default=10, help="显示结果数 (默认: 10)")
-@click.option("-j", "--json", is_flag=True, help="JSON 格式输出")
-@click.option("-v", "--verbose", is_flag=True, help="详细输出")
-@click.option("-e", "--engines", help="指定搜索引擎列表，用逗号分隔")
-@click.option(
-    "-c", "--count", type=int, help="使用的引擎数量（按延迟排序，选择低延迟引擎）"
-)
-def search(query, pro, page, page_size, limit, json, verbose, engines, count):
-    """执行搜索"""
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task(f"搜索: {query}", total=None)
-
-        try:
-            if pro:
-                # Pro 功能需要显式启用才会加载
-                try:
-                    # 直接调用本地的 Pro handlers 函数
-                    from seesea.handlers.pro import (
-                        handle_pro_search,
-                        initialize_pro_handlers,
-                    )
-                    import asyncio
-
-                    from seesea_core import init_config
-
-                    init_config("development")
-
-                    asyncio.run(initialize_pro_handlers())
-
-                    req = {
-                        "path": "/search",
-                        "method": "GET",
-                        "query_params": {
-                            "q": query,
-                            "page": page,
-                            "page_size": page_size,
-                        },
-                        "body": {},
-                    }
-
-                    response = asyncio.run(handle_pro_search(req))
-
-                    import json
-
-                    results_dict = json.loads(response.get("body", "{}"))
-                except ImportError as e:
-                    console.print(f"[red]❌ Pro features not available: {e}[/red]")
-                    console.print("[yellow]Install Pro dependencies:[/yellow]")
-                    console.print("  pip install llama-cpp-python")
-                    console.print("[yellow]Or use pre-built package:[/yellow]")
-                    console.print(
-                        "  pip install llama-cpp-python --index-url https://abetlen.github.io/llama-cpp-python/whl/cpu"
-                    )
-                    return
-
-                # 模拟 SearchResponse 对象结构
-                class ProSearchResponse:
-                    def __init__(self, data):
-                        self.query = data.get("query")
-                        self.results = [
-                            type(
-                                "obj",
-                                (object,),
-                                {
-                                    "title": item.get("title"),
-                                    "url": item.get("url"),
-                                    "content": item.get("description"),
-                                    "score": item.get("score", 0),
-                                },
-                            )
-                            for item in data.get("results", [])
-                        ]
-                        self.total_count = data.get("total_count", 0)
-                        self.cached = data.get("cached", False)
-                        self.query_time_ms = data.get("query_time_ms", 0)
-                        self.engines_used = data.get("engines_used", [])
-
-                results = ProSearchResponse(results_dict)
-                progress.update(task, description="Pro 搜索完成")
-            else:
-                # 使用普通搜索
-                client = SearchClient()
-                # Parse engines parameter
-                engines_list = None
-                if engines:
-                    engines_list = [e.strip() for e in engines.split(",") if e.strip()]
-                elif count:
-                    # If count is specified but no engines, get all engines and take first N
-                    all_engines = client.list_engines()
-                    engines_list = (
-                        all_engines[:count] if count < len(all_engines) else None
-                    )
-
-                results = client.search(
-                    query=query, page=page, page_size=page_size, engines=engines_list
-                )
-                progress.update(task, description="搜索完成")
-
-        except Exception as e:
-            progress.stop()
-            console.print(f"[red]搜索失败: {e}[/red]")
-            sys.exit(1)
-
-    if json:
-        # Convert SearchResponse to dict for JSON serialization
-        results_dict = {
-            "query": results.query,
-            "results": [
-                {
-                    "title": item.title,
-                    "url": item.url,
-                    "snippet": item.content,
-                    "score": getattr(item, "score", 0),
-                }
-                for item in results.results
-            ],
-            "total_count": results.total_count,
-            "cached": results.cached,
-            "query_time_ms": results.query_time_ms,
-            "engines_used": results.engines_used,
-        }
-        console.print(json_module.dumps(results_dict, ensure_ascii=False, indent=2))
-    else:
-        # 显示搜索概要
-        summary_table = Table(show_header=False, box=box.ROUNDED)
-        summary_table.add_column("属性", style="bold blue")
-        summary_table.add_column("值")
-        summary_table.add_row("总结果", str(results.total_count))
-        summary_table.add_row("耗时", f"{results.query_time_ms}ms")
-        summary_table.add_row("引擎", ", ".join(results.engines_used))
-        summary_table.add_row("缓存", "命中" if results.cached else "新查询")
-
-        console.print(Panel(summary_table, title="搜索概要", border_style="blue"))
-
-        # 显示结果列表
-        formatted = format_results(results.results, max_description_length=150)
-        console.print(f"\n结果列表 (显示前{min(limit, len(formatted))}个):\n")
-
-        for i, item in enumerate(formatted[:limit], 1):
-            content = Text()
-            content.append(f"{i}. ", style="cyan")
-            content.append(item["title"], style="bold")
-
-            if item["description"]:
-                content.append(f"\n   {item['description']}", style="dim")
-
-            if verbose:
-                content.append(f"\n   🔗 {item['url']}", style="blue")
-                content.append(f"\n   ⭐ 评分: {item['score']:.3f}", style="yellow")
-
-            console.print(Panel(content, box=box.SIMPLE, border_style="green"))
-            console.print()
-
-
-@cli.command()
-@click.option("-j", "--json", is_flag=True, help="JSON 格式输出")
-def engines(json):
-    """列出所有可用的搜索引擎"""
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task("获取引擎列表...", total=None)
-
-        try:
-            client = SearchClient()
-            engine_list = client.list_engines()
-            progress.update(task, description="获取完成")
-
-        except Exception as e:
-            progress.stop()
-            console.print(f"[red]获取引擎列表失败: {e}[/red]")
-            sys.exit(1)
-
-    if json:
-        console.print(
-            json_module.dumps({"engines": engine_list}, ensure_ascii=False, indent=2)
-        )
-    else:
-        if engine_list:
-            table = Table(title="可用搜索引擎", box=box.ROUNDED)
-            table.add_column("引擎名称", style="cyan")
-            table.add_column("类型", style="green")
-            table.add_column("描述", style="yellow")
-
-            # 添加引擎信息
-            engine_info = {
-                "google": ["Google", "Web", "全球最大的搜索引擎"],
-                "bing": ["Bing", "Web", "微软搜索引擎"],
-                "duckduckgo": ["DuckDuckGo", "Web", "隐私保护搜索引擎"],
-                "xinhua": ["新华网", "News", "中国官方新闻媒体"],
-                "baidu": ["百度", "Web", "中文搜索引擎"],
-            }
-
-            for engine in sorted(engine_list):
-                info = engine_info.get(engine, [engine.title(), "Unknown", "搜索引擎"])
-                table.add_row(info[0], info[1], info[2])
-
-            console.print(table)
-
-            # 使用提示
-            usage_panel = Panel(
-                "[green]使用方法:[/green]\n"
-                'seesea search "关键词" -e google,bing  # 指定多个引擎\n'
-                'seesea search "关键词" -e xinhua         # 只用新华网搜索',
-                title="引擎选择提示",
-                border_style="blue",
-            )
-            console.print(usage_panel)
-        else:
-            console.print("[yellow]没有找到可用引擎[/yellow]")
-
-
-@click.group()
-def rss():
-    """RSS 订阅功能"""
-    pass
-
-
-@rss.command("list")
-def rss_list():
-    """列出可用RSS模板"""
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task("获取RSS模板列表...", total=None)
-
-        try:
-            client = RssClient()
-            templates = client.list_templates()
-            progress.update(task, description="获取完成")
-
-        except Exception as e:
-            progress.stop()
-            console.print(f"[red]获取模板失败: {e}[/red]")
-            sys.exit(1)
-
-    if templates:
-        table = Table(title="可用RSS模板", box=box.ROUNDED)
-        table.add_column("序号", style="cyan", width=6)
-        table.add_column("模板名称", style="bold")
-        table.add_column("描述", style="dim")
-
-        for i, template in enumerate(templates, 1):
-            descriptions = {
-                "xinhua": "新华网官方RSS订阅源",
-                "people": "人民网官方RSS订阅源",
-            }
-            desc = descriptions.get(template, "RSS订阅源")
-            table.add_row(str(i), template, desc)
-
-        console.print(table)
-    else:
-        console.print("[yellow]没有找到可用模板[/yellow]")
-
-
-@rss.command("add")
-@click.argument("template")
-@click.option("-c", "--categories", help="分类列表，用逗号分隔")
-def rss_add(template, categories):
-    """从模板添加RSS"""
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task(f"添加RSS模板: {template}", total=None)
-
-        try:
-            client = RssClient()
-            categories_list = categories.split(",") if categories else None
-            count = client.add_from_template(template, categories_list)
-            progress.update(task, description="添加完成")
-
-        except Exception as e:
-            progress.stop()
-            console.print(f"[red]添加RSS失败: {e}[/red]")
-            sys.exit(1)
-
-    # 显示成功信息
-    success_panel = Panel(
-        f"[green]✅ 成功添加 {count} 个RSS feeds[/green]\n"
-        f"模板: {template}\n"
-        f"分类: {categories or '全部'}",
-        title="添加成功",
-        border_style="green",
-    )
-    console.print(success_panel)
-
-
-@rss.command("fetch")
-@click.argument("url")
-@click.option("-l", "--limit", default=10, help="显示项目数 (默认: 10)")
-@click.option("-v", "--verbose", is_flag=True, help="详细输出")
-def rss_fetch(url, limit, verbose):
-    """获取RSS feed"""
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task("获取RSS内容...", total=None)
-
-        try:
-            client = RssClient()
-            feed = client.fetch_feed(url, max_items=limit)
-            progress.update(task, description="获取完成")
-
-        except Exception as e:
-            progress.stop()
-            console.print(f"[red]获取RSS失败: {e}[/red]")
-            sys.exit(1)
-
-    # 显示Feed信息
-    feed_info = Table(show_header=False, box=box.ROUNDED)
-    feed_info.add_column("属性", style="bold blue")
-    feed_info.add_column("值")
-    feed_info.add_row("标题", feed["meta"]["title"])
-    feed_info.add_row("链接", feed["meta"]["link"])
-    if feed["meta"].get("description"):
-        desc = (
-            feed["meta"]["description"][:80] + "..."
-            if len(feed["meta"]["description"]) > 80
-            else feed["meta"]["description"]
-        )
-        feed_info.add_row("描述", desc)
-    feed_info.add_row("项目数", str(len(feed["items"])))
-
-    console.print(Panel(feed_info, title="RSS Feed 信息", border_style="blue"))
-
-    # 显示项目列表
-    console.print(f"\nRSS 项目 (显示前{min(limit, len(feed['items']))}个):\n")
-
-    for i, item in enumerate(feed["items"][:limit], 1):
-        content = Text()
-        content.append(f"{i}. ", style="cyan")
-        content.append(item["title"], style="bold")
-        content.append(f"\n   🔗 {item['link']}", style="blue")
-
-        if verbose and item.get("description"):
-            desc = (
-                item["description"][:100] + "..."
-                if len(item["description"]) > 100
-                else item["description"]
-            )
-            content.append(f"\n   📄 {desc}", style="dim")
-
-        if verbose and item.get("pub_date"):
-            content.append(f"\n   📅 {item['pub_date']}", style="yellow")
-
-        console.print(Panel(content, box=box.SIMPLE, border_style="green"))
-        console.print()
-
-
-@rss.command("ranking")
-@click.argument("keywords")
-@click.option("-u", "--urls", help="RSS URL列表，用逗号分隔")
-@click.option("-l", "--limit", default=20, help="显示项目数 (默认: 20)")
-@click.option("-s", "--min-score", default=3.0, help="最小评分 (默认: 3.0)")
-@click.option("-v", "--verbose", is_flag=True, help="详细输出")
-def rss_ranking(keywords, urls, limit, min_score, verbose):
-    """创建RSS榜单"""
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task("创建RSS榜单...", total=None)
-
-        try:
-            client = RssClient()
-
-            # 解析关键词和权重
-            keyword_list = []
-            for kw_pair in keywords.split(","):
-                if ":" in kw_pair:
-                    keyword, weight = kw_pair.split(":", 1)
-                    try:
-                        weight = float(weight.strip())
-                    except ValueError:
-                        weight = 5.0
-                    keyword_list.append((keyword.strip(), weight))
-                else:
-                    keyword_list.append((kw_pair.strip(), 5.0))
-
-            # 解析RSS URLs
-            feed_urls = urls.split(",") if urls else []
-
-            ranking = client.create_ranking(
-                feed_urls=feed_urls,
-                keywords=keyword_list,
-                min_score=min_score,
-                max_results=limit,
-            )
-
-            progress.update(task, description="榜单创建完成")
-
-        except Exception as e:
-            progress.stop()
-            console.print(f"[red]创建榜单失败: {e}[/red]")
-            sys.exit(1)
-
-    # 显示榜单概要
-    ranking_info = Table(show_header=False, box=box.ROUNDED)
-    ranking_info.add_column("属性", style="bold yellow")
-    ranking_info.add_column("值")
-    ranking_info.add_row("总项目数", str(ranking.get("total_items", 0)))
-    ranking_info.add_row("评分阈值", str(min_score))
-    ranking_info.add_row("关键词", ", ".join([kw for kw, w in keyword_list]))
-
-    console.print(Panel(ranking_info, title="RSS 榜单概要", border_style="yellow"))
-
-    # 显示榜单项目
-    items = ranking.get("items", [])
-    if items:
-        console.print(f"\n热门文章榜单 (显示前{min(limit, len(items))}个):\n")
-
-        ranking_table = Table(box=box.ROUNDED)
-        ranking_table.add_column("排名", style="bold cyan", width=6)
-        ranking_table.add_column("评分", style="bold yellow", width=8)
-        ranking_table.add_column("标题", style="bold")
-        if verbose:
-            ranking_table.add_column("链接", style="blue")
-            ranking_table.add_column("匹配关键词", style="green")
-
-        for i, item in enumerate(items[:limit], 1):
-            score = item.get("score", 0)
-            title = (
-                item.get("title", "N/A")[:50] + "..."
-                if len(item.get("title", "")) > 50
-                else item.get("title", "N/A")
-            )
-
-            row = [str(i), f"{score:.1f}", title]
-            if verbose:
-                row.extend(
-                    [
-                        item.get("link", "N/A")[:40] + "...",
-                        ", ".join(item.get("matched_keywords", [])),
-                    ]
-                )
-
-            ranking_table.add_row(*row)
-
-        console.print(ranking_table)
-    else:
-        console.print("[yellow]没有找到匹配的项目[/yellow]")
+        console.print("[yellow]使用 'seesea <command>' 命令：[/yellow]")
+        console.print("  [cyan]server[/cyan]         - 启动 API 服务器")
+        console.print("  [cyan]stock-scheduler[/cyan] - 启动股票数据调度器")
+        console.print("  [cyan]mcp[/cyan]            - MCP 服务器管理")
+        console.print("\n运行 'seesea <command> --help' 查看详细选项")
 
 
 @cli.command()
@@ -521,23 +69,11 @@ def rss_ranking(keywords, urls, limit, min_score, verbose):
     "--port", type=int, default=None, help="监听端口 (默认: 配置文件中的端口)"
 )
 @click.option("-c", "--config", default=None, help="配置文件路径")
-@click.option("--pro", is_flag=True, help="启用 Pro 功能 (LLM、向量搜索等)")
-def server(host, port, config, pro):
+def server(host, port, config):
     """启动 API 服务器"""
     try:
-        # 如果提供了配置文件，传递给ApiServer，不传递host和port
-        if config:
-            # 使用配置文件时，不传递host和port，让ApiServer自己从配置文件中获取
-            api_server = ApiServer(config_file=config, enable_pro=pro)
-        else:
-            # 没有配置文件时，使用默认值
-            default_host = host if host is not None else "127.0.0.1"
-            default_port = port if port is not None else 8080
-            api_server = ApiServer(host=default_host, port=default_port, enable_pro=pro)
-
-        # 获取实际使用的地址
-        actual_address = api_server.address
-        actual_host, actual_port = actual_address.split(":")
+        # 创建服务器管理器，传入配置参数
+        server_manager = ApiServerManager(host=host, port=port, config_file=config)
 
         # 显示启动前的配置信息
         server_info = Table(box=box.ROUNDED, show_header=False)
@@ -545,18 +81,11 @@ def server(host, port, config, pro):
         server_info.add_column("值", style="white")
 
         server_info.add_row("📡 服务", "SeeSea API 服务器")
+
+        # 获取实际配置
+        actual_host = server_manager.host
+        actual_port = server_manager.port
         server_info.add_row("🌐 监听地址", f"{actual_host}:{actual_port}")
-
-        # Pro 功能状态显示
-        if pro:
-            pro_status = "[bold green]✅ 已启用[/bold green]"
-            pro_features = "LLM 分析、向量搜索、语义缓存"
-        else:
-            pro_status = "[bold yellow]⚠️  未启用[/bold yellow]"
-            pro_features = "使用 --pro 参数启用"
-
-        server_info.add_row("⚡ Pro 功能", pro_status)
-        server_info.add_row("   功能详情", f"[dim]{pro_features}[/dim]")
 
         if config:
             server_info.add_row("⚙️  配置文件", config)
@@ -570,20 +99,11 @@ def server(host, port, config, pro):
             )
         )
 
-        if pro:
-            console.print(
-                "  [dim]提示: Pro 功能需要额外的依赖和模型,首次使用时会自动下载[/dim]\n"
-            )
-        else:
-            console.print(
-                "  [dim]提示: 使用 'seesea server --pro' 启用 LLM 和向量搜索功能[/dim]\n"
-            )
-
         console.print(
             "[bold green]⏳ 服务器启动中...[/bold green] [dim]按 Ctrl+C 停止[/dim]\n"
         )
 
-        # 启动成功后显示详细信息
+        # 显示API端点信息
         endpoint_table = Table(
             box=box.SIMPLE, show_header=True, header_style="bold magenta"
         )
@@ -601,18 +121,6 @@ def server(host, port, config, pro):
             f"http://{actual_host}:{actual_port}/api/stats", "GET", "统计信息"
         )
 
-        if pro:
-            endpoint_table.add_row(
-                f"http://{actual_host}:{actual_port}/api/semantic-search",
-                "POST",
-                "[green]语义搜索 (Pro)[/green]",
-            )
-            endpoint_table.add_row(
-                f"http://{actual_host}:{actual_port}/api/analyze",
-                "POST",
-                "[green]LLM 分析 (Pro)[/green]",
-            )
-
         success_info = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
         success_info.add_column("", style="white", width=80)
         success_info.add_row(endpoint_table)
@@ -626,17 +134,23 @@ def server(host, port, config, pro):
             )
         )
 
-        if pro:
-            console.print("\n  [bold green]💡 Pro 功能已启用[/bold green]")
-            console.print("  [dim]• LLM 模型会在首次调用时自动加载[/dim]")
-            console.print("  [dim]• 向量数据库已就绪,支持语义搜索[/dim]\n")
-        else:
-            console.print("\n  [bold yellow]💡 当前运行在标准模式[/bold yellow]")
-            console.print("  [dim]• 支持 12+ 搜索引擎聚合[/dim]")
-            console.print("  [dim]• 需要 LLM 功能? 使用 'seesea server --pro'[/dim]\n")
+        console.print("\n  [bold green]💡 SeeSea API服务器已就绪[/bold green]")
+        console.print("  [dim]• 支持 12+ 搜索引擎聚合[/dim]")
+        console.print("  [dim]• 完整的REST API接口[/dim]\n")
 
         # 启动服务器
-        api_server.start()
+        success = server_manager.start(blocking=True)
+
+        if not success:
+            console.print(
+                Panel(
+                    "[red]服务器启动失败[/red]",
+                    title="[bold red]❌ 启动失败[/bold red]",
+                    border_style="red",
+                )
+            )
+            sys.exit(1)
+
     except KeyboardInterrupt:
         console.print("\n[bold yellow]⏹️  服务器已停止[/bold yellow]")
     except Exception as e:
@@ -651,478 +165,409 @@ def server(host, port, config, pro):
 
 
 @cli.command()
-@click.option("-j", "--json", is_flag=True, help="JSON 格式输出")
-def stats(json):
-    """显示统计信息"""
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task("获取统计信息...", total=None)
+@click.option("-c", "--config", default=None, help="调度器配置文件路径")
+def stock_scheduler(config):
+    """启动股票数据调度器"""
+    try:
+        # 显示启动前的配置信息
+        scheduler_info = Table(box=box.ROUNDED, show_header=False)
+        scheduler_info.add_column("属性", style="cyan bold", width=20)
+        scheduler_info.add_column("值", style="white")
 
-        try:
-            client = SearchClient()
-            stats_data = client.get_stats()
-            progress.update(task, description="获取完成")
+        scheduler_info.add_row("📈 服务", "SeeSea 股票数据调度器")
 
-        except Exception as e:
-            progress.stop()
-            console.print(f"[red]获取统计信息失败: {e}[/red]")
+        if config:
+            scheduler_info.add_row("⚙️  配置文件", config)
+        else:
+            scheduler_info.add_row("⚙️  配置文件", "使用默认配置")
+
+        console.print(
+            Panel(
+                scheduler_info,
+                title="[bold white]📈 调度器配置[/bold white]",
+                border_style="cyan",
+                padding=(1, 2),
+            )
+        )
+
+        console.print(
+            "[bold green]⏳ 调度器启动中...[/bold green] [dim]按 Ctrl+C 停止[/dim]\n"
+        )
+
+        # 显示调度器信息
+        task_table = Table(
+            box=box.SIMPLE, show_header=True, header_style="bold magenta"
+        )
+        task_table.add_column("功能", style="cyan", width=30)
+        task_table.add_column("说明", style="white")
+
+        task_table.add_row("实时行情", "A股/B股/港股/美股实时行情")
+        task_table.add_row("历史数据", "K线数据自动更新")
+        task_table.add_row("板块数据", "行业/概念板块数据")
+        task_table.add_row("指数数据", "市场指数实时更新")
+
+        success_info = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
+        success_info.add_column("", style="white", width=80)
+        success_info.add_row(task_table)
+
+        console.print(
+            Panel(
+                success_info,
+                title="[bold green]✅ 调度器已启动[/bold green]",
+                border_style="green",
+                padding=(1, 2),
+            )
+        )
+
+        console.print("\n  [bold green]💡 股票数据调度器已就绪[/bold green]")
+        console.print("  [dim]• 自动更新股票数据[/dim]")
+        console.print("  [dim]• 支持多种数据源[/dim]\n")
+
+        # 启动调度器
+        result = StockScheduler.start()
+
+        if not result.success:
+            console.print(
+                Panel(
+                    f"[red]调度器启动失败: {result.error.message}[/red]",
+                    title="[bold red]❌ 启动失败[/bold red]",
+                    border_style="red",
+                )
+            )
             sys.exit(1)
 
-    if json:
-        console.print(json_module.dumps(stats_data, ensure_ascii=False, indent=2))
-    else:
-        stats_table = Table(title="SeeSea 统计信息", box=box.ROUNDED)
-        stats_table.add_column("统计项", style="bold blue")
-        stats_table.add_column("数值", style="bold green")
+        console.print("[dim]\n调度器正在后台运行，按 Ctrl+C 停止...[/dim]")
 
-        stats_table.add_row("总搜索次数", str(stats_data.total_searches))
-        stats_table.add_row("缓存命中", str(stats_data.cache_hits))
-        stats_table.add_row("缓存未命中", str(stats_data.cache_misses))
+        # 保持程序运行，等待 Ctrl+C
+        import signal
+        import time as _time
 
-        if stats_data.total_searches > 0:
-            total_cache = stats_data.cache_hits + stats_data.cache_misses
-            if total_cache > 0:
-                hit_rate = stats_data.cache_hits / total_cache * 100
-                stats_table.add_row("缓存命中率", f"{hit_rate:.1f}%")
+        def signal_handler(sig, frame):
+            console.print("\n[yellow]⏹️  正在停止调度器...[/yellow]")
+            stop_result = StockScheduler.stop()
+            if not stop_result.success:
+                console.print(f"[red]停止调度器失败: {stop_result.error.message}[/red]")
+            else:
+                console.print("[bold green]✅ 调度器已停止[/bold green]")
+            sys.exit(0)
 
-        stats_table.add_row("引擎失败", str(stats_data.engine_failures))
-        stats_table.add_row("超时次数", str(stats_data.timeouts))
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
 
-        console.print(stats_table)
-
-
-@cli.command()
-@click.option(
-    "-c", "--count", type=int, help="使用的引擎数量（按延迟排序，选择低延迟引擎）"
-)
-def interactive(count):
-    """交互式搜索模式"""
-    console.print("SeeSea 交互式搜索")
-    console.print("━" * 50)
-    console.print("输入查询来搜索，输入 'quit' 或 'exit' 退出")
-    console.print("输入 'engines' 列出所有引擎")
-    console.print("输入 'stats' 查看统计信息")
-    console.print("输入 'count N' 设置使用的引擎数量")
-    console.print("━" * 50)
-
-    engine_count = count
-    if engine_count:
-        console.print(f"[green]当前引擎数量: {engine_count}[/green]")
-
-    client = SearchClient()
-
-    while True:
+        # 主循环，保持进程运行
         try:
-            from rich.prompt import Prompt
-
-            prompt = "🔍 > "
-            if engine_count:
-                prompt = f"🔍 [green]引擎数量:{engine_count}[/green] > "
-
-            query = Prompt.ask(prompt, console=console).strip()
-
-            if not query:
-                continue
-
-            if query.lower() in ["quit", "exit"]:
-                console.print("[green]再见！[/green]")
-                break
-
-            if query.lower() == "engines":
-                engines({})
-                continue
-
-            if query.lower() == "stats":
-                stats({})
-                continue
-
-            if query.lower().startswith("count"):
-                parts = query.split()
-                if len(parts) == 2 and parts[1].isdigit():
-                    engine_count = int(parts[1])
-                    if engine_count <= 0:
-                        engine_count = None
-                        console.print("[green]已切换到全引擎模式[/green]")
-                    else:
-                        console.print(f"[green]已设置引擎数量为 {engine_count}[/green]")
-                else:
-                    console.print(
-                        "[yellow]用法: count N (N为引擎数量，0表示全部)[/yellow]"
-                    )
-                continue
-
-            # 执行搜索
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console,
-                transient=True,
-            ) as progress:
-                task = progress.add_task(f"搜索: {query}", total=None)
-
-                try:
-                    # 根据引擎数量获取引擎列表
-                    engines_list = None
-                    if engine_count:
-                        all_engines = client.list_engines()
-                        engines_list = (
-                            all_engines[:engine_count]
-                            if engine_count < len(all_engines)
-                            else None
-                        )
-
-                    results = client.search(
-                        query=query, page=1, page_size=10, engines=engines_list
-                    )
-                    progress.update(task, description="搜索完成")
-
-                except Exception as e:
-                    progress.stop()
-                    console.print(f"[red]搜索失败: {e}[/red]")
-                    continue
-
-            # 显示结果
-            console.print("\n搜索结果:")
-            console.print(
-                f"总结果: {results.total_count}, 耗时: {results.query_time_ms}ms"
-            )
-            console.print(f"引擎: {', '.join(results.engines_used)}")
-
-            formatted = format_results(results.results, max_description_length=120)
-            console.print("\n结果列表:\n")
-
-            for i, item in enumerate(formatted[:10], 1):
-                content = Text()
-                content.append(f"{i}. ", style="cyan")
-                content.append(item["title"], style="bold")
-
-                if item["description"]:
-                    desc = (
-                        item["description"][:120] + "..."
-                        if len(item["description"]) > 120
-                        else item["description"]
-                    )
-                    content.append(f"\n   {desc}", style="dim")
-
-                console.print(Panel(content, box=box.SIMPLE, border_style="green"))
-                console.print()
-
-        except KeyboardInterrupt:
-            console.print("\n[green]再见！[/green]")
-            break
-        except EOFError:
-            console.print("\n[green]再见！[/green]")
-            break
+            while True:
+                _time.sleep(1)
         except Exception as e:
-            console.print(f"[red]错误: {e}[/red]")
+            console.print(f"\n[red]错误: {e}[/red]")
+            sys.exit(1)
 
-
-# 添加RSS命令组
-cli.add_command(rss)
-
-
-# stock 相关的代码
-@cli.command()
-@click.argument("code", required=False)
-@click.option("--realtime", "-r", is_flag=True, help="获取实时行情数据")
-@click.option("--history", "-h", is_flag=True, help="获取历史K线数据")
-@click.option("--technical", "-t", is_flag=True, help="显示技术指标")
-@click.option("--financial", "-f", is_flag=True, help="显示财务指标")
-@click.option("--market", "-m", is_flag=True, help="显示市场概况")
-@click.option(
-    "--period",
-    default="daily",
-    type=click.Choice(["daily", "weekly", "monthly"]),
-    help="K线周期",
-)
-@click.option("--start-date", help="开始日期 (YYYY-MM-DD)")
-@click.option("--end-date", help="结束日期 (YYYY-MM-DD)")
-def stock(
-    code, realtime, history, technical, financial, market, period, start_date, end_date
-):
-    """股票数据查询工具"""
-    import sys
-    import asyncio
-
-    # 使用seesea包内的股票模块
-    try:
-        from seesea.stock import get_stock_service, initialize_stock_service
-        from seesea.stock.models import PeriodType
-    except ImportError:
-        console.print("[red]❌ 无法导入股票数据模块，请检查依赖安装[/red]")
-        console.print("提示：运行 pip install akshare 安装股票数据依赖")
+    except Exception as e:
+        console.print(
+            Panel(
+                f"[red]错误: {e}[/red]",
+                title="[bold red]❌ 调度器启动失败[/bold red]",
+                border_style="red",
+            )
+        )
         sys.exit(1)
 
-    async def run_stock_command():
-        # 确保股票服务已初始化
-        stock_service = get_stock_service()
-        if stock_service is None:
-            console.print("[yellow]🔄 正在初始化股票服务...[/yellow]")
-            if not initialize_stock_service():
-                console.print("[red]❌ 股票服务初始化失败[/red]")
-                sys.exit(1)
-            stock_service = get_stock_service()
-            if stock_service is None:
-                console.print("[red]❌ 无法获取股票服务实例[/red]")
-                sys.exit(1)
-        
-        # 检查预加载是否完成
-        if not stock_service.is_preload_complete():
-            console.print("[yellow]⏳ 股票数据预加载尚未完成...[/yellow]")
-            
-            # 显示预加载状态详情
-            preload_status = stock_service.get_preload_status()
-            if preload_status:
-                console.print("[dim]当前预加载状态：[/dim]")
-                for key, status in preload_status.items():
-                    status_icon = "✅" if status else "❌"
-                    status_color = "green" if status else "red"
-                    console.print(f"  {status_icon} [dim]{key}: [{status_color}]{'完成' if status else '失败'}[/{status_color}][/dim]")
-            
-            console.print("[dim]提示：运行 'seesea stock-refresh' 强制刷新缓存[/dim]")
-            return
 
-        # 显示市场概况
-        if market or not code:
-            console.print("[bold blue]📊 市场概况[/bold blue]")
+@cli.group(help="MCP (Model Context Protocol) 服务器管理")
+@click.pass_context
+def mcp(ctx):
+    """MCP 服务器管理"""
+    pass
+
+
+@mcp.command()
+@click.option("--name", default="seesea", help="服务器名称")
+@click.option("--port", type=int, default=8000, help="服务器端口（SSE模式）")
+@click.option("--host", default="127.0.0.1", help="服务器地址（SSE模式）")
+@click.option(
+    "--stdio", is_flag=True, help="使用 stdio 模式运行（MCP 客户端标准输入输出）"
+)
+def start(name, port, host, stdio):
+    """启动 MCP 服务器"""
+    if not _MCP_AVAILABLE:
+        console.print(
+            Panel(
+                "[red]MCP 特性未安装！[/red]\n\n"
+                "[yellow]请运行以下命令安装 MCP 特性：[/yellow]\n"
+                "[cyan]pip install seesea[mcp][/cyan]\n\n"
+                "[dim]或者：[/dim]\n"
+                "[cyan]pip install fastmcp[/cyan]",
+                title="[bold red]❌ 依赖缺失[/bold red]",
+                border_style="red",
+                padding=(1, 2),
+            )
+        )
+        sys.exit(1)
+
+    try:
+        # 创建 MCP 服务器
+        mcp_server = create_mcp_server(name=name)
+
+        if stdio:
+            # stdio 模式 - 用于 MCP 客户端
+            # 将欢迎消息输出到 stderr，避免干扰 MCP 协议的 JSON-RPC 通信
+            import sys as _sys
+
+            _sys.stderr.write("✅ SeeSea MCP 服务器已启动 (stdio模式)\n")
+            _sys.stderr.write(f"服务器名称: {name}\n")
+            _sys.stderr.write("正在等待 MCP 客户端连接...\n")
+            _sys.stderr.flush()
+
+            # stdio 模式运行（不输出到 stdout）
+            mcp_server.run(transport="stdio")
+
+        else:
+            # SSE 模式 - HTTP 服务器
+            # 显示启动信息
+            server_info = Table(box=box.ROUNDED, show_header=False)
+            server_info.add_column("属性", style="cyan bold", width=20)
+            server_info.add_column("值", style="white")
+
+            server_info.add_row("🤖 服务", "SeeSea MCP 服务器")
+            server_info.add_row("🌐 监听地址", f"{host}:{port}")
+            server_info.add_row("📋 服务器名称", name)
+
+            console.print(
+                Panel(
+                    server_info,
+                    title="[bold white]🚀 MCP 服务器配置[/bold white]",
+                    border_style="cyan",
+                    padding=(1, 2),
+                )
+            )
+
+            # 显示可用工具信息
+            # 注意：FastMCP 可能没有 _mcp_tools 属性，使用固定的工具数量
+            tool_count = 35  # 搜索7 + RSS7 + 股票16 + 清洗5
+
+            tools_table = Table(
+                box=box.SIMPLE, show_header=True, header_style="bold magenta"
+            )
+            tools_table.add_column("模块", style="cyan", width=20)
+            tools_table.add_column("工具数", style="yellow", width=10)
+            tools_table.add_row("搜索", "7")
+            tools_table.add_row("RSS", "7")
+            tools_table.add_row("股票", "16")
+            tools_table.add_row("清洗", "5")
+
+            success_info = Table(box=box.ROUNDED, show_header=False, padding=(0, 2))
+            success_info.add_column("", style="white", width=80)
+            success_info.add_row(tools_table)
+
+            console.print(
+                Panel(
+                    success_info,
+                    title=f"[bold green]✅ 服务器已就绪 ({tool_count} 个工具)[/bold green]",
+                    border_style="green",
+                    padding=(1, 2),
+                )
+            )
+
+            console.print("\n  [bold green]💡 SeeSea MCP服务器已就绪[/bold green]")
+            console.print("  [dim]• 搜索: 文本/图片/视频搜索[/dim]")
+            console.print("  [dim]• RSS: 订阅源获取和解析[/dim]")
+            console.print("  [dim]• 股票: 实时行情和历史数据[/dim]")
+            console.print("  [dim]• 清洗: 文本数据处理[/dim]\n")
+            console.print(f"  [dim]访问: http://{host}:{port}/sse[/dim]\n")
+
+            # 启动服务器（fastmcp 使用 SSE 传输）
+            console.print(
+                "[bold green]⏳ MCP 服务器启动中...[/bold green] [dim]按 Ctrl+C 停止[/dim]\n"
+            )
+
+            # SSE 模式运行
+            mcp_server.run(transport="sse", host=host, port=port)
+
+    except KeyboardInterrupt:
+        console.print("\n[bold yellow]⏹️  MCP 服务器已停止[/bold yellow]")
+    except Exception as e:
+        console.print(
+            Panel(
+                f"[red]错误: {e}[/red]",
+                title="[bold red]❌ 服务器启动失败[/bold red]",
+                border_style="red",
+            )
+        )
+        sys.exit(1)
+
+
+@mcp.command()
+@click.option(
+    "--format", type=click.Choice(["text", "json"]), default="text", help="输出格式"
+)
+def list(format):
+    """列出所有可用的 MCP 工具"""
+    from seesea.mcp import create_mcp_server
+    import asyncio
+
+    mcp_server = create_mcp_server()
+
+    if format == "json":
+        # 输出 JSON 格式的 MCP 配置
+        config = {
+            "mcpServers": {
+                "seesea": {
+                    "command": "python",
+                    "args": ["-m", "seesea.cli", "mcp", "start", "--stdio"],
+                    "description": "SeeSea MCP 服务器 - 数据聚合、RSS订阅、股票数据、文本清洗",
+                    "tools": [],
+                }
+            }
+        }
+
+        # 获取工具详细信息
+        async def get_tools_info():
+            from fastmcp.client import Client
+
+            async with Client(mcp_server) as client:
+                tools = await client.list_tools()
+                for tool in tools:
+                    tool_info = {"name": tool.name, "description": tool.description}
+                    if tool.inputSchema:
+                        tool_info["inputSchema"] = tool.inputSchema
+                    config["mcpServers"]["seesea"]["tools"].append(tool_info)
+                return config
+
+        try:
+            result = asyncio.run(get_tools_info())
+            import json
+
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        except Exception:
+            # 如果获取详细信息失败，使用 get_tools 获取基本工具列表
+            async def get_basic_tools():
+                tools = await mcp_server.get_tools()
+                return [{"name": t.name} for t in tools]
 
             try:
-                # 从缓存获取所有指数数据（缓存优先）
-                index_quotes = await stock_service.get_index_quotes_from_cache()
+                tools = asyncio.run(get_basic_tools())
+                config["mcpServers"]["seesea"]["tools"] = tools
+                import json
 
-                # 筛选主要指数
-                main_indices = ["000001", "399001", "399006"]
-                filtered_quotes = [q for q in index_quotes if q.code in main_indices]
+                print(json.dumps(config, indent=2, ensure_ascii=False))
+            except Exception:
+                # 最后的降级方案
+                import json
 
-                if filtered_quotes:
-                    table = Table(title="主要指数", box=box.ROUNDED)
-                    table.add_column("指数", style="cyan")
-                    table.add_column("代码", style="magenta")
-                    table.add_column("价格", style="green")
-                    table.add_column("涨跌幅", style="red")
-                    table.add_column("涨跌额", style="yellow")
+                config["mcpServers"]["seesea"]["tools"] = []
+                print(json.dumps(config, indent=2, ensure_ascii=False))
+    else:
+        # 输出文本格式
+        async def get_text_format():
+            tools = await mcp_server.get_tools()
+            print("📦 SeeSea MCP 服务器工具列表\n")
+            print(f"服务器名称: {mcp_server.name}")
+            print(f"工具总数: {len(tools)}")
+            print("\n工具列表:")
+            for tool in tools:
+                print(f"  • {tool.name}")
+            print("\n💡 使用 'seesea mcp list --format json' 输出 JSON 格式配置")
+            print("💡 使用 'seesea mcp start --stdio' 启动 MCP 服务器")
 
-                    for quote in filtered_quotes:
-                        change_color = "green" if quote.change_pct >= 0 else "red"
-                        table.add_row(
-                            quote.name,
-                            quote.code,
-                            f"{quote.price:.2f}",
-                            f"[{change_color}]{quote.change_pct:+.2f}%[/{change_color}]",
-                            f"[{change_color}]{quote.change:+.2f}[/{change_color}]",
-                        )
-                    console.print(table)
-                else:
-                    console.print("[yellow]⚠️ 获取市场数据失败[/yellow]")
-            except Exception as e:
-                console.print(f"[yellow]⚠️ 获取市场数据失败: {e}[/yellow]")
+        try:
+            asyncio.run(get_text_format())
+        except Exception as e:
+            print(f"获取工具列表失败: {e}")
+    """列出所有可用的 MCP 工具"""
+    if not _MCP_AVAILABLE:
+        console.print(
+            Panel(
+                "[red]MCP 特性未安装！[/red]\n\n"
+                "[yellow]请运行以下命令安装 MCP 特性：[/yellow]\n"
+                "[cyan]pip install seesea[mcp][/cyan]",
+                title="[bold red]❌ 依赖缺失[/bold red]",
+                border_style="red",
+                padding=(1, 2),
+            )
+        )
+        sys.exit(1)
 
-        # 如果没有指定股票代码，只显示市场概况
-        if not code:
-            return
-
-        console.print(f"[bold green]🔍 查询股票: {code}[/bold green]")
-
-        # 获取实时数据
-        if realtime or not any([history, technical, financial]):
-            with console.status("[bold green]获取实时数据..."):
-                try:
-                    quote = await stock_service.get_quote(code)
-                except Exception as e:
-                    quote = None
-                    console.print(f"[dim yellow]获取实时数据失败: {e}[/dim yellow]")
-
-            if quote:
-                console.print(
-                    f"\n[bold blue]📈 {quote.name} ({quote.code}) 实时行情[/bold blue]"
-                )
-
-                table = Table(box=box.ROUNDED)
-                table.add_column("项目", style="cyan")
-                table.add_column("数值", style="white")
-
-                change_color = "green" if quote.change_pct >= 0 else "red"
-                table.add_row("最新价", f"¥{quote.price:.2f}")
-                table.add_row(
-                    "涨跌幅",
-                    f"[{change_color}]{quote.change_pct:+.2f}%[/{change_color}]",
-                )
-                table.add_row(
-                    "涨跌额", f"[{change_color}]{quote.change:+.2f}[/{change_color}]"
-                )
-                table.add_row("今开", f"¥{quote.open:.2f}")
-                table.add_row("昨收", f"¥{quote.prev_close:.2f}")
-                table.add_row("最高", f"¥{quote.high:.2f}")
-                table.add_row("最低", f"¥{quote.low:.2f}")
-                table.add_row("成交量", f"{quote.volume:,}")
-                table.add_row("成交额", f"¥{quote.turnover:,.2f}")
-
-                console.print(table)
-            else:
-                console.print("[yellow]⚠️ 获取实时数据失败[/yellow]")
-
-        # 获取历史数据
-        if history:
-            with console.status("[bold green]获取历史数据..."):
-                try:
-                    # 转换period参数
-                    period_map = {
-                        "daily": PeriodType.DAILY,
-                        "weekly": PeriodType.WEEKLY,
-                        "monthly": PeriodType.MONTHLY,
-                    }
-                    period_type = period_map.get(period, PeriodType.DAILY)
-
-                    klines = await stock_service.get_klines(
-                        code, period=period_type, limit=10
-                    )
-                except Exception as e:
-                    klines = []
-                    console.print(f"[dim yellow]获取历史数据失败: {e}[/dim yellow]")
-
-            if klines:
-                console.print(f"\n[bold blue]📊 历史K线数据 ({period})[/bold blue]")
-
-                table = Table(title=f"最近10个{period}数据", box=box.ROUNDED)
-                table.add_column("日期", style="cyan")
-                table.add_column("开盘", style="white")
-                table.add_column("最高", style="green")
-                table.add_column("最低", style="red")
-                table.add_column("收盘", style="yellow")
-                table.add_column("成交量", style="magenta")
-
-                for kline in klines[-10:]:  # 显示最近10个
-                    table.add_row(
-                        kline.date.strftime("%Y-%m-%d"),
-                        f"¥{kline.open:.2f}",
-                        f"¥{kline.high:.2f}",
-                        f"¥{kline.low:.2f}",
-                        f"¥{kline.close:.2f}",
-                        f"{kline.volume:,}",
-                    )
-
-                console.print(table)
-            else:
-                console.print("[yellow]⚠️ 获取历史数据失败[/yellow]")
-
-        # 获取技术指标（简化版）
-        if technical:
-            console.print("\n[bold blue]📈 技术指标[/bold blue]")
-            console.print("[yellow]💡 技术指标计算功能开发中，敬请期待[/yellow]")
-
-        # 获取财务指标
-        if financial:
-            with console.status("[bold green]获取财务数据..."):
-                try:
-                    financial_data = await stock_service.get_financial(code)
-                except Exception as e:
-                    financial_data = None
-                    console.print(f"[dim yellow]获取财务数据失败: {e}[/dim yellow]")
-
-            if financial_data:
-                console.print("\n[bold blue]� 财务指标[/bold blue]")
-
-                table = Table(box=box.ROUNDED)
-                table.add_column("指标", style="cyan")
-                table.add_column("数值", style="white")
-
-                # 显示主要财务指标
-                if hasattr(financial_data, "total_revenue"):
-                    table.add_row("总营收", f"¥{financial_data.total_revenue:,.2f}万")
-                if hasattr(financial_data, "net_profit"):
-                    table.add_row("净利润", f"¥{financial_data.net_profit:,.2f}万")
-                if hasattr(financial_data, "roe"):
-                    table.add_row("ROE", f"{financial_data.roe:.2f}%")
-                if hasattr(financial_data, "pe_ratio"):
-                    table.add_row("市盈率", f"{financial_data.pe_ratio:.2f}")
-
-                console.print(table)
-            else:
-                console.print("[yellow]⚠️ 获取财务数据失败[/yellow]")
-
-    # 运行异步函数
     try:
-        asyncio.run(run_stock_command())
-    except KeyboardInterrupt:
-        console.print("\n[yellow]操作已取消[/yellow]")
+        # 显示工具列表（静态列表，不动态获取）
+        tools_table = Table(box=box.ROUNDED)
+        tools_table.add_column("模块", style="cyan bold", width=15)
+        tools_table.add_column("工具", style="yellow", width=30)
+        tools_table.add_column("说明", style="white")
+
+        # 搜索模块
+        tools_table.add_row("搜索", "search", "执行搜索查询")
+        tools_table.add_row("搜索", "search_images", "搜索图片")
+        tools_table.add_row("搜索", "search_videos", "搜索视频")
+        tools_table.add_row("搜索", "list_engines", "获取搜索引擎列表")
+        tools_table.add_row("搜索", "get_search_info", "获取搜索客户端信息")
+        tools_table.add_row("搜索", "clear_cache", "清除搜索缓存")
+        tools_table.add_row("搜索", "get_stats", "获取搜索统计信息")
+
+        # RSS 模块
+        tools_table.add_row("RSS", "fetch_feed", "获取 RSS feed")
+        tools_table.add_row("RSS", "parse_feed", "解析 RSS 内容")
+        tools_table.add_row("RSS", "list_templates", "列出 RSS 模板")
+        tools_table.add_row("RSS", "add_from_template", "从模板添加 feeds")
+        tools_table.add_row("RSS", "create_ranking", "创建 RSS 榜单")
+        tools_table.add_row("RSS", "get_template_info", "获取模板信息")
+        tools_table.add_row("RSS", "get_rss_info", "获取 RSS 客户端信息")
+
+        # 股票模块
+        tools_table.add_row("股票", "get_stock_list", "获取股票列表")
+        tools_table.add_row("股票", "get_stock_info", "获取个股信息")
+        tools_table.add_row("股票", "get_quote", "获取实时行情")
+        tools_table.add_row("股票", "get_quotes", "获取全市场行情")
+        tools_table.add_row("股票", "get_kline", "获取 K 线数据")
+        tools_table.add_row("股票", "get_kline_hk", "获取港股 K 线")
+        tools_table.add_row("股票", "get_industry_list", "获取行业列表")
+        tools_table.add_row("股票", "get_concept_list", "获取概念列表")
+        tools_table.add_row("股票", "get_industry_stocks", "获取行业成分股")
+        tools_table.add_row("股票", "get_concept_stocks", "获取概念成分股")
+        tools_table.add_row("股票", "get_index_list", "获取指数列表")
+        tools_table.add_row("股票", "get_market_fund_flow", "获取资金流向")
+        tools_table.add_row("股票", "get_zt_pool", "获取涨停板")
+        tools_table.add_row("股票", "get_dt_pool", "获取跌停板")
+        tools_table.add_row("股票", "search_stock", "搜索股票")
+        tools_table.add_row("股票", "get_stock_client_info", "获取股票客户端信息")
+
+        # 热点模块
+        tools_table.add_row("热点", "fetch_hot_platform", "获取平台热点")
+        tools_table.add_row("热点", "fetch_all_hot_platforms", "获取所有平台热点")
+        tools_table.add_row("热点", "fetch_multiple_hot_platforms", "批量获取平台热点")
+        tools_table.add_row("热点", "list_hot_platforms", "列出支持的平台")
+        tools_table.add_row("热点", "search_hot_platforms", "搜索平台")
+        tools_table.add_row("热点", "get_hot_client_info", "获取热点客户端信息")
+
+        # 清洗模块
+        tools_table.add_row("清洗", "clean_text", "清洗文本")
+        tools_table.add_row("清洗", "remove_html", "移除 HTML 标签")
+        tools_table.add_row("清洗", "normalize_text", "标准化文本")
+        tools_table.add_row("清洗", "extract_urls", "提取 URL")
+        tools_table.add_row("清洗", "clean_batch", "批量清洗文本")
+
+        console.print(
+            Panel(
+                tools_table,
+                title="[bold white]📋 可用工具列表 (41 个)[/bold white]",
+                border_style="cyan",
+                padding=(1, 2),
+            )
+        )
+
     except Exception as e:
-        console.print(f"[red]❌ 错误: {e}[/red]")
-
-
-def _init_standard_embedding():
-    """初始化标准模式嵌入模型（回调机制已废弃）"""
-    try:
-        from .embeddings import EmbeddingManager, EmbeddingMode
-
-        # 使用标准模式（轻量级）
-        manager = EmbeddingManager(mode=EmbeddingMode.STANDARD)
-        manager.register_callback()
-        console.print("[dim]✓ 标准嵌入模型已初始化[/dim]")
-    except Exception as e:
-        # 嵌入模型初始化失败不应该阻止 CLI 正常运行
-        console.print(f"[dim yellow]⚠ 嵌入模型初始化失败: {e}[/dim yellow]")
+        console.print(
+            Panel(
+                f"[red]错误: {e}[/red]",
+                title="[bold red]❌ 获取工具列表失败[/bold red]",
+                border_style="red",
+            )
+        )
+        sys.exit(1)
 
 
 def main():
     """主入口函数，供 __main__.py 调用"""
-    # 初始化标准模式嵌入模型
-    _init_standard_embedding()
     cli()
-
-
-@cli.command("stock-refresh")
-@click.option("--force", "-f", is_flag=True, help="强制刷新缓存")
-@click.option("--cache-path", help="自定义缓存路径")
-def stock_refresh(force, cache_path):
-    """刷新股票数据缓存
-    
-    重新从数据源获取所有股票数据并更新缓存。
-    此操作会覆盖现有的缓存数据。
-    """
-    import sys
-    
-    try:
-        from seesea.stock import refresh_stock_cache
-    except ImportError:
-        console.print("[red]❌ 无法导入股票数据模块，请检查依赖安装[/red]")
-        console.print("提示：运行 pip install akshare 安装股票数据依赖")
-        sys.exit(1)
-    
-    console.print("[bold blue]🔄 开始刷新股票数据缓存...[/bold blue]")
-    
-    try:
-        # 调用刷新函数
-        success = refresh_stock_cache()
-        
-        if success:
-            console.print("[bold green]✅ 股票数据缓存刷新成功！[/bold green]")
-            
-            # 获取服务实例并显示预加载状态
-            from seesea.stock import get_stock_service
-            stock_service = get_stock_service()
-            if stock_service:
-                preload_status = stock_service.get_preload_status()
-                if preload_status:
-                    console.print("[dim]预加载状态详情：[/dim]")
-                    for key, status in preload_status.items():
-                        status_icon = "✅" if status else "❌"
-                        status_color = "green" if status else "red"
-                        console.print(f"  {status_icon} [dim]{key}: [{status_color}]{'完成' if status else '失败'}[/{status_color}][/dim]")
-            
-            console.print("[dim]缓存已更新，可以正常使用股票查询功能[/dim]")
-        else:
-            console.print("[bold red]❌ 股票数据缓存刷新失败！[/bold red]")
-            console.print("[dim]请检查网络连接和数据源状态[/dim]")
-            sys.exit(1)
-            
-    except Exception as e:
-        console.print(f"[bold red]❌ 刷新缓存时发生错误: {e}[/bold red]")
-        console.print("[dim]请检查日志获取详细信息[/dim]")
-        sys.exit(1)
 
 
 if __name__ == "__main__":

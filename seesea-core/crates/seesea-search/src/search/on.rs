@@ -25,8 +25,9 @@ use tokio::sync::{Semaphore, mpsc};
 use tokio::time::timeout;
 
 use super::engine_config::{ENGINE_CONFIG, EngineMode};
-use super::result_visualization::{ResultVisualizer, TwoDimensionalConfig, TwoDimensionalResult};
+use super::result_visualization::TimeSorter;
 use super::types::{SearchConfig, SearchRequest, SearchResponse};
+use super::vector_scoring::VectorScorer;
 use seesea_cache::CacheInterface;
 use seesea_cache::cache::types::CacheImplConfig;
 use seesea_derive::SearchResult;
@@ -53,8 +54,10 @@ pub struct EngineInstanceMetadata {
 pub struct SearchInterface {
     /// 搜索配置
     config: SearchConfig,
-    /// 结果二维可视化器
-    visualizer: ResultVisualizer,
+    /// 时间排序器
+    time_sorter: TimeSorter,
+    /// 向量评分器
+    vector_scorer: VectorScorer,
     /// HTTP客户端（复用）
     http_client: Arc<seesea_net::client::HttpClient>,
     /// 引擎实例缓存
@@ -134,17 +137,40 @@ impl SearchInterface {
     /// # Arguments
     ///
     /// * `config` - 搜索配置
+    /// * `network_config` - 网络配置（可选，默认使用全局配置）
     ///
     /// # Returns
     ///
     /// 返回搜索接口实例或错误
     pub fn new(config: SearchConfig) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Self::new_with_network_config(config, None)
+    }
+
+    /// 使用网络配置创建新的搜索接口
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - 搜索配置
+    /// * `network_config` - 网络配置（可选，默认使用全局配置）
+    ///
+    /// # Returns
+    ///
+    /// 返回搜索接口实例或错误
+    pub fn new_with_network_config(
+        config: SearchConfig,
+        network_config: Option<seesea_config::NetworkConfig>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        // 使用提供的网络配置，或者使用默认配置
+        let net_config = network_config.unwrap_or_else(|| {
+            // 尝试从全局配置管理器获取网络配置
+            // 如果获取失败，使用默认配置
+            seesea_config::NetworkConfig::default()
+        });
+
         // 使用HttpClient单例模式，在整个应用程序中共享同一个HttpClient实例
         let http_client = Arc::new(
-            seesea_net::client::HttpClient::instance_with_config(
-                seesea_config::NetworkConfig::default(),
-            )
-            .map_err(|e| format!("Failed to get HTTP client instance: {e}"))?,
+            seesea_net::client::HttpClient::instance_with_config(net_config)
+                .map_err(|e| format!("Failed to get HTTP client instance: {e}"))?,
         );
 
         // 初始化并发控制信号量，使用默认并发数
@@ -154,20 +180,20 @@ impl SearchInterface {
             (cpu_cores as f64 * 8.0) as usize, // 调整基准倍数为8.0，更合理的初始值
             config.max_concurrent_engines,     // 优先使用配置中的最大并发数
         );
-        let semaphore = Arc::new(Semaphore::new(initial_concurrency.clamp(1, 200))); // 使用硬编码的最小和最大并发数
+        let semaphore = Arc::new(Semaphore::new(initial_concurrency.clamp(1, 200)));
 
-        // 初始化搜索结果缓存
-        let cache_config = CacheImplConfig::default();
+        let cache_config = CacheImplConfig::new(seesea_config::paths::get_cache_dir());
         let cache = Arc::new(
             CacheInterface::new(cache_config)
                 .map_err(|e| format!("Failed to create cache: {e:?}"))?,
         );
 
-        // 创建默认配置的二维可视化器
-        let visualizer = ResultVisualizer::default();
+        // 创建时间排序器和向量评分器
+        let time_sorter = TimeSorter::default();
+        let vector_scorer = VectorScorer::default();
 
         // 初始化当前并发数和上次调整时间
-        let current_concurrency = initial_concurrency.clamp(1, 200); // 使用硬编码的最小和最大并发数
+        let current_concurrency = initial_concurrency.clamp(1, 200);
         let last_adjust_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -176,7 +202,8 @@ impl SearchInterface {
         // 创建SearchInterface实例
         let search_interface = Self {
             config: config.clone(),
-            visualizer,
+            time_sorter,
+            vector_scorer,
             http_client: Arc::clone(&http_client),
             engine_cache: Arc::new(DashMap::new()),
             engine_states: Arc::new(DashMap::new()),
@@ -301,12 +328,12 @@ impl SearchInterface {
     ///
     /// # Returns
     ///
-    /// 返回二维排列的搜索结果或错误
+    /// 返回时间排序的搜索结果或错误
     pub async fn search_visualized(
         &self,
         request: &SearchRequest,
-        visualization_config: Option<TwoDimensionalConfig>,
-    ) -> Result<TwoDimensionalResult, Box<dyn std::error::Error + Send + Sync>> {
+        _visualization_config: Option<()>,
+    ) -> Result<seesea_derive::SearchResult, Box<dyn std::error::Error + Send + Sync>> {
         // 执行常规搜索
         let response = self.search(request).await?;
 
@@ -314,19 +341,17 @@ impl SearchInterface {
         println!("原始结果数量: {}", response.total_count);
         println!("使用的引擎: {:?}", response.engines_used);
 
-        // 将搜索结果转换为二维排列
-        let visualizer = match visualization_config {
-            Some(config) => ResultVisualizer::new(config),
-            None => self.visualizer.clone(),
-        };
+        // 将搜索结果按时间排序
+        let time_sorted = self
+            .time_sorter
+            .sort_by_time(response.results[0].items.clone());
 
-        // 转换为二维结果
-        let two_d_result = visualizer.visualize(
-            &response.results[0], // 假设只有一个聚合结果
-            &request.query,
-        );
+        // 将时间排序结果转换为标准搜索结果
+        let sorted_result = self
+            .time_sorter
+            .to_search_result(&time_sorted, &response.results[0]);
 
-        Ok(two_d_result)
+        Ok(sorted_result)
     }
 
     /// 执行搜索
@@ -375,34 +400,51 @@ impl SearchInterface {
         // 合并所有搜索结果
         let mut all_items = Vec::new();
         for result in &response.results {
-            all_items.extend(result.items.clone()); // 使用clone，因为需要实际的SearchResultItem对象
+            all_items.extend(result.items.clone());
         }
 
-        // 创建临时SearchResult用于可视化
-        let mut temp_result = seesea_derive::SearchResult {
+        // 标准化结果
+        crate::search::standardization::standardize_items(&mut all_items);
+
+        // 使用向量评分系统对结果进行评分
+        self.vector_scorer
+            .score_results(&mut all_items, &request.query, "aggregated")
+            .await;
+
+        // 使用时间排序器对结果进行排序
+        let time_sorted = self.time_sorter.sort_by_time(all_items);
+
+        // 将时间排序结果转换为标准搜索结果
+        let mut ordered_results =
+            Vec::with_capacity(time_sorted.timed_items.len() + time_sorted.untimed_items.len());
+        ordered_results.extend(time_sorted.timed_items);
+        ordered_results.extend(time_sorted.untimed_items);
+
+        let final_result = seesea_derive::SearchResult {
             engine_name: "aggregated".to_string(),
-            total_results: Some(all_items.len()),
+            total_results: Some(ordered_results.len()),
             elapsed_ms: 0,
-            items: all_items,
+            items: ordered_results,
             pagination: None,
             suggestions: Vec::new(),
-            metadata: std::collections::HashMap::new(),
+            metadata: {
+                let mut metadata = std::collections::HashMap::new();
+                metadata.insert("vector_scoring_enabled".to_string(), "true".to_string());
+                metadata.insert("time_sort_enabled".to_string(), "true".to_string());
+                metadata.insert(
+                    "timed_count".to_string(),
+                    time_sorted.stats.timed_count.to_string(),
+                );
+                metadata.insert(
+                    "untimed_count".to_string(),
+                    time_sorted.stats.untimed_count.to_string(),
+                );
+                metadata
+            },
         };
 
-        // 标准化结果
-        crate::search::standardization::standardize_results(&mut temp_result);
-
-        // 使用二维可视化模块重新排列结果
-        let two_d_result = self.visualizer.visualize(&temp_result, &request.query);
-
-        // 将二维结果转换为标准搜索结果
-        let visualized_result = self
-            .visualizer
-            .to_search_result(&two_d_result, &temp_result);
-
-        response.total_count = visualized_result.items.len();
-        // 用二维排列后的结果替换原始结果
-        response.results = vec![visualized_result];
+        response.total_count = final_result.items.len();
+        response.results = vec![final_result];
 
         Ok(response)
     }
@@ -443,31 +485,48 @@ impl SearchInterface {
             all_items.extend(result.items.clone());
         }
 
-        // 创建临时SearchResult用于可视化
-        let mut temp_result = seesea_derive::SearchResult {
+        // 标准化结果
+        crate::search::standardization::standardize_items(&mut all_items);
+
+        // 使用向量评分系统对结果进行评分
+        self.vector_scorer
+            .score_results(&mut all_items, &request.query, "aggregated")
+            .await;
+
+        // 使用时间排序器对结果进行排序
+        let time_sorted = self.time_sorter.sort_by_time(all_items);
+
+        // 将时间排序结果转换为标准搜索结果
+        let mut ordered_results =
+            Vec::with_capacity(time_sorted.timed_items.len() + time_sorted.untimed_items.len());
+        ordered_results.extend(time_sorted.timed_items);
+        ordered_results.extend(time_sorted.untimed_items);
+
+        let final_result = seesea_derive::SearchResult {
             engine_name: "aggregated".to_string(),
-            total_results: Some(all_items.len()),
+            total_results: Some(ordered_results.len()),
             elapsed_ms: 0,
-            items: all_items,
+            items: ordered_results,
             pagination: None,
             suggestions: Vec::new(),
-            metadata: std::collections::HashMap::new(),
+            metadata: {
+                let mut metadata = std::collections::HashMap::new();
+                metadata.insert("vector_scoring_enabled".to_string(), "true".to_string());
+                metadata.insert("time_sort_enabled".to_string(), "true".to_string());
+                metadata.insert(
+                    "timed_count".to_string(),
+                    time_sorted.stats.timed_count.to_string(),
+                );
+                metadata.insert(
+                    "untimed_count".to_string(),
+                    time_sorted.stats.untimed_count.to_string(),
+                );
+                metadata
+            },
         };
 
-        // 标准化结果
-        crate::search::standardization::standardize_results(&mut temp_result);
-
-        // 使用二维可视化模块重新排列结果
-        let two_d_result = self.visualizer.visualize(&temp_result, &request.query);
-
-        // 将二维结果转换为标准搜索结果
-        let visualized_result = self
-            .visualizer
-            .to_search_result(&two_d_result, &temp_result);
-
-        response.total_count = visualized_result.items.len();
-        // 用二维排列后的结果替换原始结果
-        response.results = vec![visualized_result];
+        response.total_count = final_result.items.len();
+        response.results = vec![final_result];
 
         Ok(response)
     }
@@ -630,13 +689,13 @@ impl SearchInterface {
         // 标准化结果
         crate::search::standardization::standardize_results(&mut temp_result);
 
-        // 使用二维可视化模块重新排列结果
-        let two_d_result = self.visualizer.visualize(&temp_result, &request.query);
+        // 将搜索结果按时间排序
+        let time_sorted = self.time_sorter.sort_by_time(temp_result.items.clone());
 
-        // 将二维结果转换为标准搜索结果
+        // 将时间排序结果转换为标准搜索结果
         let visualized_result = self
-            .visualizer
-            .to_search_result(&two_d_result, &temp_result);
+            .time_sorter
+            .to_search_result(&time_sorted, &temp_result);
 
         // 构建最终响应
         let total_count = visualized_result.items.len();
@@ -679,7 +738,7 @@ impl SearchInterface {
 
         // 2. 从数据库获取所有相关结果（包括过期的）
         // 创建缓存接口
-        let cache_config = CacheImplConfig::default();
+        let cache_config = CacheImplConfig::new(seesea_config::paths::get_cache_dir());
         let cache_interface = CacheInterface::new(cache_config)
             .map_err(|e| format!("Failed to create cache interface: {e}"))?;
 
@@ -693,15 +752,17 @@ impl SearchInterface {
 
         // 从结果缓存搜索历史结果
         let result_cache = cache_interface.results();
-        let cached_items_tuples =
-            match result_cache.search_fulltext(&query_keywords, true, Some(50)) {
-                Ok(items) => items,
-                Err(e) => {
-                    // 记录错误但不中断搜索流程
-                    tracing::warn!("Failed to search result cache: {}", e);
-                    Vec::new()
-                }
-            };
+        let cached_items_tuples = match result_cache
+            .search_fulltext(&query_keywords, true, Some(50))
+            .await
+        {
+            Ok(items) => items,
+            Err(e) => {
+                // 记录错误但不中断搜索流程
+                tracing::warn!("Failed to search result cache: {}", e);
+                Vec::new()
+            }
+        };
         let cached_items: Vec<seesea_derive::types::SearchResultItem> = cached_items_tuples
             .into_iter()
             .map(|(_, item)| item)
@@ -777,12 +838,13 @@ impl SearchInterface {
         crate::search::standardization::standardize_results(&mut temp_result);
 
         // 7. 使用二维可视化模块重新排列结果
-        let two_d_result = self.visualizer.visualize(&temp_result, &request.query);
+        // 将搜索结果按时间排序
+        let time_sorted = self.time_sorter.sort_by_time(temp_result.items.clone());
 
-        // 8. 将二维结果转换为标准搜索结果
+        // 将时间排序结果转换为标准搜索结果
         let visualized_result = self
-            .visualizer
-            .to_search_result(&two_d_result, &temp_result);
+            .time_sorter
+            .to_search_result(&time_sorted, &temp_result);
 
         let query_time_ms = start_time.elapsed().as_millis() as u64;
         let total_count = visualized_result.items.len();
@@ -991,7 +1053,8 @@ impl SearchInterface {
             // 检查缓存
             let result_cache = self.cache.results();
             if let Some(cached_result) = result_cache
-                .get(&request.query.query, engine_name)
+                .get_search_result(&request.query.query, engine_name)
+                .await
                 .map_err(|e| format!("Cache error: {e:?}"))?
             {
                 // 缓存命中，直接使用缓存结果
@@ -1092,7 +1155,9 @@ impl SearchInterface {
                             }
                         };
 
-                        let _ = result_cache.set(&query.query, &engine_name, &result, ttl);
+                        let _ = result_cache
+                            .set_search_result(&query.query, &engine_name, &result, ttl)
+                            .await;
 
                         let _ = tx.send((Ok(result), engine_name)).await;
                     }
@@ -1240,6 +1305,11 @@ impl SearchInterface {
     /// 列出全局模式引擎
     pub fn list_global_engines(&self) -> Vec<String> {
         ENGINE_CONFIG.global_engines.clone()
+    }
+
+    /// 根据引擎类型获取引擎列表
+    pub async fn get_engines_for_type(&self, engine_type: &str) -> Vec<String> {
+        ENGINE_CONFIG.get_engines_for_type(engine_type)
     }
 
     /// 健康检查

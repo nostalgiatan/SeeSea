@@ -2,8 +2,8 @@
 
 use seesea_raming::pool::*;
 use seesea_raming::types::MemoryConfig;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -403,8 +403,7 @@ fn test_pool_concurrent_cleanup() {
     }
 
     // 验证清理操作被执行
-    let cleanup_count = cleanup_triggered.load(Ordering::Relaxed);
-    assert!(cleanup_count >= 0, "清理操作应该被执行");
+    let _cleanup_count = cleanup_triggered.load(Ordering::Relaxed);
 }
 
 /// 测试内存池管理器并发清理
@@ -460,8 +459,7 @@ fn test_pool_manager_concurrent_cleanup() {
         handle.join().unwrap();
     }
 
-    let cleanup_count = cleanup_performed.load(Ordering::Relaxed);
-    assert!(cleanup_count >= 0, "清理操作应该被执行");
+    let _cleanup_count = cleanup_performed.load(Ordering::Relaxed);
 }
 
 /// 测试内存池死锁预防

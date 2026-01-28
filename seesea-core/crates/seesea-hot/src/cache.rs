@@ -40,9 +40,11 @@ const ALL_PLATFORMS_KEY: &str = "__all_platforms__";
 /// 全局缓存接口
 static CACHE_INTERFACE: Lazy<Arc<CacheInterface>> = Lazy::new(|| {
     let config = CacheImplConfig {
-        db_path: "data/cache.db".to_string(),
+        db_path: "D:/Program Files/SeeSea/.cache".to_string(),
+        secondary_path: None,
+        is_secondary: false,
         default_ttl_secs: DEFAULT_CACHE_TTL_SECS,
-        max_size_bytes: 100 * 1024 * 1024, // 100MB
+        max_size_bytes: 100 * 1024 * 1024,
         enabled: true,
         compression: false,
         mode: CacheMode::HighThroughput,
@@ -58,7 +60,12 @@ static CACHE_INTERFACE: Lazy<Arc<CacheInterface>> = Lazy::new(|| {
         }
         Err(e) => {
             warn!("热榜统一缓存初始化失败: {}，使用默认配置", e);
-            Arc::new(CacheInterface::new(CacheImplConfig::default()).unwrap())
+            Arc::new(
+                CacheInterface::new(CacheImplConfig::new(
+                    "D:/Program Files/SeeSea/.cache".to_string(),
+                ))
+                .unwrap(),
+            )
         }
     }
 });

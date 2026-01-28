@@ -86,6 +86,7 @@ impl PySearchClient {
         force: Option<bool>,
         cache_timeline: Option<u64>,
         include_deepweb: Option<bool>,
+        engine_type: Option<String>,
     ) -> PyResult<Py<PyAny>> {
         let search_query = SearchQuery {
             query,
@@ -103,9 +104,48 @@ impl PySearchClient {
         } else if include_deepweb.unwrap_or(false) {
             // 深网搜索模式
             (vec![], EngineMode::DeepWeb)
+        } else if let Some(engine_type) = engine_type {
+            // 按引擎类型搜索
+            match self.runtime.as_ref() {
+                Some(runtime) => {
+                    let engines_for_type = runtime.block_on(async {
+                        self.interface.get_engines_for_type(&engine_type).await
+                    });
+                    (
+                        engines_for_type.clone(),
+                        EngineMode::Custom(engines_for_type.clone()),
+                    )
+                }
+                None => {
+                    let engines_for_type = tokio::runtime::Handle::current().block_on(async {
+                        self.interface.get_engines_for_type(&engine_type).await
+                    });
+                    (
+                        engines_for_type.clone(),
+                        EngineMode::Custom(engines_for_type.clone()),
+                    )
+                }
+            }
         } else {
-            // 快速搜索模式
-            (vec![], EngineMode::Fast)
+            // 默认使用通用文本引擎
+            match self.runtime.as_ref() {
+                Some(runtime) => {
+                    let general_engines = runtime
+                        .block_on(async { self.interface.get_engines_for_type("general").await });
+                    (
+                        general_engines.clone(),
+                        EngineMode::Custom(general_engines.clone()),
+                    )
+                }
+                None => {
+                    let general_engines = tokio::runtime::Handle::current()
+                        .block_on(async { self.interface.get_engines_for_type("general").await });
+                    (
+                        general_engines.clone(),
+                        EngineMode::Custom(general_engines.clone()),
+                    )
+                }
+            }
         };
 
         let request = SearchRequest {

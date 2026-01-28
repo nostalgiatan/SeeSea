@@ -21,6 +21,7 @@ pub mod search;
 
 // 重新导出常用类型
 pub use search::EngineManager;
+pub use search::python_engine_bridge::{PythonEngineProxy, PythonEngineRegistry};
 pub use search::{ParsedQuery, QueryParser};
 pub use search::{SearchRequest, SearchResponse};
 pub use seesea_config::{EngineListConfig, EngineMode, SearchConfig as CentralizedSearchConfig};

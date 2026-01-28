@@ -29,7 +29,32 @@ use crate::api::types::{
 };
 use seesea_search::SearchRequest;
 
-/// 处理 GET 搜索请求
+/// 执行搜索请求
+///
+/// 支持多引擎搜索，可指定引擎数量、语言、地区等参数
+#[utoipa::path(
+    get,
+    path = "/search",
+    params(
+        ("query" = Option<String>, Query, description = "搜索查询字符串"),
+        ("q" = Option<String>, Query, description = "搜索查询字符串（短参数名）"),
+        ("engine_count" = Option<u32>, Query, description = "引擎数量"),
+        ("page" = u32, Query, description = "页码"),
+        ("page_size" = u32, Query, description = "每页结果数"),
+        ("language" = Option<String>, Query, description = "语言过滤"),
+        ("region" = Option<String>, Query, description = "地区过滤"),
+        ("safe_search" = Option<String>, Query, description = "安全搜索级别"),
+        ("time_range" = Option<String>, Query, description = "时间范围"),
+        ("engines" = Option<String>, Query, description = "指定搜索引擎"),
+        ("include_deepweb" = bool, Query, description = "是否包含深网搜索"),
+    ),
+    responses(
+        (status = 200, description = "搜索成功", body = ApiSearchResponse),
+        (status = 400, description = "参数错误", body = ApiErrorResponse),
+        (status = 500, description = "服务器错误", body = ApiErrorResponse),
+    ),
+    tag = "search"
+)]
 pub async fn handle_search(
     State(state): State<ApiState>,
     Query(params): Query<ApiSearchRequest>,
@@ -48,6 +73,17 @@ pub async fn handle_search(
 }
 
 /// 处理 POST 搜索请求
+#[utoipa::path(
+    post,
+    path = "/search",
+    request_body = ApiSearchRequest,
+    responses(
+        (status = 200, description = "搜索成功", body = ApiSearchResponse),
+        (status = 400, description = "参数错误", body = ApiErrorResponse),
+        (status = 500, description = "服务器错误", body = ApiErrorResponse),
+    ),
+    tag = "search"
+)]
 pub async fn handle_search_post(
     State(state): State<ApiState>,
     Json(params): Json<ApiSearchRequest>,

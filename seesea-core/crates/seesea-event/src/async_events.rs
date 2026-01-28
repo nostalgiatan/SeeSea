@@ -1,12 +1,21 @@
 use crate::{RamingError, RamingResult};
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::sync::{RwLock, mpsc, oneshot};
+
+/// 类型别名：复杂的字符串异步事件处理函数类型
+type StringAsyncEventHandlerFn = Arc<
+    dyn Fn(&str, &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = EventPayload> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// 基础异步事件总线
 pub struct AsyncEventBus {
     sender: mpsc::UnboundedSender<AsyncEvent>,
     receiver: Arc<RwLock<mpsc::UnboundedReceiver<AsyncEvent>>>,
     handlers: Arc<RwLock<std::collections::HashMap<String, Arc<dyn AsyncEventHandler>>>>,
+    event_loop_started: AtomicBool,
 }
 
 /// 异步事件处理器trait
@@ -73,11 +82,134 @@ impl AsyncEventBus {
             sender,
             receiver: Arc::new(RwLock::new(receiver)),
             handlers: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            event_loop_started: AtomicBool::new(false),
         }
+    }
+
+    /// 确保事件循环已启动
+    ///
+    /// 这个方法会在后台 spawn 一个任务来处理事件。
+    /// 可以安全地多次调用，只会启动一次。
+    pub fn ensure_event_loop_started(&self) {
+        // 使用 compare_exchange 确保只启动一次
+        if self
+            .event_loop_started
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            let receiver = self.receiver.clone();
+            let handlers = self.handlers.clone();
+
+            // 在后台启动事件处理循环
+            tokio::spawn(async move {
+                tracing::info!("🔄 事件总线循环已启动");
+
+                loop {
+                    // 尝试获取 receiver 的写锁并接收事件
+                    let event = {
+                        let mut receiver_guard = receiver.write().await;
+                        receiver_guard.recv().await
+                    };
+
+                    match event {
+                        Some(event) => {
+                            if let Err(e) = Self::handle_event_static(&handlers, event).await {
+                                tracing::error!("处理事件失败: {}", e);
+                            }
+                        }
+                        None => {
+                            tracing::info!("事件总线通道已关闭");
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    /// 静态方法处理事件（用于 spawn 的任务）
+    async fn handle_event_static(
+        handlers: &Arc<RwLock<std::collections::HashMap<String, Arc<dyn AsyncEventHandler>>>>,
+        event: AsyncEvent,
+    ) -> RamingResult<()> {
+        match event {
+            AsyncEvent::Request {
+                event_type,
+                event_type_str,
+                payload,
+                response_sender,
+            } => {
+                let handlers_guard = handlers.read().await;
+
+                // 找到能处理该事件的处理器
+                let mut result = Err(RamingError::EventSystemError(
+                    "没有合适的处理器".to_string(),
+                ));
+
+                for handler in handlers_guard.values() {
+                    if handler.can_handle(&event_type) {
+                        match handler
+                            .handle_event_with_response(&AsyncEvent::Notification {
+                                event_type: event_type.clone(),
+                                event_type_str: event_type_str.clone(),
+                                payload: payload.clone(),
+                            })
+                            .await
+                        {
+                            Ok(EventPayload::Empty) => {
+                                if event_type_str == "empty.test"
+                                    || event_type_str == "async.empty.test"
+                                {
+                                    result = Ok(EventPayload::Empty);
+                                    break;
+                                }
+                                continue;
+                            }
+                            Ok(response_payload) => {
+                                result = Ok(response_payload);
+                                break;
+                            }
+                            Err(e) => {
+                                result = Err(e);
+                            }
+                        }
+                    }
+                }
+
+                let _ = response_sender.send(result);
+            }
+            AsyncEvent::Notification {
+                event_type,
+                event_type_str,
+                payload,
+            } => {
+                let handlers_guard = handlers.read().await;
+
+                // 通知所有能处理该事件的处理器
+                for handler in handlers_guard.values() {
+                    if handler.can_handle(&event_type)
+                        && let Err(e) = handler
+                            .handle_event(&AsyncEvent::Notification {
+                                event_type: event_type.clone(),
+                                event_type_str: event_type_str.clone(),
+                                payload: payload.clone(),
+                            })
+                            .await
+                    {
+                        tracing::error!("处理器 {} 处理事件失败: {}", handler.name(), e);
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// 注册事件处理器
     pub async fn register_handler(&self, handler: Arc<dyn AsyncEventHandler>) -> RamingResult<()> {
+        // 确保事件循环已启动
+        self.ensure_event_loop_started();
+
         let name = handler.name().to_string();
         let mut handlers = self.handlers.write().await;
         handlers.insert(name, handler);
@@ -145,6 +277,9 @@ impl AsyncEventBus {
         event_type_str: String,
         payload: EventPayload,
     ) -> RamingResult<()> {
+        // 确保事件循环已启动（否则事件会丢失）
+        self.ensure_event_loop_started();
+
         let event = AsyncEvent::Notification {
             event_type,
             event_type_str,
@@ -158,90 +293,12 @@ impl AsyncEventBus {
         Ok(())
     }
 
-    /// 运行事件处理循环
+    /// 运行事件处理循环（向后兼容，已被 ensure_event_loop_started 替代）
     pub async fn run_event_loop(&self) -> RamingResult<()> {
         let mut receiver = self.receiver.write().await;
 
         while let Some(event) = receiver.recv().await {
-            self.handle_event(event).await?;
-        }
-
-        Ok(())
-    }
-
-    /// 处理单个事件
-    async fn handle_event(&self, event: AsyncEvent) -> RamingResult<()> {
-        match event {
-            AsyncEvent::Request {
-                event_type,
-                event_type_str,
-                payload,
-                response_sender,
-            } => {
-                let handlers = self.handlers.read().await;
-
-                // 找到能处理该事件的处理器
-                let mut result = Err(RamingError::EventSystemError(
-                    "没有合适的处理器".to_string(),
-                ));
-
-                for handler in handlers.values() {
-                    if handler.can_handle(&event_type) {
-                        match handler
-                            .handle_event_with_response(&AsyncEvent::Notification {
-                                event_type: event_type.clone(),
-                                event_type_str: event_type_str.clone(),
-                                payload: payload.clone(),
-                            })
-                            .await
-                        {
-                            Ok(EventPayload::Empty) => {
-                                // For empty.test and async.empty.test events, accept empty payload as valid result
-                                if event_type_str == "empty.test"
-                                    || event_type_str == "async.empty.test"
-                                {
-                                    result = Ok(EventPayload::Empty);
-                                    break;
-                                }
-                                // For other handlers, continue to next handler
-                                continue;
-                            }
-                            Ok(response_payload) => {
-                                result = Ok(response_payload);
-                                break;
-                            }
-                            Err(e) => {
-                                result = Err(e);
-                            }
-                        }
-                    }
-                }
-
-                let _ = response_sender.send(result);
-            }
-            AsyncEvent::Notification {
-                event_type,
-                event_type_str,
-                payload,
-            } => {
-                let handlers = self.handlers.read().await;
-
-                // 通知所有能处理该事件的处理器
-                for handler in handlers.values() {
-                    if handler.can_handle(&event_type) {
-                        if let Err(e) = handler
-                            .handle_event(&AsyncEvent::Notification {
-                                event_type: event_type.clone(),
-                                event_type_str: event_type_str.clone(),
-                                payload: payload.clone(),
-                            })
-                            .await
-                        {
-                            eprintln!("处理器 {} 处理事件失败: {}", handler.name(), e);
-                        }
-                    }
-                }
-            }
+            Self::handle_event_static(&self.handlers, event).await?;
         }
 
         Ok(())
@@ -274,13 +331,13 @@ pub trait StringAsyncEventOperations {
         &self,
         event_type: &str,
         handler: impl Fn(
-                &str,
-                &str,
-            )
-                -> std::pin::Pin<Box<dyn std::future::Future<Output = EventPayload> + Send>>
-            + Send
-            + Sync
-            + 'static,
+            &str,
+            &str,
+        )
+            -> std::pin::Pin<Box<dyn std::future::Future<Output = EventPayload> + Send>>
+        + Send
+        + Sync
+        + 'static,
     ) -> impl std::future::Future<Output = RamingResult<()>> + Send;
 }
 
@@ -309,13 +366,13 @@ impl StringAsyncEventOperations for AsyncEventBus {
         &self,
         event_type: &str,
         handler: impl Fn(
-                &str,
-                &str,
-            )
-                -> std::pin::Pin<Box<dyn std::future::Future<Output = EventPayload> + Send>>
-            + Send
-            + Sync
-            + 'static,
+            &str,
+            &str,
+        )
+            -> std::pin::Pin<Box<dyn std::future::Future<Output = EventPayload> + Send>>
+        + Send
+        + Sync
+        + 'static,
     ) -> RamingResult<()> {
         let event_type_str = event_type.to_string();
         let handler = Arc::new(handler);
@@ -323,15 +380,7 @@ impl StringAsyncEventOperations for AsyncEventBus {
         struct StringAsyncEventHandler {
             name: String,
             event_type: String,
-            handler: Arc<
-                dyn Fn(
-                        &str,
-                        &str,
-                    )
-                        -> std::pin::Pin<Box<dyn std::future::Future<Output = EventPayload> + Send>>
-                    + Send
-                    + Sync,
-            >,
+            handler: StringAsyncEventHandlerFn,
         }
 
         #[async_trait::async_trait]
@@ -355,14 +404,13 @@ impl StringAsyncEventOperations for AsyncEventBus {
                         event_type_str,
                         ..
                     } => {
-                        if self.event_type == *event_type_str {
-                            if let EventPayload::Data(data) = payload {
-                                if let Ok(data_str) = String::from_utf8(data.clone()) {
-                                    let future = (self.handler)(event_type_str, &data_str);
-                                    let result = future.await;
-                                    return Ok(result);
-                                }
-                            }
+                        if self.event_type == *event_type_str
+                            && let EventPayload::Data(data) = payload
+                            && let Ok(data_str) = String::from_utf8(data.clone())
+                        {
+                            let future = (self.handler)(event_type_str, &data_str);
+                            let result = future.await;
+                            return Ok(result);
                         }
                     }
                 }

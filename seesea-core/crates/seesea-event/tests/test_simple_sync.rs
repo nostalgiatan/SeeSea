@@ -4,8 +4,8 @@
 
 use seesea_event::{EventBus, StringEventOperations};
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
 };
 
 #[test]
@@ -17,7 +17,7 @@ fn test_simple_sync_event() {
 
     // Start event loop in background
     let bus_clone = Arc::clone(&bus);
-    let handle = std::thread::spawn(move || {
+    let _handle = std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async { bus_clone.run().await })
     });

@@ -210,8 +210,7 @@ fn test_pool_cleanup_statistics() {
     thread::sleep(Duration::from_millis(100));
 
     // 执行清理
-    let cleaned_blocks = pool.cleanup_expired_blocks().unwrap();
-    assert!(cleaned_blocks >= 0);
+    let _cleaned_blocks = pool.cleanup_expired_blocks().unwrap();
 
     // 检查清理后的统计
     let after_cleanup_stats = pool.stats();
@@ -320,7 +319,7 @@ fn test_pool_long_running_statistics() {
     let mut total_allocations = 0;
     let mut total_deallocations = 0;
 
-    for cycle in 0..5 {
+    for _cycle in 0..5 {
         // 分配阶段
         let mut allocations = Vec::new();
         for _ in 0..3 {

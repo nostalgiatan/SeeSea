@@ -4,7 +4,10 @@
 use crate::{RamingError, RamingResult};
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
+
+/// 类型别名：字符串事件处理函数类型
+type StringEventHandlerFn = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
 /// 基础事件类型
 #[derive(Debug, Clone)]
@@ -146,11 +149,11 @@ impl EventBus {
 
         // 分发事件
         for listener_name in interested_listeners {
-            if let Some(listener) = listeners.get(listener_name) {
-                if let Err(e) = listener.on_event(&event).await {
-                    // 记录错误但不中断其他监听器
-                    tracing::error!("监听器 {} 处理事件失败: {}", listener_name, e);
-                }
+            if let Some(listener) = listeners.get(listener_name)
+                && let Err(e) = listener.on_event(&event).await
+            {
+                // 记录错误但不中断其他监听器
+                tracing::error!("监听器 {} 处理事件失败: {}", listener_name, e);
             }
         }
 
@@ -242,7 +245,7 @@ impl StringEventOperations for EventBus {
         struct StringEventListener {
             name: String,
             event_type: String,
-            handler: Arc<dyn Fn(&str, &str) + Send + Sync>,
+            handler: StringEventHandlerFn,
         }
 
         #[async_trait]
@@ -256,12 +259,11 @@ impl StringEventOperations for EventBus {
             }
 
             async fn on_event(&self, event: &Event) -> RamingResult<()> {
-                if let Event::Data(data_event) = event {
-                    if data_event.event_type.as_ref() == self.event_type {
-                        if let Ok(data_str) = String::from_utf8(data_event.payload.to_vec()) {
-                            (self.handler)(data_event.event_type.as_ref(), &data_str);
-                        }
-                    }
+                if let Event::Data(data_event) = event
+                    && data_event.event_type.as_ref() == self.event_type
+                    && let Ok(data_str) = String::from_utf8(data_event.payload.to_vec())
+                {
+                    (self.handler)(data_event.event_type.as_ref(), &data_str);
                 }
                 Ok(())
             }

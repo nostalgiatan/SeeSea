@@ -1,0 +1,143 @@
+# SeeSea 调度器配置文件
+# 路径: 
+# Windows: D:\Program Files\SeeSea\config\scheduler.toml
+# Linux/macOS: ~/.seesea/config/scheduler.toml
+
+[scheduler]
+# 是否启用调度器
+enabled = true
+
+# 工作线程数
+worker_threads = 4
+
+# 默认日期策略
+# - current: 使用当前日期
+# - last_trading_day: 使用最近交易日
+# - specified: 使用指定日期
+# - last_workday: 使用上一个工作日
+default_date_strategy = "last_trading_day"
+
+[scheduler.trading_days]
+# 交易日数据源
+data_source = "api"
+
+# 交易日缓存路径（留空则使用默认路径）
+# Windows: D:\Program Files\SeeSea\cache\trading_days
+# Linux/macOS: ~/.seesea/cache/trading_days
+cache_path = ""
+
+# 缓存过期时间（小时）
+cache_ttl_hours = 24
+
+# 是否启用节假日跳过
+skip_holidays = true
+
+# 任务配置列表
+[[scheduler.tasks]]
+name = "A股代码名称"
+task_type = "stock_info_a_code_name"
+enabled = true
+date_strategy = "current"
+# custom_interval = 3600  # 可选：自定义间隔（秒）
+
+[[scheduler.tasks]]
+name = "上海主板A股"
+task_type = "stock_info_sh_name_code_a"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "上海主板B股"
+task_type = "stock_info_sh_name_code_b"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "上海科创板"
+task_type = "stock_info_sh_name_code_kcb"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "深圳A股列表"
+task_type = "stock_info_sz_name_code_a"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "深圳B股列表"
+task_type = "stock_info_sz_name_code_b"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "深圳CDR列表"
+task_type = "stock_info_sz_name_code_cdr"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "深圳AB股列表"
+task_type = "stock_info_sz_name_code_ab"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "A股实时行情"
+task_type = "stock_zh_a_spot_em"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "B股实时行情"
+task_type = "stock_zh_b_spot_em"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "美股实时行情"
+task_type = "stock_us_spot_em"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "港股实时行情"
+task_type = "stock_hk_spot_em"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "行业板块名称"
+task_type = "stock_board_industry_name_em"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "概念板块名称"
+task_type = "stock_board_concept_name_em"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "指数实时行情"
+task_type = "stock_zh_index_spot_em"
+enabled = true
+date_strategy = "current"
+
+[[scheduler.tasks]]
+name = "市场资金流向"
+task_type = "stock_market_fund_flow"
+enabled = true
+date_strategy = "last_trading_day"
+
+[[scheduler.tasks]]
+name = "涨停池"
+task_type = "stock_zt_pool_em"
+enabled = true
+date_strategy = "last_trading_day"
+
+[[scheduler.tasks]]
+name = "跌停池"
+task_type = "stock_dt_pool_em"
+enabled = true
+date_strategy = "last_trading_day"

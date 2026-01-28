@@ -18,6 +18,7 @@
 //! 包含热点数据相关的所有类型定义，包括API响应、热点项和结果结构。
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 /// API返回的热点数据结构
 #[derive(Debug, Deserialize, Serialize)]
@@ -45,7 +46,7 @@ fn default_status() -> String {
 }
 
 /// 单个热点新闻项
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, ToSchema)]
 pub struct HotTrendItem {
     /// 新闻标题
     #[serde(default)]
@@ -81,7 +82,7 @@ pub struct HotTrendItem {
 }
 
 /// 处理后的热点数据结果
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct HotTrendResult {
     /// 平台ID
     pub platform_id: String,

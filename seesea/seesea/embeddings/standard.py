@@ -2,27 +2,44 @@
 """
 标准模式嵌入器
 
-使用轻量级 all-MiniLM-L6-v2-Q4_K_M 模型，适合资源受限环境。
-模型大小约 23MB，维度 384。
+优先使用轻量级 all-MiniLM-L6-v2-Q4_K_M 模型（需要 llama-cpp-python），
+如果未安装则回退到纯 Python 实现的简单向量化器。
 """
 
-from typing import List, Optional, Union, cast
+from typing import List, Optional, Union, Any, cast
 import os
 from .manager import BaseEmbedder
+
+# 检查 llama-cpp-python 是否可用
+try:
+    from seesea_core import get_file
+    import importlib.util
+
+    spec = importlib.util.find_spec("llama_cpp")
+    LLAMA_CPP_AVAILABLE = spec is not None
+except (ImportError, AttributeError):
+    LLAMA_CPP_AVAILABLE = False
+
+# 导入简单向量化器作为后备
+from .simple import SimpleEmbedder
 
 
 class StandardEmbedder(BaseEmbedder):
     """
     标准模式嵌入器
 
-    使用 all-MiniLM-L6-v2-Q4_K_M 模型，特点：
+    如果 llama-cpp-python 可用，使用 all-MiniLM-L6-v2-Q4_K_M 模型：
     - 模型小巧（~23MB）
     - 推理速度快
     - 维度384，足够用于相关性计算
-    - 适合标准模式下的快速嵌入
+
+    如果 llama-cpp-python 不可用，使用纯 Python 实现的简单向量化器：
+    - 无需外部依赖
+    - 固定维度 512
+    - 基于词频和哈希
     """
 
-    # 模型配置
+    # 模型配置（仅在使用 llama-cpp-python 时使用）
     MODEL_FILENAME = "all-MiniLM-L6-v2-Q4_K_M.gguf"
     MODEL_URL = "https://hf-mirror.com/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-Q4_K_M.gguf?download=true"
     EXPECTED_DIMENSION = 384
@@ -37,17 +54,24 @@ class StandardEmbedder(BaseEmbedder):
         初始化标准嵌入器
 
         Args:
-            model_path: 模型路径（None则自动下载）
-            device: 运行设备（'cuda', 'cpu', None自动检测）
-            n_threads: 线程数（None自动检测）
+            model_path: 模型路径（None则自动下载，仅在使用 llama-cpp-python 时有效）
+            device: 运行设备（'cuda', 'cpu', None自动检测，仅在使用 llama-cpp-python 时有效）
+            n_threads: 线程数（None自动检测，仅在使用 llama-cpp-python 时有效）
         """
-        try:
-            from llama_cpp import Llama
-            from seesea_core import get_file
-        except ImportError as e:
-            raise ImportError(
-                "请先安装依赖: pip install llama-cpp-python seesea_core"
-            ) from e
+        # 检查 llama-cpp-python 是否可用
+        if not LLAMA_CPP_AVAILABLE:
+            print("⚠️  [Standard] llama-cpp-python 未安装，使用简单向量化器")
+            print("💡 提示: 安装 llama-cpp-python 以获得更好的效果")
+            print("   pip install llama-cpp-python")
+            self.embedder = SimpleEmbedder(dimension=512)
+            self.dimension = self.embedder.get_dimension()
+            self._use_llama = False
+            self.model_name = "simple-embedder-512"
+            return
+
+        # 使用 llama-cpp-python
+        self._use_llama = True
+        self.model_name = "all-MiniLM-L6-v2"
 
         # 模型目录 - 使用用户主目录下的固定位置
         import platform
@@ -106,6 +130,8 @@ class StandardEmbedder(BaseEmbedder):
         # 加载模型
         print("🔄 [Standard] 加载嵌入模型...")
         try:
+            from llama_cpp import Llama
+
             self.embedder = Llama(
                 model_path=model_path,
                 embedding=True,
@@ -118,30 +144,36 @@ class StandardEmbedder(BaseEmbedder):
             )
 
             # 测试获取维度
-            test_result = self.embedder.create_embedding(input="test")
+            if self.embedder is None:
+                raise RuntimeError("嵌入模型初始化失败")
+            # 调用 llama-cpp-python 的 create_embedding 方法
+            llama_embedder = cast(Any, self.embedder)
+            test_result = llama_embedder.create_embedding(input="test")
             self.dimension = len(test_result["data"][0]["embedding"])
             print(f"✅ [Standard] 模型加载完成，维度: {self.dimension}")
 
         except Exception as e:
             # 如果是本地文件且加载失败，尝试重新下载
             if model_path == local_model_file and os.path.exists(local_model_file):
-                print(f"⚠️ [Standard] 本地模型文件损坏，尝试重新下载...")
+                print("⚠️ [Standard] 本地模型文件损坏，尝试重新下载...")
                 try:
                     os.remove(local_model_file)
                     print("⬇️  [Standard] 重新下载模型...")
-                    
+
                     headers = {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                     }
-                    
+
                     result = get_file(self.MODEL_URL, local_model_file, headers)
                     if result.get("status") != 200:
                         raise RuntimeError(f"下载失败，状态码: {result.get('status')}")
-                    
+
                     print(f"✅ [Standard] 模型重新下载完成: {local_model_file}")
-                    
+
                     # 重新加载模型
                     print("🔄 [Standard] 重新加载嵌入模型...")
+                    from llama_cpp import Llama
+
                     self.embedder = Llama(
                         model_path=local_model_file,
                         embedding=True,
@@ -152,16 +184,47 @@ class StandardEmbedder(BaseEmbedder):
                         use_mmap=True,
                         use_mlock=False,
                     )
-                    
+
                     # 测试获取维度
-                    test_result = self.embedder.create_embedding(input="test")
+                    if self.embedder is None:
+                        raise RuntimeError("嵌入模型初始化失败")
+                    llama_embedder = cast(Any, self.embedder)
+                    test_result = llama_embedder.create_embedding(input="test")
                     self.dimension = len(test_result["data"][0]["embedding"])
                     print(f"✅ [Standard] 模型加载完成，维度: {self.dimension}")
-                    
+
                 except Exception as download_e:
-                    raise RuntimeError(f"模型重新下载后仍然加载失败: {download_e}") from download_e
+                    raise RuntimeError(
+                        f"模型重新下载后仍然加载失败: {download_e}"
+                    ) from download_e
             else:
                 raise RuntimeError(f"模型加载失败: {e}") from e
+
+    def _encode_llama(self, texts: List[str], **kwargs) -> List[List[float]]:
+        """
+        使用 llama-cpp-python 编码
+
+        Args:
+            texts: 文本列表
+            **kwargs: 其他参数
+
+        Returns:
+            向量列表
+        """
+        if self.embedder is None:
+            raise RuntimeError("嵌入模型未初始化")
+
+        # 调用 llama-cpp-python 的 embedding API
+        try:
+            llama_embedder = cast(Any, self.embedder)
+            response = llama_embedder.create_embedding(
+                input=texts, model=self.model_name, **kwargs
+            )
+            embeddings = [item["embedding"] for item in response["data"]]
+            return embeddings
+
+        except Exception as e:
+            raise RuntimeError(f"编码失败: {e}") from e
 
     def _detect_gpu(self, device: Optional[str]) -> int:
         """检测GPU配置"""
@@ -194,6 +257,11 @@ class StandardEmbedder(BaseEmbedder):
         Returns:
             单个向量或向量列表
         """
+        # 如果使用简单向量化器，直接调用
+        if not self._use_llama:
+            return self.embedder.encode(texts, batch_size)  # type: ignore
+
+        # 使用 llama-cpp-python
         single_input = isinstance(texts, str)
         texts_to_process: List[str]
         if single_input:
@@ -201,29 +269,27 @@ class StandardEmbedder(BaseEmbedder):
         else:
             texts_to_process = texts  # type: ignore[assignment]
 
-        # 限制文本长度
-        max_chars = 2048  # 标准模型上下文较小
-        truncated_texts = [
-            text[:max_chars] if len(text) > max_chars else text
-            for text in texts_to_process
-        ]
+        # 调用 llama 编码
+        embeddings = self._encode_llama(texts_to_process)
 
-        all_embeddings = []
-        for text in truncated_texts:
-            try:
-                result = self.embedder.create_embedding(input=[text])
-                if result and "data" in result and result["data"]:
-                    embedding = cast(
-                        List[float], result["data"][0].get("embedding", [])
-                    )
-                    if embedding:
-                        all_embeddings.append(embedding)
-            except Exception:
-                pass  # 跳过失败的文本
+        if single_input and embeddings:
+            return embeddings[0]
+        return embeddings
 
-        if single_input and all_embeddings:
-            return all_embeddings[0]
-        return all_embeddings
+    def create_embedding(self, text: str) -> List[float]:
+        """
+        创建嵌入向量（兼容接口）
+
+        Args:
+            text: 要编码的文本
+
+        Returns:
+            向量
+        """
+        result = self.encode(text)
+        if isinstance(result, list) and len(result) > 0 and isinstance(result[0], list):
+            return result[0]
+        return result  # type: ignore[return-value]
 
     def get_dimension(self) -> int:
         """获取向量维度"""
@@ -239,5 +305,9 @@ class StandardEmbedder(BaseEmbedder):
         Returns:
             向量
         """
+        # 如果使用简单向量化器，直接调用
+        if not self._use_llama:
+            return self.embedder.encode_callback(text)
+
         result = cast(List[float], self.encode(text))
         return result

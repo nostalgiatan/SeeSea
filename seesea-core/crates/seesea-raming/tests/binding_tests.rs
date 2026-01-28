@@ -103,7 +103,7 @@ async fn test_binding_enable_disable() {
     binding_manager.set_event_bus(event_bus);
     let binding_manager = Arc::new(binding_manager);
 
-    let listener = Arc::new(TestBindingListener::new());
+    let _listener = Arc::new(TestBindingListener::new());
 
     // 创建绑定
     let _ = binding_manager
@@ -135,7 +135,7 @@ async fn test_binding_deletion() {
     binding_manager.set_event_bus(event_bus);
     let binding_manager = Arc::new(binding_manager);
 
-    let listener = Arc::new(TestBindingListener::new());
+    let _listener = Arc::new(TestBindingListener::new());
 
     // 创建绑定
     let _ = binding_manager
@@ -167,7 +167,7 @@ async fn test_binding_list() {
     binding_manager.set_event_bus(event_bus);
     let binding_manager = Arc::new(binding_manager);
 
-    let listener = Arc::new(TestBindingListener::new());
+    let _listener = Arc::new(TestBindingListener::new());
 
     // 创建多个绑定
     for i in 0..5 {
@@ -202,7 +202,7 @@ async fn test_binding_event_processing() {
     binding_manager.set_event_bus(event_bus);
     let binding_manager = Arc::new(binding_manager);
 
-    let listener = Arc::new(TestBindingListener::new());
+    let _listener = Arc::new(TestBindingListener::new());
 
     // 创建绑定
     let _ = binding_manager
@@ -224,7 +224,7 @@ async fn test_binding_stats_update() {
     binding_manager.set_event_bus(event_bus);
     let binding_manager = Arc::new(binding_manager);
 
-    let listener = Arc::new(TestBindingListener::new());
+    let _listener = Arc::new(TestBindingListener::new());
 
     // 创建绑定
     let _ = binding_manager
@@ -281,7 +281,7 @@ async fn test_binding_error_handling() {
     binding_manager.set_event_bus(event_bus);
     let binding_manager = Arc::new(binding_manager);
 
-    let listener = Arc::new(TestBindingListener::new());
+    let _listener = Arc::new(TestBindingListener::new());
 
     // 测试创建同名绑定
     let _ = binding_manager
@@ -315,7 +315,7 @@ async fn test_concurrent_binding_operations() {
     binding_manager.set_event_bus(event_bus);
     let binding_manager = Arc::new(binding_manager);
 
-    let listener = Arc::new(TestBindingListener::new());
+    let _listener = Arc::new(TestBindingListener::new());
 
     // 并发创建多个绑定
     let mut handles = vec![];
@@ -377,6 +377,7 @@ impl TestBindingListener {
         }
     }
 
+    #[allow(dead_code)]
     fn was_called(&self) -> bool {
         self.called.load(std::sync::atomic::Ordering::SeqCst)
     }

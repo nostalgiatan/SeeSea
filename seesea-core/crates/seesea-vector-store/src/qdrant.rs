@@ -180,6 +180,8 @@ impl QdrantVectorStore {
             // Create cache interface and scope cache
             let cache_interface = CacheInterface::new(CacheImplConfig {
                 db_path: ".seesea/cache.db".to_string(),
+                secondary_path: None,
+                is_secondary: false,
                 default_ttl_secs: cache_config.ttl,
                 max_size_bytes: 1024 * 1024 * 1024, // 1GB default
                 enabled: true,

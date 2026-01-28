@@ -45,7 +45,7 @@ pub enum ConfigUpdateEvent {
     /// 全局网络配置更新
     NetworkConfigUpdate {
         /// 新的网络配置
-        config: NetworkConfig,
+        config: Box<NetworkConfig>,
     },
     /// 资源限制更新
     ResourceLimitUpdate {
@@ -175,7 +175,9 @@ impl DynamicConfigManager {
         *self.current_config.write().await = config.clone();
 
         // 发送配置更新事件
-        let event = ConfigUpdateEvent::NetworkConfigUpdate { config };
+        let event = ConfigUpdateEvent::NetworkConfigUpdate {
+            config: Box::new(config),
+        };
 
         match self.event_sender.send(event) {
             Ok(_) => {

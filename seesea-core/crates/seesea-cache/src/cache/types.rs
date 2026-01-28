@@ -49,6 +49,10 @@ pub enum CacheMode {
 pub struct CacheImplConfig {
     /// 数据库路径（用于持久化模式）
     pub db_path: String,
+    /// Secondary 实例路径（用于多进程访问）
+    pub secondary_path: Option<String>,
+    /// 是否作为 Secondary 实例打开（只读，用于多进程访问）
+    pub is_secondary: bool,
     /// 默认TTL（秒）
     pub default_ttl_secs: u64,
     /// 最大缓存大小（字节）
@@ -71,6 +75,8 @@ impl Default for CacheImplConfig {
     fn default() -> Self {
         Self {
             db_path: "./cache".to_string(),
+            secondary_path: None,
+            is_secondary: false,
             default_ttl_secs: 3600,
             max_size_bytes: 1024 * 1024 * 1024,
             enabled: true,
@@ -87,6 +93,8 @@ impl From<CacheConfig> for CacheImplConfig {
     fn from(config: CacheConfig) -> Self {
         Self {
             db_path: config.database_path.to_string_lossy().to_string(),
+            secondary_path: None,
+            is_secondary: false,
             default_ttl_secs: config.ttl,
             max_size_bytes: config.max_size,
             enabled: config.enable_result_cache,
@@ -141,6 +149,18 @@ impl CacheImplConfig {
 
     pub fn default_ttl(&self) -> Duration {
         Duration::from_secs(self.default_ttl_secs)
+    }
+
+    pub fn as_primary(mut self) -> Self {
+        self.is_secondary = false;
+        self.secondary_path = None;
+        self
+    }
+
+    pub fn as_secondary(mut self, secondary_path: String) -> Self {
+        self.is_secondary = true;
+        self.secondary_path = Some(secondary_path);
+        self
     }
 
     pub fn validate(&self) -> Result<(), String> {

@@ -61,3 +61,27 @@ pub fn init_config(environment: &str) -> PyResult<()> {
             }
         })
 }
+
+/// 获取缓存目录路径
+#[pyfunction]
+pub fn get_cache_dir() -> String {
+    seesea_config::paths::get_cache_dir()
+}
+
+/// 获取数据目录路径
+#[pyfunction]
+pub fn get_data_dir() -> String {
+    seesea_config::paths::get_data_dir()
+}
+
+/// 获取配置目录路径
+#[pyfunction]
+pub fn get_config_dir() -> String {
+    seesea_config::paths::get_config_dir()
+}
+
+/// 获取日志目录路径
+#[pyfunction]
+pub fn get_log_dir() -> String {
+    seesea_config::paths::get_log_dir()
+}

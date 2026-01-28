@@ -22,11 +22,41 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use utoipa::ToSchema;
 
 use crate::api::on::ApiState;
 
+/// 魔法链接生成请求
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct MagicLinkRequest {
+    /// 用途
+    pub purpose: String,
+}
+
+/// 魔法链接生成响应
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MagicLinkResponse {
+    /// 访问令牌
+    pub token: String,
+    /// 过期时间（秒）
+    pub expires_in: u64,
+    /// 访问URL
+    pub url: String,
+}
+
 /// 处理魔法链接生成请求
+#[utoipa::path(
+    post,
+    path = "/api/magic-link/generate",
+    request_body = serde_json::Value,
+    responses(
+        (status = 200, description = "生成成功", body = MagicLinkResponse),
+        (status = 400, description = "参数错误", body = crate::api::types::ApiErrorResponse),
+    ),
+    tag = "config"
+)]
 pub async fn handle_magic_link_generate(
     State(state): State<ApiState>,
     Json(params): Json<serde_json::Value>,

@@ -103,6 +103,9 @@ pub mod vector_store;
 /// 平台路径配置模块
 pub mod paths;
 
+/// RSS 配置模块，包括 RSS Feed 配置
+pub mod rss;
+
 /// 核心类型定义模块，包括环境类型等
 pub mod types;
 
@@ -154,6 +157,9 @@ pub use logging::LoggingConfig;
 
 /// 引擎配置，包括各搜索引擎的具体配置
 pub use engines::EnginesConfig;
+
+/// RSS 配置，包括 RSS Feed 配置
+pub use rss::RssConfig;
 
 /// 环境类型，包括开发、测试、生产等
 pub use types::Environment;

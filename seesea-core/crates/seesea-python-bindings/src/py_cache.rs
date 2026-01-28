@@ -28,58 +28,20 @@ use seesea_cache::cache::types::CacheImplConfig;
 
 /// 获取操作系统特定的缓存目录
 fn get_cache_dir() -> PathBuf {
-    // Windows: 使用 D:\seesea\cache
-    // Linux: 使用 /etc/seesea/cache
-    // macOS: 使用 ~/Library/Caches/seesea
-    #[cfg(windows)]
-    {
-        let base_dir = PathBuf::from("D:\\seesea\\cache");
-        if let Err(e) = std::fs::create_dir_all(&base_dir) {
-            tracing::error!("Failed to create cache directory {:?}: {}", base_dir, e);
-            panic!("Failed to create cache directory: {}", e);
-        }
-        base_dir
+    let cache_dir = seesea_config::paths::get_cache_dir();
+    let base_dir = PathBuf::from(&cache_dir);
+
+    if let Err(e) = std::fs::create_dir_all(&base_dir) {
+        tracing::error!("Failed to create cache directory {:?}: {}", base_dir, e);
+        panic!("Failed to create cache directory: {}", e);
     }
-    
-    #[cfg(not(windows))]
-    {
-        #[cfg(target_os = "linux")]
-        {
-            let base_dir = PathBuf::from("/etc/seesea/cache");
-            if let Err(e) = std::fs::create_dir_all(&base_dir) {
-                tracing::error!("Failed to create cache directory {:?}: {}", base_dir, e);
-                panic!("Failed to create cache directory: {}", e);
-            }
-            base_dir
-        }
-        
-        #[cfg(target_os = "macos")]
-        {
-            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-            let base_dir = PathBuf::from(home).join("Library/Caches/seesea");
-            if let Err(e) = std::fs::create_dir_all(&base_dir) {
-                tracing::error!("Failed to create cache directory {:?}: {}", base_dir, e);
-                panic!("Failed to create cache directory: {}", e);
-            }
-            base_dir
-        }
-        
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        {
-            let base_dir = std::env::temp_dir().join("seesea");
-            if let Err(e) = std::fs::create_dir_all(&base_dir) {
-                tracing::error!("Failed to create cache directory {:?}: {}", base_dir, e);
-                panic!("Failed to create cache directory: {}", e);
-            }
-            base_dir
-        }
-    }
+    base_dir
 }
 
 /// 全局缓存实例，确保复用
 pub static GLOBAL_CACHE_INSTANCE: Lazy<Arc<CacheInterface>> = Lazy::new(|| {
     let cache_dir = get_cache_dir();
-    
+
     let cache_config = CacheImplConfig {
         db_path: cache_dir.to_string_lossy().to_string(),
         ..Default::default()
@@ -205,12 +167,8 @@ pub struct PyCacheInterface {
 #[pymethods]
 impl PyCacheInterface {
     #[new]
-    pub fn new(
-        _db_path: Option<String>,
-        _ttl_secs: Option<u64>,
-        _max_size_mb: Option<u64>,
-    ) -> PyResult<Self> {
-        // 使用全局缓存实例，忽略传入的参数以确保复用
+    pub fn new() -> PyResult<Self> {
+        // 使用全局缓存实例，确保复用
         Ok(Self {
             cache: GLOBAL_CACHE_INSTANCE.clone(),
         })

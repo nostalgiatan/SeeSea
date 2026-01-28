@@ -203,8 +203,13 @@ filter_policy = "disabled"
 # 缓存配置
 # =============================================================================
 [cache]
-# 缓存后端: "sled", "redis", "memory", "hybrid"
-backend = "sled"
+# 缓存后端: "rocks_db", "redis", "memory", "hybrid", "custom"
+# RocksDB: 嵌入式数据库（默认，持久化到磁盘）
+# Redis: 分布式缓存
+# Memory: 纯内存缓存（最快）
+# Hybrid: 混合缓存（内存 + 磁盘）
+# Custom: 自定义后端
+backend = "memory"
 # 数据库路径（使用 .seesea 目录）
 database_path = ".seesea/cache.db"
 # 缓存过期时间（秒）

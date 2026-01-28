@@ -1,6 +1,6 @@
 //! Test utilities for event system testing
 
-use seesea_event::{get_global_event_bus, EventBus};
+use seesea_event::{EventBus, get_global_event_bus};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;

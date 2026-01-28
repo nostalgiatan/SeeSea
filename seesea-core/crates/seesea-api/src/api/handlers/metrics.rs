@@ -29,6 +29,14 @@ use crate::api::on::ApiState;
 use crate::api::types::{ApiEngineInfo, ApiStatsResponse};
 
 /// 处理统计信息请求
+#[utoipa::path(
+    get,
+    path = "/stats",
+    responses(
+        (status = 200, description = "获取成功", body = ApiStatsResponse),
+    ),
+    tag = "metrics"
+)]
 pub async fn handle_stats(State(state): State<ApiState>) -> Response {
     let stats = state.search.get_stats().await;
     let api_stats = ApiStatsResponse::from_search_stats(&stats);
@@ -37,6 +45,14 @@ pub async fn handle_stats(State(state): State<ApiState>) -> Response {
 }
 
 /// 处理引擎列表请求
+#[utoipa::path(
+    get,
+    path = "/engines",
+    responses(
+        (status = 200, description = "获取成功"),
+    ),
+    tag = "metrics"
+)]
 pub async fn handle_engines_list(State(state): State<ApiState>) -> Response {
     let engines = state.search.list_engines();
 
@@ -55,6 +71,14 @@ pub async fn handle_engines_list(State(state): State<ApiState>) -> Response {
 }
 
 /// 处理版本信息请求
+#[utoipa::path(
+    get,
+    path = "/version",
+    responses(
+        (status = 200, description = "获取成功"),
+    ),
+    tag = "metrics"
+)]
 pub async fn handle_version(State(state): State<ApiState>) -> Response {
     let version_info = json!({
         "version": state.version,
@@ -66,6 +90,15 @@ pub async fn handle_version(State(state): State<ApiState>) -> Response {
 }
 
 /// 处理指标请求（Prometheus格式）
+#[utoipa::path(
+    get,
+    path = "/metrics",
+    responses(
+        (status = 200, description = "获取成功", content_type = "text/plain"),
+        (status = 503, description = "指标未启用"),
+    ),
+    tag = "metrics"
+)]
 pub async fn handle_metrics(State(state): State<ApiState>) -> Response {
     if let Some(metrics) = state.metrics.get_prometheus_metrics() {
         (StatusCode::OK, metrics).into_response()
@@ -79,6 +112,14 @@ pub async fn handle_metrics(State(state): State<ApiState>) -> Response {
 }
 
 /// 处理实时指标请求（JSON格式）
+#[utoipa::path(
+    get,
+    path = "/metrics/realtime",
+    responses(
+        (status = 200, description = "获取成功"),
+    ),
+    tag = "metrics"
+)]
 pub async fn handle_realtime_metrics(State(state): State<ApiState>) -> Response {
     let metrics = state.metrics.get_realtime_metrics().await;
     (StatusCode::OK, Json(metrics)).into_response()

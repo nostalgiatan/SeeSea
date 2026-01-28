@@ -474,7 +474,7 @@ impl BindingManager {
     /// 获取绑定状态
     pub fn get_binding_status(&self, name: &str) -> RamingResult<BindingStatus> {
         let binding = self.get_binding(name)?;
-        let status = binding.status.read().clone();
+        let status = *binding.status.read();
         Ok(status)
     }
 
@@ -640,10 +640,10 @@ impl BindingManager {
         }
 
         for binding in self.bindings.iter() {
-            if let Some(listener) = &binding.value().event_listener {
-                if let Err(e) = listener.handle_raming_event(event_data.clone()).await {
-                    warn!("事件处理失败 {}: {}", binding.key(), e);
-                }
+            if let Some(listener) = &binding.value().event_listener
+                && let Err(e) = listener.handle_raming_event(event_data.clone()).await
+            {
+                warn!("事件处理失败 {}: {}", binding.key(), e);
             }
         }
 

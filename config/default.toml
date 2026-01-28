@@ -30,8 +30,6 @@ environment = "production"
 bind_address = "0.0.0.0"
 # 端口号
 port = 8080
-# 是否启用限流
-limiter = true
 # 是否为公共实例
 public_instance = false
 # 服务密钥（生产环境请更改！）
@@ -219,8 +217,13 @@ filter_policy = "disabled"
 # 缓存配置
 # =============================================================================
 [cache]
-# 缓存后端: "sled", "redis", "memory", "hybrid"
-backend = "sled"
+# 缓存后端: "rocks_db", "redis", "memory", "hybrid", "custom"
+# RocksDB: 嵌入式数据库（默认，持久化到磁盘）
+# Redis: 分布式缓存
+# Memory: 纯内存缓存（最快）
+# Hybrid: 混合缓存（内存 + 磁盘）
+# Custom: 自定义后端
+backend = "memory"
 # 数据库路径（使用 .seesea 目录）
 database_path = ".seesea/cache.db"
 # 缓存过期时间（秒）
@@ -298,9 +301,33 @@ burst_size = 20
 # 认证配置
 [api.auth]
 # 是否启用认证
-enabled = false
+enabled = true
 # 认证类型: "none", "api_key", "jwt", "basic"
-auth_type = "none"
+auth_type = "api_key"
+
+# API 密钥配置
+[api.auth.api_key]
+enabled = true
+header_name = "Authorization"
+query_param = "magic_token"
+key_prefix = "Bearer"
+
+[[api.auth.api_key.api_keys]]
+name = "default"
+key_hash = "change-me-in-production"
+permissions = ["*"]
+enabled = true
+created_at = "2025-01-01T00:00:00Z"
+
+# JWT 配置
+[api.auth.jwt]
+enabled = false
+secret = "jwt_secret_key_change_in_production"
+algorithm = "HS256"
+expiry = 3600
+refresh_expiry = 86400
+issuer = "seesea"
+audience = "api"
 
 # 响应格式配置
 [api.response_format]

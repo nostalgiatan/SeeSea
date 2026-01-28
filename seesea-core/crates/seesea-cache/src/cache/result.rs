@@ -1,3 +1,4 @@
+use crate::cache::manager::CacheManager;
 use crate::cache::types::CacheImplConfig;
 use dashmap::DashMap;
 use seesea_errors::Result;
@@ -13,7 +14,6 @@ pub struct ResultCache {
     inner: Arc<ResultCacheInner>,
 }
 
-#[derive(Debug)]
 struct ResultCacheInner {
     /// 缓存数据
     data: DashMap<String, CachedResult>,
@@ -21,6 +21,19 @@ struct ResultCacheInner {
     config: CacheImplConfig,
     /// 缓存统计
     stats: RwLock<CacheStats>,
+    /// 缓存管理器（用于作用域支持）
+    manager: Option<Arc<CacheManager>>,
+}
+
+impl std::fmt::Debug for ResultCacheInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResultCacheInner")
+            .field("data", &self.data)
+            .field("config", &self.config)
+            .field("stats", &self.stats)
+            .field("manager", &self.manager.as_ref().map(|_| "CacheManager"))
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +67,19 @@ impl ResultCache {
             data: DashMap::new(),
             config,
             stats: RwLock::new(CacheStats::default()),
+            manager: None,
+        });
+
+        Self { inner }
+    }
+
+    /// 创建新的结果缓存实例（带缓存管理器支持作用域）
+    pub fn with_manager(config: CacheImplConfig, manager: Arc<CacheManager>) -> Self {
+        let inner = Arc::new(ResultCacheInner {
+            data: DashMap::new(),
+            config,
+            stats: RwLock::new(CacheStats::default()),
+            manager: Some(manager),
         });
 
         Self { inner }
@@ -64,7 +90,7 @@ impl ResultCache {
         &self.inner.config
     }
 
-    /// 设置缓存项
+    /// 设置缓存项（支持作用域）
     pub async fn set(&self, key: String, value: Vec<u8>, ttl: Option<Duration>) -> Result<()> {
         let expires_at = ttl.map(|duration| SystemTime::now() + duration);
         let created_at = SystemTime::now();
@@ -83,6 +109,72 @@ impl ResultCache {
         stats.total_inserts += 1;
 
         Ok(())
+    }
+
+    /// 设置缓存项（带作用域）
+    pub async fn set_with_scope(
+        &self,
+        scope: &str,
+        key: &str,
+        value: Vec<u8>,
+        ttl: Option<Duration>,
+    ) -> Result<()> {
+        if let Some(ref manager) = self.inner.manager {
+            let full_key = format!("{}:{}", scope, key);
+            return manager.set(scope, full_key, value, ttl).map_err(|e| {
+                seesea_errors::ErrorInfo::new(500, format!("Failed to set cache with scope: {}", e))
+            });
+        }
+
+        self.set(key.to_string(), value, ttl).await
+    }
+
+    /// 设置搜索结果缓存（带引擎作用域）
+    pub async fn set_search_result(
+        &self,
+        key: &str,
+        engine_name: &str,
+        value: &seesea_derive::types::SearchResult,
+        ttl: Option<Duration>,
+    ) -> Result<()> {
+        let serialized = serde_json::to_vec(value).map_err(|e| {
+            seesea_errors::ErrorInfo::new(500, format!("Failed to serialize search result: {}", e))
+        })?;
+
+        let scope = format!("search:{}", engine_name);
+        self.set_with_scope(&scope, key, serialized, ttl).await
+    }
+
+    /// 获取搜索结果缓存（带引擎作用域）
+    pub async fn get_search_result(
+        &self,
+        key: &str,
+        engine_name: &str,
+    ) -> Result<Option<seesea_derive::types::SearchResult>> {
+        let scope = format!("search:{}", engine_name);
+        if let Some(data) = self.get_with_scope(&scope, key).await? {
+            let result = serde_json::from_slice(&data).map_err(|e| {
+                seesea_errors::ErrorInfo::new(
+                    500,
+                    format!("Failed to deserialize search result: {}", e),
+                )
+            })?;
+            Ok(Some(result))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 全文搜索缓存结果
+    pub async fn search_fulltext(
+        &self,
+        _keywords: &[String],
+        _include_stale: bool,
+        _max_results: Option<usize>,
+    ) -> Result<Vec<(String, seesea_derive::types::SearchResultItem)>> {
+        // 简化实现：返回空结果
+        // 实际实现需要访问底层缓存并进行全文搜索
+        Ok(Vec::new())
     }
 
     /// 获取缓存项
@@ -115,6 +207,24 @@ impl ResultCache {
             stats.total_misses += 1;
             Ok(None)
         }
+    }
+
+    /// 获取缓存项（带作用域）
+    pub async fn get_with_scope(&self, scope: &str, key: &str) -> Result<Option<Vec<u8>>> {
+        if let Some(ref manager) = self.inner.manager {
+            let full_key = format!("{}:{}", scope, key);
+            return manager
+                .get(scope, &full_key)
+                .map_err(|e| {
+                    seesea_errors::ErrorInfo::new(
+                        500,
+                        format!("Failed to get cache with scope: {}", e),
+                    )
+                })
+                .map(|opt| opt.map(|v| v.to_vec()));
+        }
+
+        self.get(key).await
     }
 
     /// 删除缓存项
@@ -262,6 +372,8 @@ mod tests {
 
         let config = CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
+            secondary_path: None,
+            is_secondary: false,
             default_ttl_secs: 3600,
             max_size_bytes: 1024 * 1024,
             enabled: true,

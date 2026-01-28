@@ -13,7 +13,7 @@
 
 //! 缓存管理器
 //!
-//! 提供基于 sled 的缓存管理核心功能
+//! 提供基于 RocksDB 的缓存管理核心功能
 
 use crate::cache::bloom::{BloomFilter, BloomFilterConfig};
 use crate::cache::types::{
@@ -21,10 +21,51 @@ use crate::cache::types::{
     LatencyStats,
 };
 use once_cell::sync::Lazy;
-use sled::Db;
+use rocksdb::{ColumnFamilyRef, DB, Options};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tracing::{error, info};
+
+/// 带有 TTL 的缓存值
+#[derive(Debug, Clone, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
+struct CacheEntry {
+    value: Vec<u8>,
+    expires_at_ms: Option<u64>,
+}
+
+impl CacheEntry {
+    fn new(value: Vec<u8>, ttl: Duration) -> Self {
+        let expires_at_ms = if ttl.as_millis() > 0 {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_millis() as u64 + ttl.as_millis() as u64)
+        } else {
+            None
+        };
+        Self {
+            value,
+            expires_at_ms,
+        }
+    }
+
+    fn is_expired(&self) -> bool {
+        match self.expires_at_ms {
+            Some(expires_at_ms) => SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|now| now.as_millis() as u64 > expires_at_ms)
+                .unwrap_or(false),
+            None => false,
+        }
+    }
+
+    fn into_value(self) -> Vec<u8> {
+        self.value
+    }
+}
 
 /// 缓存错误类型
 #[derive(Debug, thiserror::Error)]
@@ -94,13 +135,12 @@ static GLOBAL_CACHE_MANAGER: Lazy<Mutex<Option<Arc<CacheManager>>>> =
 
 /// 缓存管理器
 ///
-/// 基于 sled 实现的高性能缓存管理器（单例模式）
-#[derive(Debug)]
+/// 基于 RocksDB 实现的高性能缓存管理器（单例模式）
 pub struct CacheManager {
-    /// sled 数据库实例（Arc包装，支持线程安全共享）
-    db: Arc<Db>,
-    /// 元数据树（Arc包装，支持线程安全共享）
-    metadata_tree: Arc<sled::Tree>,
+    /// RocksDB 数据库实例（Arc包装，支持线程安全共享）
+    db: Arc<DB>,
+    /// 列族名称集合（用于跟踪已创建的列族）
+    column_family_names: Arc<RwLock<HashMap<String, ()>>>,
     /// 配置
     config: CacheImplConfig,
     /// 统计信息
@@ -162,7 +202,7 @@ impl Clone for CacheManager {
     fn clone(&self) -> Self {
         Self {
             db: Arc::clone(&self.db),
-            metadata_tree: Arc::clone(&self.metadata_tree),
+            column_family_names: Arc::clone(&self.column_family_names),
             config: self.config.clone(),
             stats: Arc::clone(&self.stats),
             hits: Arc::clone(&self.hits),
@@ -204,16 +244,6 @@ impl CacheManager {
     /// # 返回值
     ///
     /// 返回缓存管理器实例或错误
-    ///
-    /// # 示例
-    ///
-    /// ```rust,no_run
-    /// use seesea::seesea_seesea_cache::{CacheManager, CacheImplConfig};
-    ///
-    /// let config = CacheImplConfig::default();
-    /// let manager = CacheManager::instance(config)?;
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
     pub fn instance(config: CacheImplConfig) -> Result<Arc<Self>> {
         let mut guard = GLOBAL_CACHE_MANAGER
             .lock()
@@ -249,44 +279,132 @@ impl CacheManager {
 
     /// 创建新的缓存管理器（内部方法）
     fn create_internal(config: CacheImplConfig) -> Result<Self> {
-        // 创建数据库目录（sled 需要目录路径，而不是文件路径）
+        info!("开始创建缓存管理器，数据库路径: {}", config.db_path);
+        info!("是否为 Secondary 模式: {}", config.is_secondary);
+        if config.is_secondary {
+            info!("Secondary 路径: {:?}", config.secondary_path);
+        }
+
+        // 创建数据库目录（RocksDB 需要目录路径，而不是文件路径）
         std::fs::create_dir_all(&config.db_path)
             .map_err(|e| CacheError::DatabaseError(format!("创建缓存目录失败: {e}")))?;
 
-        // 根据缓存模式配置 sled
-        let db_config = match config.mode {
-            CacheMode::LowLatency => sled::Config::default()
-                .path(&config.db_path)
-                .cache_capacity(1024 * 1024 * 128) // 128MB 缓存
-                .flush_every_ms(Some(1000)), // 每秒刷新
-            CacheMode::HighThroughput => sled::Config::default()
-                .path(&config.db_path)
-                .cache_capacity(1024 * 1024 * 64) // 64MB 缓存
-                .flush_every_ms(Some(5000)), // 5秒刷新
-            CacheMode::LowMemory => sled::Config::default()
-                .path(&config.db_path)
-                .cache_capacity(1024 * 1024 * 16) // 16MB 缓存
-                .flush_every_ms(Some(10000)), // 10秒刷新
-            CacheMode::Balanced => sled::Config::default()
-                .path(&config.db_path)
-                .cache_capacity(1024 * 1024 * 32) // 32MB 缓存
-                .flush_every_ms(Some(3000)), // 3秒刷新
-            CacheMode::HighPerformance => sled::Config::default()
-                .path(&config.db_path)
-                .cache_capacity(1024 * 1024 * 256) // 256MB 缓存
-                .flush_every_ms(Some(500)), // 0.5秒刷新
+        // 如果是 Secondary 模式，创建 secondary 目录
+        if config.is_secondary
+            && let Some(secondary_path) = &config.secondary_path
+        {
+            info!("创建 Secondary 目录: {}", secondary_path);
+            std::fs::create_dir_all(secondary_path).map_err(|e| {
+                CacheError::DatabaseError(format!("创建 secondary 缓存目录失败: {e}"))
+            })?;
+            info!("Secondary 目录创建成功");
+        }
+
+        // 根据缓存模式配置 RocksDB
+        let mut db_options = Options::default();
+
+        match config.mode {
+            CacheMode::LowLatency => {
+                db_options.create_if_missing(true);
+                db_options.create_missing_column_families(true);
+                db_options.set_write_buffer_size(128 * 1024 * 1024); // 128MB 写缓冲区
+                db_options.set_max_write_buffer_number(4);
+                db_options.set_level_zero_file_num_compaction_trigger(4);
+                db_options.set_max_bytes_for_level_base(512 * 1024 * 1024); // 512MB
+                db_options.set_target_file_size_base(64 * 1024 * 1024); // 64MB
+                db_options.set_max_open_files(-1); // 不限制打开文件数
+            }
+            CacheMode::HighThroughput => {
+                db_options.create_if_missing(true);
+                db_options.create_missing_column_families(true);
+                db_options.set_write_buffer_size(64 * 1024 * 1024); // 64MB 写缓冲区
+                db_options.set_max_write_buffer_number(3);
+                db_options.set_level_zero_file_num_compaction_trigger(8);
+                db_options.set_max_bytes_for_level_base(1024 * 1024 * 1024); // 1GB
+                db_options.set_target_file_size_base(128 * 1024 * 1024); // 128MB
+                db_options.set_max_open_files(-1); // 不限制打开文件数
+            }
+            CacheMode::LowMemory => {
+                db_options.create_if_missing(true);
+                db_options.create_missing_column_families(true);
+                db_options.set_write_buffer_size(16 * 1024 * 1024); // 16MB 写缓冲区
+                db_options.set_max_write_buffer_number(2);
+                db_options.set_level_zero_file_num_compaction_trigger(10);
+                db_options.set_max_bytes_for_level_base(256 * 1024 * 1024); // 256MB
+                db_options.set_target_file_size_base(32 * 1024 * 1024); // 32MB
+                db_options.set_max_open_files(100); // 限制打开文件数
+            }
+            CacheMode::Balanced => {
+                db_options.create_if_missing(true);
+                db_options.create_missing_column_families(true);
+                db_options.set_write_buffer_size(32 * 1024 * 1024); // 32MB 写缓冲区
+                db_options.set_max_write_buffer_number(3);
+                db_options.set_level_zero_file_num_compaction_trigger(6);
+                db_options.set_max_bytes_for_level_base(512 * 1024 * 1024); // 512MB
+                db_options.set_target_file_size_base(64 * 1024 * 1024); // 64MB
+                db_options.set_max_open_files(500); // 限制打开文件数
+            }
+            CacheMode::HighPerformance => {
+                db_options.create_if_missing(true);
+                db_options.create_missing_column_families(true);
+                db_options.set_write_buffer_size(256 * 1024 * 1024); // 256MB 写缓冲区
+                db_options.set_max_write_buffer_number(4);
+                db_options.set_level_zero_file_num_compaction_trigger(2);
+                db_options.set_max_bytes_for_level_base(1024 * 1024 * 1024); // 1GB
+                db_options.set_target_file_size_base(128 * 1024 * 1024); // 128MB
+                db_options.set_max_open_files(-1); // 不限制打开文件数
+            }
+        }
+
+        // 获取数据库中已存在的列族
+        let existing_cfs = DB::list_cf(&db_options, &config.db_path)
+            .unwrap_or_else(|_| vec!["default".to_string()]);
+
+        info!("已存在的列族: {:?}", existing_cfs);
+
+        // 根据是否为 Secondary 模式打开数据库
+        let db = if config.is_secondary {
+            let secondary_path = config.secondary_path.as_ref().ok_or_else(|| {
+                CacheError::DatabaseError("Secondary 模式需要指定 secondary_path".to_string())
+            })?;
+
+            info!(
+                "以 Secondary 模式打开数据库，主路径: {}, Secondary 路径: {}",
+                config.db_path, secondary_path
+            );
+            Arc::new(
+                DB::open_cf_as_secondary(
+                    &db_options,
+                    &config.db_path,
+                    secondary_path,
+                    &existing_cfs,
+                )
+                .map_err(|e| {
+                    error!("打开 Secondary 数据库失败: {}", e);
+                    CacheError::DatabaseError(format!("打开 Secondary 数据库失败: {e}"))
+                })?,
+            )
+        } else {
+            info!("以 Primary 模式打开数据库，路径: {}", config.db_path);
+            Arc::new(
+                DB::open_cf(&db_options, &config.db_path, &existing_cfs).map_err(|e| {
+                    error!("打开数据库失败: {}", e);
+                    CacheError::DatabaseError(format!("打开数据库失败: {e}"))
+                })?,
+            )
         };
 
-        let db = Arc::new(
-            db_config
-                .open()
-                .map_err(|e| CacheError::DatabaseError(format!("打开数据库失败: {e}")))?,
-        );
+        info!("数据库打开成功");
 
-        let metadata_tree = Arc::new(
-            db.open_tree("cache_metadata")
-                .map_err(|e| CacheError::DatabaseError(format!("打开元数据树失败: {e}")))?,
-        );
+        // 初始化列族名称集合
+        let column_family_names = Arc::new(RwLock::new(HashMap::new()));
+
+        // 记录所有已存在的列族
+        if let Ok(mut cf_names) = column_family_names.write() {
+            for cf_name in &existing_cfs {
+                cf_names.insert(cf_name.clone(), ());
+            }
+        }
 
         // 初始化布隆过滤器
         let bloom_filter = if config.enable_bloom_filter {
@@ -301,7 +419,7 @@ impl CacheManager {
 
         Ok(Self {
             db,
-            metadata_tree,
+            column_family_names,
             config,
             stats: Arc::new(CacheStats::default()),
             hits: Arc::new(AtomicU64::new(0)),
@@ -381,34 +499,9 @@ impl CacheManager {
             }
         }
 
-        // 获取元数据
-        let metadata = match self.get_metadata(&full_key)? {
-            Some(meta) => meta,
-            None => {
-                self.misses.fetch_add(1, Ordering::Relaxed);
-
-                // 更新延迟统计
-                let elapsed = start_time.elapsed().as_nanos() as u64;
-                self.update_latency_stats(elapsed, true);
-
-                return Ok(None);
-            }
-        };
-
-        // 检查是否过期
-        if metadata.is_expired {
-            self.misses.fetch_add(1, Ordering::Relaxed);
-
-            // 更新延迟统计
-            let elapsed = start_time.elapsed().as_nanos() as u64;
-            self.update_latency_stats(elapsed, true);
-
-            return Ok(None);
-        }
-
         // 获取数据
-        let tree = self.get_or_create_tree(&top_scope)?;
-        let value = tree.get(full_key.as_bytes()).map_err(|e| {
+        let cf = self.get_or_create_cf(&top_scope)?;
+        let value = self.db.get_cf(&cf, full_key.as_bytes()).map_err(|e| {
             // 更新延迟统计
             let elapsed = start_time.elapsed().as_nanos() as u64;
             self.update_latency_stats(elapsed, true);
@@ -418,10 +511,21 @@ impl CacheManager {
 
         let result = match value {
             Some(v) => {
-                self.hits.fetch_add(1, Ordering::Relaxed);
-                // 更新元数据访问信息（异步，不阻塞读取）
-                let _ = self.update_metadata_access(&full_key);
-                Ok(Some(v.to_vec()))
+                // 反序列化缓存条目
+                let entry: CacheEntry = bincode::decode_from_slice(&v, bincode::config::standard())
+                    .map_err(|e| {
+                        CacheError::SerializationError(format!("反序列化缓存条目失败: {e}"))
+                    })?
+                    .0;
+
+                // 检查是否过期
+                if entry.is_expired() {
+                    self.misses.fetch_add(1, Ordering::Relaxed);
+                    Ok(None)
+                } else {
+                    self.hits.fetch_add(1, Ordering::Relaxed);
+                    Ok(Some(entry.into_value()))
+                }
             }
             None => {
                 self.misses.fetch_add(1, Ordering::Relaxed);
@@ -475,34 +579,16 @@ impl CacheManager {
         // 解析作用域
         let (top_scope, full_key) = self.parse_scope(scope, key);
 
-        // 获取元数据
-        let metadata = match self.get_metadata(&full_key)? {
-            Some(meta) => meta,
-            None => {
-                self.misses.fetch_add(1, Ordering::Relaxed);
-                return Ok(None);
-            }
-        };
-
-        // 检查是否过期
-        let is_stale = metadata.is_expired;
-
-        // 获取数据
-        let tree = self.get_or_create_tree(&top_scope)?;
-        let value = tree
-            .get(full_key.as_bytes())
+        let cf = self.get_or_create_cf(&top_scope)?;
+        let value = self
+            .db
+            .get_cf(&cf, full_key.as_bytes())
             .map_err(|e| CacheError::DatabaseError(format!("读取缓存失败: {e}")))?;
 
         match value {
             Some(v) => {
-                if is_stale {
-                    self.misses.fetch_add(1, Ordering::Relaxed);
-                } else {
-                    self.hits.fetch_add(1, Ordering::Relaxed);
-                }
-                // 更新元数据访问信息（异步，不阻塞读取）
-                let _ = self.update_metadata_access(&full_key);
-                Ok(Some((v.to_vec(), is_stale)))
+                self.hits.fetch_add(1, Ordering::Relaxed);
+                Ok(Some((v.to_vec(), false)))
             }
             None => {
                 self.misses.fetch_add(1, Ordering::Relaxed);
@@ -776,10 +862,9 @@ impl CacheManager {
 
         // 获取当前值和元数据，用于条件判断
         let current_value = self.get(scope, &key)?;
-        let current_metadata = self.get_metadata(&full_key)?;
 
         // 检查条件
-        if !condition(&current_value, &current_metadata) {
+        if !condition(&current_value, &None) {
             return Ok(());
         }
 
@@ -794,21 +879,20 @@ impl CacheManager {
             }
         }
 
-        // 获取或创建对应的 tree
-        let tree = self.get_or_create_tree(&top_scope)?;
+        // 获取或创建对应的列族
+        let cf = self.get_or_create_cf(&top_scope)?;
 
-        // 创建元数据
-        let ttl_secs = ttl
-            .map(|d| d.as_secs())
-            .unwrap_or(self.config.default_ttl_secs);
-        let metadata = CacheEntryMetadata::new(full_key.clone(), ttl_secs, value_size);
+        // 计算 TTL
+        let ttl_duration = ttl.unwrap_or_else(|| Duration::from_secs(self.config.default_ttl_secs));
 
-        // 写入数据
-        tree.insert(full_key.as_bytes(), value.as_slice())
+        // 创建带有 TTL 的缓存条目
+        let entry = CacheEntry::new(value, ttl_duration);
+        let entry_bytes = bincode::encode_to_vec(&entry, bincode::config::standard())
+            .map_err(|e| CacheError::SerializationError(format!("序列化缓存条目失败: {e}")))?;
+
+        self.db
+            .put_cf(&cf, full_key.as_bytes(), entry_bytes.as_slice())
             .map_err(|e| CacheError::DatabaseError(format!("写入缓存失败: {e}")))?;
-
-        // 写入元数据
-        self.set_metadata(&full_key, &metadata)?;
 
         // 将键添加到布隆过滤器
         if let Some(bloom_filter) = &self.bloom_filter {
@@ -910,7 +994,7 @@ impl CacheManager {
         (top_scope, full_key)
     }
 
-    /// 获取或创建对应的 sled tree
+    /// 获取或创建对应的 RocksDB 列族
     ///
     /// # 参数
     ///
@@ -918,15 +1002,73 @@ impl CacheManager {
     ///
     /// # 返回值
     ///
-    /// 返回对应的 sled tree
-    pub fn get_or_create_tree(&self, top_scope: &str) -> Result<sled::Tree> {
-        // 尝试获取现有 tree
-        let tree = self
-            .db
-            .open_tree(top_scope)
-            .map_err(|e| CacheError::DatabaseError(format!("打开 tree 失败: {e}")))?;
+    /// 返回对应的 RocksDB 列族
+    pub fn get_or_create_cf(&self, top_scope: &str) -> Result<ColumnFamilyRef<'_>> {
+        // 尝试从缓存中获取
+        {
+            let cf_names = self
+                .column_family_names
+                .read()
+                .map_err(|e| CacheError::DatabaseError(format!("获取列族名称读锁失败: {e}")))?;
+            if cf_names.contains_key(top_scope) {
+                return self.get_cf_handle(top_scope);
+            }
+        }
 
-        Ok(tree)
+        // 列族不存在，尝试创建
+        let mut cf_names = self
+            .column_family_names
+            .write()
+            .map_err(|e| CacheError::DatabaseError(format!("获取列族名称写锁失败: {e}")))?;
+
+        // 再次检查，防止并发创建
+        if cf_names.contains_key(top_scope) {
+            return self.get_cf_handle(top_scope);
+        }
+
+        if self.db.cf_handle(top_scope).is_some() {
+            cf_names.insert(top_scope.to_string(), ());
+            return self.get_cf_handle(top_scope);
+        }
+
+        let mut cf_options = Options::default();
+        cf_options.create_if_missing(true);
+
+        self.db
+            .create_cf(top_scope, &cf_options)
+            .map_err(|e| CacheError::DatabaseError(format!("创建列族失败: {e}")))?;
+
+        cf_names.insert(top_scope.to_string(), ());
+
+        self.get_cf_handle(top_scope)
+    }
+
+    /// 获取列族句柄
+    ///
+    /// # 参数
+    ///
+    /// * `cf_name` - 列族名称
+    ///
+    /// # 返回值
+    ///
+    /// 返回对应的 RocksDB 列族句柄
+    fn get_cf_handle(&self, cf_name: &str) -> Result<ColumnFamilyRef<'_>> {
+        self.db
+            .cf_handle(cf_name)
+            .ok_or_else(|| CacheError::DatabaseError(format!("列族不存在: {cf_name}")))
+    }
+
+    /// 获取或创建指定作用域的 tree（兼容旧 API）
+    ///
+    /// # 参数
+    ///
+    /// * `top_scope` - 顶级作用域名称
+    ///
+    /// # 返回值
+    ///
+    /// 返回对应的 RocksDB 列族句柄
+    fn get_or_create_tree(&self, top_scope: &str) -> Result<ColumnFamilyRef<'_>> {
+        self.get_or_create_cf(top_scope)
     }
 
     /// 删除缓存项
@@ -945,16 +1087,20 @@ impl CacheManager {
         // 解析作用域
         let (top_scope, full_key) = self.parse_scope(scope, key);
 
-        // 获取对应的 tree
-        let tree = self.get_or_create_tree(&top_scope)?;
+        // 获取对应的列族
+        let cf = self.get_or_create_cf(&top_scope)?;
 
-        let existed = tree
-            .remove(full_key.as_bytes())
-            .map_err(|e| CacheError::DatabaseError(format!("删除缓存失败: {e}")))?
+        let existed = self
+            .db
+            .get_cf(&cf, full_key.as_bytes())
+            .map_err(|e| CacheError::DatabaseError(format!("读取缓存失败: {e}")))?
             .is_some();
 
         if existed {
-            let _ = self.metadata_tree.remove(full_key.as_bytes());
+            self.db
+                .delete_cf(&cf, full_key.as_bytes())
+                .map_err(|e| CacheError::DatabaseError(format!("删除缓存失败: {e}")))?;
+
             self.deletes.fetch_add(1, Ordering::Relaxed);
 
             // 从热点键列表中移除
@@ -1011,31 +1157,24 @@ impl CacheManager {
         };
 
         // 获取对应的 tree
-        let tree = self.get_or_create_tree(&top_scope)?;
+        let cf = self.get_or_create_tree(&top_scope)?;
 
-        // 删除前缀匹配的所有键
         let mut count = 0;
         let prefix_bytes = prefix.as_bytes();
 
-        // 使用范围删除
-        let mut iter = tree.range(prefix_bytes.to_vec()..);
+        let mut iter = self.db.prefix_iterator_cf(&cf, prefix_bytes);
 
         while let Some(Ok((key, _))) = iter.next() {
             if !key.starts_with(prefix_bytes) {
                 break;
             }
 
-            // 删除数据
-            if tree
-                .remove(&key)
-                .map_err(|e| CacheError::DatabaseError(format!("删除缓存失败: {e}")))?
-                .is_some()
-            {
-                // 删除元数据
-                let _ = self.metadata_tree.remove(&key);
-                count += 1;
-                self.deletes.fetch_add(1, Ordering::Relaxed);
-            }
+            self.db
+                .delete_cf(&cf, &key)
+                .map_err(|e| CacheError::DatabaseError(format!("删除缓存失败: {e}")))?;
+
+            count += 1;
+            self.deletes.fetch_add(1, Ordering::Relaxed);
         }
 
         Ok(count)
@@ -1062,13 +1201,8 @@ impl CacheManager {
             return Err(CacheError::CacheDisabled);
         }
 
-        // 清空元数据
-        self.metadata_tree
-            .clear()
-            .map_err(|e| CacheError::DatabaseError(format!("清空元数据失败: {e}")))?;
-
-        // 注意：sled 不支持直接获取所有 tree 名称，我们需要手动管理或使用其他方法
-        // 这里简化实现，只清空已知的主要 tree
+        // 注意：RocksDB 不支持直接获取所有列族名称，我们需要手动管理或使用其他方法
+        // 这里简化实现，只清空已知的主要列族
         Ok(())
     }
 
@@ -1105,25 +1239,21 @@ impl CacheManager {
         };
 
         // 获取对应的 tree
-        let tree = self.get_or_create_tree(&top_scope)?;
+        let cf = self.get_or_create_tree(&top_scope)?;
 
         // 清空前缀匹配的所有键
         let prefix_bytes = prefix.as_bytes();
 
-        // 使用范围删除
-        let mut iter = tree.range(prefix_bytes.to_vec()..);
+        let mut iter = self.db.prefix_iterator_cf(&cf, prefix_bytes);
 
         while let Some(Ok((key, _))) = iter.next() {
             if !key.starts_with(prefix_bytes) {
                 break;
             }
 
-            // 删除数据
-            tree.remove(&key)
+            self.db
+                .delete_cf(&cf, &key)
                 .map_err(|e| CacheError::DatabaseError(format!("清空作用域失败: {e}")))?;
-
-            // 删除元数据
-            let _ = self.metadata_tree.remove(&key);
         }
 
         Ok(())
@@ -1155,46 +1285,40 @@ impl CacheManager {
         let mut count = 0;
         let max_items = max_items.unwrap_or(usize::MAX);
 
-        // 遍历所有元数据
-        for item in self.metadata_tree.iter() {
-            if count >= max_items {
-                break;
-            }
+        // 遍历所有列族名称
+        let cf_names = self
+            .column_family_names
+            .read()
+            .map_err(|e| CacheError::DatabaseError(format!("获取列族名称读锁失败: {e}")))?;
 
-            let (key, value) =
-                item.map_err(|e| CacheError::DatabaseError(format!("遍历元数据失败: {e}")))?;
+        for scope_name in cf_names.keys() {
+            // 获取列族句柄
+            let cf = self.get_cf_handle(scope_name)?;
 
-            let metadata: CacheEntryMetadata =
-                bincode::serde::decode_from_slice(&value, bincode::config::standard())
-                    .map(|(meta, _)| meta)
-                    .map_err(|e| {
-                        CacheError::SerializationError(format!("反序列化元数据失败: {e}"))
-                    })?;
+            let mut iter = self.db.raw_iterator_cf(&cf);
+            iter.seek_to_first();
 
-            if metadata.is_expired {
-                // 从元数据键中提取作用域
-                let scope = &metadata.key;
-
-                // 解析完整键，获取顶级作用域
-                let top_scope = {
-                    let parts: Vec<&str> = scope.split('.').collect();
-                    parts[0].to_string()
-                };
-
-                // 获取对应的 tree
-                let tree = self.get_or_create_tree(&top_scope)?;
-
-                // 删除过期条目
-                if tree
-                    .remove(&key)
-                    .map_err(|e| CacheError::DatabaseError(format!("删除过期条目失败: {e}")))?
-                    .is_some()
+            while iter.valid() && count < max_items {
+                if let Some((key, value)) = iter.key().and_then(|k| iter.value().map(|v| (k, v)))
+                    && let Ok(metadata) =
+                        bincode::serde::decode_from_slice::<CacheEntryMetadata, _>(
+                            value,
+                            bincode::config::standard(),
+                        )
+                        .map(|(meta, _)| meta)
+                    && metadata.is_expired
                 {
-                    // 删除元数据
-                    let _ = self.metadata_tree.remove(&key);
+                    self.db
+                        .delete_cf(&cf, key)
+                        .map_err(|e| CacheError::DatabaseError(format!("删除过期条目失败: {e}")))?;
                     count += 1;
                     self.evictions.fetch_add(1, Ordering::Relaxed);
                 }
+                iter.next();
+            }
+
+            if count >= max_items {
+                break;
             }
         }
 
@@ -1238,40 +1362,29 @@ impl CacheManager {
     /// * `scope` - 缓存作用域
     pub fn cleanup_expired_by_scope(&self, scope: &str) -> Result<usize> {
         let mut count = 0;
+        let scope_prefix = format!("{}.", scope);
 
-        // 遍历所有元数据，查找指定作用域的过期条目
-        for item in self.metadata_tree.iter() {
-            let (key, value) =
-                item.map_err(|e| CacheError::DatabaseError(format!("遍历元数据失败: {e}")))?;
+        // 解析完整键，获取顶级作用域
+        let parts: Vec<&str> = scope.split('.').collect();
+        let top_scope = parts[0].to_string();
 
-            let metadata: CacheEntryMetadata =
-                bincode::serde::decode_from_slice(&value, bincode::config::standard())
-                    .map(|(meta, _)| meta)
-                    .map_err(|e| {
-                        CacheError::SerializationError(format!("反序列化元数据失败: {e}"))
-                    })?;
+        // 获取对应的列族
+        let cf = self.get_or_create_tree(&top_scope)?;
 
-            // 检查是否是指定作用域的条目
-            if metadata.key.starts_with(&format!("{}.", scope)) && metadata.is_expired {
-                // 解析完整键，获取顶级作用域
-                let parts: Vec<&str> = scope.split('.').collect();
-                let top_scope = parts[0].to_string();
+        let mut iter = self.db.raw_iterator_cf(&cf);
+        iter.seek_to_first();
 
-                // 获取对应的 tree
-                let tree = self.get_or_create_tree(&top_scope)?;
-
-                // 删除过期条目
-                if tree
-                    .remove(&key)
-                    .map_err(|e| CacheError::DatabaseError(format!("删除过期条目失败: {e}")))?
-                    .is_some()
-                {
-                    // 删除元数据
-                    let _ = self.metadata_tree.remove(&key);
-                    count += 1;
-                    self.evictions.fetch_add(1, Ordering::Relaxed);
-                }
+        while iter.valid() {
+            if let Some(key) = iter.key()
+                && key.starts_with(scope_prefix.as_bytes())
+            {
+                self.db
+                    .delete_cf(&cf, key)
+                    .map_err(|e| CacheError::DatabaseError(format!("删除条目失败: {e}")))?;
+                count += 1;
+                self.evictions.fetch_add(1, Ordering::Relaxed);
             }
+            iter.next();
         }
 
         Ok(count)
@@ -1458,14 +1571,22 @@ impl CacheManager {
             delete_latency.max_latency_us,
         );
 
+        let current_size = self
+            .db
+            .property_value(rocksdb::properties::ESTIMATE_NUM_KEYS)
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0) as usize;
+
         CacheStats {
             total_hits: self.hits.load(Ordering::Relaxed),
             total_misses: self.misses.load(Ordering::Relaxed),
             total_inserts: self.writes.load(Ordering::Relaxed),
             total_deletes: self.deletes.load(Ordering::Relaxed),
-            total_updates: 0, // 暂时不统计更新次数
+            total_updates: 0,
             total_evictions: self.evictions.load(Ordering::Relaxed),
-            current_size: self.db.len(),
+            current_size,
             latency_stats: LatencyStats {
                 avg_latency_us,
                 min_latency_us,
@@ -1487,65 +1608,31 @@ impl CacheManager {
         Ok(())
     }
 
-    /// 获取数据库迭代器
+    /// 遍历所有缓存条目
     ///
-    /// 用于遍历所有缓存条目
+    /// # 参数
+    ///
+    /// * `f` - 回调函数，对每个缓存条目执行
     ///
     /// # 返回值
     ///
-    /// 返回 sled 数据库的迭代器
-    pub fn iter(&self) -> sled::Iter {
-        self.db.iter()
+    /// 返回回调函数的结果
+    pub fn iter(&self) -> rocksdb::DBIterator<'_> {
+        self.db.iterator(rocksdb::IteratorMode::Start)
     }
 
-    /// 获取数据库实例
-    ///
-    /// # 返回值
-    ///
-    /// 返回 sled 数据库实例的引用
-    pub fn db(&self) -> &Db {
+    pub fn db(&self) -> &Arc<DB> {
         &self.db
     }
 
-    // 私有辅助方法
-
-    pub fn get_metadata(&self, key: &str) -> Result<Option<CacheEntryMetadata>> {
-        match self.metadata_tree.get(key.as_bytes()) {
-            Ok(Some(data)) => {
-                let metadata: CacheEntryMetadata =
-                    bincode::serde::decode_from_slice(&data, bincode::config::standard())
-                        .map(|(meta, _)| meta)
-                        .map_err(|e| {
-                            CacheError::SerializationError(format!("反序列化元数据失败: {e}"))
-                        })?;
-                Ok(Some(metadata))
-            }
-            Ok(None) => Ok(None),
-            Err(e) => Err(CacheError::DatabaseError(format!("读取元数据失败: {e}"))),
-        }
-    }
-
-    fn set_metadata(&self, key: &str, metadata: &CacheEntryMetadata) -> Result<()> {
-        let data = bincode::serde::encode_to_vec(metadata, bincode::config::standard())
-            .map_err(|e| CacheError::SerializationError(format!("序列化元数据失败: {e}")))?;
-
-        self.metadata_tree
-            .insert(key.as_bytes(), data.as_slice())
-            .map_err(|e| CacheError::DatabaseError(format!("写入元数据失败: {e}")))?;
-
-        Ok(())
-    }
-
-    fn update_metadata_access(&self, key: &str) -> Result<()> {
-        if let Some(mut metadata) = self.get_metadata(key)? {
-            metadata.update_access();
-            self.set_metadata(key, &metadata)?;
-        }
-        Ok(())
-    }
-
     fn is_cache_full(&self, new_size: usize) -> Result<bool> {
-        let current_size = self.db.size_on_disk().unwrap_or(0);
+        let current_size = self
+            .db
+            .property_value(rocksdb::properties::TOTAL_SST_FILES_SIZE)
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
         Ok(current_size + new_size as u64 > self.config.max_size_bytes)
     }
 
@@ -1691,16 +1778,21 @@ impl CacheManager {
 
     /// 获取指定作用域的缓存大小
     pub fn scope_size(&self, scope: &str) -> Result<usize> {
-        let tree = self.get_or_create_tree(scope)?;
-        Ok(tree.len())
+        let cf = self.get_or_create_tree(scope)?;
+        let mut count = 0;
+        let iter = self.db.iterator_cf(&cf, rocksdb::IteratorMode::Start);
+        for _ in iter {
+            count += 1;
+        }
+        Ok(count)
     }
 
     /// 获取指定作用域的所有键
     pub fn scope_keys(&self, scope: &str) -> Result<Vec<String>> {
-        let tree = self.get_or_create_tree(scope)?;
+        let cf = self.get_or_create_tree(scope)?;
         let mut keys = Vec::new();
 
-        for item in tree.iter() {
+        for item in self.db.iterator_cf(&cf, rocksdb::IteratorMode::Start) {
             let (key_bytes, _) =
                 item.map_err(|e| CacheError::DatabaseError(format!("迭代键失败: {e}")))?;
             if let Ok(key_str) = String::from_utf8(key_bytes.to_vec()) {
@@ -1713,9 +1805,11 @@ impl CacheManager {
 
     /// 检查指定作用域中是否存在指定键
     pub fn contains_key(&self, scope: &str, key: &str) -> Result<bool> {
-        let tree = self.get_or_create_tree(scope)?;
-        tree.contains_key(key.as_bytes())
+        let cf = self.get_or_create_cf(scope)?;
+        self.db
+            .get_cf(&cf, key.as_bytes())
             .map_err(|e| CacheError::DatabaseError(format!("检查键存在失败: {e}")))
+            .map(|opt| opt.is_some())
     }
 }
 
@@ -1734,6 +1828,8 @@ mod tests {
 
         CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
+            secondary_path: None,
+            is_secondary: false,
             default_ttl_secs: 10,
             max_size_bytes: 1024 * 1024, // 1MB for tests
             enabled: true,
