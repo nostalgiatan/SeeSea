@@ -68,7 +68,7 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libxml2-dev libxslt1-dev wget gnupg
+        sudo apt-get install -y libxml2-dev libxslt1-dev wget gnupg pkg-config libssl-dev
 
     - name: Install LLVM
       if: matrix.os == 'ubuntu-latest'
@@ -95,11 +95,19 @@ jobs:
         git clone https://github.com/Microsoft/vcpkg.git
         cd vcpkg
         ./bootstrap-vcpkg.bat
-        ./vcpkg install openssl:x64-windows
+        # 根据架构安装对应的 OpenSSL
+        if [ "${{ matrix.arch }}" = "x64" ]; then
+          ./vcpkg install openssl:x64-windows
+          echo "OPENSSL_DIR=$GITHUB_WORKSPACE/vcpkg/installed/x64-windows" >> $GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=$GITHUB_WORKSPACE/vcpkg/installed/x64-windows/lib" >> $GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$GITHUB_WORKSPACE/vcpkg/installed/x64-windows/include" >> $GITHUB_ENV
+        else
+          ./vcpkg install openssl:arm64-windows
+          echo "OPENSSL_DIR=$GITHUB_WORKSPACE/vcpkg/installed/arm64-windows" >> $GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=$GITHUB_WORKSPACE/vcpkg/installed/arm64-windows/lib" >> $GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$GITHUB_WORKSPACE/vcpkg/installed/arm64-windows/include" >> $GITHUB_ENV
+        fi
         echo "VCPKG_ROOT=$GITHUB_WORKSPACE/vcpkg" >> $GITHUB_ENV
-        echo "OPENSSL_DIR=$GITHUB_WORKSPACE/vcpkg/installed/x64-windows" >> $GITHUB_ENV
-        echo "OPENSSL_LIB_DIR=$GITHUB_WORKSPACE/vcpkg/installed/x64-windows/lib" >> $GITHUB_ENV
-        echo "OPENSSL_INCLUDE_DIR=$GITHUB_WORKSPACE/vcpkg/installed/x64-windows/include" >> $GITHUB_ENV
 
     - name: Set LLVM environment variables (macOS)
       if: matrix.os == 'macos-latest'
@@ -154,14 +162,18 @@ jobs:
               sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu pkg-config
               sudo dpkg --add-architecture arm64
               sudo apt-get update && sudo apt-get install -y libssl-dev:arm64
-              echo "OPENSSL_DIR=/usr/lib/aarch64-linux-gnu" >> $GITHUB_ENV
+              echo "OPENSSL_DIR=/usr" >> $GITHUB_ENV
+              echo "OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu" >> $GITHUB_ENV
+              echo "OPENSSL_INCLUDE_DIR=/usr/include" >> $GITHUB_ENV
               echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
               ;;
             armv7-unknown-linux-gnueabihf)
               sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf pkg-config
               sudo dpkg --add-architecture armhf
               sudo apt-get update && sudo apt-get install -y libssl-dev:armhf
-              echo "OPENSSL_DIR=/usr/lib/arm-linux-gnueabihf" >> $GITHUB_ENV
+              echo "OPENSSL_DIR=/usr" >> $GITHUB_ENV
+              echo "OPENSSL_LIB_DIR=/usr/lib/arm-linux-gnueabihf" >> $GITHUB_ENV
+              echo "OPENSSL_INCLUDE_DIR=/usr/include" >> $GITHUB_ENV
               echo "PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
               ;;
           esac
@@ -169,6 +181,7 @@ jobs:
         elif [ "${{ matrix.platform }}" = "windows" ]; then
           # Windows ARM64 交叉编译需要设置环境变量
           echo "Setting up Windows ARM64 cross-compilation"
+          # vcpkg 已经在前面安装了对应的 OpenSSL
         fi
 
     - name: Build seesea-core with maturin
