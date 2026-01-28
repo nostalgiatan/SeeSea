@@ -19,7 +19,7 @@ jobs:
       matrix:
         include:
           # Linux x64 build (ABI3 supports Python 3.9+)
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             platform: linux
             arch: x64
             maturin-target: x86_64-unknown-linux-gnu
@@ -29,7 +29,7 @@ jobs:
             arch: arm64
             maturin-target: aarch64-unknown-linux-gnu
           # Windows x64 build (ABI3 supports Python 3.9+)
-          - os: windows-latest
+          - os: windows-2025
             platform: windows
             arch: x64
             maturin-target: x86_64-pc-windows-msvc
@@ -39,12 +39,12 @@ jobs:
             arch: arm64
             maturin-target: aarch64-pc-windows-msvc
           # macOS x64 build (ABI3 supports Python 3.9+)
-          - os: macos-latest
+          - os: macos-15-intel
             platform: macos
             arch: x64
             maturin-target: x86_64-apple-darwin
           # macOS arm64 build (ABI3 supports Python 3.9+)
-          - os: macos-latest
+          - os: macos-15
             platform: macos
             arch: arm64
             maturin-target: aarch64-apple-darwin
@@ -60,13 +60,13 @@ jobs:
         targets: ${{ matrix.maturin-target }}
 
     - name: Install system dependencies (Ubuntu)
-      if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
+      if: matrix.os == 'ubuntu-24.04' || matrix.os == 'ubuntu-24.04-arm'
       run: |
         sudo apt-get update
         sudo apt-get install -y libxml2-dev libxslt1-dev wget gnupg pkg-config libssl-dev
 
     - name: Install LLVM
-      if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
+      if: matrix.os == 'ubuntu-24.04' || matrix.os == 'ubuntu-24.04-arm'
       run: |
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
@@ -74,17 +74,17 @@ jobs:
         sudo apt-get install -y lld-21
 
     - name: Install LLVM (macOS)
-      if: matrix.os == 'macos-latest'
+      if: matrix.os == 'macos-15' || matrix.os == 'macos-15-intel'
       run: |
         brew install llvm@21 nasm pkg-config openssl@3
 
     - name: Install LLVM (Windows)
-      if: matrix.os == 'windows-latest' || matrix.os == 'windows-11-arm'
+      if: matrix.os == 'windows-2025' || matrix.os == 'windows-11-arm'
       run: |
         winget install LLVM.LLVM --accept-source-agreements --accept-package-agreements -e
 
     - name: Install vcpkg and OpenSSL (Windows)
-      if: matrix.os == 'windows-latest' || matrix.os == 'windows-11-arm'
+      if: matrix.os == 'windows-2025' || matrix.os == 'windows-11-arm'
       shell: bash
       run: |
         git clone https://github.com/Microsoft/vcpkg.git
@@ -105,7 +105,7 @@ jobs:
         echo "VCPKG_ROOT=$GITHUB_WORKSPACE/vcpkg" >> $GITHUB_ENV
 
     - name: Set LLVM environment variables (macOS)
-      if: matrix.os == 'macos-latest'
+      if: matrix.os == 'macos-15' || matrix.os == 'macos-15-intel'
       run: |
         # Apple Silicon 使用 /opt/homebrew，Intel 使用 /usr/local
         if [ "$(uname -m)" = "arm64" ]; then
@@ -127,9 +127,10 @@ jobs:
         echo "OPENSSL_LIB_DIR=$HOMEBREW_PREFIX/opt/openssl@3/lib" >> $GITHUB_ENV
         echo "OPENSSL_INCLUDE_DIR=$HOMEBREW_PREFIX/opt/openssl@3/include" >> $GITHUB_ENV
         echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
+        echo "MACOSX_DEPLOYMENT_TARGET=11.0" >> $GITHUB_ENV
 
     - name: Set LLVM environment variables (Windows)
-      if: matrix.os == 'windows-latest' || matrix.os == 'windows-11-arm'
+      if: matrix.os == 'windows-2025' || matrix.os == 'windows-11-arm'
       run: |
         echo "C:\Program Files\LLVM\bin" >> $env:GITHUB_PATH
 
