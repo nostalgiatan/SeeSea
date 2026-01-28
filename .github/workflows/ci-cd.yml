@@ -86,7 +86,7 @@ jobs:
     - name: Install LLVM (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        winget install LLVM.LLVM
+        winget install LLVM.LLVM --accept-source-agreements --accept-package-agreements -e
 
     - name: Set LLVM environment variables (macOS)
       if: matrix.os == 'macos-latest'
