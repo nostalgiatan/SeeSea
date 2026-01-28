@@ -13,210 +13,51 @@ on:
 
 jobs:
   build:
-    name: Build on ${{ matrix.platform }} (Python ${{ matrix.python-version }})
+    name: Build on ${{ matrix.platform }}-${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
-          # Linux x64 builds for Python 3.10-3.14
+          # Linux x64 build (ABI3 supports Python 3.9+)
           - os: ubuntu-latest
             platform: linux
             arch: x64
             maturin-target: x86_64-unknown-linux-gnu
-            python-version: '3.10'
-          - os: ubuntu-latest
-            platform: linux
-            arch: x64
-            maturin-target: x86_64-unknown-linux-gnu
-            python-version: '3.11'
-          - os: ubuntu-latest
-            platform: linux
-            arch: x64
-            maturin-target: x86_64-unknown-linux-gnu
-            python-version: '3.12'
-          - os: ubuntu-latest
-            platform: linux
-            arch: x64
-            maturin-target: x86_64-unknown-linux-gnu
-            python-version: '3.13'
-          # Temporarily commented out due to build issues with Python 3.14
-          # - os: ubuntu-latest
-          #   platform: linux
-          #   arch: x64
-          #   maturin-target: x86_64-unknown-linux-gnu
-          #   python-version: '3.14'
-          # Linux arm64 builds for Python 3.10-3.14
+          # Linux arm64 build (ABI3 supports Python 3.9+)
           - os: ubuntu-latest
             platform: linux
             arch: arm64
             maturin-target: aarch64-unknown-linux-gnu
-            python-version: '3.10'
-          - os: ubuntu-latest
-            platform: linux
-            arch: arm64
-            maturin-target: aarch64-unknown-linux-gnu
-            python-version: '3.11'
-          - os: ubuntu-latest
-            platform: linux
-            arch: arm64
-            maturin-target: aarch64-unknown-linux-gnu
-            python-version: '3.12'
-          - os: ubuntu-latest
-            platform: linux
-            arch: arm64
-            maturin-target: aarch64-unknown-linux-gnu
-            python-version: '3.13'
-          # Temporarily commented out due to build issues with Python 3.14
-          # - os: ubuntu-latest
-          #   platform: linux
-          #   arch: arm64
-          #   maturin-target: aarch64-unknown-linux-gnu
-          #   python-version: '3.14'
-          # Linux armv7 builds for Python 3.10-3.14
+          # Linux armv7 build (ABI3 supports Python 3.9+)
           - os: ubuntu-latest
             platform: linux
             arch: armv7
             maturin-target: armv7-unknown-linux-gnueabihf
-            python-version: '3.10'
-          - os: ubuntu-latest
-            platform: linux
-            arch: armv7
-            maturin-target: armv7-unknown-linux-gnueabihf
-            python-version: '3.11'
-          - os: ubuntu-latest
-            platform: linux
-            arch: armv7
-            maturin-target: armv7-unknown-linux-gnueabihf
-            python-version: '3.12'
-          - os: ubuntu-latest
-            platform: linux
-            arch: armv7
-            maturin-target: armv7-unknown-linux-gnueabihf
-            python-version: '3.13'
-          # Temporarily commented out due to build issues with Python 3.14
-          # - os: ubuntu-latest
-          #   platform: linux
-          #   arch: armv7
-          #   maturin-target: armv7-unknown-linux-gnueabihf
-          #   python-version: '3.14'
-          # Windows x64 builds for Python 3.10-3.14
+          # Windows x64 build (ABI3 supports Python 3.9+)
           - os: windows-latest
             platform: windows
             arch: x64
             maturin-target: x86_64-pc-windows-msvc
-            python-version: '3.10'
-          - os: windows-latest
-            platform: windows
-            arch: x64
-            maturin-target: x86_64-pc-windows-msvc
-            python-version: '3.11'
-          - os: windows-latest
-            platform: windows
-            arch: x64
-            maturin-target: x86_64-pc-windows-msvc
-            python-version: '3.12'
-          - os: windows-latest
-            platform: windows
-            arch: x64
-            maturin-target: x86_64-pc-windows-msvc
-            python-version: '3.13'
-          # Temporarily commented out due to build issues with Python 3.14
-          # - os: windows-latest
-          #   platform: windows
-          #   arch: x64
-          #   maturin-target: x86_64-pc-windows-msvc
-          #   python-version: '3.14'
-          # Windows arm64 builds for Python 3.10-3.14
+          # Windows arm64 build (ABI3 supports Python 3.9+)
           - os: windows-latest
             platform: windows
             arch: arm64
             maturin-target: aarch64-pc-windows-msvc
-            python-version: '3.10'
-          - os: windows-latest
-            platform: windows
-            arch: arm64
-            maturin-target: aarch64-pc-windows-msvc
-            python-version: '3.11'
-          - os: windows-latest
-            platform: windows
-            arch: arm64
-            maturin-target: aarch64-pc-windows-msvc
-            python-version: '3.12'
-          - os: windows-latest
-            platform: windows
-            arch: arm64
-            maturin-target: aarch64-pc-windows-msvc
-            python-version: '3.13'
-          # Temporarily commented out due to build issues with Python 3.14
-          # - os: windows-latest
-          #   platform: windows
-          #   arch: arm64
-          #   maturin-target: aarch64-pc-windows-msvc
-          #   python-version: '3.14'
-          # macOS x64 builds for Python 3.10-3.14
+          # macOS x64 build (ABI3 supports Python 3.9+)
           - os: macos-latest
             platform: macos
             arch: x64
             maturin-target: x86_64-apple-darwin
-            python-version: '3.10'
-          - os: macos-latest
-            platform: macos
-            arch: x64
-            maturin-target: x86_64-apple-darwin
-            python-version: '3.11'
-          - os: macos-latest
-            platform: macos
-            arch: x64
-            maturin-target: x86_64-apple-darwin
-            python-version: '3.12'
-          - os: macos-latest
-            platform: macos
-            arch: x64
-            maturin-target: x86_64-apple-darwin
-            python-version: '3.13'
-          # Temporarily commented out due to build issues with Python 3.14
-          # - os: macos-latest
-          #   platform: macos
-          #   arch: x64
-          #   maturin-target: x86_64-apple-darwin
-          #   python-version: '3.14'
-          # macOS arm64 builds for Python 3.10-3.14
+          # macOS arm64 build (ABI3 supports Python 3.9+)
           - os: macos-latest
             platform: macos
             arch: arm64
             maturin-target: aarch64-apple-darwin
-            python-version: '3.10'
-          - os: macos-latest
-            platform: macos
-            arch: arm64
-            maturin-target: aarch64-apple-darwin
-            python-version: '3.11'
-          - os: macos-latest
-            platform: macos
-            arch: arm64
-            maturin-target: aarch64-apple-darwin
-            python-version: '3.12'
-          - os: macos-latest
-            platform: macos
-            arch: arm64
-            maturin-target: aarch64-apple-darwin
-            python-version: '3.13'
-          # Temporarily commented out due to build issues with Python 3.14
-          # - os: macos-latest
-          #   platform: macos
-          #   arch: arm64
-          #   maturin-target: aarch64-apple-darwin
-          #   python-version: '3.14'
 
     steps:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
 
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
@@ -231,26 +72,25 @@ jobs:
 
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
         pip install maturin setuptools wheel build
-        # 安装用于静态类型检查的类型存根（仅安装项目中需要的几个）
+        # 安装用于静态类型检查的类型存根
         pip install types-PyYAML types-decorator types-tabulate
-        # 如遇到其它第三方库缺失类型时，可按需添加相应的 types-* 包，例如 pandas-stubs、types-psutil 等
 
     - name: Build seesea-core with maturin
       shell: bash
       run: |
-        # 为特定目标架构构建
-        cd seesea-core && maturin build --release --strip
-        mkdir -p building
-        cp seesea-core/target/wheels/*.whl building/
+        # 为特定目标架构构建（使用ABI3，支持Python 3.9+）
+        cd seesea-core && maturin build --release --strip --target ${{ matrix.maturin-target }}
+        mkdir -p ../building
+        # 复制wheel文件（根据target参数，wheel会在target/{target}/wheels/目录下）
+        find . -name "*.whl" -path "*/wheels/*" -exec cp {} ../building/ \;
 
     - name: Build seesea Python package
-      working-directory: ./seesea
       shell: bash
       run: |
-        python -m pip install -e .
-        python -m build --wheel
+        # 设置临时Python环境用于构建seesea SDK
+        python -m pip install --upgrade pip build
+        cd seesea && python -m build --wheel
         cp dist/*.whl ../building/
 
     - name: List generated files
@@ -260,7 +100,7 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: seesea-${{ matrix.platform }}-${{ matrix.arch }}-py${{ matrix.python-version }}-${{ github.run_id }}
+        name: seesea-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.run_id }}
         path: building/*
 
   release:
