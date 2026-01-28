@@ -68,13 +68,70 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libxml2-dev libxslt1-dev
+        sudo apt-get install -y libxml2-dev libxslt1-dev wget gnupg
+
+    - name: Install LLVM
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 21
+        sudo apt-get install -y lld-21
+
+    - name: Install LLVM (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install llvm@21
+
+    - name: Install LLVM (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        winget install LLVM.LLVM
+
+    - name: Set LLVM environment variables (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        echo "/usr/local/opt/llvm@21/bin" >> $GITHUB_PATH
+        echo "LDFLAGS=\"-L/usr/local/opt/llvm@21/lib\"" >> $GITHUB_ENV
+        echo "CPPFLAGS=\"-I/usr/local/opt/llvm@21/include\"" >> $GITHUB_ENV
+
+    - name: Set LLVM environment variables (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        echo "C:\Program Files\LLVM\bin" >> $env:GITHUB_PATH
+
+    - name: Verify LLVM installation
+      shell: bash
+      run: |
+        echo "Checking clang version..."
+        clang --version || echo "clang not found"
+        echo "Checking llvm-config..."
+        llvm-config --version || echo "llvm-config not found"
 
     - name: Install dependencies
       run: |
         pip install maturin setuptools wheel build
         # 安装用于静态类型检查的类型存根
         pip install types-PyYAML types-decorator types-tabulate
+
+    - name: Install cross-compilation toolchain
+      if: (matrix.platform == 'linux' && matrix.arch != 'x64') || (matrix.platform == 'windows' && matrix.arch == 'arm64')
+      shell: bash
+      run: |
+        if [ "${{ matrix.platform }}" = "linux" ]; then
+          case "${{ matrix.maturin-target }}" in
+            aarch64-unknown-linux-gnu)
+              sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+              ;;
+            armv7-unknown-linux-gnueabihf)
+              sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf
+              ;;
+          esac
+          # LLVM 21 已经在前面的步骤中安装
+        elif [ "${{ matrix.platform }}" = "windows" ]; then
+          # Windows ARM64 交叉编译需要设置环境变量
+          echo "Setting up Windows ARM64 cross-compilation"
+        fi
 
     - name: Build seesea-core with maturin
       shell: bash
