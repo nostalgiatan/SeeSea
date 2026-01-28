@@ -104,19 +104,25 @@ jobs:
     - name: Set LLVM environment variables (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        echo "/usr/local/opt/llvm@21/bin" >> $GITHUB_PATH
-        echo "LLVM_HOME=/usr/local/opt/llvm@21" >> $GITHUB_ENV
+        # Apple Silicon 使用 /opt/homebrew，Intel 使用 /usr/local
+        if [ "$(uname -m)" = "arm64" ]; then
+          HOMEBREW_PREFIX="/opt/homebrew"
+        else
+          HOMEBREW_PREFIX="/usr/local"
+        fi
+        echo "$HOMEBREW_PREFIX/opt/llvm@21/bin" >> $GITHUB_PATH
+        echo "LLVM_HOME=$HOMEBREW_PREFIX/opt/llvm@21" >> $GITHUB_ENV
         echo "CC=clang" >> $GITHUB_ENV
         echo "CXX=clang++" >> $GITHUB_ENV
-        echo "AR=/usr/local/opt/llvm@21/bin/llvm-ar" >> $GITHUB_ENV
-        echo "NM=/usr/local/opt/llvm@21/bin/llvm-nm" >> $GITHUB_ENV
-        echo "RANLIB=/usr/local/opt/llvm@21/bin/llvm-ranlib" >> $GITHUB_ENV
-        echo "LDFLAGS=-L/usr/local/opt/llvm@21/lib -L/usr/local/opt/openssl@3/lib" >> $GITHUB_ENV
-        echo "CPPFLAGS=-I/usr/local/opt/llvm@21/include -I/usr/local/opt/openssl@3/include" >> $GITHUB_ENV
-        echo "PKG_CONFIG_PATH=/usr/local/opt/openssl@3/lib/pkgconfig" >> $GITHUB_ENV
-        echo "OPENSSL_DIR=/usr/local/opt/openssl@3" >> $GITHUB_ENV
-        echo "OPENSSL_LIB_DIR=/usr/local/opt/openssl@3/lib" >> $GITHUB_ENV
-        echo "OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl@3/include" >> $GITHUB_ENV
+        echo "AR=$HOMEBREW_PREFIX/opt/llvm@21/bin/llvm-ar" >> $GITHUB_ENV
+        echo "NM=$HOMEBREW_PREFIX/opt/llvm@21/bin/llvm-nm" >> $GITHUB_ENV
+        echo "RANLIB=$HOMEBREW_PREFIX/opt/llvm@21/bin/llvm-ranlib" >> $GITHUB_ENV
+        echo "LDFLAGS=-L$HOMEBREW_PREFIX/opt/llvm@21/lib -L$HOMEBREW_PREFIX/opt/openssl@3/lib" >> $GITHUB_ENV
+        echo "CPPFLAGS=-I$HOMEBREW_PREFIX/opt/llvm@21/include -I$HOMEBREW_PREFIX/opt/openssl@3/include" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=$HOMEBREW_PREFIX/opt/openssl@3/lib/pkgconfig" >> $GITHUB_ENV
+        echo "OPENSSL_DIR=$HOMEBREW_PREFIX/opt/openssl@3" >> $GITHUB_ENV
+        echo "OPENSSL_LIB_DIR=$HOMEBREW_PREFIX/opt/openssl@3/lib" >> $GITHUB_ENV
+        echo "OPENSSL_INCLUDE_DIR=$HOMEBREW_PREFIX/opt/openssl@3/include" >> $GITHUB_ENV
         echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
 
     - name: Set LLVM environment variables (Windows)
