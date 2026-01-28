@@ -81,12 +81,25 @@ jobs:
     - name: Install LLVM (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        brew install llvm@21 nasm
+        brew install llvm@21 nasm pkg-config openssl@3
 
     - name: Install LLVM (Windows)
       if: matrix.os == 'windows-latest'
       run: |
         winget install LLVM.LLVM --accept-source-agreements --accept-package-agreements -e
+
+    - name: Install vcpkg and OpenSSL (Windows)
+      if: matrix.os == 'windows-latest'
+      shell: bash
+      run: |
+        git clone https://github.com/Microsoft/vcpkg.git
+        cd vcpkg
+        ./bootstrap-vcpkg.bat
+        ./vcpkg install openssl:x64-windows
+        echo "VCPKG_ROOT=$GITHUB_WORKSPACE/vcpkg" >> $GITHUB_ENV
+        echo "OPENSSL_DIR=$GITHUB_WORKSPACE/vcpkg/installed/x64-windows" >> $GITHUB_ENV
+        echo "OPENSSL_LIB_DIR=$GITHUB_WORKSPACE/vcpkg/installed/x64-windows/lib" >> $GITHUB_ENV
+        echo "OPENSSL_INCLUDE_DIR=$GITHUB_WORKSPACE/vcpkg/installed/x64-windows/include" >> $GITHUB_ENV
 
     - name: Set LLVM environment variables (macOS)
       if: matrix.os == 'macos-latest'
@@ -98,8 +111,12 @@ jobs:
         echo "AR=/usr/local/opt/llvm@21/bin/llvm-ar" >> $GITHUB_ENV
         echo "NM=/usr/local/opt/llvm@21/bin/llvm-nm" >> $GITHUB_ENV
         echo "RANLIB=/usr/local/opt/llvm@21/bin/llvm-ranlib" >> $GITHUB_ENV
-        echo "LDFLAGS=-L/usr/local/opt/llvm@21/lib" >> $GITHUB_ENV
-        echo "CPPFLAGS=-I/usr/local/opt/llvm@21/include" >> $GITHUB_ENV
+        echo "LDFLAGS=-L/usr/local/opt/llvm@21/lib -L/usr/local/opt/openssl@3/lib" >> $GITHUB_ENV
+        echo "CPPFLAGS=-I/usr/local/opt/llvm@21/include -I/usr/local/opt/openssl@3/include" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=/usr/local/opt/openssl@3/lib/pkgconfig" >> $GITHUB_ENV
+        echo "OPENSSL_DIR=/usr/local/opt/openssl@3" >> $GITHUB_ENV
+        echo "OPENSSL_LIB_DIR=/usr/local/opt/openssl@3/lib" >> $GITHUB_ENV
+        echo "OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl@3/include" >> $GITHUB_ENV
         echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
 
     - name: Set LLVM environment variables (Windows)
@@ -128,10 +145,18 @@ jobs:
         if [ "${{ matrix.platform }}" = "linux" ]; then
           case "${{ matrix.maturin-target }}" in
             aarch64-unknown-linux-gnu)
-              sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+              sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu pkg-config
+              sudo dpkg --add-architecture arm64
+              sudo apt-get update && sudo apt-get install -y libssl-dev:arm64
+              echo "OPENSSL_DIR=/usr/lib/aarch64-linux-gnu" >> $GITHUB_ENV
+              echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
               ;;
             armv7-unknown-linux-gnueabihf)
-              sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf
+              sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf pkg-config
+              sudo dpkg --add-architecture armhf
+              sudo apt-get update && sudo apt-get install -y libssl-dev:armhf
+              echo "OPENSSL_DIR=/usr/lib/arm-linux-gnueabihf" >> $GITHUB_ENV
+              echo "PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
               ;;
           esac
           # LLVM 21 已经在前面的步骤中安装
