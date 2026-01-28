@@ -98,8 +98,8 @@ jobs:
         echo "AR=/usr/local/opt/llvm@21/bin/llvm-ar" >> $GITHUB_ENV
         echo "NM=/usr/local/opt/llvm@21/bin/llvm-nm" >> $GITHUB_ENV
         echo "RANLIB=/usr/local/opt/llvm@21/bin/llvm-ranlib" >> $GITHUB_ENV
-        echo "LDFLAGS=\"-L/usr/local/opt/llvm@21/lib\"" >> $GITHUB_ENV
-        echo "CPPFLAGS=\"-I/usr/local/opt/llvm@21/include\"" >> $GITHUB_ENV
+        echo "LDFLAGS=-L/usr/local/opt/llvm@21/lib" >> $GITHUB_ENV
+        echo "CPPFLAGS=-I/usr/local/opt/llvm@21/include" >> $GITHUB_ENV
         echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
 
     - name: Set LLVM environment variables (Windows)
