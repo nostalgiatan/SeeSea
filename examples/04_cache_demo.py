@@ -66,11 +66,9 @@ def main():
 
     # 设置多个缓存
     print("8. 批量设置缓存...")
-    mset_result = client.mset(mapping={
-        "key1": "value1",
-        "key2": "value2",
-        "key3": "value3"
-    })
+    mset_result = client.mset(
+        mapping={"key1": "value1", "key2": "value2", "key3": "value3"}
+    )
     if mset_result.success:
         print("   ✓ 批量设置完成\n")
 

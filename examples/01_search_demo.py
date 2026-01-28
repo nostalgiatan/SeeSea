@@ -37,11 +37,7 @@ def main():
     # 执行搜索
     print("4. 执行搜索: '人工智能'")
     search_result = client.search(
-        query="人工智能",
-        page=1,
-        page_size=5,
-        language="zh-CN",
-        engine_type="text"
+        query="人工智能", page=1, page_size=5, language="zh-CN", engine_type="text"
     )
 
     if search_result.success and search_result.data:
