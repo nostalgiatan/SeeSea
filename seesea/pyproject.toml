@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "seesea"
-version = "2.1.1"
+version = "2.2.2"
 description = "SeeSea Python SDK - Privacy-focused metasearch engine"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,14 +29,12 @@ classifiers = [
 ]
 
 dependencies = [
-    'seesea-core>=2.0.4', 
+    'seesea-core>=2.0.4',
     'psutil>=7.1.3',
-    'crawl4ai>=0.7.7',
     'akshare>=1.15.0',
-    'pandas>=2.0.0',
-    'numpy>=1.24.0',
-    'pypinyin>=0.50.0',
-    'llama-cpp-python',
+    'pandas>=2.2.0',
+    'numpy>=2.0.0',
+    'pypinyin>=0.52.0',
 ]
 
 [project.scripts]
@@ -44,15 +42,14 @@ seesea = "seesea.cli:cli"
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
-    "black>=23.0",
-    "mypy>=1.0",
-    "ruff>=0.1",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "black>=24.0",
+    "mypy>=1.11",
+    "ruff>=0.8",
 ]
-browser = [
-    "playwright>=1.40.0",
-    "playwright-stealth>=1.0.0",
+mcp = [
+    "fastmcp>=0.2.0",
 ]
 
 [project.urls]

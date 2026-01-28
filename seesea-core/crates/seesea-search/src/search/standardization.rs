@@ -183,13 +183,18 @@ pub fn deduplicate_by_url(items: &mut Vec<SearchResultItem>) {
 
 /// 标准化搜索结果
 pub fn standardize_results(result: &mut SearchResult) {
+    standardize_items(&mut result.items);
+}
+
+/// 标准化搜索结果项
+pub fn standardize_items(items: &mut Vec<SearchResultItem>) {
     // 1. 标准化每个项
-    for item in &mut result.items {
+    for item in &mut *items {
         standardize_item(item);
     }
 
     // 2. 去重
-    deduplicate_by_url(&mut result.items);
+    deduplicate_by_url(items);
 }
 
 #[cfg(test)]

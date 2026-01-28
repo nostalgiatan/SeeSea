@@ -1,30 +1,29 @@
 """
-Tests for SeeSea Python SDK
+SeeSea Python SDK 测试套件
 
-This test suite validates the Python bindings, scoring system,
-cache preservation, and multi-parameter support.
+验证Python绑定、评分系统、缓存保持和多参数支持功能
 """
 
 import pytest
 import sys
 import os
 
-# Add the seesea module to path
+# 添加seesea模块路径以便测试导入
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 class TestSearchClient:
-    """Tests for SearchClient class"""
+    """SearchClient类的测试用例"""
 
     def test_client_creation(self):
-        """Test that SearchClient can be created"""
+        """测试SearchClient实例创建"""
         from seesea import SearchClient
 
         client = SearchClient()
         assert client is not None
 
     def test_client_has_search_method(self):
-        """Test that SearchClient has search method"""
+        """验证SearchClient具有search方法"""
         from seesea import SearchClient
 
         client = SearchClient()
@@ -32,7 +31,7 @@ class TestSearchClient:
         assert callable(client.search)
 
     def test_client_has_get_stats_method(self):
-        """Test that SearchClient has get_stats method"""
+        """验证SearchClient具有get_stats方法"""
         from seesea import SearchClient
 
         client = SearchClient()
@@ -40,7 +39,7 @@ class TestSearchClient:
         assert callable(client.get_stats)
 
     def test_client_has_clear_cache_method(self):
-        """Test that SearchClient has clear_cache method"""
+        """验证SearchClient具有clear_cache方法"""
         from seesea import SearchClient
 
         client = SearchClient()

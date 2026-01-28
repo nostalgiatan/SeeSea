@@ -150,31 +150,44 @@ pub async fn magic_link_middleware(
     let uri = req.uri();
     let query_str = uri.query().unwrap_or("");
 
-    if let Ok(query) = serde_urlencoded::from_str::<MagicLinkQuery>(query_str)
-        && let Some(token) = &query.token
-    {
-        match state.verify_token(token) {
-            Ok(_purpose) => {
-                // 魔法链接验证成功，添加标记到请求扩展
-                // 这样后续的认证中间件可以跳过
-                tracing::info!("Magic link verified successfully");
-                return next.run(req).await;
+    tracing::debug!("Magic link middleware: query_str = {}", query_str);
+
+    if let Ok(query) = serde_urlencoded::from_str::<MagicLinkQuery>(query_str) {
+        tracing::debug!(
+            "Magic link middleware: parsed query, token = {:?}",
+            query.token
+        );
+        if let Some(token) = &query.token {
+            tracing::info!("Magic link middleware: verifying token = {}", token);
+            match state.verify_token(token) {
+                Ok(_purpose) => {
+                    // 魔法链接验证成功，添加标记到请求扩展
+                    // 这样后续的认证中间件可以跳过
+                    tracing::info!("Magic link verified successfully");
+                    return next.run(req).await;
+                }
+                Err(e) => {
+                    tracing::warn!("Magic link verification failed: {}", e);
+                    return (
+                        StatusCode::UNAUTHORIZED,
+                        serde_json::json!({
+                            "code": "MAGIC_LINK_INVALID",
+                            "message": format!("魔法链接无效: {}", e)
+                        })
+                        .to_string(),
+                    )
+                        .into_response();
+                }
             }
-            Err(e) => {
-                return (
-                    StatusCode::UNAUTHORIZED,
-                    serde_json::json!({
-                        "code": "MAGIC_LINK_INVALID",
-                        "message": format!("魔法链接无效: {}", e)
-                    })
-                    .to_string(),
-                )
-                    .into_response();
-            }
+        } else {
+            tracing::debug!("Magic link middleware: no token in query");
         }
+    } else {
+        tracing::debug!("Magic link middleware: failed to parse query");
     }
 
     // 没有魔法链接，继续正常流程
+    tracing::debug!("Magic link middleware: no magic token found, continuing");
     next.run(req).await
 }
 

@@ -25,8 +25,26 @@ use std::sync::OnceLock;
 
 use crate::api::on::ApiState;
 
+use pyo3::types::PyAnyMethods;
+
 /// 缓存的包根目录路径
 static PACKAGE_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// 获取 Python 模块的 __file__ 路径
+///
+/// 通过 PyO3 的 Python API 直接获取 seesea_core 模块的路径
+#[allow(deprecated)]
+fn get_python_module_path() -> Option<PathBuf> {
+    pyo3::Python::with_gil(|py| {
+        // 导入 seesea_core 模块
+        let module = py.import("seesea_core").ok()?;
+        // 获取 __file__ 属性
+        let file_path = module.getattr(pyo3::intern!(py, "__file__")).ok()?;
+        // 转换为字符串
+        let path_str = file_path.extract::<String>().ok()?;
+        Some(PathBuf::from(path_str))
+    })
+}
 
 /// 获取 seesea-core 包的根目录
 ///
@@ -42,9 +60,10 @@ static PACKAGE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 ///
 /// 查找顺序：
 /// 1. 环境变量 SEESEA_ROOT（最高优先级，用于自定义部署）
-/// 2. seesea_core 模块所在目录的父目录（site-packages 目录）
-/// 3. 二进制文件所在目录
-/// 4. 当前工作目录（开发时使用）
+/// 2. Python 模块的 __file__ 路径（通过 PyO3 直接获取）
+/// 3. 环境变量 SEESEA_MODULE_PATH（Python 传递的模块路径）
+/// 4. 当前可执行文件的目录
+/// 5. 当前工作目录（开发时使用）
 fn get_package_root() -> &'static PathBuf {
     PACKAGE_ROOT.get_or_init(|| {
         // 1. 检查环境变量
@@ -56,17 +75,70 @@ fn get_package_root() -> &'static PathBuf {
             }
         }
 
-        // 2. 尝试通过 seesea_core 模块位置查找
-        // 对于 Python 包，seesea_core.pyd/.so 在 site-packages/seesea_core/ 目录下
-        // static 和 rss 目录在 site-packages/ 目录下（与 seesea_core 同级）
+        // 2. 通过 PyO3 获取 Python 模块路径
+        if let Some(module_path) = get_python_module_path() {
+            tracing::info!("Found Python module path: {}", module_path.display());
 
-        // 尝试从当前可执行文件路径推断
-        if let Ok(exe_path) = std::env::current_exe() {
-            // 对于 Python 调用，exe_path 可能是 python.exe
-            // 我们需要通过其他方式找到 seesea_core 模块位置
+            // site-packages/seesea_core/__init__.pyd -> site-packages
+            if let Some(parent) = module_path.parent() {
+                let site_packages = if parent.ends_with("seesea_core") {
+                    parent.parent()
+                } else {
+                    Some(parent)
+                };
 
-            if let Some(exe_dir) = exe_path.parent() {
-                // 方法1: 检查 exe_dir/Lib/site-packages（Windows Python 安装）
+                if let Some(sp) = site_packages
+                    && (sp.join("static").exists() || sp.join("rss").exists())
+                {
+                    tracing::info!("Using module path site-packages: {}", sp.display());
+                    return sp.to_path_buf();
+                }
+            }
+        }
+
+        // 3. 检查环境变量 SEESEA_MODULE_PATH（兼容旧的传递方式）
+        if let Ok(module_path) = std::env::var("SEESEA_MODULE_PATH") {
+            let path = PathBuf::from(&module_path);
+            if let Some(parent) = path.parent() {
+                let site_packages = if parent.ends_with("seesea_core") {
+                    parent.parent()
+                } else {
+                    Some(parent)
+                };
+
+                if let Some(sp) = site_packages
+                    && (sp.join("static").exists() || sp.join("rss").exists())
+                {
+                    tracing::info!("Using module path site-packages: {}", sp.display());
+                    return sp.to_path_buf();
+                }
+            }
+        }
+
+        // 4. 尝试通过当前可执行文件路径推断
+        if let Ok(exe_path) = std::env::current_exe()
+            && let Some(exe_dir) = exe_path.parent()
+        {
+            // 检查 exe_dir/lib/pythonX.Y/site-packages（Unix Python）
+            if let Some(parent) = exe_dir.parent() {
+                for python_ver in &[
+                    "python3.10",
+                    "python3.11",
+                    "python3.12",
+                    "python3.13",
+                    "python3.14",
+                ] {
+                    let site_packages = parent.join("lib").join(python_ver).join("site-packages");
+                    if site_packages.join("seesea_core").exists() {
+                        tracing::info!(
+                            "Found seesea_core in Python site-packages: {}",
+                            site_packages.display()
+                        );
+                        return site_packages;
+                    }
+                }
+
+                // 检查 exe_dir/Lib/site-packages（Windows Python）
                 let site_packages = exe_dir.join("Lib").join("site-packages");
                 if site_packages.join("seesea_core").exists() {
                     tracing::info!(
@@ -76,47 +148,22 @@ fn get_package_root() -> &'static PathBuf {
                     return site_packages;
                 }
 
-                // 方法2: 检查 exe_dir/../lib/pythonX.Y/site-packages（Unix Python 安装）
-                if let Some(parent) = exe_dir.parent() {
-                    for python_ver in &[
-                        "python3.10",
-                        "python3.11",
-                        "python3.12",
-                        "python3.13",
-                        "python3.14",
-                    ] {
-                        let site_packages =
-                            parent.join("lib").join(python_ver).join("site-packages");
-                        if site_packages.join("seesea_core").exists() {
-                            tracing::info!(
-                                "Found seesea_core in Python site-packages: {}",
-                                site_packages.display()
-                            );
-                            return site_packages;
-                        }
-                    }
-                }
-
-                // 方法3: 直接在 exe_dir 查找（独立二进制）
+                // 检查 exe_dir 本身
                 if exe_dir.join("static").exists() {
                     tracing::info!("Found static in exe directory: {}", exe_dir.display());
                     return exe_dir.to_path_buf();
                 }
 
-                // 方法4: 在 exe_dir 父目录查找
-                if let Some(parent) = exe_dir.parent()
-                    && parent.join("static").exists()
-                {
+                // 检查 exe_dir 父目录
+                if parent.join("static").exists() {
                     tracing::info!("Found static in parent directory: {}", parent.display());
                     return parent.to_path_buf();
                 }
             }
         }
 
-        // 3. 尝试通过 Python 模块路径查找（运行时环境）
-        // 检查常见的虚拟环境和 site-packages 位置
+        // 5. 检查虚拟环境
         if let Ok(current_dir) = std::env::current_dir() {
-            // 检查当前目录下的 venv
             for venv_name in &[".venv", "venv", ".env", "env"] {
                 #[cfg(target_os = "windows")]
                 let site_packages = current_dir
@@ -125,7 +172,6 @@ fn get_package_root() -> &'static PathBuf {
                     .join("site-packages");
                 #[cfg(not(target_os = "windows"))]
                 let site_packages = {
-                    // 在 Unix 上尝试多个 Python 版本
                     let mut found = None;
                     for ver in &[
                         "python3.10",
@@ -172,7 +218,7 @@ fn get_package_root() -> &'static PathBuf {
             }
         }
 
-        // 4. 回退到当前工作目录
+        // 6. 回退到当前工作目录
         let fallback = PathBuf::from(".");
         tracing::warn!(
             "Could not find seesea_core package root, using current directory: {}",

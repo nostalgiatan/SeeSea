@@ -21,7 +21,7 @@
 //! - 连接池支持
 //! - 健壮的错误处理和重试机制
 
-use seesea_config::{common::ProxyType, network::ProxyConfig};
+use crate::{ProxyConfig, ProxyType};
 use seesea_errors::Result;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};

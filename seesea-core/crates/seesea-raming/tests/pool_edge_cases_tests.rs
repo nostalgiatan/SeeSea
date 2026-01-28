@@ -141,8 +141,7 @@ fn test_pool_cleanup_boundary_conditions() {
     thread::sleep(Duration::from_millis(100));
 
     // 再次清理
-    let delayed_cleanup = pool.cleanup_expired_blocks().unwrap();
-    assert!(delayed_cleanup >= 0);
+    let _delayed_cleanup = pool.cleanup_expired_blocks().unwrap();
 
     drop(allocations);
 }
@@ -307,8 +306,7 @@ fn test_pool_memory_pressure_handling() {
     drop(allocations);
 
     // 验证清理功能正常工作
-    let cleanup_result = manager.cleanup_all().unwrap();
-    assert!(cleanup_result >= 0);
+    let _cleanup_result = manager.cleanup_all().unwrap();
 }
 
 /// 测试内存池异常恢复

@@ -1,2 +1,0 @@
-crawl4ai==0.7.7
-psutil==7.1.3

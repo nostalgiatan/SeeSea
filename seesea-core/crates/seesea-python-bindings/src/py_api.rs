@@ -24,9 +24,11 @@ use seesea_api::ApiInterface;
 use seesea_api::api::network::{
     ExternalNetworkConfig, InternalNetworkConfig, NetworkConfig as ApiNetworkConfig, NetworkMode,
 };
+use seesea_cache::CacheInterface;
+use seesea_cache::cache::types::CacheImplConfig;
 
 use seesea_config::ConfigManager;
-use seesea_search::search::{SearchConfig, SearchInterface};
+use seesea_search::search::SearchInterface;
 use std::env;
 
 /// Python bindings for API server
@@ -102,12 +104,15 @@ impl PyApiServer {
 
                     // Create API interface with network configuration
                     // Note: network and cache are created by the ApiInterface internally
-                    let search_config = SearchConfig::default();
+                    let search_config = config.search.clone();
+                    let network_config = config.network.clone();
                     let search = Arc::new(
-                        SearchInterface::new(search_config)
-                            .map_err(|e| format!("Search error: {}", e))?,
+                        SearchInterface::new_with_network_config(
+                            search_config.into(),
+                            Some(network_config),
+                        )
+                        .map_err(|e| format!("Search error: {}", e))?,
                     );
-
                     // 使用结构体字面量初始化，包含所有字段，避免Clippy警告
                     let api_network_config = ApiNetworkConfig {
                         mode: network_mode_enum,
@@ -118,14 +123,33 @@ impl PyApiServer {
                         external: ExternalNetworkConfig {
                             port: config.server.port + 1,
                             host: config.server.bind_address.clone(),
+                            enable_jwt_auth: config.api.auth.enabled,
+                            enable_magic_link: config.api.auth.enabled,
+                            auth_type: format!("{:?}", config.api.auth.auth_type),
+                            api_key: config.api.auth.api_key.query_param.clone(),
+                            key_source: "query".to_string(),
+                            key_name: config.api.auth.api_key.query_param.clone(),
+                            cors_origins: config.api.cors.allowed_origins.clone(),
+                            enable_rate_limit: config.api.rate_limit.enabled,
+                            rate_limit_per_second: config.api.rate_limit.requests_per_second,
+                            rate_limit_burst_size: config.api.rate_limit.burst_size,
                             ..Default::default()
                         },
                     };
 
-                    let api = ApiInterface::with_network_config(
+                    // 创建缓存接口
+                    let cache_config = config.cache.clone();
+                    let cache = Arc::new(
+                        CacheInterface::new(CacheImplConfig::from(cache_config))
+                            .map_err(|e| format!("Cache error: {}", e))?,
+                    );
+
+                    let api = ApiInterface::with_full_config(
                         search,
                         env!("CARGO_PKG_VERSION").to_string(),
                         api_network_config,
+                        String::new(),
+                        cache,
                     );
 
                     // Calculate actual host and port to use for binding
@@ -147,10 +171,14 @@ impl PyApiServer {
 
                     // Create API interface with network configuration
                     // Note: network and cache are created by the ApiInterface internally
-                    let search_config = SearchConfig::default();
+                    let search_config = config.search.clone();
+                    let network_config = config.network.clone();
                     let search = Arc::new(
-                        SearchInterface::new(search_config)
-                            .map_err(|e| format!("Search error: {}", e))?,
+                        SearchInterface::new_with_network_config(
+                            search_config.into(),
+                            Some(network_config),
+                        )
+                        .map_err(|e| format!("Search error: {}", e))?,
                     );
 
                     // 使用结构体字面量初始化，包含所有字段，避免Clippy警告
@@ -163,14 +191,33 @@ impl PyApiServer {
                         external: ExternalNetworkConfig {
                             port: config.server.port + 1,
                             host: config.server.bind_address.clone(),
+                            enable_jwt_auth: config.api.auth.enabled,
+                            enable_magic_link: config.api.auth.enabled,
+                            auth_type: format!("{:?}", config.api.auth.auth_type),
+                            api_key: config.api.auth.api_key.query_param.clone(),
+                            key_source: "query".to_string(),
+                            key_name: config.api.auth.api_key.query_param.clone(),
+                            cors_origins: config.api.cors.allowed_origins.clone(),
+                            enable_rate_limit: config.api.rate_limit.enabled,
+                            rate_limit_per_second: config.api.rate_limit.requests_per_second,
+                            rate_limit_burst_size: config.api.rate_limit.burst_size,
                             ..Default::default()
                         },
                     };
 
-                    let api = ApiInterface::with_network_config(
+                    // 创建缓存接口
+                    let cache_config = config.cache.clone();
+                    let cache = Arc::new(
+                        CacheInterface::new(CacheImplConfig::from(cache_config))
+                            .map_err(|e| format!("Cache error: {}", e))?,
+                    );
+
+                    let api = ApiInterface::with_full_config(
                         search,
                         env!("CARGO_PKG_VERSION").to_string(),
                         api_network_config,
+                        String::new(),
+                        cache,
                     );
 
                     // Calculate actual host and port to use for binding
@@ -226,15 +273,14 @@ impl PyApiServer {
         let network_mode = self.network_mode.clone();
         let version = env!("CARGO_PKG_VERSION").to_string();
 
+        println!("🌊 Starting SeeSea API Server");
+        println!("   Address: {}", addr);
+        println!("   Mode: {}", network_mode);
+        println!("   Version: {}", version);
+        println!("   Press Ctrl+C to stop");
+
         // 定义异步任务
         let async_task = async move {
-            // 仅打印简洁的启动信息
-            println!("🌊 Starting SeeSea API Server");
-            println!("   Address: {}", addr);
-            println!("   Mode: {}", network_mode);
-            println!("   Version: {}", version);
-            println!("   Press Ctrl+C to stop");
-
             let listener = TcpListener::bind(&addr)
                 .await
                 .map_err(|e| format!("Failed to bind: {}", e))?;
@@ -263,14 +309,14 @@ impl PyApiServer {
         let app = self.api.build_internal_router();
         let addr = self.address.clone();
 
+        println!("🔒 Starting SeeSea API Server (Internal Mode)");
+        println!("   Address: {}", addr);
+        println!("   Security: Disabled (local access only)");
+        println!("   Press Ctrl+C to stop");
+
         // 根据runtime是否存在来执行异步任务
         match self.runtime.as_ref() {
             Some(runtime) => runtime.block_on(async {
-                println!("🔒 Starting SeeSea API Server (Internal Mode)");
-                println!("   Address: {}", addr);
-                println!("   Security: Disabled (local access only)");
-                println!("   Press Ctrl+C to stop");
-
                 let listener = TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;
@@ -280,11 +326,6 @@ impl PyApiServer {
                     .map_err(|e| format!("Server error: {}", e))
             }),
             None => tokio::runtime::Handle::current().block_on(async {
-                println!("🔒 Starting SeeSea API Server (Internal Mode)");
-                println!("   Address: {}", addr);
-                println!("   Security: Disabled (local access only)");
-                println!("   Press Ctrl+C to stop");
-
                 let listener = TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;
@@ -305,14 +346,14 @@ impl PyApiServer {
         let app = self.api.build_external_router();
         let addr = self.address.clone();
 
+        println!("🌐 Starting SeeSea API Server (External Mode)");
+        println!("   Address: {}", addr);
+        println!("   Security: Enabled");
+        println!("   Press Ctrl+C to stop");
+
         // 根据runtime是否存在来执行异步任务
         match self.runtime.as_ref() {
             Some(runtime) => runtime.block_on(async {
-                println!("🌐 Starting SeeSea API Server (External Mode)");
-                println!("   Address: {}", addr);
-                println!("   Security: Enabled");
-                println!("   Press Ctrl+C to stop");
-
                 let listener = TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;
@@ -322,11 +363,6 @@ impl PyApiServer {
                     .map_err(|e| format!("Server error: {}", e))
             }),
             None => tokio::runtime::Handle::current().block_on(async {
-                println!("🌐 Starting SeeSea API Server (External Mode)");
-                println!("   Address: {}", addr);
-                println!("   Security: Enabled");
-                println!("   Press Ctrl+C to stop");
-
                 let listener = TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;

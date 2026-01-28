@@ -22,6 +22,7 @@ impl IntegrationTestEngine {
         }
     }
 
+    #[allow(dead_code)]
     fn with_delay(mut self, delay_ms: u64) -> Self {
         self.response_delay = std::time::Duration::from_millis(delay_ms);
         self

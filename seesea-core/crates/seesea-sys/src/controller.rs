@@ -275,7 +275,7 @@ impl SystemController {
             resource_status,
             component_statuses: statuses.values().cloned().collect(),
             controller_running: running,
-            daemon_running: false, // 守护进程还未实现
+            daemon_running: false, // 需要守护进程实例引用来获取真实状态
         }
     }
 

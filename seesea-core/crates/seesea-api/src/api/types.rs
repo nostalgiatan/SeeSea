@@ -20,9 +20,10 @@
 use seesea_derive::SearchQuery;
 use seesea_search::search::EngineListConfig;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 /// API 搜索请求
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ApiSearchRequest {
     /// 搜索查询字符串（主要字段）
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -31,6 +32,12 @@ pub struct ApiSearchRequest {
     /// 搜索查询字符串（短参数名，等价于 query）
     #[serde(alias = "q", skip_serializing_if = "Option::is_none")]
     pub _q: Option<String>,
+
+    /// 搜索引擎类型
+    /// 可选值: "general", "image", "video", "news", "social"
+    /// 如果不指定，默认为 "general"（文本搜索）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine_type: Option<String>,
 
     /// 引擎数量（可选）- 根据引擎延迟选择低延迟的引擎
     /// 如果不提供，默认使用全部引擎
@@ -118,10 +125,9 @@ impl ApiSearchRequest {
     ///
     /// 根据以下优先级返回引擎列表:
     /// 1. 如果指定了 engines 参数，使用自定义引擎列表
-    /// 2. 如果指定了 engine_count 参数，根据引擎延迟选择低延迟引擎
-    /// 3. 根据 include_deepweb 参数选择引擎列表
-    ///    - include_deepweb=false: 仅使用快速引擎
-    ///    - include_deepweb=true: 使用所有引擎
+    /// 2. 如果指定了 engine_type 参数，根据引擎类型选择对应的引擎
+    /// 3. 如果指定了 engine_count 参数，根据引擎延迟选择低延迟引擎
+    /// 4. 根据 include_deepweb 参数选择引擎列表
     pub fn get_engines(&self) -> Vec<String> {
         if let Some(ref engines_str) = self.engines {
             // 自定义引擎列表
@@ -133,18 +139,19 @@ impl ApiSearchRequest {
         } else {
             // 使用统一的引擎配置模块获取引擎
             let config = EngineListConfig::default();
-            let base_engines = if self.include_deepweb {
+
+            // 根据引擎类型获取引擎列表
+            let base_engines = if let Some(ref engine_type) = self.engine_type {
+                config.get_engines_for_type(engine_type)
+            } else if self.include_deepweb {
                 config.global_engines
             } else {
-                config.fast_engines
+                config.get_engines_for_type("general") // 默认使用文本引擎
             };
 
             if let Some(count) = self.engine_count {
                 // 根据引擎数量限制引擎列表
-                // 引擎按默认顺序排列（配置中已按延迟优化排序）
                 let count = count as usize;
-                // 只有当 count > 0 且 count 小于基础引擎数时才限制
-                // 否则返回全部基础引擎
                 if count > 0 && count < base_engines.len() {
                     base_engines.into_iter().take(count).collect()
                 } else {
@@ -159,7 +166,7 @@ impl ApiSearchRequest {
 }
 
 /// API 搜索响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ApiSearchResponse {
     /// 查询字符串
     pub query: String,
@@ -187,7 +194,7 @@ pub struct ApiSearchResponse {
 }
 
 /// API 搜索结果项
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ApiSearchResultItem {
     /// 结果标题
     pub title: String,
@@ -212,7 +219,7 @@ pub struct ApiSearchResultItem {
 }
 
 /// API 错误响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ApiErrorResponse {
     /// 错误代码
     pub code: String,
@@ -226,7 +233,7 @@ pub struct ApiErrorResponse {
 }
 
 /// API 健康检查响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ApiHealthResponse {
     /// 服务状态
     pub status: String,
@@ -242,7 +249,7 @@ pub struct ApiHealthResponse {
 }
 
 /// API 引擎信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ApiEngineInfo {
     /// 引擎名称
     pub name: String,
@@ -261,7 +268,7 @@ pub struct ApiEngineInfo {
 }
 
 /// API 统计信息响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ApiStatsResponse {
     /// 总搜索次数
     pub total_searches: u64,

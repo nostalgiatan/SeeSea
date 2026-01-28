@@ -18,6 +18,8 @@
 //! 处理热门搜索相关的 API 请求，包括获取单个平台热点、获取所有平台热点、列出支持的平台等。
 //! 支持5分钟缓存以减少重复请求。
 
+use utoipa::ToSchema;
+
 use axum::{
     extract::{Json, Path, Query, State},
     http::StatusCode,
@@ -33,7 +35,7 @@ use seesea_hot::types::HotTrendResult;
 use seesea_hot::{SUPPORTED_PLATFORMS, get_hot_trend_cache};
 
 /// 热门搜索请求参数
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct ApiHotSearchRequest {
     /// 是否获取最新数据
     #[serde(default = "default_latest")]
@@ -50,6 +52,21 @@ fn default_latest() -> bool {
 }
 
 /// 处理获取单个平台热点请求
+///
+/// 获取指定平台的热门搜索内容
+#[utoipa::path(
+    get,
+    path = "/hot/{platform_id}",
+    params(
+        ("platform_id" = String, Path, description = "平台ID"),
+        ("latest" = bool, Query, description = "是否获取最新数据"),
+    ),
+    responses(
+        (status = 200, description = "获取成功", body = HotTrendResult),
+        (status = 500, description = "服务器错误", body = ApiErrorResponse),
+    ),
+    tag = "hot"
+)]
 pub async fn handle_hot_platform(
     State(state): State<ApiState>,
     Path(platform_id): Path<String>,
@@ -85,6 +102,18 @@ pub async fn handle_hot_platform(
 }
 
 /// 处理获取所有平台热点请求
+#[utoipa::path(
+    get,
+    path = "/hot",
+    params(
+        ("latest" = bool, Query, description = "是否获取最新数据"),
+    ),
+    responses(
+        (status = 200, description = "获取成功"),
+        (status = 500, description = "服务器错误", body = ApiErrorResponse),
+    ),
+    tag = "hot"
+)]
 pub async fn handle_hot_all(
     State(state): State<ApiState>,
     Query(_params): Query<ApiHotSearchRequest>,
@@ -131,6 +160,20 @@ pub async fn handle_hot_all(
 }
 
 /// 处理获取多个平台热点请求
+#[utoipa::path(
+    get,
+    path = "/hot/multiple",
+    params(
+        ("platforms" = Option<String>, Query, description = "平台ID列表，逗号分隔"),
+        ("latest" = bool, Query, description = "是否获取最新数据"),
+    ),
+    responses(
+        (status = 200, description = "获取成功"),
+        (status = 400, description = "参数错误", body = ApiErrorResponse),
+        (status = 500, description = "服务器错误", body = ApiErrorResponse),
+    ),
+    tag = "hot"
+)]
 pub async fn handle_hot_multiple(
     State(state): State<ApiState>,
     Query(params): Query<ApiHotSearchRequest>,
@@ -187,6 +230,14 @@ pub async fn handle_hot_multiple(
 }
 
 /// 处理列出支持的平台请求
+#[utoipa::path(
+    get,
+    path = "/hot/platforms",
+    responses(
+        (status = 200, description = "获取成功"),
+    ),
+    tag = "hot"
+)]
 pub async fn handle_hot_platforms_list() -> Response {
     let platforms: Vec<serde_json::Value> = SUPPORTED_PLATFORMS
         .iter()

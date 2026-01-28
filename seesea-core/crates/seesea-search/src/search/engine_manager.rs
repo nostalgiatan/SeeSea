@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 use super::engines::*;
+use super::python_engine_bridge::PythonEngineRegistry;
 use seesea_config::NetworkConfig;
 use seesea_derive::{SearchEngine, SearchQuery, SearchResult};
 use seesea_net::client::HttpClient;
@@ -175,6 +176,8 @@ pub struct EngineManager {
     failure_threshold: u32,
     /// 共享的 HTTP 客户端（用于优化性能）
     shared_client: Option<Arc<HttpClient>>,
+    /// Python引擎注册器
+    python_registry: Arc<PythonEngineRegistry>,
 }
 
 impl EngineManager {
@@ -221,6 +224,9 @@ impl EngineManager {
         configured_engines: Vec<String>,
         shared_client: Arc<HttpClient>,
     ) -> Self {
+        // 创建Python引擎注册器
+        let python_registry = Arc::new(PythonEngineRegistry::new());
+
         let mut manager = Self {
             mode,
             configured_engines,
@@ -229,9 +235,27 @@ impl EngineManager {
             temporary_disable_duration: 300,
             failure_threshold: 3,
             shared_client: Some(shared_client),
+            python_registry: Arc::clone(&python_registry),
         };
 
+        // 同步启动Python引擎监听器（确保监听器准备就绪）
+        let registry_clone = Arc::clone(&python_registry);
+        let rt = tokio::runtime::Handle::try_current()
+            .or_else(|_| tokio::runtime::Runtime::new().map(|rt| rt.handle().clone()))
+            .expect("Failed to get tokio runtime");
+
+        rt.block_on(async {
+            if let Err(e) = registry_clone.start_listening().await {
+                eprintln!("❌ Failed to start Python engine registry: {}", e);
+            } else {
+                println!("✅ Python引擎注册监听器启动完成");
+            }
+        });
+
+        // 在Python引擎监听器完全准备好后，再初始化Rust引擎
         manager.initialize_engines();
+
+        println!("🚀 EngineManager 初始化完成");
         manager
     }
 
@@ -286,6 +310,46 @@ impl EngineManager {
             "unsplash",
             Box::new(UnsplashEngine::with_client(Arc::clone(&client))),
         );
+    }
+
+    /// 获取所有可用的引擎（包括Python引擎）
+    pub async fn get_all_available_engines(&self) -> Vec<String> {
+        let mut all_engines = self.get_active_engines().await;
+
+        // 添加Python引擎
+        let python_engines = self.python_registry.list_engines().await;
+        all_engines.extend(python_engines);
+
+        all_engines
+    }
+
+    /// 搜索引擎（包括Python引擎）
+    pub async fn search_with_python_engines(
+        &self,
+        query: &SearchQuery,
+    ) -> HashMap<String, Result<SearchResult, String>> {
+        let mut all_results = HashMap::new();
+
+        // 获取Rust引擎的搜索结果
+        let rust_results = self.search_concurrent(query).await;
+        all_results.extend(rust_results);
+
+        // 搜索Python引擎
+        let python_engines = self.python_registry.list_engines().await;
+        for engine_name in python_engines {
+            if let Some(python_engine) = self.python_registry.get_engine(&engine_name).await {
+                match python_engine.search(query).await {
+                    Ok(result) => {
+                        all_results.insert(engine_name, Ok(result));
+                    }
+                    Err(e) => {
+                        all_results.insert(engine_name, Err(e.to_string()));
+                    }
+                }
+            }
+        }
+
+        all_results
     }
 
     /// 注册引擎

@@ -52,13 +52,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 解析命令行参数
     let cli = Cli::parse();
 
-    // 初始化日志
+    // 先加载配置以获取日志配置
+    let manager = ConfigManager::with_environment(cli.config.clone(), &cli.environment).await?;
+    let config = manager.get_config().await;
+
+    // 初始化日志（使用配置文件中的日志配置）
+    let log_level = match config.logging.level {
+        seesea_config::LogLevel::Error => tracing::Level::ERROR,
+        seesea_config::LogLevel::Warn => tracing::Level::WARN,
+        seesea_config::LogLevel::Info => tracing::Level::INFO,
+        seesea_config::LogLevel::Debug => tracing::Level::DEBUG,
+        seesea_config::LogLevel::Trace => tracing::Level::TRACE,
+    };
+
     tracing_subscriber::fmt()
-        .with_max_level(if cli.debug {
-            tracing::Level::DEBUG
-        } else {
-            tracing::Level::INFO
-        })
+        .with_max_level(log_level)
+        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::FULL)
+        .with_ansi(config.logging.colored)
         .init();
 
     println!("🌊 SeeSea - 看海看得远，看得广");
@@ -83,13 +93,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 初始化搜索接口
     println!("🔍 初始化搜索接口...");
     let search_config = SearchConfig::default();
-    let _search = Arc::new(SearchInterface::new(search_config.clone())?);
+    let network_config = config.network.clone();
+    let _search = Arc::new(SearchInterface::new_with_network_config(
+        search_config.clone(),
+        Some(network_config),
+    )?);
     println!("  ✅ 搜索接口初始化成功");
     println!();
 
     // 初始化缓存接口
     println!("💾 初始化缓存接口...");
-    let cache_config = CacheImplConfig::default();
+    let cache_config = CacheImplConfig::new(seesea_config::paths::get_cache_dir());
     let _cache = Arc::new(tokio::sync::RwLock::new(
         CacheInterface::new(cache_config).map_err(|e| format!("Cache error: {e}"))?,
     ));
@@ -99,14 +113,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 初始化API接口
     println!("🚀 初始化API接口...");
 
-    // 创建搜索接口
-    let search = Arc::new(SearchInterface::new(search_config)?);
+    // 创建搜索接口（使用完整的网络配置，包括隐私配置）
+    let network_config_for_search = config.network.clone();
+    let search = Arc::new(SearchInterface::new_with_network_config(
+        search_config,
+        Some(network_config_for_search),
+    )?);
 
     // 保存bind_address和port，因为它们会被移动
     let bind_address = config.server.bind_address.clone();
     let port = config.server.port;
     let external_port = port + 1;
-    let limiter = config.server.limiter;
     let auth_enabled = config.api.auth.enabled;
 
     // 创建自定义网络配置，使用配置文件中的端口号
@@ -122,12 +139,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             enabled: true,
             host: config.server.bind_address,
             port: external_port, // 外网使用配置文件中的端口号+1，避免冲突
-            cors_origins: vec!["*".to_string()],
-            enable_rate_limit: limiter,
+            cors_origins: config.api.cors.allowed_origins.clone(),
+            enable_rate_limit: config.api.rate_limit.enabled,
+            rate_limit_per_second: config.api.rate_limit.requests_per_second,
+            rate_limit_burst_size: config.api.rate_limit.burst_size,
             enable_circuit_breaker: true,
             enable_ip_filter: true,
             enable_jwt_auth: auth_enabled,
             enable_magic_link: true,
+            auth_type: format!("{:?}", config.api.auth.auth_type),
+            api_key: config.api.auth.api_key.query_param.clone(),
+            key_source: "query".to_string(),
+            key_name: config.api.auth.api_key.query_param.clone(),
         },
     };
 

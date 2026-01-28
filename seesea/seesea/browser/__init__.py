@@ -90,7 +90,6 @@ from .xinhua import (
     DEFAULT_USER_AGENT,
 )
 
-
 # Convenience aliases for backward compatibility
 BrowserEngine = BaseBrowserEngine
 xinhua_search_callback = create_xinhua_callback

@@ -15,8 +15,8 @@
 //!
 //! 提供请求头的伪造和混淆功能
 
+use crate::PrivacyConfig;
 use reqwest::ClientBuilder;
-use seesea_config::privacy::PrivacyConfig;
 
 /// 配置隐私保护
 ///
@@ -74,10 +74,8 @@ pub fn generate_fake_headers(url: &str, config: &PrivacyConfig) -> Vec<(String, 
     ];
 
     // 伪造 Referer
-    if false {
-        if let Some(referer) = generate_fake_referer(url) {
-            headers.push(("Referer".to_string(), referer));
-        }
+    if false && let Some(referer) = generate_fake_referer(url) {
+        headers.push(("Referer".to_string(), referer));
     }
 
     // 添加 Sec-Fetch 头（现代浏览器特征）
@@ -102,10 +100,10 @@ pub fn generate_fake_headers(url: &str, config: &PrivacyConfig) -> Vec<(String, 
 /// 伪造的 Referer URL
 fn generate_fake_referer(url: &str) -> Option<String> {
     // 从 URL 中提取域名作为 Referer
-    if let Ok(parsed_url) = url::Url::parse(url) {
-        if let Some(host) = parsed_url.host_str() {
-            return Some(format!("https://{host}/"));
-        }
+    if let Ok(parsed_url) = url::Url::parse(url)
+        && let Some(host) = parsed_url.host_str()
+    {
+        return Some(format!("https://{host}/"));
     }
     None
 }
@@ -127,7 +125,8 @@ pub fn get_fingerprint_headers() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{PrivacyConfig, UserAgentStrategy};
+    use crate::FingerprintLevel;
+    use crate::UaRotationStrategy;
 
     #[test]
     fn test_generate_fake_headers() {
@@ -160,12 +159,11 @@ mod tests {
     #[test]
     fn test_configure_privacy() {
         let mut config = PrivacyConfig::default();
-        config.user_agent_rotation.rotation_strategy = UaRotationStrategy::Realistic;
+        config.user_agent_rotation.rotation_strategy = UaRotationStrategy::Random;
         config.headers.randomize_headers = true;
         config.fingerprint_protection.protection_level = FingerprintLevel::Advanced;
 
         let builder = ClientBuilder::new();
         let _builder = configure_privacy(builder, &config);
-        // 只测试不会 panic
     }
 }

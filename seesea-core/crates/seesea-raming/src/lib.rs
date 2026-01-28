@@ -19,9 +19,7 @@ pub use events::{
 pub use manager::{ManagerConfig, RamingManager};
 pub use memory::{MemorySegment, SharedMemory};
 pub use pool::{MemoryPool, MemoryPoolManager, PoolInfo, PooledMemory};
-pub use types::{
-    BindingConfig, BindingType, EventConfig, PoolStats, RamingMemoryConfig as MemoryConfig,
-};
+pub use types::{BindingConfig, BindingType, EventConfig, MemoryConfig, PoolStats};
 
 use tracing::{debug, info};
 
@@ -41,5 +39,5 @@ pub fn init() -> RamingResult<()> {
 
 /// 获取全局raming管理器
 pub fn global_manager() -> RamingResult<RamingManager> {
-    RamingManager::global().map_err(|e| RamingError::from(e))
+    RamingManager::global()
 }

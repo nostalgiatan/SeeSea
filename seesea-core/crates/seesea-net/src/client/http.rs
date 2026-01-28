@@ -195,7 +195,7 @@ impl HttpClient {
 
         // 创建隐私管理器
         let privacy_manager = Arc::new(PrivacyManager::new(
-            seesea_config::privacy::PrivacyConfig::default(),
+            config.privacy.clone(),
             config.tls.clone(),
             config.dns.clone(),
         ));
@@ -294,7 +294,7 @@ impl HttpClient {
 
         // 创建隐私管理器
         let privacy_manager = Arc::new(PrivacyManager::new(
-            seesea_config::privacy::PrivacyConfig::default(),
+            config.privacy.clone(),
             config.tls.clone(),
             config.dns.clone(),
         ));

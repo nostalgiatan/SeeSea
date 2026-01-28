@@ -2,15 +2,12 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use uuid::Uuid;
 
-pub use seesea_config::{
+pub use seesea_config::raming::{
     BindingConfig, BindingStats, BindingType, EventConfig, EventPriority, EventStats, MemoryAccess,
-    MemoryConfig as RamingMemoryConfig, MemoryStats, PoolStats,
+    MemoryConfig, MemoryStats, PoolStats,
 };
-
-pub use RamingMemoryConfig as MemoryConfig;
 
 /// 内存段信息
 #[derive(Debug, Clone, Serialize, Deserialize)]

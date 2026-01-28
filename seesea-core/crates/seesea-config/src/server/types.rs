@@ -26,9 +26,6 @@ pub struct ServerConfig {
     /// 端口号
     #[serde(default)]
     pub port: u16,
-    /// 是否启用限流
-    #[serde(default)]
-    pub limiter: bool,
     /// 是否为公共实例
     #[serde(default)]
     pub public_instance: bool,
@@ -88,7 +85,6 @@ impl Default for ServerConfig {
         Self {
             bind_address: "127.0.0.1".to_string(),
             port: 8080,
-            limiter: true,
             public_instance: false,
             secret_key: "change-me-in-production".to_string(),
             base_url: None,

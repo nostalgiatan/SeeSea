@@ -21,6 +21,8 @@ pub mod cache;
 pub mod config;
 pub mod health;
 pub mod hot;
+pub mod internal;
+pub mod internal_extended;
 pub mod metrics;
 pub mod pro;
 pub mod rss;
@@ -33,6 +35,15 @@ pub use config::handle_magic_link_generate;
 pub use health::handle_health;
 pub use hot::{
     handle_hot_all, handle_hot_multiple, handle_hot_platform, handle_hot_platforms_list,
+};
+pub use internal::{
+    handle_cache_keys, handle_engines_status, handle_system_resources, handle_system_status,
+};
+pub use internal_extended::{
+    handle_cache_clear_pattern, handle_cache_stats_detail, handle_config_get, handle_config_update,
+    handle_connections_stats, handle_controller_action, handle_engine_toggle, handle_engines_batch,
+    handle_engines_list_full, handle_health_detail, handle_logs_directory, handle_logs_errors,
+    handle_logs_files, handle_logs_read, handle_logs_tail, handle_version_info,
 };
 pub use metrics::{
     handle_engines_list, handle_metrics, handle_realtime_metrics, handle_stats, handle_version,

@@ -18,9 +18,9 @@
 use super::fingerprint::FingerprintProtector;
 use super::headers::generate_fake_headers;
 // Removed: use super::user_agent::() // TODO: fix UserAgentGenerator;
-use seesea_config::common::FingerprintLevel;
-use seesea_config::privacy::UaRotationStrategy;
-use seesea_config::{DnsConfig, PrivacyConfig, TlsConfig};
+use crate::FingerprintLevel;
+use crate::UaRotationStrategy;
+use crate::{DnsConfig, PrivacyConfig, TlsConfig};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -222,7 +222,7 @@ pub struct PrivacyStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use seesea_config::{FingerprintLevel, UaRotationStrategy};
+    use crate::UaRotationStrategy;
 
     #[tokio::test]
     async fn test_privacy_manager_creation() {
@@ -242,10 +242,7 @@ mod tests {
         privacy_config.headers.remove_privacy_headers = true;
         privacy_config.user_agent_rotation.rotation_strategy = UaRotationStrategy::Random;
 
-        let mut tls_config = TlsConfig::default();
-        let mut fingerprint_config = privacy_config.fingerprint_protection.clone();
-        fingerprint_config.protection_level = FingerprintLevel::Maximum;
-
+        let tls_config = TlsConfig::default();
         let mut doh_config = DnsConfig::default();
         doh_config.doh_enabled = true;
 

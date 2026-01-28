@@ -58,6 +58,9 @@ pub struct SeeSeaConfig {
     /// Raming 配置
     #[serde(default)]
     pub raming: crate::raming::RamingConfig,
+    /// RSS 配置
+    #[serde(default)]
+    pub rss: crate::rss::RssConfig,
 }
 
 impl SeeSeaConfig {

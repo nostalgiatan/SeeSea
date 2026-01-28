@@ -20,15 +20,83 @@
 use crate::api::handlers::static_files::get_rss_template_dir;
 use crate::api::on::ApiState;
 use crate::api::types::ApiErrorResponse;
+
 use axum::{
     extract::{Json, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use seesea_rss::RssParser;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use utoipa::ToSchema;
+
+/// 存储的 RSS Feed
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct StoredFeed {
+    /// Feed 名称/分类
+    pub name: String,
+    /// Feed URL
+    pub url: String,
+    /// 添加时间戳
+    pub added_at: u64,
+}
+
+/// RSS 存储管理器
+#[derive(Clone)]
+pub struct RssStorage {
+    feeds: Arc<RwLock<HashMap<String, StoredFeed>>>,
+}
+
+impl RssStorage {
+    /// 创建新的存储
+    pub fn new() -> Self {
+        Self {
+            feeds: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// 添加 feed
+    pub async fn add_feed(&self, name: String, url: String) {
+        let mut feeds = self.feeds.write().await;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        feeds.insert(
+            name.clone(),
+            StoredFeed {
+                name,
+                url,
+                added_at: now,
+            },
+        );
+    }
+
+    /// 获取所有 feeds
+    pub async fn get_all_feeds(&self) -> Vec<StoredFeed> {
+        let feeds = self.feeds.read().await;
+        feeds.values().cloned().collect()
+    }
+
+    /// 获取 feeds 数量
+    pub async fn count(&self) -> usize {
+        let feeds = self.feeds.read().await;
+        feeds.len()
+    }
+}
+
+impl Default for RssStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// RSS Feed 请求
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct RssFetchRequest {
     /// Feed URL
     pub url: String,
@@ -45,20 +113,20 @@ fn default_max_items() -> Option<usize> {
 }
 
 /// RSS Feed 响应
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct RssFeedResponse {
     pub meta: RssFeedMeta,
     pub items: Vec<RssFeedItemResponse>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct RssFeedMeta {
     pub title: Option<String>,
     pub description: Option<String>,
     pub link: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct RssFeedItemResponse {
     pub title: String,
     pub link: String,
@@ -69,7 +137,7 @@ pub struct RssFeedItemResponse {
 }
 
 /// 模板添加请求
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct TemplateAddRequest {
     /// 模板名称
     pub name: String,
@@ -79,7 +147,7 @@ pub struct TemplateAddRequest {
 }
 
 /// 模板添加响应
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct TemplateAddResponse {
     /// 是否成功
     pub success: bool,
@@ -92,17 +160,38 @@ pub struct TemplateAddResponse {
 }
 
 /// 处理获取RSS feeds列表请求
-pub async fn handle_rss_feeds_list(State(_state): State<ApiState>) -> Response {
-    // TODO: 实现获取所有RSS feeds列表
+#[utoipa::path(
+    get,
+    path = "/rss/feeds",
+    responses(
+        (status = 200, description = "获取成功"),
+    ),
+    tag = "rss"
+)]
+pub async fn handle_rss_feeds_list(State(state): State<ApiState>) -> Response {
+    // 从 ApiState 获取 RSS 存储
+    let feeds = state.rss_storage.get_all_feeds().await;
+
     let response = serde_json::json!({
-        "feeds": [],
-        "total": 0
+        "feeds": feeds,
+        "total": feeds.len()
     });
 
     (StatusCode::OK, Json(response)).into_response()
 }
 
 /// 处理获取特定RSS feed请求
+#[utoipa::path(
+    post,
+    path = "/rss/fetch",
+    request_body = RssFetchRequest,
+    responses(
+        (status = 200, description = "获取成功"),
+        (status = 400, description = "参数错误", body = ApiErrorResponse),
+        (status = 502, description = "网络错误", body = ApiErrorResponse),
+    ),
+    tag = "rss"
+)]
 pub async fn handle_rss_fetch(
     State(_state): State<ApiState>,
     Json(request): Json<RssFetchRequest>,
@@ -110,7 +199,7 @@ pub async fn handle_rss_fetch(
     // use crate::rss::parser::RssParser;
 
     // 获取 RSS feed 内容
-    let _feed_content = match reqwest::get(&request.url).await {
+    let feed_content = match reqwest::get(&request.url).await {
         Ok(response) => match response.text().await {
             Ok(text) => text,
             Err(e) => {
@@ -132,28 +221,71 @@ pub async fn handle_rss_fetch(
         }
     };
 
-    // 解析 RSS feed - 暂时注释掉，等待RSS解析器实现
-    // let parser = RssParser::new();
-    // let feed = match parser.parse(&feed_content) {
-    //     Ok(feed) => feed,
-    //     Err(e) => {
-    //         let error = ApiErrorResponse {
-    //             code: "PARSE_ERROR".to_string(),
-    //             message: format!("Failed to parse RSS feed: {}", e),
-    //             details: None,
-    //         };
-    //         return (StatusCode::BAD_REQUEST, Json(error)).into_response();
-    //     }
-    // };
+    // 解析 RSS feed
+    let parser = RssParser::new();
+    let feed = match parser.parse_rss2(&feed_content) {
+        Ok(feed) => feed,
+        Err(e) => {
+            let error = ApiErrorResponse {
+                code: "PARSE_ERROR".to_string(),
+                message: format!("Failed to parse RSS feed: {}", e),
+                details: None,
+            };
+            return (StatusCode::BAD_REQUEST, Json(error)).into_response();
+        }
+    };
 
-    // 临时响应 - 等待RSS解析器实现
-    let response = serde_json::json!({
-        "error": "RSS parser not implemented yet"
-    });
-    (StatusCode::NOT_IMPLEMENTED, Json(response)).into_response()
+    // 应用过滤器和限制
+    let mut items = feed.items;
+
+    // 根据关键词过滤
+    if !request.filter_keywords.is_empty() {
+        items.retain(|item| {
+            let title = item.title.to_lowercase();
+            let description = item.description.as_deref().unwrap_or("").to_lowercase();
+            request.filter_keywords.iter().any(|keyword| {
+                let keyword_lower = keyword.to_lowercase();
+                title.contains(&keyword_lower) || description.contains(&keyword_lower)
+            })
+        });
+    }
+
+    // 限制项目数量
+    if let Some(max_items) = request.max_items {
+        items.truncate(max_items);
+    }
+
+    let response = RssFeedResponse {
+        meta: RssFeedMeta {
+            title: Some(feed.meta.title),
+            description: Some(feed.meta.description.unwrap_or_default()),
+            link: Some(feed.meta.link),
+        },
+        items: items
+            .into_iter()
+            .map(|item| RssFeedItemResponse {
+                title: item.title,
+                link: item.link,
+                description: item.description,
+                author: item.author,
+                published: item.pub_date,
+                categories: item.categories,
+            })
+            .collect(),
+    };
+
+    Json(response).into_response()
 }
 
 /// 处理获取RSS模板列表请求
+#[utoipa::path(
+    get,
+    path = "/rss/templates",
+    responses(
+        (status = 200, description = "获取成功"),
+    ),
+    tag = "rss"
+)]
 pub async fn handle_rss_templates_list(State(_state): State<ApiState>) -> Response {
     // 动态读取 rss/template 目录下的所有 .see 文件
     let template_dir = get_rss_template_dir();
@@ -198,8 +330,18 @@ pub async fn handle_rss_templates_list(State(_state): State<ApiState>) -> Respon
 }
 
 /// 处理从模板添加RSS feeds请求
+#[utoipa::path(
+    post,
+    path = "/rss/template/add",
+    request_body = TemplateAddRequest,
+    responses(
+        (status = 200, description = "添加成功"),
+        (status = 404, description = "模板不存在", body = ApiErrorResponse),
+    ),
+    tag = "rss"
+)]
 pub async fn handle_rss_template_add(
-    State(_state): State<ApiState>,
+    State(state): State<ApiState>,
     Json(request): Json<TemplateAddRequest>,
 ) -> Response {
     // 读取模板文件
@@ -223,8 +365,9 @@ pub async fn handle_rss_template_add(
         }
     };
 
-    // 解析模板内容（简单的行解析）
+    // 解析模板内容（INI 格式）
     let mut added_feeds = Vec::new();
+    let mut current_section = String::new();
 
     for line in template_content.lines() {
         let line = line.trim();
@@ -233,26 +376,37 @@ pub async fn handle_rss_template_add(
             continue;
         }
 
-        // 解析格式: URL [分类]
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.is_empty() {
+        // 检查是否是节标题 [section]
+        if line.starts_with('[') && line.ends_with(']') {
+            current_section = line[1..line.len() - 1].to_string();
             continue;
         }
 
-        let url = parts[0];
-        let category = if parts.len() > 1 {
-            parts[1].to_string()
-        } else {
-            "默认".to_string()
-        };
-
-        // 如果指定了特定分类，只添加匹配的
-        if !request.categories.is_empty() && !request.categories.contains(&category) {
+        // 只在 [feeds] 节中解析 feeds
+        if current_section != "feeds" {
             continue;
         }
 
-        // 添加到列表（实际应用中这里应该保存到数据库）
-        added_feeds.push(url.to_string());
+        // 解析格式: key = "URL" 或 key = URL
+        if let Some((key, value)) = line.split_once('=') {
+            let key = key.trim();
+            let value = value.trim().trim_matches('"').trim_matches('\'');
+
+            // 如果指定了特定分类，只添加匹配的
+            if !request.categories.is_empty() && !request.categories.contains(&key.to_string()) {
+                continue;
+            }
+
+            // 添加到存储
+            if !value.is_empty() && (value.starts_with("http://") || value.starts_with("https://"))
+            {
+                state
+                    .rss_storage
+                    .add_feed(key.to_string(), value.to_string())
+                    .await;
+                added_feeds.push(format!("{}: {}", key, value));
+            }
+        }
     }
 
     let response = TemplateAddResponse {

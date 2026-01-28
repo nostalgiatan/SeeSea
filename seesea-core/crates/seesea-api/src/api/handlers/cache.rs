@@ -18,6 +18,7 @@
 //! 处理缓存管理相关的 API 请求
 
 use crate::api::on::ApiState;
+
 use axum::{
     Json,
     extract::State,
@@ -27,7 +28,7 @@ use axum::{
 use serde::Serialize;
 
 /// 缓存统计响应
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct CacheStatsResponse {
     /// 总缓存条目数
     pub total_entries: u64,
@@ -52,7 +53,7 @@ pub struct CacheStatsResponse {
 }
 
 /// 缓存清理响应
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct CacheClearResponse {
     /// 是否成功
     pub success: bool,
@@ -63,6 +64,14 @@ pub struct CacheClearResponse {
 }
 
 /// 处理获取缓存统计请求
+#[utoipa::path(
+    get,
+    path = "/cache/stats",
+    responses(
+        (status = 200, description = "获取成功", body = CacheStatsResponse),
+    ),
+    tag = "cache"
+)]
 pub async fn handle_cache_stats(State(state): State<ApiState>) -> Response {
     let cache_stats = state.search.get_cache_stats();
 
@@ -95,6 +104,15 @@ pub async fn handle_cache_stats(State(state): State<ApiState>) -> Response {
 }
 
 /// 处理清除所有缓存请求
+#[utoipa::path(
+    post,
+    path = "/cache/clear",
+    responses(
+        (status = 200, description = "清除成功", body = CacheClearResponse),
+        (status = 500, description = "服务器错误", body = CacheClearResponse),
+    ),
+    tag = "cache"
+)]
 pub async fn handle_cache_clear(State(state): State<ApiState>) -> Response {
     // 先获取当前条目数
     let cache_stats = state.search.get_cache_stats();
@@ -122,6 +140,15 @@ pub async fn handle_cache_clear(State(state): State<ApiState>) -> Response {
 }
 
 /// 处理清理过期缓存请求
+#[utoipa::path(
+    post,
+    path = "/cache/cleanup",
+    responses(
+        (status = 200, description = "清理成功", body = CacheClearResponse),
+        (status = 500, description = "服务器错误", body = CacheClearResponse),
+    ),
+    tag = "cache"
+)]
 pub async fn handle_cache_cleanup(State(state): State<ApiState>) -> Response {
     match state.search.cleanup_expired_cache().await {
         Ok(cleaned_count) => {

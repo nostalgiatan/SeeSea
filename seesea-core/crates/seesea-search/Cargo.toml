@@ -1,6 +1,6 @@
 [package]
 name = "seesea-search"
-version = "2.1.0"
+version = "2.2.2"
 edition = "2024"
 
 [features]
@@ -35,6 +35,8 @@ seesea-cache = { path = "../seesea-cache" }
 seesea-net = { path = "../seesea-net" }
 seesea-sys = { path = "../seesea-sys" }
 seesea-cleaner = { path = "../seesea-cleaner" }
+seesea-raming = { path = "../seesea-raming" }
+uuid = { version = "1.10", features = ["v4", "serde"] }
 
 [dev-dependencies]
 tokio-test = "0.4.4"

@@ -32,6 +32,8 @@ pub mod py_embedding_callback;
 #[cfg(feature = "python")]
 pub mod py_engine_registry;
 #[cfg(feature = "python")]
+pub mod py_event;
+#[cfg(feature = "python")]
 pub mod py_hot;
 
 #[cfg(feature = "python")]
@@ -39,12 +41,14 @@ pub mod py_net;
 #[cfg(feature = "python")]
 pub mod py_object_pool;
 #[cfg(feature = "python")]
+pub mod py_raming;
+#[cfg(feature = "python")]
 pub mod py_rss;
 #[cfg(feature = "python")]
 pub mod py_search;
 #[cfg(feature = "python")]
+pub mod py_stock;
+#[cfg(feature = "python")]
 pub mod py_system_controller;
 #[cfg(feature = "python")]
 pub mod py_vector_store;
-#[cfg(feature = "python")]
-pub mod py_stock_callbacks;

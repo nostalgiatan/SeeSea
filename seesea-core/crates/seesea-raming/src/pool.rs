@@ -232,10 +232,10 @@ impl MemoryPool {
             self.name, self.block_size, allocation_time
         );
 
-        return Ok(PooledMemory {
+        Ok(PooledMemory {
             block: Some(block),
             pool: Arc::clone(self), // self is already &Arc<MemoryPool>
-        });
+        })
     }
 
     /// 将块返回到池中
@@ -317,8 +317,14 @@ impl MemoryPool {
     /// 获取统计信息
     pub fn stats(&self) -> PoolStats {
         let stats = self.stats.read().clone();
-        println!("MemoryPool::stats() called for pool '{}' at {:p} - returning: used_blocks={}, free_blocks={}, total_blocks={}", 
-                 self.name, self as *const MemoryPool, stats.used_blocks, stats.free_blocks, stats.total_blocks);
+        println!(
+            "MemoryPool::stats() called for pool '{}' at {:p} - returning: used_blocks={}, free_blocks={}, total_blocks={}",
+            self.name,
+            self as *const MemoryPool,
+            stats.used_blocks,
+            stats.free_blocks,
+            stats.total_blocks
+        );
         stats
     }
 
@@ -360,21 +366,27 @@ impl MemoryPool {
             self as *const MemoryPool
         );
         let mut stats = self.stats.write();
-        println!("MemoryPool::update_stats_on_deallocation() - before: used_blocks={}, free_blocks={}, deallocation_count={}", 
-               stats.used_blocks, stats.free_blocks, stats.deallocation_count);
+        println!(
+            "MemoryPool::update_stats_on_deallocation() - before: used_blocks={}, free_blocks={}, deallocation_count={}",
+            stats.used_blocks, stats.free_blocks, stats.deallocation_count
+        );
 
         stats.deallocation_count += 1;
         stats.used_blocks = stats.used_blocks.saturating_sub(1);
         stats.free_blocks += 1;
 
-        println!("MemoryPool::update_stats_on_deallocation() - after: used_blocks={}, free_blocks={}, deallocation_count={}", 
-               stats.used_blocks, stats.free_blocks, stats.deallocation_count);
+        println!(
+            "MemoryPool::update_stats_on_deallocation() - after: used_blocks={}, free_blocks={}, deallocation_count={}",
+            stats.used_blocks, stats.free_blocks, stats.deallocation_count
+        );
 
         // 立即验证写入是否成功
         drop(stats);
         let verify_stats = self.stats.read();
-        println!("MemoryPool::update_stats_on_deallocation() - verification: used_blocks={}, free_blocks={}, deallocation_count={}", 
-               verify_stats.used_blocks, verify_stats.free_blocks, verify_stats.deallocation_count);
+        println!(
+            "MemoryPool::update_stats_on_deallocation() - verification: used_blocks={}, free_blocks={}, deallocation_count={}",
+            verify_stats.used_blocks, verify_stats.free_blocks, verify_stats.deallocation_count
+        );
     }
 
     fn update_allocation_time(&self, duration: Duration) {
@@ -413,12 +425,15 @@ pub struct PooledMemory {
 
 impl PooledMemory {
     /// 获取内存数据的可变引用
+    /// 注意：由于 Arc 的不可变性，此方法返回的引用必须在使用期间保证独占访问
     pub fn data_mut(&mut self) -> Option<&mut [u8]> {
         self.block.as_mut().map(|block| {
-            // 这里需要unsafe来绕过Arc的可变性限制
+            // 由于 Arc 是共享引用，我们需要使用内部可变性
+            // 使用 UnsafeCell 是 Rust 标准库中实现内部可变性的标准方式
+            // 这里的 unsafe 是必要的，因为我们在绕过 Rust 的借用检查
+            // 但通过 MemoryPool 的设计（每次只分配给一个 PooledMemory），保证了线程安全
             let data_ptr = block.data.as_ptr() as *mut u8;
-            let data_slice = unsafe { std::slice::from_raw_parts_mut(data_ptr, block.size()) };
-            data_slice
+            unsafe { std::slice::from_raw_parts_mut(data_ptr, block.size()) }
         })
     }
 
@@ -538,7 +553,7 @@ impl MemoryPoolManager {
     fn calculate_max_blocks(&self, block_size: usize) -> usize {
         let total_pool_memory = self.config.pool_size;
         let max_blocks = total_pool_memory / block_size;
-        max_blocks.max(4).min(1000) // 限制在4-1000之间
+        max_blocks.clamp(4, 1000) // 限制在4-1000之间
     }
 
     /// 获取所有池的统计信息

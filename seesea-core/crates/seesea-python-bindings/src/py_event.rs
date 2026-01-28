@@ -7,7 +7,9 @@ use seesea_event::{
     EventPayload, StringAsyncEventOperations, StringEventOperations, get_global_async_event_bus,
     get_global_event_bus,
 };
+use seesea_sys::get_or_create_runtime;
 use std::sync::Arc;
+use tracing::info;
 
 /// Python事件包装器
 #[pyclass]
@@ -128,13 +130,9 @@ pub fn send_string_request_event(
 
 /// 注册字符串事件处理器
 #[pyfunction]
-pub fn on_string_event(
-    py: Python,
-    event_type: String,
-    handler: Py<PyAny>,
-) -> PyResult<Py<PyAny>> {
+pub fn on_string_event(py: Python, event_type: String, handler: Py<PyAny>) -> PyResult<Py<PyAny>> {
     let bus = get_global_async_event_bus();
-    
+
     // 使用Arc包装handler以便在异步上下文中共享
     let handler = Arc::new(handler);
 
@@ -146,11 +144,8 @@ pub fn on_string_event(
             Box::pin(async move {
                 Python::attach(|py| {
                     // 调用Python处理器
-                    let result = handler.call1(
-                        py,
-                        (event_type, data),
-                    );
-                    
+                    let result = handler.call1(py, (event_type, data));
+
                     match result {
                         Ok(result) => {
                             // 如果处理器返回数据，转换为EventPayload
@@ -167,7 +162,9 @@ pub fn on_string_event(
                     }
                 })
             })
-        }).await.map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        })
+        .await
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
         Ok::<(), PyErr>(())
     };
@@ -210,4 +207,67 @@ pub fn send_string_error_event(py: Python, error_message: String) -> PyResult<Py
 
     let result = future_into_py(py, future)?;
     Ok(result.into())
+}
+
+/// 确保全局 Tokio 运行时已初始化
+///
+/// 在使用任何异步事件功能之前调用此函数，确保运行时存在。
+/// 可以安全地多次调用，只会初始化一次。
+#[pyfunction]
+pub fn ensure_event_runtime() -> PyResult<()> {
+    let _ = get_or_create_runtime();
+    info!("✅ 事件运行时已确保存在");
+    Ok(())
+}
+
+/// 同步注册字符串事件处理器
+///
+/// 这是 on_string_event 的同步版本，在没有运行中的 event loop 时使用。
+/// 它会确保 Tokio 运行时存在，然后在该运行时上注册事件处理器。
+#[pyfunction]
+pub fn on_string_event_sync(event_type: String, handler: Py<PyAny>) -> PyResult<()> {
+    // 确保运行时存在
+    let runtime = get_or_create_runtime();
+    let bus = get_global_async_event_bus();
+
+    // 使用Arc包装handler以便在异步上下文中共享
+    let handler = Arc::new(handler);
+    let event_type_clone = event_type.clone();
+
+    // 在全局运行时上注册事件处理器
+    runtime.block_on(async {
+        bus.on(&event_type_clone, move |event_type: &str, data: &str| {
+            let handler = Arc::clone(&handler);
+            let event_type = event_type.to_string();
+            let data = data.to_string();
+            Box::pin(async move {
+                Python::attach(|py| {
+                    // 调用Python处理器
+                    let result = handler.call1(py, (event_type, data));
+
+                    match result {
+                        Ok(result) => {
+                            // 如果处理器返回数据，转换为EventPayload
+                            if let Ok(data_str) = result.extract::<String>(py) {
+                                EventPayload::Data(data_str.into_bytes())
+                            } else {
+                                EventPayload::Empty
+                            }
+                        }
+                        Err(e) => {
+                            // 处理器出错，返回错误
+                            EventPayload::Error(e.to_string())
+                        }
+                    }
+                })
+            })
+        })
+        .await
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
+        Ok::<(), PyErr>(())
+    })?;
+
+    info!("✅ 事件处理器已注册: {}", event_type);
+    Ok(())
 }

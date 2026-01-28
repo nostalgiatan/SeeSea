@@ -218,7 +218,7 @@ SeeSea 正是为解决这些问题而生:
 │                      基础设施层                             │
 ├─────────────────┬─────────────────┬─────────────────────────┤
 │   隐私网络      │   缓存系统      │   配置管理              │
-│   Tor/Proxy     │   Sled DB       │   Config Manager        │
+│   Tor/Proxy     │   RocksDB       │   Config Manager        │
 └─────────────────┴─────────────────┴─────────────────────────┘
 ```
 
@@ -228,7 +228,7 @@ SeeSea 正是为解决这些问题而生:
 - **Rust 2024**: 内存安全，零成本抽象
 - **Tokio**: 异步运行时，高并发处理
 - **Axum**: 现代化 Web 框架
-- **Sled**: 嵌入式数据库
+- **RocksDB**: 嵌入式数据库
 - **PyO3**: Python-Rust 绑定
 
 **前端服务** (SvelteKit)
@@ -1457,7 +1457,7 @@ results = client.search(
 - Rust 标准库 (MIT/Apache-2.0)
 - Tokio (MIT)
 - Axum (MIT)
-- Sled (MIT/Apache-2.0)
+- RocksDB (GPL-2.0/BSD-3-Clause)
 - Qdrant 客户端 (Apache-2.0)
 - Playwright (Apache-2.0)
 - 其他依赖见 `Cargo.toml` 和 `requirements.txt`

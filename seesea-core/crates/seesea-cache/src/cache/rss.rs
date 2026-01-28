@@ -246,7 +246,7 @@ impl RssCache {
     pub fn search_fulltext(
         &self,
         keywords: &[String],
-        include_stale: bool,
+        _include_stale: bool,
         max_results: Option<usize>,
     ) -> Result<Vec<(String, seesea_derive::rss::RssFeedItem)>> {
         use seesea_derive::rss::RssFeed;
@@ -254,7 +254,6 @@ impl RssCache {
         let mut matched_items = Vec::new();
         let max = max_results.unwrap_or(usize::MAX);
 
-        // 遍历所有以 rss: 开头的缓存键
         for item in self.manager.iter() {
             if matched_items.len() >= max {
                 break;
@@ -265,26 +264,15 @@ impl RssCache {
 
             let key_str = String::from_utf8_lossy(&key);
 
-            // 只处理 RSS feed 缓存
             if !key_str.starts_with(RSS_KEY_PREFIX) {
                 continue;
             }
 
-            // 提取 feed URL（移除前缀）
             let feed_url = key_str
                 .strip_prefix(RSS_KEY_PREFIX)
                 .unwrap_or(&key_str)
                 .to_string();
 
-            // 检查是否过期（如果不包含过期结果）
-            if !include_stale
-                && let Some(metadata) = self.manager.get_metadata(&key_str)?
-                && metadata.is_expired
-            {
-                continue;
-            }
-
-            // 反序列化 RSS feed
             let feed: RssFeed = match bincode::serde::decode_from_slice::<RssFeed, _>(
                 &value,
                 bincode::config::standard(),
@@ -292,16 +280,14 @@ impl RssCache {
             .map(|(feed, _)| feed)
             {
                 Ok(f) => f,
-                Err(_) => continue, // 跳过损坏的数据
+                Err(_) => continue,
             };
 
-            // 在 RSS items 中搜索关键词
             for rss_item in feed.items {
                 if matched_items.len() >= max {
                     break;
                 }
 
-                // 检查标题、描述和内容是否包含任何关键词
                 let matches = keywords.iter().any(|keyword| {
                     let keyword_lower = keyword.to_lowercase();
                     rss_item.title.to_lowercase().contains(&keyword_lower)
@@ -341,18 +327,15 @@ impl RssCache {
 
             let key_str = String::from_utf8_lossy(&key);
 
-            // 只处理 RSS feed 缓存
             if !key_str.starts_with(RSS_KEY_PREFIX) {
                 continue;
             }
 
-            // 提取 feed URL（移除前缀）
             let feed_url = key_str
                 .strip_prefix(RSS_KEY_PREFIX)
                 .unwrap_or(&key_str)
                 .to_string();
 
-            // 获取元数据
             let meta = self.get_meta(&feed_url).ok().flatten();
 
             feeds.push((feed_url, meta));

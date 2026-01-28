@@ -27,7 +27,17 @@ use axum::{
 use crate::api::on::ApiState;
 use crate::api::types::ApiHealthResponse;
 
-/// 处理健康检查请求
+/// 健康检查接口
+///
+/// 返回服务健康状态和版本信息
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "服务健康", body = ApiHealthResponse),
+    ),
+    tag = "health"
+)]
 pub async fn handle_health(State(state): State<ApiState>) -> Response {
     let engines = state.search.list_engines();
 

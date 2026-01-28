@@ -17,16 +17,14 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{
-        DnsConfig, PrivacyConfig, TlsConfig, TlsFingerprintLevel, UserAgentStrategy,
-    };
     use crate::privacy::{PrivacyLevel, PrivacyManager};
+    use crate::{DnsConfig, FingerprintLevel, PrivacyConfig, TlsConfig};
 
     #[tokio::test]
     async fn test_privacy_manager_integration() {
         let mut privacy_config = PrivacyConfig::default();
         privacy_config.user_agent_rotation.enabled = true;
-        privacy_config.fingerprint_protection.protection_level = TlsFingerprintLevel::Advanced;
+        privacy_config.fingerprint_protection.protection_level = FingerprintLevel::Advanced;
         privacy_config.dns_config.enabled = true;
 
         let tls_config = TlsConfig::default();
@@ -96,7 +94,7 @@ mod tests {
 
         // Update privacy config
         let mut new_config = PrivacyConfig::default();
-        new_config.fake_headers = false;
+        new_config.headers.randomize_headers = false;
         manager.update_privacy_config(new_config).await;
 
         let stats = manager.get_stats().await;

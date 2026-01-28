@@ -178,6 +178,8 @@ mod tests {
 
         let config = CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
+            secondary_path: None,
+            is_secondary: false,
             default_ttl_secs: 10,
             max_size_bytes: 1024 * 1024,
             enabled: true,
@@ -219,6 +221,8 @@ mod tests {
 
         let config = CacheImplConfig {
             db_path: db_path.to_string_lossy().to_string(),
+            secondary_path: None,
+            is_secondary: false,
             default_ttl_secs: 10,
             max_size_bytes: 1024 * 1024,
             enabled: true,

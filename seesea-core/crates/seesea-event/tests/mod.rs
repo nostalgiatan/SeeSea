@@ -10,13 +10,13 @@ pub mod test_event_payloads;
 pub mod test_sync_events;
 pub mod test_utils;
 
-use seesea_event::{EventPayload, StringAsyncEventOperations, StringEventOperations};
+use seesea_event::EventPayload;
 
 /// Common test utilities and helpers
 pub mod utils {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Test event counter for verifying event delivery
     pub struct EventCounter {
@@ -59,9 +59,9 @@ pub mod utils {
         &str,
         &str,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = EventPayload> + Send>>
-           + Send
-           + Sync
-           + 'static {
+    + Send
+    + Sync
+    + 'static {
         move |_event_type, _data| {
             let counter = counter.clone();
             Box::pin(async move {

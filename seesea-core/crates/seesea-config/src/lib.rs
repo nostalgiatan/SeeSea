@@ -30,6 +30,8 @@ pub mod on;
 pub mod paths;
 pub mod privacy;
 pub mod raming;
+pub mod rss;
+pub mod scheduler;
 pub mod search;
 pub mod server;
 pub mod types;
@@ -43,8 +45,8 @@ pub use api::{
 pub use cache::{
     CacheBackend, CacheConfig, CacheKeyStrategy, CacheMonitoringConfig, CacheTypeConfig,
     CompressionAlgorithm, CompressionConfig, ConsistentHashConfig, DnsCacheConfig, EvictionPolicy,
-    HashAlgorithm, MemoryConfig, ReadFrom, RedisClusterConfig, RedisConfig, RedisNode,
-    RedisTlsConfig, ResultCacheConfig, ShardingConfig, ShardingStrategy,
+    HashAlgorithm, MemoryConfig as CacheMemoryConfig, ReadFrom, RedisClusterConfig, RedisConfig,
+    RedisNode, RedisTlsConfig, ResultCacheConfig, ShardingConfig, ShardingStrategy,
 };
 pub use common::{
     AuthType, ConfigValidationResult, EngineLoadingMode, FingerprintLevel, LogLevel, ProxyType,
@@ -65,6 +67,8 @@ pub use raming::{
     BindingConfig, BindingStats, BindingType, EventConfig, EventPriority, EventStats, MemoryAccess,
     MemoryConfig as RamingMemoryConfig, MemoryStats, PoolStats, RamingConfig,
 };
+pub use rss::RssConfig;
+pub use scheduler::{DateStrategy, SchedulerConfig, TaskConfig, TradingDaysConfig};
 pub use search::{EngineListConfig, EngineMode, SearchConfig};
 pub use server::ServerConfig;
 pub use types::Environment;
