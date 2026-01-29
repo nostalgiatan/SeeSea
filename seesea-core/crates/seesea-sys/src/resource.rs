@@ -265,9 +265,7 @@ impl ResourceMonitor {
         #[cfg(target_os = "windows")]
         {
             // Windows: 使用 GetDiskPerformanceStatistics API
-            use std::os::windows::ffi::OsStrExt;
             use windows::Win32::Foundation::INVALID_HANDLE_VALUE;
-            use windows::Win32::Foundation::{GetLastError, HANDLE};
             use windows::Win32::Storage::FileSystem::CreateFileW;
             use windows::Win32::Storage::FileSystem::{
                 DRIVE_FIXED, GetDriveTypeW, GetLogicalDriveStringsW,
@@ -276,25 +274,26 @@ impl ResourceMonitor {
                 DeviceIoControl, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_READ, FILE_SHARE_WRITE,
                 OPEN_EXISTING,
             };
-            use windows::Win32::System::SystemInformation::{
-                FILE_ID_BOTH_DIR_INFO, IOCTL_DISK_PERFORMANCE,
-            };
+            use windows::Win32::System::SystemInformation::IOCTL_DISK_PERFORMANCE;
+            use windows::Win32::System::Threading::GENERIC_READ;
             use windows::core::PCWSTR;
 
             let mut drives = [0u16; 256];
             unsafe {
-                let len = GetLogicalDriveStringsW(256, windows::core::PWSTR(drives.as_mut_ptr()));
+                let len = GetLogicalDriveStringsW(Some(&mut drives));
                 if len > 0 {
                     let mut i = 0;
-                    while i < len as usize {
+                    while i < drives.len() {
                         if drives[i] == 0 {
                             break;
                         }
                         let drive_str = &drives[i..i + 4];
                         if GetDriveTypeW(PCWSTR(drive_str.as_ptr())) == DRIVE_FIXED {
                             // 构造设备路径
-                            let device_path =
-                                format!("\\\\.\\{}:", std::char::from_u32(drives[i]).unwrap());
+                            let device_path = format!(
+                                "\\\\.\\{}:",
+                                std::char::from_u32(drives[i] as u32).unwrap()
+                            );
                             let device_path_wide: Vec<u16> = device_path
                                 .encode_utf16()
                                 .chain(std::iter::once(0))
@@ -303,9 +302,9 @@ impl ResourceMonitor {
                             // 打开设备句柄
                             let handle = CreateFileW(
                                 PCWSTR(device_path_wide.as_ptr()),
-                                windows::Win32::System::Threading::GENERIC_READ,
+                                GENERIC_READ,
                                 FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                Some(std::ptr::null()),
+                                None,
                                 OPEN_EXISTING,
                                 FILE_FLAG_BACKUP_SEMANTICS,
                                 None,
@@ -371,8 +370,7 @@ impl ResourceMonitor {
                 let num_disks: libc::c_int = 32; // 假设最多 32 个磁盘
 
                 // 获取所有磁盘的统计信息
-                let mut disk_stats: Vec<DiskStats> =
-                    vec![std::mem::zeroed(); num_disks as usize];
+                let mut disk_stats: Vec<DiskStats> = vec![std::mem::zeroed(); num_disks as usize];
                 let mut size = std::mem::size_of::<DiskStats>() * num_disks as usize;
 
                 let mut mib = [CTL_HW, HW_DISKSTATS];
