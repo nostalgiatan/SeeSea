@@ -310,7 +310,8 @@ impl ResourceMonitor {
                                 None,
                             );
 
-                            if handle != INVALID_HANDLE_VALUE {
+                            if handle.is_ok() && handle.as_ref().unwrap() != &INVALID_HANDLE_VALUE {
+                                let handle = handle.unwrap();
                                 // 获取磁盘性能统计
                                 let mut perf_stats = [0u8; std::mem::size_of::<
                                     windows::Win32::System::IO::DISK_PERFORMANCE,
@@ -323,7 +324,7 @@ impl ResourceMonitor {
                                     None,
                                     0,
                                     Some(perf_stats.as_mut_slice()),
-                                    &mut bytes_returned,
+                                    bytes_returned,
                                     None,
                                 );
 
