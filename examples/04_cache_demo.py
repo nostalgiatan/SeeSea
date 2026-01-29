@@ -58,19 +58,17 @@ def main():
     if ttl_result.success:
         ttl = ttl_result.data
         if ttl == -1:
-            print(f"   ✓ 缓存永不过期\n")
+            print("   ✓ 缓存永不过期\n")
         elif ttl == -2:
-            print(f"   ✓ 缓存不存在\n")
+            print("   ✓ 缓存不存在\n")
         else:
             print(f"   ✓ 剩余 TTL: {ttl} 秒\n")
 
     # 设置多个缓存
     print("8. 批量设置缓存...")
-    mset_result = client.mset(mapping={
-        "key1": "value1",
-        "key2": "value2",
-        "key3": "value3"
-    })
+    mset_result = client.mset(
+        mapping={"key1": "value1", "key2": "value2", "key3": "value3"}
+    )
     if mset_result.success:
         print("   ✓ 批量设置完成\n")
 
