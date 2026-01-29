@@ -354,6 +354,7 @@ impl ResourceMonitor {
             unsafe {
                 // macOS 使用 diskstats 结构体
                 #[repr(C)]
+                #[derive(Clone)]
                 struct DiskStats {
                     dk_name: [libc::c_char; 128],
                     dk_bs: libc::c_uint,
@@ -365,42 +366,33 @@ impl ResourceMonitor {
                 }
 
                 // 获取磁盘数量
-                let mut num_disks: libc::c_int = 0;
-                let mut size = std::mem::size_of::<libc::c_int>();
-                let mut mib = [CTL_HW, HW_DISKSTATS, libc::DISKCOUNT as libc::c_int];
+                // 注意: libc::DISKCOUNT 在某些版本中可能不存在
+                // 使用替代方法：直接请求所有磁盘统计信息，然后计算数量
+                let num_disks: libc::c_int = 32; // 假设最多 32 个磁盘
 
+                // 获取所有磁盘的统计信息
+                let mut disk_stats: Vec<DiskStats> =
+                    vec![std::mem::zeroed(); num_disks as usize];
+                let mut size = std::mem::size_of::<DiskStats>() * num_disks as usize;
+
+                let mut mib = [CTL_HW, HW_DISKSTATS];
                 if sysctl(
                     mib.as_mut_ptr(),
-                    3,
-                    &mut num_disks as *mut _ as *mut c_void,
+                    2,
+                    disk_stats.as_mut_ptr() as *mut c_void,
                     &mut size,
-                    std::ptr::null(),
+                    std::ptr::null_mut(),
                     0,
                 ) == 0
-                    && num_disks > 0
                 {
-                    // 获取所有磁盘的统计信息
-                    let mut disk_stats: Vec<DiskStats> =
-                        vec![std::mem::zeroed(); num_disks as usize];
-                    size = std::mem::size_of::<DiskStats>() * num_disks as usize;
+                    let actual_num_disks = size / std::mem::size_of::<DiskStats>();
 
-                    let mut mib_all = [CTL_HW, HW_DISKSTATS];
-                    if sysctl(
-                        mib_all.as_mut_ptr(),
-                        2,
-                        disk_stats.as_mut_ptr() as *mut c_void,
-                        &mut size,
-                        std::ptr::null(),
-                        0,
-                    ) == 0
-                    {
-                        // 累加所有磁盘的统计信息
-                        for disk in &disk_stats {
-                            current_stats.read_bytes += disk.dk_rbytes as u64;
-                            current_stats.write_bytes += disk.dk_wbytes as u64;
-                            current_stats.reads += disk.dk_rxfer as u64;
-                            current_stats.writes += disk.dk_wxfer as u64;
-                        }
+                    // 累加所有磁盘的统计信息
+                    for disk in disk_stats.iter().take(actual_num_disks) {
+                        current_stats.read_bytes += disk.dk_rbytes as u64;
+                        current_stats.write_bytes += disk.dk_wbytes as u64;
+                        current_stats.reads += disk.dk_rxfer as u64;
+                        current_stats.writes += disk.dk_wxfer as u64;
                     }
                 }
 
