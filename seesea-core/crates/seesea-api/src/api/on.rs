@@ -17,20 +17,22 @@
 //!
 //! 提供高层次的 HTTP API 接口供外部调用
 
+use axum::extract::connect_info::IntoMakeServiceWithConnectInfo;
 use axum::{
     Router,
-    routing::{any, get, post},
+    routing::{any, get, get_service, post},
 };
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::info;
 
 use super::dynamic_router::{ThreadSafeDynamicRouter, new_dynamic_router};
 use super::handlers::{
-    cache, get_static_app_path, get_static_html_path, handle_cache_clear_pattern,
-    handle_cache_keys, handle_cache_stats_detail, handle_config_get, handle_config_update,
-    handle_connections_stats, handle_controller_action, handle_engine_toggle, handle_engines_batch,
-    handle_engines_list, handle_engines_list_full, handle_engines_status, handle_favicon,
-    handle_health, handle_health_detail, handle_hot_all, handle_hot_multiple, handle_hot_platform,
+    cache, get_static_html_path, handle_cache_clear_pattern, handle_cache_keys,
+    handle_cache_stats_detail, handle_config_get, handle_config_update, handle_connections_stats,
+    handle_controller_action, handle_engine_toggle, handle_engines_batch, handle_engines_list,
+    handle_engines_list_full, handle_engines_status, handle_favicon, handle_health,
+    handle_health_detail, handle_hot_all, handle_hot_multiple, handle_hot_platform,
     handle_hot_platforms_list, handle_index, handle_logs_directory, handle_logs_errors,
     handle_logs_files, handle_logs_read, handle_logs_tail, handle_magic_link_generate,
     handle_metrics, handle_pro_api, handle_realtime_metrics, handle_search, handle_search_post,
@@ -304,7 +306,7 @@ impl ApiInterface {
     /// # Returns
     ///
     /// 返回配置好的 Axum Router
-    pub fn build_router(&self) -> Router {
+    pub fn build_router(&self) -> IntoMakeServiceWithConnectInfo<Router, SocketAddr> {
         self.build_internal_router()
     }
 
@@ -313,13 +315,11 @@ impl ApiInterface {
     /// # Returns
     ///
     /// 返回配置好的 Axum Router
-    pub fn build_internal_router(&self) -> Router {
-        use axum::middleware;
+    pub fn build_internal_router(&self) -> IntoMakeServiceWithConnectInfo<Router, SocketAddr> {
         use axum::routing::get_service;
         use tower_http::services::ServeDir;
 
         // 获取静态文件路径
-        let static_app_path = get_static_app_path();
         let static_html_path = get_static_html_path();
 
         // API 路由组
@@ -389,7 +389,10 @@ impl ApiInterface {
             // Swagger UI 路由
             .merge(create_swagger_router())
             // 静态资源目录
-            .nest_service("/_app", get_service(ServeDir::new(static_app_path)))
+            .nest_service(
+                "/assets",
+                get_service(ServeDir::new(static_html_path.join("assets"))),
+            )
             // 根路径返回 index.html
             .route("/", get(handle_index))
             // robots.txt 等根目录文件
@@ -401,12 +404,13 @@ impl ApiInterface {
             .fallback(get(handle_index))
             .with_state(self.state.clone())
             // 应用指标收集中间件
-            .layer(middleware::from_fn_with_state(
+            .layer(axum::middleware::from_fn_with_state(
                 self.state.metrics.clone(),
                 metrics_middleware,
             ))
             // 应用 CORS 中间件
             .layer(cors::default_cors_layer())
+            .into_make_service_with_connect_info::<SocketAddr>()
     }
 
     /// 构建外网路由器（带安全限制）
@@ -414,13 +418,10 @@ impl ApiInterface {
     /// # Returns
     ///
     /// 返回配置好的 Axum Router
-    pub fn build_external_router(&self) -> Router {
-        use axum::middleware;
-        use axum::routing::get_service;
+    pub fn build_external_router(&self) -> IntoMakeServiceWithConnectInfo<Router, SocketAddr> {
         use tower_http::services::ServeDir;
 
         // 获取静态文件路径
-        let static_app_path = get_static_app_path();
         let static_html_path = get_static_html_path();
 
         // API 路由组
@@ -457,7 +458,10 @@ impl ApiInterface {
             // Swagger UI 路由
             .merge(Router::from(swagger))
             // 静态资源目录 - 优先级最高
-            .nest_service("/_app", get_service(ServeDir::new(static_app_path)))
+            .nest_service(
+                "/assets",
+                get_service(ServeDir::new(static_html_path.join("assets"))),
+            )
             // 根路径返回 index.html
             .route("/", get(handle_index))
             // robots.txt 等根目录文件
@@ -470,32 +474,32 @@ impl ApiInterface {
             .with_state(self.state.clone())
             // 应用中间件（顺序很重要）
             // 1. 魔法链接（最先检查，可以绕过认证）
-            .layer(middleware::from_fn_with_state(
+            .layer(axum::middleware::from_fn_with_state(
                 self.state.magic_link.clone(),
                 magic_link_middleware,
             ))
             // 2. JWT认证（如果启用）
-            .layer(middleware::from_fn_with_state(
+            .layer(axum::middleware::from_fn_with_state(
                 self.auth_state.clone(),
                 jwt_auth_middleware,
             ))
             // 3. IP过滤
-            .layer(middleware::from_fn_with_state(
+            .layer(axum::middleware::from_fn_with_state(
                 self.ip_filter.clone(),
                 ip_filter_middleware,
             ))
             // 4. 熔断器
-            .layer(middleware::from_fn_with_state(
+            .layer(axum::middleware::from_fn_with_state(
                 self.circuit_breaker.clone(),
                 circuit_breaker_middleware,
             ))
             // 5. 限流
-            .layer(middleware::from_fn_with_state(
+            .layer(axum::middleware::from_fn_with_state(
                 self.rate_limiter.clone(),
                 rate_limit_middleware,
             ))
             // 6. 指标收集
-            .layer(middleware::from_fn_with_state(
+            .layer(axum::middleware::from_fn_with_state(
                 self.state.metrics.clone(),
                 metrics_middleware,
             ))
@@ -503,6 +507,7 @@ impl ApiInterface {
             .layer(cors::create_cors_layer(
                 self.network_config.external.cors_origins.clone(),
             ))
+            .into_make_service_with_connect_info::<SocketAddr>()
     }
 
     /// 启动服务器

@@ -88,7 +88,7 @@ fn get_package_root() -> &'static PathBuf {
                 };
 
                 if let Some(sp) = site_packages
-                    && (sp.join("static").exists() || sp.join("rss").exists())
+                    && (sp.join("seesea-static").exists() || sp.join("rss").exists())
                 {
                     tracing::info!("Using module path site-packages: {}", sp.display());
                     return sp.to_path_buf();
@@ -107,7 +107,7 @@ fn get_package_root() -> &'static PathBuf {
                 };
 
                 if let Some(sp) = site_packages
-                    && (sp.join("static").exists() || sp.join("rss").exists())
+                    && (sp.join("seesea-static").exists() || sp.join("rss").exists())
                 {
                     tracing::info!("Using module path site-packages: {}", sp.display());
                     return sp.to_path_buf();
@@ -149,14 +149,20 @@ fn get_package_root() -> &'static PathBuf {
                 }
 
                 // 检查 exe_dir 本身
-                if exe_dir.join("static").exists() {
-                    tracing::info!("Found static in exe directory: {}", exe_dir.display());
+                if exe_dir.join("seesea-static").exists() {
+                    tracing::info!(
+                        "Found seesea-static in exe directory: {}",
+                        exe_dir.display()
+                    );
                     return exe_dir.to_path_buf();
                 }
 
                 // 检查 exe_dir 父目录
-                if parent.join("static").exists() {
-                    tracing::info!("Found static in parent directory: {}", parent.display());
+                if parent.join("seesea-static").exists() {
+                    tracing::info!(
+                        "Found seesea-static in parent directory: {}",
+                        parent.display()
+                    );
                     return parent.to_path_buf();
                 }
             }
@@ -209,9 +215,9 @@ fn get_package_root() -> &'static PathBuf {
             }
 
             // 检查当前目录
-            if current_dir.join("static").exists() {
+            if current_dir.join("seesea-static").exists() {
                 tracing::info!(
-                    "Found static in current directory: {}",
+                    "Found seesea-static in current directory: {}",
                     current_dir.display()
                 );
                 return current_dir;
@@ -231,7 +237,7 @@ fn get_package_root() -> &'static PathBuf {
 /// 获取静态文件根目录
 pub fn get_static_root() -> PathBuf {
     let root = get_package_root();
-    root.join("static")
+    root.join("seesea-static")
 }
 
 /// 获取 RSS 模板目录
@@ -253,7 +259,7 @@ pub async fn handle_index(State(state): State<ApiState>) -> impl IntoResponse {
             let mut content = String::new();
             if file.read_to_string(&mut content).is_err() {
                 tracing::warn!("Failed to read index.html, using embedded fallback");
-                include_str!("../../../../../static/html/index.html").to_string()
+                include_str!("../../../../../seesea-static/html/index.html").to_string()
             } else {
                 tracing::info!("Loaded index.html from: {}", index_path.display());
                 content
@@ -265,7 +271,7 @@ pub async fn handle_index(State(state): State<ApiState>) -> impl IntoResponse {
                 index_path.display(),
                 e
             );
-            include_str!("../../../../../static/html/index.html").to_string()
+            include_str!("../../../../../seesea-static/html/index.html").to_string()
         }
     };
 
@@ -294,7 +300,7 @@ pub async fn handle_favicon() -> impl IntoResponse {
     let favicon_paths = [
         static_root.join("image/favicon.ico"),
         static_root.join("html/favicon.ico"),
-        PathBuf::from("server/static/favicon.ico"),
+        PathBuf::from("server/seesea-static/favicon.ico"),
     ];
 
     for path in &favicon_paths {
@@ -328,15 +334,15 @@ pub fn get_static_html_path() -> PathBuf {
     get_static_root().join("html")
 }
 
-/// 获取静态文件 _app 目录路径（供外部使用）
-pub fn get_static_app_path() -> PathBuf {
-    get_static_root().join("html/_app")
+/// 获取静态文件 assets 目录路径（供外部使用）
+pub fn get_static_assets_path() -> PathBuf {
+    get_static_root().join("html/assets")
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn test_index_html_contains_seesea() {
-        assert!(include_str!("../../../../../static/html/index.html").contains("SeeSea"));
+        assert!(include_str!("../../../../../seesea-static/html/index.html").contains("SeeSea"));
     }
 }

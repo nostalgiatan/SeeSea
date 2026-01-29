@@ -5,13 +5,6 @@ import { Activity, Zap, HardDrive, Cpu, Network, ArrowUpRight, ArrowDownRight, D
 import CustomSelect from './CustomSelect';
 import { useSystemStatus } from '../hooks/useSystemStatus';
 
-const chartData = [
-  { time: '00:00', requests: 400 }, { time: '04:00', requests: 300 },
-  { time: '08:00', requests: 900 }, { time: '12:00', requests: 1200 },
-  { time: '16:00', requests: 1500 }, { time: '20:00', requests: 800 },
-  { time: '23:59', requests: 500 },
-];
-
 const StatCard: React.FC<{ title: string; value: string | number; trend?: string; isUp?: boolean; icon: any; color: string; loading?: boolean; }> = ({ title, value, trend, isUp, icon: Icon, color, loading }) => (
   <div className="glass-panel p-3.5 md:p-6 rounded-2xl hover:border-white/20 transition-all duration-300 group relative overflow-hidden">
     {loading ? (
@@ -49,13 +42,71 @@ const ResourceProgress: React.FC<{ icon: any; label: string; value: number; colo
 
 const Dashboard: React.FC = () => {
   const [timeRange, setTimeRange] = useState('24h');
+  const [previousStats, setPreviousStats] = useState<ApiStatsResponse | null>(null);
   const { status, loading } = useSystemStatus();
+
+  // 保存前一次的统计数据用于计算趋势
+  React.useEffect(() => {
+    if (status?.search_stats && !loading) {
+      setPreviousStats(prev => {
+        // 只在有足够数据时更新（至少 5 秒间隔）
+        if (!prev || Math.abs(Date.now() - Date.now()) > 5000) {
+          return status.search_stats;
+        }
+        return prev;
+      });
+    }
+  }, [status?.search_stats, loading]);
+
+  // 计算趋势
+  const calculateTrend = (current: number, previous: number): { value: string; isUp: boolean } => {
+    if (previous === 0) return { value: "0%", isUp: true };
+    const diff = current - previous;
+    const percent = Math.abs((diff / previous) * 100).toFixed(1);
+    return {
+      value: `${diff >= 0 ? '+' : ''}${percent}%`,
+      isUp: diff >= 0
+    };
+  };
+
+  const searchTrend = React.useMemo(() => {
+    if (!status?.search_stats || !previousStats) return { value: "0%", isUp: true };
+    return calculateTrend(
+      status.search_stats.total_searches,
+      previousStats.total_searches
+    );
+  }, [status?.search_stats, previousStats]);
+
+  const cacheTrend = React.useMemo(() => {
+    if (!status?.search_stats || !previousStats) return { value: "0%", isUp: true };
+    return calculateTrend(
+      status.search_stats.cache_hit_rate * 100,
+      previousStats.cache_hit_rate * 100
+    );
+  }, [status?.search_stats, previousStats]);
+
+  // 将搜索历史数据转换为图表数据格式
+  const chartData = React.useMemo(() => {
+    if (!status?.search_stats.search_history || status.search_stats.search_history.length === 0) {
+      return [];
+    }
+
+    return status.search_stats.search_history.map(entry => {
+      const date = new Date(entry.hour * 3600 * 1000);
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      return {
+        time: `${hours}:${minutes}`,
+        requests: entry.count
+      };
+    });
+  }, [status?.search_stats.search_history]);
 
   return (
     <div className="space-y-4 md:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
-        <StatCard title="查询总量" value={status?.search_stats.total_searches.toLocaleString() || "0"} trend="+12%" isUp={true} icon={Activity} color="bg-blue-500" loading={loading} />
-        <StatCard title="缓存命中率" value={`${((status?.search_stats.cache_hit_rate || 0) * 100).toFixed(1)}%`} trend="+2%" isUp={true} icon={Database} color="bg-emerald-500" loading={loading} />
+        <StatCard title="查询总量" value={status?.search_stats.total_searches.toLocaleString() || "0"} trend={searchTrend.value} isUp={searchTrend.isUp} icon={Activity} color="bg-blue-500" loading={loading} />
+        <StatCard title="缓存命中率" value={`${((status?.search_stats.cache_hit_rate || 0) * 100).toFixed(1)}%`} trend={cacheTrend.value} isUp={cacheTrend.isUp} icon={Database} color="bg-emerald-500" loading={loading} />
         <StatCard title="引擎异常" value={status?.search_stats.engine_failures || 0} trend={status?.search_stats.engine_failures ? "需关注" : "正常"} isUp={false} icon={Zap} color="bg-purple-500" loading={loading} />
         <StatCard title="系统在线" value={status ? `${Math.floor(status.uptime_seconds / 3600)}h` : "0h"} icon={RefreshCw} color="bg-amber-500" loading={loading} />
       </div>
@@ -67,16 +118,22 @@ const Dashboard: React.FC = () => {
             <CustomSelect value={timeRange} onChange={setTimeRange} options={[{label: '最近 24 小时', value: '24h'}, {label: '最近 7 天', value: '7d'}]} />
           </div>
           <div className="h-[240px] md:h-[320px] w-full relative z-10">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs><linearGradient id="colorReq" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.25}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
-                <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#475569', fontSize: 10}} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: '#475569', fontSize: 10}} />
-                <Tooltip contentStyle={{ backgroundColor: 'rgba(3, 7, 18, 0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '20px' }} />
-                <Area type="monotone" dataKey="requests" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorReq)" animationDuration={1000} />
-              </AreaChart>
-            </ResponsiveContainer>
+            {chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs><linearGradient id="colorReq" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.25}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="rgba(255,255,255,0.02)" />
+                  <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#475569', fontSize: 10}} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#475569', fontSize: 10}} />
+                  <Tooltip contentStyle={{ backgroundColor: 'rgba(3, 7, 18, 0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '20px' }} />
+                  <Area type="monotone" dataKey="requests" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorReq)" animationDuration={1000} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-slate-500">
+                暂无搜索数据
+              </div>
+            )}
           </div>
         </div>
 

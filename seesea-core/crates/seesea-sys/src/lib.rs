@@ -26,6 +26,7 @@ pub mod types;
 
 // 重新导出常用类型
 pub use controller::{
-    SystemController, get_global_system_controller, get_or_create_runtime, spawn_runtime_task,
+    SystemController, get_global_system_controller, get_or_create_runtime,
+    get_process_uptime_seconds, spawn_runtime_task,
 };
 pub use types::{ComponentId, ComponentType, ResourceType};

@@ -39,6 +39,15 @@ static GLOBAL_SYSTEM_CONTROLLER: OnceCell<Arc<SystemController>> = OnceCell::new
 /// 全局 Tokio 运行时实例 - 供系统控制器使用
 static GLOBAL_RUNTIME: OnceCell<tokio::runtime::Runtime> = OnceCell::new();
 
+/// 全局进程启动时间
+static PROCESS_START_TIME: once_cell::sync::Lazy<std::time::Instant> =
+    once_cell::sync::Lazy::new(std::time::Instant::now);
+
+/// 获取进程运行时间（秒）
+pub fn get_process_uptime_seconds() -> u64 {
+    PROCESS_START_TIME.elapsed().as_secs()
+}
+
 /// 获取或创建全局 Tokio 运行时
 ///
 /// 确保在没有运行时上下文的情况下也能正常工作

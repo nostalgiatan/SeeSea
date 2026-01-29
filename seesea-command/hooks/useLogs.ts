@@ -14,21 +14,63 @@ const INITIAL_LOGS: LogEntry[] = [];
 
 // 解析日志行，提取时间戳、级别、服务和消息
 const parseLogLine = (line: string): LogEntry | null => {
-  // 示例日志格式：2025-01-28 08:15:32 INFO [GATEWAY] API Gateway initialized
-  const timeMatch = line.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+  // 支持多种日志格式：
+  // 格式1: 2026-01-29T12:52:36.323249Z INFO seesea_api::api::handlers::static_files: message
+  // 格式2: 2025-01-28 08:15:32 INFO [GATEWAY] message
+  
+  // 尝试匹配 ISO 8601 格式 (格式1)
+  const isoTimeMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+  // 尝试匹配标准格式 (格式2)
+  const stdTimeMatch = !isoTimeMatch ? line.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/) : null;
+  
+  const timeMatch = isoTimeMatch || stdTimeMatch;
+  
+  // 匹配日志级别
   const levelMatch = line.match(/\b(INFO|WARN|ERROR|DEBUG)\b/i);
   
   if (!timeMatch || !levelMatch) return null;
 
-  const timestamp = timeMatch[1].split(' ')[1]; // 只保留时间部分
+  // 格式化时间戳
+  let timestamp: string;
+  if (isoTimeMatch) {
+    // ISO 8601 格式: 2026-01-29T12:52:36 -> 12:52:36
+    const timePart = isoTimeMatch[1].split('T')[1];
+    timestamp = timePart;
+  } else {
+    // 标准格式: 2025-01-28 08:15:32 -> 08:15:32
+    timestamp = stdTimeMatch![1].split(' ')[1];
+  }
+  
   const level = levelMatch[1].toLowerCase() as 'info' | 'warn' | 'error' | 'debug';
   
-  // 提取服务（在方括号中的内容）
-  const serviceMatch = line.match(/\[([^\]]+)\]/);
-  const service = serviceMatch ? serviceMatch[1] : 'SYSTEM';
+  // 提取服务名（可能是模块路径或方括号中的内容）
+  let service = 'SYSTEM';
   
-  // 提取消息（服务后面的内容）
-  const message = line.substring(serviceMatch ? serviceMatch.index + serviceMatch[0].length : line.indexOf(levelMatch[0]) + levelMatch[0].length).trim();
+  // 尝试提取模块路径（格式1）
+  const moduleMatch = line.match(/INFO|WARN|ERROR|DEBUG\s+(\S+)::/);
+  if (moduleMatch) {
+    // 提取模块名的最后一部分
+    const parts = moduleMatch[1].split('::');
+    service = parts[parts.length - 1].toUpperCase();
+  } else {
+    // 尝试提取方括号中的内容（格式2）
+    const bracketMatch = line.match(/\[([^\]]+)\]/);
+    if (bracketMatch) {
+      service = bracketMatch[1].toUpperCase();
+    }
+  }
+  
+  // 提取消息（第一个冒号后面的内容，或者日志级别后面的内容）
+  const firstColonIndex = line.indexOf(':');
+  let message: string;
+  
+  if (firstColonIndex > -1 && firstColonIndex > line.indexOf(levelMatch[0]) + levelMatch[0].length) {
+    message = line.substring(firstColonIndex + 1).trim();
+  } else {
+    // 使用日志级别后的内容
+    const levelIndex = line.indexOf(levelMatch[0]);
+    message = line.substring(levelIndex + levelMatch[0].length).trim();
+  }
 
   return {
     id: Math.random().toString(),

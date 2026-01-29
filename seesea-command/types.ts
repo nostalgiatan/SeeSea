@@ -41,6 +41,12 @@ export interface ApiStatsResponse {
   cache_hit_rate: number;
   engine_failures: number;
   timeouts: number;
+  search_history: SearchHistoryEntry[];
+}
+
+export interface SearchHistoryEntry {
+  hour: number;
+  count: number;
 }
 
 export interface CacheStatsResponse {

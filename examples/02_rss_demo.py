@@ -52,7 +52,7 @@ def main():
             template_info = template_info_result.data
             print(f"   模板名称: {template_name}")
             print(f"   描述: {template_info.get('description', 'N/A')}")
-            feeds = template_info.get("feeds", [])
+            feeds = template_info.get('feeds', [])
             print(f"   Feed 数量: {len(feeds)}\n")
             if feeds:
                 print("   示例 Feed:")
@@ -68,14 +68,14 @@ def main():
         feed_data = fetch_result.data
         print(f"   ✓ 获取到 feed: {feed_data.get('title', 'N/A')}")
         print(f"   描述: {feed_data.get('description', 'N/A')[:100]}...")
-        items = feed_data.get("items", [])
+        items = feed_data.get('items', [])
         print(f"   文章数量: {len(items)}\n")
 
         # 显示前3篇文章
         for i, item in enumerate(items[:3], 1):
-            title = item.get("title", "N/A")
-            link = item.get("link", "N/A")
-            published = item.get("published", "N/A")
+            title = item.get('title', 'N/A')
+            link = item.get('link', 'N/A')
+            published = item.get('published', 'N/A')
             print(f"   {i}. {title}")
             print(f"      发布时间: {published}")
             print(f"      链接: {link}\n")
@@ -101,7 +101,7 @@ def main():
         parsed_data = parse_result.data
         print(f"   ✓ 解析成功")
         print(f"   标题: {parsed_data.get('title', 'N/A')}")
-        items = parsed_data.get("items", [])
+        items = parsed_data.get('items', [])
         print(f"   文章数量: {len(items)}\n")
     else:
         print(f"   ✗ 解析失败: {parse_result.error}\n")

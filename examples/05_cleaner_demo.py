@@ -83,7 +83,11 @@ def main():
 
     # 批量清洗文本
     print("8. 批量清洗文本...")
-    texts = ["  文本1  ", "  文本2  \n", "  文本3  "]
+    texts = [
+        "  文本1  ",
+        "  文本2  \n",
+        "  文本3  "
+    ]
     clean_batch_result = client.clean_batch(texts=texts)
     if clean_batch_result.success:
         cleaned_texts = clean_batch_result.data

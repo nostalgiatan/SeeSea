@@ -285,7 +285,8 @@ impl PyApiServer {
                 .await
                 .map_err(|e| format!("Failed to bind: {}", e))?;
 
-            axum::serve(listener, app)
+            let server = axum::serve(listener, app);
+            server
                 .with_graceful_shutdown(shutdown_signal())
                 .await
                 .map_err(|e| format!("Server error: {}", e))
@@ -320,7 +321,8 @@ impl PyApiServer {
                 let listener = TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;
-                axum::serve(listener, app)
+                let server = axum::serve(listener, app);
+                server
                     .with_graceful_shutdown(shutdown_signal())
                     .await
                     .map_err(|e| format!("Server error: {}", e))
@@ -329,7 +331,8 @@ impl PyApiServer {
                 let listener = TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;
-                axum::serve(listener, app)
+                let server = axum::serve(listener, app);
+                server
                     .with_graceful_shutdown(shutdown_signal())
                     .await
                     .map_err(|e| format!("Server error: {}", e))
@@ -357,7 +360,8 @@ impl PyApiServer {
                 let listener = TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;
-                axum::serve(listener, app)
+                let server = axum::serve(listener, app);
+                server
                     .with_graceful_shutdown(shutdown_signal())
                     .await
                     .map_err(|e| format!("Server error: {}", e))
@@ -366,7 +370,8 @@ impl PyApiServer {
                 let listener = TcpListener::bind(&addr)
                     .await
                     .map_err(|e| format!("Failed to bind: {}", e))?;
-                axum::serve(listener, app)
+                let server = axum::serve(listener, app);
+                server
                     .with_graceful_shutdown(shutdown_signal())
                     .await
                     .map_err(|e| format!("Server error: {}", e))

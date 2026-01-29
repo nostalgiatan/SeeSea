@@ -38,8 +38,8 @@ manifest-path = "crates/seesea-python-bindings/Cargo.toml"
 strip = true
 include = [
     "rss/template/*.see",
-    "static/html/*",
-    "static/html/**/*"
+    "seesea-static/html/*",
+    "seesea-static/html/**/*"
 ]
 
 [tool.mypy]

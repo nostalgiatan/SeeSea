@@ -17,6 +17,7 @@ lib/
 .ruff_cache/
 storage/
 .mypy_cache/
+.iflow/
 .llm/
 lib64/
 vendor/

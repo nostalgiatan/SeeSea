@@ -24,7 +24,7 @@ html-escape = "0.2.13"
 num_cpus = "1.16.0"
 urlencoding = "2.1.3"
 chrono = { version = "0.4.40", features = ["serde"] }
-sysinfo = "0.33.1"
+sysinfo = "0.38"
 tracing = "0.1"
 lazy_static = "1.4"
 base64 = "0.22"
