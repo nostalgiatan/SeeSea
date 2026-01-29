@@ -83,11 +83,7 @@ def main():
 
     # 批量清洗文本
     print("8. 批量清洗文本...")
-    texts = [
-        "  文本1  ",
-        "  文本2  \n",
-        "  文本3  "
-    ]
+    texts = ["  文本1  ", "  文本2  \n", "  文本3  "]
     clean_batch_result = client.clean_batch(texts=texts)
     if clean_batch_result.success:
         cleaned_texts = clean_batch_result.data
@@ -119,7 +115,7 @@ def main():
     context_result = client.process_text_with_context(text=sample_text)
     if context_result.success:
         context = context_result.data
-        print(f"   ✓ 上下文:\n")
+        print("   ✓ 上下文:\n")
         print(f"   {context[:100]}...\n")
 
     # 健康检查

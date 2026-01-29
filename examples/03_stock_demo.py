@@ -51,8 +51,8 @@ def main():
         stocks = search_result.data
         print(f"   ✓ 找到 {len(stocks)} 只股票:\n")
         for i, stock in enumerate(stocks[:3], 1):
-            name = stock.get('name', 'N/A')
-            code = stock.get('code', 'N/A')
+            name = stock.get("name", "N/A")
+            code = stock.get("code", "N/A")
             print(f"   {i}. {name} ({code})\n")
     else:
         print(f"   ✗ 搜索失败: {search_result.error}\n")
@@ -64,8 +64,8 @@ def main():
         stocks = stocks_result.data
         print(f"   ✓ 找到 {len(stocks)} 只股票，显示前10只:\n")
         for i, stock in enumerate(stocks[:10], 1):
-            name = stock.get('name', 'N/A')
-            code = stock.get('code', 'N/A')
+            name = stock.get("name", "N/A")
+            code = stock.get("code", "N/A")
             print(f"   {i}. {name} ({code})\n")
     else:
         print(f"   ✗ 获取失败: {stocks_result.error}\n")
@@ -77,8 +77,8 @@ def main():
         indices = indices_result.data
         print(f"   ✓ 找到 {len(indices)} 个指数:\n")
         for i, index in enumerate(indices[:5], 1):
-            name = index.get('name', 'N/A')
-            code = index.get('code', 'N/A')
+            name = index.get("name", "N/A")
+            code = index.get("code", "N/A")
             print(f"   {i}. {name} ({code})\n")
     else:
         print(f"   ✗ 获取失败: {indices_result.error}\n")
@@ -90,8 +90,8 @@ def main():
         industries = industries_result.data
         print(f"   ✓ 找到 {len(industries)} 个行业板块:\n")
         for i, industry in enumerate(industries[:5], 1):
-            name = industry.get('name', 'N/A')
-            code = industry.get('code', 'N/A')
+            name = industry.get("name", "N/A")
+            code = industry.get("code", "N/A")
             print(f"   {i}. {name} ({code})\n")
     else:
         print(f"   ✗ 获取失败: {industries_result.error}\n")
