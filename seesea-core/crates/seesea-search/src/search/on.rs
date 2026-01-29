@@ -74,6 +74,8 @@ pub struct SearchInterface {
     current_concurrency: std::sync::atomic::AtomicUsize,
     /// 上次调整时间
     last_adjust_time: std::sync::atomic::AtomicU64,
+    /// 搜索历史数据（按小时统计）
+    search_history: Arc<tokio::sync::RwLock<Vec<SearchHistoryEntry>>>,
 }
 
 impl SearchInterface {
@@ -212,6 +214,7 @@ impl SearchInterface {
             cache,
             current_concurrency: std::sync::atomic::AtomicUsize::new(current_concurrency),
             last_adjust_time: std::sync::atomic::AtomicU64::new(last_adjust_time),
+            search_history: Arc::new(tokio::sync::RwLock::new(Vec::new())),
         };
 
         // 暂时移除预创建引擎实例的逻辑，因为SearchConfig中没有相关字段
@@ -369,6 +372,13 @@ impl SearchInterface {
     ) -> Result<SearchResponse, Box<dyn std::error::Error + Send + Sync>> {
         // 检查内存使用情况
         Self::check_memory_usage()?;
+
+        // 更新总搜索次数
+        use std::sync::atomic::Ordering;
+        self.stats.total_searches.fetch_add(1, Ordering::Relaxed);
+
+        // 记录搜索历史
+        self.record_search_history().await;
 
         // 确定要使用的引擎列表 - 使用全局ENGINE_CONFIG实例避免重复创建和克隆
         let engines_to_use = if !request.engines.is_empty() {
@@ -1247,12 +1257,28 @@ impl SearchInterface {
     pub async fn get_stats(&self) -> SearchStatsResult {
         use std::sync::atomic::Ordering;
 
+        let total_searches = self.stats.total_searches.load(Ordering::Relaxed);
+        let cache_hits = self.stats.cache_hits.load(Ordering::Relaxed);
+        let cache_misses = self.stats.cache_misses.load(Ordering::Relaxed);
+
+        // 计算缓存命中率
+        let cache_hit_rate = if total_searches > 0 {
+            cache_hits as f64 / total_searches as f64
+        } else {
+            0.0
+        };
+
+        // 获取搜索历史数据
+        let search_history = self.search_history.read().await.clone();
+
         SearchStatsResult {
-            total_searches: self.stats.total_searches.load(Ordering::Relaxed),
-            cache_hits: self.stats.cache_hits.load(Ordering::Relaxed),
-            cache_misses: self.stats.cache_misses.load(Ordering::Relaxed),
+            total_searches,
+            cache_hits,
+            cache_misses,
             engine_failures: self.stats.engine_failures.load(Ordering::Relaxed),
             timeouts: self.stats.timeouts.load(Ordering::Relaxed),
+            cache_hit_rate,
+            search_history,
         }
     }
 
@@ -1264,6 +1290,34 @@ impl SearchInterface {
             .map(|entry| entry.key().clone())
             .collect();
         (self.engine_cache.len(), cached_engines)
+    }
+
+    /// 记录搜索历史
+    async fn record_search_history(&self) {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let hour = (now / 3600) as u32;
+
+        let mut history = self.search_history.write().await;
+
+        // 查找或创建当前小时的记录
+        if let Some(entry) = history.iter_mut().find(|e| e.hour == hour) {
+            entry.count += 1;
+        } else {
+            history.push(SearchHistoryEntry { hour, count: 1 });
+        }
+
+        // 清理超过24小时的历史数据
+        let cutoff_hour = hour.saturating_sub(24);
+        history.retain(|e| e.hour >= cutoff_hour);
+
+        // 按小时排序
+        history.sort_by_key(|e| e.hour);
     }
 
     /// 清理引擎缓存
@@ -1481,6 +1535,19 @@ pub struct SearchStatsResult {
     pub engine_failures: u64,
     /// 超时次数
     pub timeouts: u64,
+    /// 缓存命中率
+    pub cache_hit_rate: f64,
+    /// 搜索历史数据（最近24小时）
+    pub search_history: Vec<SearchHistoryEntry>,
+}
+
+/// 搜索历史记录条目
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SearchHistoryEntry {
+    /// 时间戳（小时）
+    pub hour: u32,
+    /// 该小时的搜索次数
+    pub count: u64,
 }
 
 #[cfg(test)]

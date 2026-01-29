@@ -241,8 +241,11 @@ pub async fn handle_system_status(headers: HeaderMap, State(state): State<ApiSta
         hit_rate: search_stats.cache_hit_rate,
     });
 
-    // 计算运行时间（简化实现）
-    let uptime_seconds = 3600;
+    // 计算真实的运行时间（使用进程启动时间）
+    let uptime_seconds = {
+        use seesea_sys::get_process_uptime_seconds;
+        get_process_uptime_seconds()
+    };
 
     let system_status_response = InternalSystemStatusResponse {
         resources,

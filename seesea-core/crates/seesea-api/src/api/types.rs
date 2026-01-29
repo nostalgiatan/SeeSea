@@ -287,6 +287,18 @@ pub struct ApiStatsResponse {
 
     /// 超时次数
     pub timeouts: u64,
+
+    /// 搜索历史数据（最近24小时）
+    pub search_history: Vec<SearchHistoryEntry>,
+}
+
+/// 搜索历史记录条目
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SearchHistoryEntry {
+    /// 时间戳（小时）
+    pub hour: u32,
+    /// 该小时的搜索次数
+    pub count: u64,
 }
 
 impl ApiStatsResponse {
@@ -306,6 +318,14 @@ impl ApiStatsResponse {
             cache_hit_rate: hit_rate,
             engine_failures: stats.engine_failures,
             timeouts: stats.timeouts,
+            search_history: stats
+                .search_history
+                .iter()
+                .map(|h| SearchHistoryEntry {
+                    hour: h.hour,
+                    count: h.count,
+                })
+                .collect(),
         }
     }
 }
