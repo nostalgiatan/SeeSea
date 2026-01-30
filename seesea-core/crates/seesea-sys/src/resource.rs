@@ -271,9 +271,8 @@ impl ResourceMonitor {
                 FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_MODE, GetDriveTypeW, GetLogicalDriveStringsW,
                 OPEN_EXISTING,
             };
-            use windows::Win32::System::Ioctl::{
-                DISK_PERFORMANCE, DeviceIoControl, IOCTL_DISK_PERFORMANCE,
-            };
+            use windows::Win32::System::IO::DeviceIoControl;
+            use windows::Win32::System::Ioctl::{DISK_PERFORMANCE, IOCTL_DISK_PERFORMANCE};
             use windows::Win32::System::WindowsProgramming::DRIVE_FIXED;
             use windows::core::PCWSTR;
 
@@ -320,16 +319,15 @@ impl ResourceMonitor {
                                     IOCTL_DISK_PERFORMANCE,
                                     None,
                                     0,
-                                    Some(&mut perf_stats as *mut _ as *mut u8 as *mut [u8]),
-                                    &mut bytes_returned,
+                                    Some(&mut perf_stats as *mut _ as *mut core::ffi::c_void),
+                                    std::mem::size_of::<DISK_PERFORMANCE>() as u32,
+                                    Some(&mut bytes_returned),
                                     None,
                                 );
 
                                 if result.is_ok() && bytes_returned > 0 {
-                                    current_stats.read_bytes +=
-                                        perf_stats.BytesRead.QuadPart as u64;
-                                    current_stats.write_bytes +=
-                                        perf_stats.BytesWritten.QuadPart as u64;
+                                    current_stats.read_bytes += perf_stats.BytesRead as u64;
+                                    current_stats.write_bytes += perf_stats.BytesWritten as u64;
                                     current_stats.reads += perf_stats.ReadCount as u64;
                                     current_stats.writes += perf_stats.WriteCount as u64;
                                 }
