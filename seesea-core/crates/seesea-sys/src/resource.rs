@@ -265,17 +265,16 @@ impl ResourceMonitor {
         #[cfg(target_os = "windows")]
         {
             // Windows: 使用 GetDiskPerformanceStatistics API
-            use windows::Win32::Foundation::INVALID_HANDLE_VALUE;
-            use windows::Win32::Storage::FileSystem::CreateFileW;
+            use windows::Win32::Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE};
             use windows::Win32::Storage::FileSystem::{
-                DRIVE_FIXED, GetDriveTypeW, GetLogicalDriveStringsW,
-            };
-            use windows::Win32::System::IO::{
-                DeviceIoControl, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_READ, FILE_SHARE_WRITE,
+                CreateFileW, FILE_CREATION_DISPOSITION, FILE_FLAG_BACKUP_SEMANTICS,
+                FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_MODE, GetDriveTypeW, GetLogicalDriveStringsW,
                 OPEN_EXISTING,
             };
-            use windows::Win32::System::SystemInformation::IOCTL_DISK_PERFORMANCE;
-            use windows::Win32::System::Threading::GENERIC_READ;
+            use windows::Win32::System::Ioctl::{
+                DISK_PERFORMANCE, DeviceIoControl, IOCTL_DISK_PERFORMANCE,
+            };
+            use windows::Win32::System::WindowsProgramming::DRIVE_FIXED;
             use windows::core::PCWSTR;
 
             let mut drives = [0u16; 256];
@@ -288,7 +287,7 @@ impl ResourceMonitor {
                             break;
                         }
                         let drive_str = &drives[i..i + 4];
-                        if GetDriveTypeW(PCWSTR(drive_str.as_ptr())) == DRIVE_FIXED {
+                        if GetDriveTypeW(PCWSTR(drive_str.as_ptr())).0 == DRIVE_FIXED {
                             // 构造设备路径
                             let device_path = format!(
                                 "\\\\.\\{}:",
@@ -302,20 +301,18 @@ impl ResourceMonitor {
                             // 打开设备句柄
                             let handle = CreateFileW(
                                 PCWSTR(device_path_wide.as_ptr()),
-                                GENERIC_READ,
-                                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                GENERIC_READ.0,
+                                FILE_SHARE_MODE(3), // FILE_SHARE_READ | FILE_SHARE_WRITE
                                 None,
-                                OPEN_EXISTING,
-                                FILE_FLAG_BACKUP_SEMANTICS,
+                                FILE_CREATION_DISPOSITION(OPEN_EXISTING.0),
+                                FILE_FLAGS_AND_ATTRIBUTES(FILE_FLAG_BACKUP_SEMANTICS.0),
                                 None,
                             );
 
                             if handle.is_ok() && handle.as_ref().unwrap() != &INVALID_HANDLE_VALUE {
                                 let handle = handle.unwrap();
                                 // 获取磁盘性能统计
-                                let mut perf_stats = [0u8; std::mem::size_of::<
-                                    windows::Win32::System::IO::DISK_PERFORMANCE,
-                                >()];
+                                let mut perf_stats = DISK_PERFORMANCE::default();
                                 let mut bytes_returned = 0u32;
 
                                 let result = DeviceIoControl(
@@ -323,22 +320,19 @@ impl ResourceMonitor {
                                     IOCTL_DISK_PERFORMANCE,
                                     None,
                                     0,
-                                    Some(perf_stats.as_mut_slice()),
-                                    bytes_returned,
+                                    Some(&mut perf_stats as *mut _ as *mut u8 as *mut [u8]),
+                                    &mut bytes_returned,
                                     None,
                                 );
 
                                 if result.is_ok() && bytes_returned > 0 {
-                                    let perf = &*(perf_stats.as_ptr()
-                                        as *const windows::Win32::System::IO::DISK_PERFORMANCE);
-                                    current_stats.read_bytes += perf.BytesRead.QuadPart as u64;
-                                    current_stats.write_bytes += perf.BytesWritten.QuadPart as u64;
-                                    current_stats.reads += perf.ReadCount as u64;
-                                    current_stats.writes += perf.WriteCount as u64;
+                                    current_stats.read_bytes +=
+                                        perf_stats.BytesRead.QuadPart as u64;
+                                    current_stats.write_bytes +=
+                                        perf_stats.BytesWritten.QuadPart as u64;
+                                    current_stats.reads += perf_stats.ReadCount as u64;
+                                    current_stats.writes += perf_stats.WriteCount as u64;
                                 }
-
-                                // 关闭句柄（在 Windows 中，使用 CloseHandle 需要特定的方式）
-                                // 这里简化处理，实际应该正确管理资源
                             }
                         }
                         i += 4;
