@@ -287,7 +287,7 @@ impl ResourceMonitor {
                             break;
                         }
                         let drive_str = &drives[i..i + 4];
-                        if GetDriveTypeW(PCWSTR(drive_str.as_ptr())).0 == DRIVE_FIXED {
+                        if GetDriveTypeW(PCWSTR(drive_str.as_ptr())) == DRIVE_FIXED {
                             // 构造设备路径
                             let device_path = format!(
                                 "\\\\.\\{}:",
