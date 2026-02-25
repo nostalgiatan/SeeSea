@@ -1,5 +1,7 @@
 # SeeSea - 隐私优先多模态数据聚合平台
 
+[English](./README_EN.md) | 中文
+
 <div align="center">
 
 **🌊 看海看得远，看得广 - 隐私优先的数据聚合与 AI 工具平台**
