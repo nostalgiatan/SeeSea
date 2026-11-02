@@ -14,11 +14,13 @@ pub struct FetchOptions {
     pub timeout_secs: u64,
     /// Bodies longer than this are cut off (on a character boundary).
     pub max_bytes: usize,
+    /// Allow loopback and private addresses. Off by default; meant for tests and intranet use.
+    pub allow_private: bool,
 }
 
 impl Default for FetchOptions {
     fn default() -> Self {
-        Self { timeout_secs: 15, max_bytes: 5 * 1024 * 1024 }
+        Self { timeout_secs: 15, max_bytes: 5 * 1024 * 1024, allow_private: false }
     }
 }
 
@@ -56,9 +58,17 @@ impl std::error::Error for FetchError {}
 
 /// Parse `raw` and reject anything that is not a public http/https target.
 pub fn check_target(raw: &str) -> Result<Url, FetchError> {
+    check_target_with(raw, false)
+}
+
+/// Like [`check_target`], optionally letting loopback and private addresses through.
+pub fn check_target_with(raw: &str, allow_private: bool) -> Result<Url, FetchError> {
     let url = Url::parse(raw).map_err(|e| FetchError::InvalidUrl(e.to_string()))?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err(FetchError::Blocked("only http and https urls are allowed".into()));
+    }
+    if allow_private {
+        return if url.host().is_some() { Ok(url) } else { Err(FetchError::InvalidUrl("url has no host".into())) };
     }
     match url.host() {
         None => Err(FetchError::InvalidUrl("url has no host".into())),
@@ -92,14 +102,14 @@ fn check_ip(ip: IpAddr) -> Result<(), FetchError> {
 }
 
 pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchError> {
-    let url = check_target(raw_url)?;
+    let url = check_target_with(raw_url, opts.allow_private)?;
     let client = HttpClient::instance().await.map_err(|e| FetchError::Network(e.to_string()))?;
     let request = RequestOptions { timeout_secs: Some(opts.timeout_secs), ..Default::default() };
     let response = client.get(url.as_str(), Some(request)).await.map_err(|e| FetchError::Network(e.to_string()))?;
 
     // A redirect may have led somewhere private; do not hand its content back.
     let final_url = response.url().to_string();
-    check_target(&final_url)?;
+    check_target_with(&final_url, opts.allow_private)?;
 
     let status = response.status().as_u16();
     if !response.status().is_success() {
@@ -138,6 +148,13 @@ mod tests {
         ] {
             assert!(check_target(bad).is_err(), "{bad} should be rejected");
         }
+    }
+
+    #[test]
+    fn allow_private_lets_local_targets_through_but_not_other_schemes() {
+        assert!(check_target_with("http://127.0.0.1:8080/x", true).is_ok());
+        assert!(check_target_with("http://localhost/x", true).is_ok());
+        assert!(check_target_with("file:///etc/passwd", true).is_err());
     }
 
     #[test]
