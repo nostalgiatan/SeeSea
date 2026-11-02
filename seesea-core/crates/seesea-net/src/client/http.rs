@@ -59,7 +59,7 @@
 //! ```
 
 use crate::metrics::MetricsCollector;
-use crate::privacy::PrivacyManager;
+use crate::privacy::{Kind, Privacy};
 use crate::retry::RetryConfig;
 use seesea_config::{NetworkConfig, RequestOptions};
 use seesea_errors::Result;
@@ -82,8 +82,8 @@ pub struct HttpClientState {
     stream_client: Arc<Client>,
     /// 网络配置
     config: Arc<NetworkConfig>,
-    /// 隐私管理器
-    privacy_manager: Option<Arc<PrivacyManager>>,
+    /// 请求外观与节奏
+    privacy: Arc<Privacy>,
 }
 
 /// HTTP 客户端封装
@@ -176,8 +176,8 @@ impl HttpClient {
                 builder = super::proxy::configure_proxy(builder, &config.proxy)?;
             }
 
-            // 添加隐私保护请求头
-            builder = crate::privacy::headers::configure_privacy(builder, &Default::default());
+            // 兜底的浏览器 User-Agent（经 inner() 直接发出的请求也不带库标识）
+            builder = builder.user_agent(crate::privacy::profile_for("", 0, None).headers[0].1.clone());
 
             // 配置解压缩
             if enable_decompression {
@@ -193,12 +193,7 @@ impl HttpClient {
             })
         };
 
-        // 创建隐私管理器
-        let privacy_manager = Arc::new(PrivacyManager::new(
-            config.privacy.clone(),
-            config.tls.clone(),
-            config.dns.clone(),
-        ));
+        let privacy = Arc::new(Privacy::from_env());
 
         // 创建普通请求客户端（带自动解压缩）
         let client = create_client(true, &config)?;
@@ -210,7 +205,7 @@ impl HttpClient {
             client: Arc::new(client),
             stream_client: Arc::new(stream_client),
             config: Arc::new(config),
-            privacy_manager: Some(privacy_manager),
+            privacy,
         };
 
         Ok(Self {
@@ -220,10 +215,10 @@ impl HttpClient {
         })
     }
 
-    /// 获取隐私管理器
-    pub async fn privacy_manager(&self) -> Option<Arc<PrivacyManager>> {
+    /// 获取请求外观与节奏设置
+    pub async fn privacy(&self) -> Arc<Privacy> {
         let state = self.state.read().await;
-        state.privacy_manager.clone()
+        Arc::clone(&state.privacy)
     }
 
     /// 动态更新网络配置
@@ -275,8 +270,8 @@ impl HttpClient {
                 builder = super::proxy::configure_proxy(builder, &config.proxy)?;
             }
 
-            // 添加隐私保护请求头
-            builder = crate::privacy::headers::configure_privacy(builder, &Default::default());
+            // 兜底的浏览器 User-Agent（经 inner() 直接发出的请求也不带库标识）
+            builder = builder.user_agent(crate::privacy::profile_for("", 0, None).headers[0].1.clone());
 
             // 配置解压缩
             if enable_decompression {
@@ -292,12 +287,7 @@ impl HttpClient {
             })
         };
 
-        // 创建隐私管理器
-        let privacy_manager = Arc::new(PrivacyManager::new(
-            config.privacy.clone(),
-            config.tls.clone(),
-            config.dns.clone(),
-        ));
+        let privacy = Arc::new(Privacy::from_env());
 
         // 创建普通请求客户端（带自动解压缩）
         let client = create_client(true)?;
@@ -310,7 +300,7 @@ impl HttpClient {
             client: Arc::new(client),
             stream_client: Arc::new(stream_client),
             config: Arc::new(config),
-            privacy_manager: Some(privacy_manager),
+            privacy,
         };
 
         Ok(())
@@ -411,20 +401,9 @@ impl HttpClient {
             .get(url)
             .timeout(Duration::from_secs(opts.timeout_secs.unwrap_or(30)));
 
-        // 添加隐私保护请求头
-        if let Some(ref privacy_mgr) = state.privacy_manager {
-            let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
-            for (key, value) in privacy_headers {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
-
-        // 添加自定义请求头
-        if let Some(headers_map) = &opts.headers {
-            for (key, value) in headers_map {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
+        // 请求头：浏览器画像 + 调用方自定义（同名则替换）
+        state.privacy.pace(url).await;
+        request = request.headers(state.privacy.headers(url, Kind::Navigate, 0, opts.headers.as_ref()));
         // 非流处理请求：允许服务器返回压缩数据，client会自动解压缩
 
         // 发送请求
@@ -445,6 +424,33 @@ impl HttpClient {
         }
 
         // 处理结果
+        result.map_err(|e| seesea_errors::http_error(0, &format!("GET request failed: {e}")))
+    }
+
+    /// 加载一个页面：浏览器式请求头（第 `attempt` 次尝试换一套画像）并按主机限速。
+    /// `plain` 为真时不加任何画像头、也不限速。返回原始响应，状态码由调用方判断。
+    pub async fn get_page(
+        &self,
+        url: &str,
+        timeout_secs: u64,
+        attempt: usize,
+        plain: bool,
+    ) -> Result<Response> {
+        let start_time = self.metrics_collector.start_request();
+        let state = self.state.read().await;
+        let mut request = state
+            .client
+            .get(url)
+            .timeout(Duration::from_secs(timeout_secs.max(1)));
+        if !plain {
+            state.privacy.pace(url).await;
+            request = request.headers(state.privacy.headers(url, Kind::Navigate, attempt, None));
+        }
+        let result = request.send().await;
+        match &result {
+            Ok(_) => self.metrics_collector.record_successful_request(start_time).await,
+            Err(_) => self.metrics_collector.record_failed_request(start_time).await,
+        }
         result.map_err(|e| seesea_errors::http_error(0, &format!("GET request failed: {e}")))
     }
 
@@ -476,20 +482,9 @@ impl HttpClient {
             .timeout(Duration::from_secs(opts.timeout_secs.unwrap_or(30)))
             .body(body);
 
-        // 添加隐私保护请求头
-        if let Some(ref privacy_mgr) = state.privacy_manager {
-            let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
-            for (key, value) in privacy_headers {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
-
-        // 添加自定义请求头（会覆盖隐私头）
-        if let Some(headers_map) = &opts.headers {
-            for (key, value) in headers_map {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
+        // 请求头：浏览器画像 + 调用方自定义（同名则替换）
+        state.privacy.pace(url).await;
+        request = request.headers(state.privacy.headers(url, Kind::Api, 0, opts.headers.as_ref()));
         // 非流处理请求：使用默认的Accept-Encoding设置，允许服务器返回压缩数据
         // reqwest会自动解压缩响应体
 
@@ -605,20 +600,9 @@ impl HttpClient {
             .get(url)
             .timeout(Duration::from_secs(opts.timeout_secs.unwrap_or(30)));
 
-        // 添加隐私保护请求头
-        if let Some(ref privacy_mgr) = state.privacy_manager {
-            let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
-            for (key, value) in privacy_headers {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
-
-        // 添加自定义请求头（会覆盖隐私头）
-        if let Some(headers_map) = &opts.headers {
-            for (key, value) in headers_map {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
+        // 请求头：浏览器画像 + 调用方自定义（同名则替换）
+        state.privacy.pace(url).await;
+        request = request.headers(state.privacy.headers(url, Kind::Api, 0, opts.headers.as_ref()));
 
         // 明确禁用压缩，确保获取原始二进制数据
         request = request.header("Accept-Encoding", "identity");
@@ -705,20 +689,9 @@ impl HttpClient {
             request = request.header("Content-Type", ct);
         }
 
-        // 添加隐私保护请求头
-        if let Some(ref privacy_mgr) = state.privacy_manager {
-            let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
-            for (key, value) in privacy_headers {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
-
-        // 添加自定义请求头（会覆盖隐私头）
-        if let Some(headers_map) = &opts.headers {
-            for (key, value) in headers_map {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
+        // 请求头：浏览器画像 + 调用方自定义（同名则替换）
+        state.privacy.pace(url).await;
+        request = request.headers(state.privacy.headers(url, Kind::Api, 0, opts.headers.as_ref()));
         // 流处理请求：禁用压缩，确保获取原始二进制数据
         request = request.header("Accept-Encoding", "identity");
 
@@ -939,16 +912,6 @@ mod tests {
             updated_config.pool.connect_timeout_secs,
             new_config.pool.connect_timeout_secs
         );
-    }
-
-    #[tokio::test]
-    async fn test_http_client_privacy_manager_access() {
-        let config = NetworkConfig::default();
-        let client = HttpClient::new(config).unwrap();
-
-        // 测试获取隐私管理器
-        let privacy_mgr = client.privacy_manager().await;
-        assert!(privacy_mgr.is_some());
     }
 
     #[tokio::test]

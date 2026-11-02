@@ -24,7 +24,7 @@ pub struct Profile {
 
 #[cfg(test)]
 impl Profile {
-    pub fn header(&self, name: &str) -> Option<&str> {
+    fn header(&self, name: &str) -> Option<&str> {
         self.headers
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case(name))

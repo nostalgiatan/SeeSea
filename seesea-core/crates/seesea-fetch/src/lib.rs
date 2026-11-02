@@ -4,9 +4,8 @@
 //! is repeated on the final URL after redirects. A host name that resolves to a private address
 //! (DNS rebinding) is not caught here; that needs a check at connection time.
 
-mod profile;
-
 use seesea_net::HttpClient;
+use seesea_net::privacy::retryable;
 use std::fmt;
 use std::net::IpAddr;
 use url::{Host, Url};
@@ -146,32 +145,20 @@ pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchErro
     let client = HttpClient::instance()
         .await
         .map_err(|e| FetchError::Network(e.to_string()))?;
-    let inner = client.inner().await;
-    let host = url.host_str().unwrap_or_default().to_string();
-    let custom_ua = std::env::var("SEESEA_USER_AGENT").ok();
     let started = std::time::Instant::now();
     let budget = std::time::Duration::from_secs(opts.timeout_secs.max(1));
 
     let mut attempt = 0;
     let response = loop {
-        let mut request = inner.get(url.as_str()).timeout(
-            budget
-                .saturating_sub(started.elapsed())
-                .max(std::time::Duration::from_secs(1)),
-        );
-        if opts.browser_headers {
-            for (k, v) in profile::profile_for(&host, attempt, custom_ua.as_deref()).headers {
-                request = request.header(k, v);
-            }
-        }
-        let response = request
-            .send()
+        let left = budget.saturating_sub(started.elapsed()).as_secs().max(1);
+        let response = client
+            .get_page(url.as_str(), left, attempt, !opts.browser_headers)
             .await
             .map_err(|e| FetchError::Network(e.to_string()))?;
         let status = response.status().as_u16();
         attempt += 1;
         let again = opts.browser_headers
-            && profile::retryable(status)
+            && retryable(status)
             && attempt < ATTEMPTS
             && started.elapsed() < budget / 2;
         if !again {
