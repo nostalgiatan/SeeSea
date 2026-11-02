@@ -35,6 +35,8 @@ seesea models download                              # 下载缺失的 GGUF 模�
 seesea model ./bge-small-en-v1.5                     # 检查嵌入模型能否加载、能否区分相关/无关
 seesea --model-dir ./bge-small-en-v1.5 search "query"  # 语义精排（纯 Rust 推理，模型需自行下载）
 seesea --rerank-model ./bge-reranker-v2-m3-q4_k_m.gguf search "query"  # 交叉编码器精排（可与 --model-dir 叠加）
+seesea feedback https://example.org/a bad            # 告诉第一层排序这个结果好/坏（HTTP：POST /v1/feedback）
+seesea learn show                                    # 第一层学到的各主机/来源表现；`learn reset` 清空
 seesea mcp                                           # stdio MCP
 ```
 
@@ -46,12 +48,14 @@ seesea mcp                                           # stdio MCP
 
 ## 已知限制
 
+- 第一层排序会从日志学习：每次读了正文之后，第二层给出的相关度（0.7）与正文质量（0.3）记到该主机和来源名下（取不到正文记 0.15），指数衰减（半衰期 90 天）、向全局均值收缩、至少约 3 次观察后才生效，给第一层得分加一个有界的修正（主机最多约 ±0.075，来源 ±0.025；`score_parts.learned` 可见）。`feedback good/bad` 相当于 5 次观察。状态存在 `~/.local/share/seesea/learn.json`（原子写，服务进程每 30 秒落盘）；`--no-learn` 关闭，`eval` 不学习。偏差：只有被读取的候选才有观察，所以 `explore`（每次搜索以该概率换读一个排名靠后的结果）用来缓解。限制：未在标注集上证明能提高 nDCG（8 个查询的集合已饱和）；同一查询的缓存响应不会随学习更新；主机表上限 2 万。
+
 - SearXNG 与 Brave 的解析只用手写样本测试过，未对真实服务验证；请用 `seesea sources --check` 检查你的实例。
 - 内置来源无需账号：Bing、DuckDuckGo（HTML）、Mojeek、Wikipedia 默认参与；Stack Overflow、arXiv、GitHub 只回答特定类型的问题，需要点名才使用（`-s stackoverflow,arxiv,github`；`SEESEA_GITHUB_TOKEN` 可提高 GitHub 限额）。百度、搜狗已移除（验证码/超时）。抓取型来源本质上脆弱：DuckDuckGo、Mojeek 常对云主机和部分家庭网络返回验证码（报告为 `Blocked`），部分网络下 Wikipedia/DuckDuckGo 可能无法访问。只有 arXiv、Stack Overflow、GitHub 对真实服务验证过，DuckDuckGo、Mojeek、Wikipedia 的解析基于样本，请运行 `seesea sources --check`。更稳的来源是 SearXNG 或 Brave API。`--no-native` 关闭全部内置来源。
 - 抓取页面时默认带浏览器式请求头（User-Agent、Accept-Language、Sec-Fetch-*、客户端提示，三套互相一致的浏览器画像；同一站点固定用同一套）；遇到 403/429/503 会换一套画像并带上搜索引擎 Referer 重试，最多共 3 次，遵守 Retry-After。只改请求头：不模拟 TLS 指纹、不执行脚本、不破解验证码，所以需要这些的站点（如知乎、百度百科）仍会拒绝。`SEESEA_USER_AGENT` 可自定义 UA，`--plain-headers` 关闭。同一主机的请求之间默认至少间隔 300 毫秒并带随机抖动（`SEESEA_HOST_INTERVAL_MS` 调整，本机和内网地址不限速）。隐私模块已重写（原来的 TLS/Canvas 指纹“混淆”、Tor 电路管理和隐私评分只是摆设，已删除）；要隐藏出口地址请用 `--proxy`，例如指向 Tor 的 SOCKS5。
 - 静态 HTML 里没有正文的页面（脚本渲染的应用）会用 [Lightpanda](https://github.com/lightpanda-io/browser) 渲染，前提是它在 `PATH` 中，或由 `--lightpanda`/`SEESEA_LIGHTPANDA`/配置里的 `lightpanda` 指定；`--no-render` 关闭。结果带 `rendered: true`。浏览器被禁止连接私有地址（包括页面脚本发起的请求），不能配合 SOCKS 代理，也无法越过拒绝 seesea 的服务器（知乎仍返回 403）。渲染结果用独立的键缓存。
 - SSRF：抓取前会解析主机名，只要有任何一个地址是私有的（回环、RFC 1918、含 169.254.169.254 的链路本地、ULA）就拒绝。检查刻意宽松，避免用户网络环境导致完全无法使用：`198.18.0.0/15`（TUN 类代理的 fake-IP 段）视为公网，解析失败或超时不拦截，使用 `--proxy` 时由代理解析，因此不检查。检查发生在连接之前而不是连接时，所以检查与连接之间改变解析结果的域名拦不住。
-- 旧的 API 服务、RSS、热点、向量库、事件、raming 各 crate，React 前端，`openapi.json` 以及旧的隐私配置类型已删除（破坏性变更）。HTTP 服务目前只有可选的 Bearer token；限流和用户/API 密钥体系是后续工作。
+- 旧的 API 服务、RSS、热点、向量库、事件、raming 各 crate，React 前端，`openapi.json` 以及旧的隐私配置类型已删除（破坏性变更）。HTTP 服务有用户/API 密钥/套餐/限流（`seesea users`、`keys`、`usage`，见配置文件的 `[plans]`）：密钥形如 `ss_<id>_<secret>`，库里只存 SHA-256；令牌桶按 fast 1 / standard 2 / deep 5 积分扣费，并有日额度、并发上限和按 IP 的失败限速；限流状态在进程内存里，不跨进程共享；没有注册页、计费和控制台。
 - 提取器：表格按 DOM 还原为 Markdown 表格（colspan/rowspan 和空单元格保持列对齐，单列的布局表格保持段落），上下标转为 Unicode（m²、10⁻¹、H₂O）；短小的推广块（“点击报名”“buy now”等）被剔除；链接 href 里被 CMS 写进去的 Markdown 会还原为真实地址。章节选择不会留下“只有标题没有正文”的孤立标签。
 - 模型也可以是单个 `.gguf` 文件（BERT/XLM-R 布局，如 bge-m3 的 Q4_0，约 400 MB）：纯 Rust 读取并解码，线性层解成 f32 常驻内存（约 1.5 GB）。在有 Vulkan GPU 的机器上（默认构建已包含，纯 Rust：burn + wgpu），24 层 Transformer 跑在 GPU 上：RTX 5070 Laptop 上 32 个约 280 词元的段落 3.5 秒（CPU 约 50 秒），相似度与 CPU 一致到小数点后三位；没有可用 GPU 时自动退回 CPU（`SEESEA_EMBED_DEVICE=cpu` 可强制）。模型在后台线程加载（约 1.7 秒，含 GPU 内核预热），与网络检索重叠，所以不拖慢单次搜索；`fast` 模式不加载模型。默认参数（权重 0.8、余弦映射 0.3–0.75）按 bge-m3 在 `tools/search-eval` 上调过。带 GPU 的二进制约 47 MB，`cargo build --no-default-features` 约 15 MB。bge-m3 质量好且跨语言（英文查询可命中中文段落）。
 - 交叉编码器精排：`--rerank-model` 指向 bge-reranker-v2-m3 的 `.gguf`（Q4_K_M 约 440 MB，与 bge-m3 同属 XLM-R，复用同一套纯 Rust 读取器和 GPU 路径，加载约 1.8 秒，后台进行）。它把查询和段落放在一起读，比比较向量更能区分“谈到这个话题”和“回答了这个问题”；每页只评分开头段和最匹配的几段（`--rerank-passages`，默认 3）。输出的原始 logit 经 `sigmoid((logit-center)/scale)` 映射（`--rerank-center` 默认 -4，`--rerank-scale` 默认 3：模型很严格，答案也常在 -4 附近），再按 `--rerank-weight`（默认 0.5）与下层得分（嵌入或词法）混合。用 `tools/search-eval` 在 `--mode deep` 下的 nDCG@5：仅词法 0.828，bge-m3 0.952，仅交叉编码器 0.945，两者叠加 0.970；这个集合只有 8 个查询且已接近饱和，差异不应过度解读。

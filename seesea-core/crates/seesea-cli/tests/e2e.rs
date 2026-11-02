@@ -447,3 +447,46 @@ async fn a_revoked_key_stops_working_and_an_open_server_needs_nothing() {
     let open = spawn_with_access(&base, seesea_cli::access::Access::open()).await;
     assert_eq!(http.get(format!("{open}/v1/sources")).send().await.unwrap().status(), 200);
 }
+
+#[tokio::test]
+async fn feedback_reaches_the_learner_and_is_refused_when_learning_is_off() {
+    let base = spawn_site().await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("learn.json");
+    let mut on = settings(&base);
+    on.learn_file = Some(file.clone());
+    let pipeline = Arc::new(build_pipeline(&on).unwrap());
+    let app = router(AppState::new(Arc::clone(&pipeline), None), 8);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let http = reqwest::Client::new();
+
+    let r = http
+        .post(format!("{api}/v1/feedback"))
+        .json(&json!({"url": "https://www.Example.org/page", "verdict": "bad"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let v: Value = r.json().await.unwrap();
+    assert_eq!(v["host"], "example.org");
+    let r = http
+        .post(format!("{api}/v1/feedback"))
+        .json(&json!({"url": "https://example.org/", "verdict": "meh"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    // Feedback is written at once, so a restarted server remembers it.
+    assert!(std::fs::read_to_string(&file).unwrap().contains("example.org"));
+
+    let off = spawn_server(&base, None).await;
+    let r = http
+        .post(format!("{off}/v1/feedback"))
+        .json(&json!({"url": "https://example.org/", "verdict": "good"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+}

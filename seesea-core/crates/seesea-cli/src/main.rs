@@ -104,6 +104,12 @@ struct NetArgs {
     /// Never render pages with a headless browser.
     #[arg(long, global = true)]
     no_render: bool,
+    /// Do not adapt stage-1 ranking to what earlier searches found.
+    #[arg(long, global = true)]
+    no_learn: bool,
+    /// Chance (0..1) per search of also reading one lower-ranked result.
+    #[arg(long, env = "SEESEA_EXPLORE", global = true)]
+    explore: Option<f64>,
     #[arg(long, global = true)]
     no_cache: bool,
     /// Allow fetching loopback and private addresses.
@@ -211,6 +217,17 @@ enum Command {
         #[arg(long, default_value_t = 14)]
         days: u32,
     },
+    /// Tell stage 1 whether a result was good or bad, so its host ranks higher or lower next time.
+    Feedback {
+        url: String,
+        #[arg(value_parser = ["good", "bad"])]
+        verdict: String,
+    },
+    /// Inspect or clear what stage 1 has learned from earlier searches.
+    Learn {
+        #[command(subcommand)]
+        action: LearnAction,
+    },
     /// Run the HTTP server (JSON API and MCP on /mcp).
     Serve {
         #[arg(long, default_value = "127.0.0.1:8080")]
@@ -226,6 +243,17 @@ enum Command {
     },
     /// Run as an MCP server over standard input and output.
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum LearnAction {
+    /// The best and worst hosts and every source, by the value their pages delivered.
+    Show {
+        #[arg(long, default_value_t = 15)]
+        top: usize,
+    },
+    /// Forget everything.
+    Reset,
 }
 
 #[derive(Subcommand)]
@@ -279,6 +307,8 @@ fn apply_file(net: &mut NetArgs, f: &FileConfig, use_model: bool) {
     fill(&mut net.lightpanda, &f.lightpanda);
     fill(&mut net.auth_db, &f.auth_db);
     net.no_render |= f.no_render.unwrap_or(false);
+    net.no_learn |= f.no_learn.unwrap_or(false);
+    fill(&mut net.explore, &f.explore);
     fill(&mut net.cache_dir, &f.cache_dir);
     fill(&mut net.fuzzy_cache, &f.fuzzy_cache);
     fill(&mut net.model_dir, &f.models.embedding);
@@ -327,6 +357,8 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         plain_headers: net.plain_headers,
         lightpanda: net.lightpanda.clone(),
         no_render: net.no_render,
+        learn_file: (!net.no_learn).then(userconfig::default_learn_file),
+        explore: net.explore.unwrap_or(0.0),
     }
 }
 
@@ -545,13 +577,57 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         _ => {}
     }
     match &cli.command {
+        Command::Feedback { .. } | Command::Learn { .. } => {
+            let path = userconfig::default_learn_file();
+            let learner = seesea_pipeline::Learner::open(Default::default(), path.clone());
+            match &cli.command {
+                Command::Feedback { url, verdict } => {
+                    let host = seesea_pipeline::host_of(url);
+                    if host.is_empty() {
+                        return Err(Error::InvalidRequest(format!("not a URL: {url}")));
+                    }
+                    learner.feedback(&host, verdict == "good");
+                    println!("{host}: marked {verdict}");
+                }
+                Command::Learn { action: LearnAction::Reset } => {
+                    learner.reset();
+                    println!("forgot everything ({})", path.display());
+                }
+                Command::Learn { action: LearnAction::Show { top } } => {
+                    let r = learner.report(*top);
+                    if json {
+                        return print_json(&r);
+                    }
+                    println!("{} pages judged, average value {:.2}, {} hosts ({})", r.observations.round(), r.average_value, r.hosts, path.display());
+                    let show = |title: &str, rows: &[seesea_pipeline::learn::Standing]| {
+                        println!("\n{title}");
+                        for h in rows {
+                            println!("  {:.2}  {:>6.1}  {}", h.value, h.observations, h.name);
+                        }
+                    };
+                    show("best hosts", &r.best_hosts);
+                    show("worst hosts", &r.worst_hosts);
+                    show("sources", &r.sources);
+                }
+                _ => unreachable!(),
+            }
+            return Ok(());
+        }
+        _ => {}
+    }
+    match &cli.command {
         Command::Users { .. } | Command::Keys { .. } | Command::Usage { .. } => {
             let store = open_auth(&cli.net)?;
             return manage_accounts(&cli.command, &store, &file, json);
         }
         _ => {}
     }
-    let pipeline = Arc::new(build_pipeline(&settings(&cli.net, long_lived, use_model))?);
+    let mut pipeline_settings = settings(&cli.net, long_lived, use_model);
+    // An evaluation must not change the ranking it is measuring.
+    if matches!(cli.command, Command::Eval { .. }) {
+        pipeline_settings.learn_file = None;
+    }
+    let pipeline = Arc::new(build_pipeline(&pipeline_settings)?);
 
     match cli.command {
         Command::Search {
@@ -783,7 +859,9 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         | Command::Models { .. }
         | Command::Users { .. }
         | Command::Keys { .. }
-        | Command::Usage { .. } => unreachable!("handled above"),
+        | Command::Usage { .. }
+        | Command::Feedback { .. }
+        | Command::Learn { .. } => unreachable!("handled above"),
         Command::Mcp => {
             // Standard output belongs to the protocol; anything else goes to standard error.
             eprintln!("seesea MCP server ready on stdio");

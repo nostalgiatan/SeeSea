@@ -24,6 +24,10 @@ pub struct FileConfig {
     pub lightpanda: Option<PathBuf>,
     /// Never render, even when Lightpanda is installed.
     pub no_render: Option<bool>,
+    /// Do not adapt stage-1 ranking to how hosts and sources delivered before.
+    pub no_learn: Option<bool>,
+    /// Chance per search (0..1) of reading one lower-ranked result to keep the learning unbiased.
+    pub explore: Option<f64>,
     /// The SQLite file with users and API keys (default: next to the models).
     pub auth_db: Option<PathBuf>,
     /// Plans for API users, by name: `[plans.free] per_minute = 20`. `default` and `unlimited`
@@ -102,6 +106,11 @@ pub fn default_models_dir() -> PathBuf {
     env_path("SEESEA_MODELS_DIR").unwrap_or_else(|| data_dir().join("models"))
 }
 
+/// What stage 1 has learned about hosts and sources.
+pub fn default_learn_file() -> PathBuf {
+    data_dir().join("learn.json")
+}
+
 pub fn default_auth_db() -> PathBuf {
     data_dir().join("auth.db")
 }
@@ -162,6 +171,10 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # (https://github.com/lightpanda-io/browser) when it is on PATH or named here.
 # lightpanda = "/usr/local/bin/lightpanda"
 # no_render = false
+
+# Stage 1 learns from the pages it reads which hosts and sources deliver (see `seesea learn show`).
+# no_learn = false
+# explore = 0.05             # now and then read a lower-ranked result too, so ranks are not judged by hearsay
 # fuzzy_cache = 0.8          # reuse cached results for similar queries
 # cache_dir = "~/.cache/seesea"
 
