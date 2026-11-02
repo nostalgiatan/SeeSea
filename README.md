@@ -35,14 +35,14 @@ seesea --rerank-model ./bge-reranker-v2-m3-q4_k_m.gguf search "query"  # 交叉�
 seesea mcp                                           # stdio MCP
 ```
 
-全局参数：`--searxng`、`--brave-key`、`--no-native`（不用内置 Bing/百度/搜狗抓取）、`--proxy`、`--cache-dir`、`--no-cache`、`--allow-private`、`--json`；前四项也可用 `SEESEA_SEARXNG_URL`、`SEESEA_BRAVE_API_KEY`、`SEESEA_PROXY`、`SEESEA_CACHE_DIR` 设置。
+全局参数：`--searxng`、`--brave-key`、`--no-native`（不用内置 Bing/搜狗抓取）、`--proxy`、`--cache-dir`、`--no-cache`、`--allow-private`、`--json`；前四项也可用 `SEESEA_SEARXNG_URL`、`SEESEA_BRAVE_API_KEY`、`SEESEA_PROXY`、`SEESEA_CACHE_DIR` 设置。
 
 退出码：0 成功，1 其他，2 用法错误，3 配置错误或无可用来源，4 网络/上游失败。错误以 `error[code]: message` 输出。
 
 ## 已知限制
 
 - SearXNG 与 Brave 的解析只用手写样本测试过，未对真实服务验证；请用 `seesea sources --check` 检查你的实例。
-- 抓取型引擎（Bing、百度、搜狗）未在沙箱外验证，本质上也较脆弱。
+- 抓取型引擎（Bing、搜狗）未在沙箱外验证，本质上也较脆弱。
 - 模型也可以是单个 `.gguf` 文件（BERT/XLM-R 布局，如 bge-m3 的 Q4_0，约 400 MB）：纯 Rust 读取并解码，线性层解成 f32 常驻内存（约 1.5 GB）。在有 Vulkan GPU 的机器上（默认构建已包含，纯 Rust：burn + wgpu），24 层 Transformer 跑在 GPU 上：RTX 5070 Laptop 上 32 个约 280 词元的段落 3.5 秒（CPU 约 50 秒），相似度与 CPU 一致到小数点后三位；没有可用 GPU 时自动退回 CPU（`SEESEA_EMBED_DEVICE=cpu` 可强制）。模型在后台线程加载（约 1.7 秒，含 GPU 内核预热），与网络检索重叠，所以不拖慢单次搜索；`fast` 模式不加载模型。默认参数（权重 0.8、余弦映射 0.3–0.75）按 bge-m3 在 `tools/search-eval` 上调过。带 GPU 的二进制约 47 MB，`cargo build --no-default-features` 约 15 MB。bge-m3 质量好且跨语言（英文查询可命中中文段落）。
 - 交叉编码器精排：`--rerank-model` 指向 bge-reranker-v2-m3 的 `.gguf`（Q4_K_M 约 440 MB，与 bge-m3 同属 XLM-R，复用同一套纯 Rust 读取器和 GPU 路径，加载约 1.8 秒，后台进行）。它把查询和段落放在一起读，比比较向量更能区分“谈到这个话题”和“回答了这个问题”；每页只评分开头段和最匹配的几段（`--rerank-passages`，默认 3）。输出的原始 logit 经 `sigmoid((logit-center)/scale)` 映射（`--rerank-center` 默认 -4，`--rerank-scale` 默认 3：模型很严格，答案也常在 -4 附近），再按 `--rerank-weight`（默认 0.5）与下层得分（嵌入或词法）混合。用 `tools/search-eval` 在 `--mode deep` 下的 nDCG@5：仅词法 0.828，bge-m3 0.952，仅交叉编码器 0.945，两者叠加 0.970；这个集合只有 8 个查询且已接近饱和，差异不应过度解读。
 - 章节选择：页面放不下预算时，先用词法挑出最有希望的 12 个片段，再交给已加载的模型（优先交叉编码器，否则嵌入）按语义重新打分（0.3 词法 + 0.7 语义），这样答案章节即使和查询没有共同词也能被选中；`--lexical-sections` 可关闭。`extract -q` 带查询时也会加载模型。
