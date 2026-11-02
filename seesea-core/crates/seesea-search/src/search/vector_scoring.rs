@@ -26,8 +26,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, Semaphore};
 
-#[cfg(feature = "python")]
-use seesea_python_bindings::py_embedding_callback::{embed_text, get_embedding_callback};
 
 /// 向量缓存
 pub struct VectorCache {
@@ -145,24 +143,6 @@ impl VectorScorer {
         Self::new(VectorScoringWeights::pro_mode(), 4)
     }
 
-    #[cfg(feature = "python")]
-    async fn get_or_compute_vector(&self, text: &str) -> Option<Vec<f32>> {
-        if let Some(vector) = self.cache.get(text).await {
-            return Some(vector);
-        }
-
-        let _permit = self.semaphore.acquire().await.ok()?;
-
-        match embed_text(text) {
-            Ok(vector) => {
-                self.cache.set(text, vector.clone()).await;
-                Some(vector)
-            }
-            Err(_) => None,
-        }
-    }
-
-    #[cfg(not(feature = "python"))]
     async fn get_or_compute_vector(&self, _text: &str) -> Option<Vec<f32>> {
         None
     }
@@ -240,12 +220,6 @@ impl VectorScorer {
     }
 }
 
-#[cfg(feature = "python")]
-pub fn is_vector_scoring_available() -> bool {
-    get_embedding_callback().is_some()
-}
-
-#[cfg(not(feature = "python"))]
 pub fn is_vector_scoring_available() -> bool {
     false
 }

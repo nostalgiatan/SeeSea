@@ -20,7 +20,6 @@
 pub mod api;
 
 // 重新导出常用类型
-pub use api::dynamic_router::new_dynamic_router;
 pub use api::handlers::*;
 pub use api::middleware::*;
 pub use api::on::ApiInterface;

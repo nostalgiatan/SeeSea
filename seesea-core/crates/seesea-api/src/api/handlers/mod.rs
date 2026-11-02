@@ -25,11 +25,9 @@ pub mod hot;
 pub mod internal;
 pub mod internal_extended;
 pub mod metrics;
-pub mod pro;
 pub mod rss;
 pub mod search;
 pub mod static_files;
-pub mod stock;
 
 // Re-export handlers for convenient use
 pub use config::handle_magic_link_generate;
@@ -50,9 +48,7 @@ pub use internal_extended::{
 pub use metrics::{
     handle_engines_list, handle_metrics, handle_realtime_metrics, handle_stats, handle_version,
 };
-pub use pro::handle_pro_api;
 pub use search::{handle_search, handle_search_post};
 pub use static_files::{
     get_static_assets_path, get_static_html_path, handle_favicon, handle_index,
 };
-pub use stock::handle_stock_api;

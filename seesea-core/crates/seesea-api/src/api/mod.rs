@@ -99,9 +99,6 @@ pub mod metrics;
 /// 网络相关功能模块，包括服务器配置和启动等
 pub mod network;
 
-/// 动态路由模块，实现基于前缀树的高效动态路由匹配机制
-pub mod dynamic_router;
-
 /// OpenAPI 文档模块
 pub mod openapi;
 
@@ -134,5 +131,3 @@ pub use metrics::*;
 /// API 网络相关功能，包括服务器配置和启动
 pub use network::*;
 
-/// API 动态路由功能，支持高效路由匹配
-pub use dynamic_router::*;

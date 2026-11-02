@@ -101,9 +101,6 @@ pub mod result_visualization;
 /// 向量化相关性评分模块，使用嵌入向量进行语义相关性计算
 pub mod vector_scoring;
 
-/// Python引擎桥接模块，通过raming系统与Python引擎通信
-pub mod python_engine_bridge;
-
 /// 主要接口定义，提供统一的搜索服务接口
 pub mod on;
 
@@ -140,5 +137,3 @@ pub use vector_scoring::{
     VectorScorer, VectorScoringWeights, get_vector_cache, is_vector_scoring_available,
 };
 
-/// Python引擎桥接相关组件，用于与Python引擎通信
-pub use python_engine_bridge::{PythonEngineInfo, PythonEngineProxy, PythonEngineRegistry};

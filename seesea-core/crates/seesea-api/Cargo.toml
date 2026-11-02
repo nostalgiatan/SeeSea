@@ -26,7 +26,6 @@ seesea-rss = { path = "../seesea-rss" }
 seesea-sys = { path = "../seesea-sys" }
 seesea-derive = { path = "../seesea-derive" }
 seesea-event = { path = "../seesea-event" }
-seesea-stock = { path = "../seesea-stock" }
 seesea-fetch = { path = "../seesea-fetch" }
 seesea-extract = { path = "../seesea-extract", default-features = false }
 lazy_static = "1.5"
@@ -36,15 +35,12 @@ tracing = "0.1"
 sha2 = "0.10"
 metrics-exporter-prometheus = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
-pyo3 = { version = "0.27.2", optional = true }
 utoipa = { version = "5.3", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 utoipa-axum = "0.1"
 
 [features]
-default = ["stock"]
-python = ["pyo3"]
-stock = []
+default = []
 
 [dev-dependencies]
 tokio-test = "0.4.4"

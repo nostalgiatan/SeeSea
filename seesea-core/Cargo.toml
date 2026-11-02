@@ -5,14 +5,14 @@ edition = "2024"
 
 description = "SeeSea - A privacy-focused data aggregation platform with search, RSS, hot trends, and AI enhancement"
 
-keywords = ["search", "metasearch", "rust", "privacy", "tor", "proxy", "python", "rss", "ai"]
+keywords = ["search", "metasearch", "rust", "privacy", "tor", "proxy", "rss", "ai"]
 
 license = "AGPL-3.0-or-later"
 readme = "README.md"
 
 [lib]
 name = "seesea_core"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 path = "crates/lib.rs"
 
 [dependencies]
@@ -69,7 +69,7 @@ seesea-net = { path = "crates/seesea-net" }
 # 工作区依赖 - 搜索模块
 seesea-search = { path = "crates/seesea-search" }
 # 工作区依赖 - API模块
-seesea-api = { path = "crates/seesea-api", features = ["python"] }
+seesea-api = { path = "crates/seesea-api" }
 # 工作区依赖 - RSS模块
 seesea-rss = { path = "crates/seesea-rss" }
 # 工作区依赖 - 向量存储模块
@@ -98,8 +98,6 @@ sha2 = "0.10"
 uuid = { version = "1.19", features = ["v4", "serde"] }
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.16", default-features = false }
-pyo3 = { version = "0.27.2", features = ["extension-module"], optional = true }
-pyo3-async-runtimes = { version = "0.27.0", features = ["tokio-runtime"], optional = true }
 tokio-util = "0.7.17"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
@@ -129,9 +127,6 @@ syn = ["dep:syn"]
 scraper = ["dep:scraper"]
 html5ever = ["dep:html5ever"]
 select = ["dep:select"]
-python = ["pyo3", "pyo3-async-runtimes"]
-pyo3 = ["dep:pyo3"]
-pyo3-async-runtimes = ["dep:pyo3-async-runtimes"]
 
 [workspace]
 members = [
@@ -149,10 +144,8 @@ members = [
     "crates/seesea-cleaner",
     "crates/seesea-extract",
     "crates/seesea-fetch",
-    "crates/seesea-python-bindings",
     "crates/seesea-event",
     "crates/seesea-raming",
-    "crates/seesea-stock",
     "crates/error",
     "crates/error-derive",
 ]
