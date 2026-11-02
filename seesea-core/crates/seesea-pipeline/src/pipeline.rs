@@ -8,11 +8,13 @@ use crate::rank::{self, QueryInfo, RankConfig};
 use crate::rerank::{DocView, LexicalReranker, Reranker};
 use crate::sections;
 use crate::source::{Source, SourceQuery};
-use crate::store::{Cache, NoCache};
+use crate::store::{Cache, CacheCounts, Metered, NoCache};
+use crate::text::{jaccard, normalize_query, token_set};
 use chrono::Utc;
 use seesea_extract::{Extractor, Meta, Scope};
 use serde::Serialize;
-use std::sync::{Arc, OnceLock};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 pub struct PipelineConfig {
@@ -27,7 +29,14 @@ pub struct PipelineConfig {
     pub fetch_standard: usize,
     pub fetch_deep: usize,
     pub search_cache_ttl: Duration,
+    /// Starting lifetime of a cached page; it then adapts per URL between `page_ttl_min` and
+    /// `page_ttl_max` depending on whether the page changed when it was last refetched.
     pub page_cache_ttl: Duration,
+    pub page_ttl_min: Duration,
+    pub page_ttl_max: Duration,
+    /// Serve a cached response for a query whose meaningful words overlap this much (Jaccard) with
+    /// an earlier one. Off by default: similar is not the same, and `seesea replay` shows what it costs.
+    pub fuzzy_cache_threshold: Option<f64>,
 }
 
 impl Default for PipelineConfig {
@@ -42,6 +51,9 @@ impl Default for PipelineConfig {
             fetch_deep: 20,
             search_cache_ttl: Duration::from_secs(600),
             page_cache_ttl: Duration::from_secs(3600),
+            page_ttl_min: Duration::from_secs(300),
+            page_ttl_max: Duration::from_secs(7 * 24 * 3600),
+            fuzzy_cache_threshold: None,
         }
     }
 }
@@ -52,8 +64,20 @@ pub struct Pipeline {
     extractor: OnceLock<Arc<Extractor>>,
     reranker: Arc<dyn Reranker>,
     cache: Arc<dyn Cache>,
+    metered: Option<Arc<Metered>>,
+    recent_queries: Mutex<VecDeque<RecentQuery>>,
     cfg: PipelineConfig,
 }
+
+/// An earlier search kept so near-identical queries can reuse its cached response.
+struct RecentQuery {
+    /// Everything in the cache key except the query.
+    scope: String,
+    tokens: HashSet<String>,
+    key: String,
+}
+
+const RECENT_QUERIES: usize = 1000;
 
 /// The result of `extract`: one page, with the sections that matter for an optional query.
 #[derive(Debug, Clone, Serialize)]
@@ -94,6 +118,8 @@ impl Pipeline {
             extractor: OnceLock::new(),
             reranker: Arc::new(LexicalReranker),
             cache: Arc::new(NoCache),
+            metered: None,
+            recent_queries: Mutex::new(VecDeque::new()),
             cfg: PipelineConfig::default(),
         }
     }
@@ -123,13 +149,23 @@ impl Pipeline {
 
     /// Cache search responses and fetched pages.
     pub fn cache(mut self, cache: Arc<dyn Cache>) -> Self {
-        self.fetcher = Arc::new(CachedFetcher::new(
+        let metered = Arc::new(Metered::new(cache));
+        let cache: Arc<dyn Cache> = metered.clone();
+        self.fetcher = Arc::new(CachedFetcher::with_ttl_range(
             Arc::clone(&self.fetcher),
             Arc::clone(&cache),
             self.cfg.page_cache_ttl,
+            self.cfg.page_ttl_min,
+            self.cfg.page_ttl_max,
         ));
         self.cache = cache;
+        self.metered = Some(metered);
         self
+    }
+
+    /// Hits, misses and writes per kind of cache entry (`search`, `page`, ...).
+    pub fn cache_stats(&self) -> BTreeMap<String, CacheCounts> {
+        self.metered.as_ref().map(|m| m.stats()).unwrap_or_default()
     }
 
     pub fn source_names(&self) -> Vec<String> {
@@ -201,11 +237,12 @@ impl Pipeline {
             .collect())
     }
 
-    fn cache_key(req: &SearchRequest, sources: &[Arc<dyn Source>]) -> String {
+    /// The part of the cache key that does not depend on the query text.
+    fn cache_scope(req: &SearchRequest, sources: &[Arc<dyn Source>]) -> String {
         let mut names: Vec<&str> = sources.iter().map(|s| s.name()).collect();
         names.sort_unstable();
         format!(
-            "search:{:?}:{}:{:?}:{:?}:{}:{}:{}:{}",
+            "{:?}:{}:{:?}:{:?}:{}:{}:{}",
             req.mode,
             req.limit,
             req.time_range,
@@ -213,8 +250,40 @@ impl Pipeline {
             names.join(","),
             req.full_content,
             req.max_chars_per_result,
-            req.query
         )
+    }
+
+    /// A cached key for an earlier query that is close enough to this one, if fuzzy matching is on.
+    /// Queries must agree on every number: "rust 1.70" is not "rust 1.71".
+    fn similar_key(&self, scope: &str, tokens: &HashSet<String>) -> Option<String> {
+        let threshold = self.cfg.fuzzy_cache_threshold?;
+        let digits = |t: &HashSet<String>| -> BTreeSet<String> {
+            t.iter()
+                .filter(|w| w.chars().any(|c| c.is_ascii_digit()))
+                .cloned()
+                .collect()
+        };
+        let recent = self.recent_queries.lock().ok()?;
+        recent
+            .iter()
+            .filter(|r| r.scope == scope && digits(&r.tokens) == digits(tokens))
+            .map(|r| (jaccard(&r.tokens, tokens), r))
+            .filter(|(j, _)| *j >= threshold)
+            .max_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, r)| r.key.clone())
+    }
+
+    fn remember_query(&self, scope: String, tokens: HashSet<String>, key: String) {
+        if self.cfg.fuzzy_cache_threshold.is_none() {
+            return;
+        }
+        if let Ok(mut recent) = self.recent_queries.lock() {
+            recent.retain(|r| r.key != key);
+            recent.push_back(RecentQuery { scope, tokens, key });
+            while recent.len() > RECENT_QUERIES {
+                recent.pop_front();
+            }
+        }
     }
 
     pub async fn search(&self, req: &SearchRequest) -> Result<SearchResponse> {
@@ -222,13 +291,19 @@ impl Pipeline {
         let started = Instant::now();
         let sources = self.select_sources(&req.sources)?;
 
-        let key = Self::cache_key(req, &sources);
-        if let Some(bytes) = self.cache.get(&key).await
-            && let Ok(mut cached) = serde_json::from_slice::<SearchResponse>(&bytes)
-        {
-            cached.cached = true;
-            cached.took_ms = ms(started);
-            return Ok(cached);
+        let scope = Self::cache_scope(req, &sources);
+        let tokens = token_set(&req.query);
+        let key = format!("search:{scope}:{}", normalize_query(&req.query));
+        let mut lookups = vec![key.clone()];
+        lookups.extend(self.similar_key(&scope, &tokens).filter(|k| *k != key));
+        for k in lookups {
+            if let Some(bytes) = self.cache.get(&k).await
+                && let Ok(mut cached) = serde_json::from_slice::<SearchResponse>(&bytes)
+            {
+                cached.cached = true;
+                cached.took_ms = ms(started);
+                return Ok(cached);
+            }
         }
 
         let mut stages = Vec::new();
@@ -479,6 +554,7 @@ impl Pipeline {
             && let Ok(bytes) = serde_json::to_vec(&resp)
         {
             self.cache.put(&key, bytes, self.cfg.search_cache_ttl).await;
+            self.remember_query(scope, tokens, key);
         }
         Ok(resp)
     }

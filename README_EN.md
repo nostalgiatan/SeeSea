@@ -24,6 +24,8 @@ seesea extract https://example.com/post -q "thread pool" --max-chars 1500
 seesea extract page.html                             # file, or `-` for stdin
 seesea sources --check                               # ask every source a question
 seesea eval judgments.jsonl -k 10                    # nDCG / recall / MRR
+seesea search --log s.jsonl "query"                   # keep a search log
+seesea replay s.jsonl --ttl 600                      # cache policies on that log: hit ratio vs result drift
 seesea serve --addr 127.0.0.1:8080                   # SEESEA_API_KEY enables bearer auth
 seesea mcp                                           # MCP over stdio
 ```
@@ -39,6 +41,7 @@ Exit codes: 0 ok, 1 other, 2 bad usage, 3 configuration or no sources, 4 network
 - Reranking is lexical (BM25 plus title-support); there is no cross-encoder or embedding model yet. The `Reranker` trait is the seam.
 - `deep` mode reads more pages but does not rewrite queries yet.
 - SSRF guard checks the target and redirects but does not pin DNS results.
+- Caching: queries are keyed by their meaningful words (case, order and stopwords don't matter); cached pages live longer or shorter per URL depending on whether they changed when refetched; `--fuzzy-cache 0.8` (off by default) reuses results for near-identical queries, so check its cost with `seesea replay` first; the server's `GET /v1/stats` reports hit ratios.
 - Storage is memory/file cache only; Turso is not adopted yet.
 
 Design: [docs/search-pipeline-design.md](docs/search-pipeline-design.md). License: AGPL-3.0-or-later.

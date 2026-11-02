@@ -196,6 +196,20 @@ async fn http_api_search_extract_sources_and_errors() {
     assert_eq!(v["meta"]["title"], "Tokio overview");
 
     let v: Value = http
+        .get(format!("{api}/v1/stats"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(v["cache"]["search"]["misses"].as_u64().unwrap() >= 2, "{v}");
+    assert_eq!(
+        v["cache"]["search"]["hit_ratio"], 0.0,
+        "no cache is configured here"
+    );
+
+    let v: Value = http
         .get(format!("{api}/v1/sources/check"))
         .send()
         .await

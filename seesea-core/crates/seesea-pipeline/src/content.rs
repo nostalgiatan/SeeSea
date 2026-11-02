@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use seesea_extract::{ExtractResult, Extractor, Options, Scope};
 use seesea_fetch::{FetchError, FetchOptions};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -42,22 +43,83 @@ impl PageFetcher for NetFetcher {
     }
 }
 
+/// What is remembered about a URL between fetches, to tune how long its page is kept.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PageHistory {
+    /// FNV-1a of the HTML at the last fetch.
+    hash: u64,
+    /// Lifetime given to the cached copy at the last fetch, in milliseconds.
+    ttl_ms: u64,
+}
+
+fn fnv1a(data: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in data {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
 /// Wraps a fetcher with a cache of page HTML. Pages above `max_cached_bytes` are not cached.
+///
+/// How long a page is kept adapts per URL: each time a copy has expired and the page is fetched
+/// again, the lifetime doubles if the content is unchanged and halves if it changed, within
+/// `[min_ttl, max_ttl]`. Documentation sites drift to days, front pages to minutes.
 pub struct CachedFetcher {
     inner: Arc<dyn PageFetcher>,
     cache: Arc<dyn Cache>,
     ttl: Duration,
+    min_ttl: Duration,
+    max_ttl: Duration,
     max_cached_bytes: usize,
 }
 
+/// How long the per-URL history outlives the page itself.
+const HISTORY_TTL: Duration = Duration::from_secs(30 * 24 * 3600);
+
 impl CachedFetcher {
     pub fn new(inner: Arc<dyn PageFetcher>, cache: Arc<dyn Cache>, ttl: Duration) -> Self {
+        Self::with_ttl_range(inner, cache, ttl, ttl, ttl)
+    }
+
+    pub fn with_ttl_range(
+        inner: Arc<dyn PageFetcher>,
+        cache: Arc<dyn Cache>,
+        ttl: Duration,
+        min_ttl: Duration,
+        max_ttl: Duration,
+    ) -> Self {
         Self {
             inner,
             cache,
             ttl,
+            min_ttl,
+            max_ttl,
             max_cached_bytes: 2 * 1024 * 1024,
         }
+    }
+
+    async fn next_ttl(&self, url: &str, hash: u64) -> Duration {
+        let key = format!("pagehist:{url}");
+        let previous = self
+            .cache
+            .get(&key)
+            .await
+            .and_then(|b| serde_json::from_slice::<PageHistory>(&b).ok());
+        let ttl = match previous {
+            None => self.ttl,
+            Some(h) if h.hash == hash => Duration::from_millis(h.ttl_ms.saturating_mul(2)),
+            Some(h) => Duration::from_millis(h.ttl_ms / 2),
+        }
+        .clamp(self.min_ttl, self.max_ttl.max(self.min_ttl));
+        if let Ok(bytes) = serde_json::to_vec(&PageHistory {
+            hash,
+            ttl_ms: ttl.as_millis() as u64,
+        }) {
+            self.cache.put(&key, bytes, HISTORY_TTL).await;
+        }
+        ttl
     }
 }
 
@@ -76,11 +138,12 @@ impl PageFetcher for CachedFetcher {
         }
         let page = self.inner.fetch(url).await?;
         if page.html.len() <= self.max_cached_bytes {
+            let ttl = self.next_ttl(url, fnv1a(page.html.as_bytes())).await;
             self.cache
                 .put(
                     &key,
                     format!("{}\n{}", page.final_url, page.html).into_bytes(),
-                    self.ttl,
+                    ttl,
                 )
                 .await;
         }
@@ -276,6 +339,51 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(err.code(), "extract_failed");
+    }
+
+    /// Serves whatever is in `body` right now.
+    struct Flip(std::sync::Mutex<String>);
+
+    #[async_trait]
+    impl PageFetcher for Flip {
+        async fn fetch(&self, url: &str) -> std::result::Result<FetchedPage, FetchError> {
+            Ok(FetchedPage {
+                final_url: url.to_string(),
+                html: self.0.lock().unwrap().clone(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn page_lifetime_grows_while_a_page_is_stable_and_shrinks_when_it_changes() {
+        let cache = Arc::new(MemoryCache::new(10));
+        let page = Arc::new(Flip(std::sync::Mutex::new("<p>one</p>".into())));
+        let f = CachedFetcher::with_ttl_range(
+            page.clone(),
+            cache.clone(),
+            Duration::from_millis(40),
+            Duration::from_millis(10),
+            Duration::from_millis(150),
+        );
+        let ttl = |c: Arc<MemoryCache>| async move {
+            let b = c.get("pagehist:https://a.org/x").await.unwrap();
+            serde_json::from_slice::<PageHistory>(&b).unwrap().ttl_ms
+        };
+        f.fetch("https://a.org/x").await.unwrap();
+        assert_eq!(ttl(cache.clone()).await, 40);
+
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        f.fetch("https://a.org/x").await.unwrap();
+        assert_eq!(ttl(cache.clone()).await, 80, "unchanged: doubled");
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        f.fetch("https://a.org/x").await.unwrap();
+        assert_eq!(ttl(cache.clone()).await, 150, "capped at the maximum");
+
+        *page.0.lock().unwrap() = "<p>two</p>".into();
+        tokio::time::sleep(Duration::from_millis(170)).await;
+        f.fetch("https://a.org/x").await.unwrap();
+        assert_eq!(ttl(cache.clone()).await, 75, "changed: halved");
     }
 
     #[tokio::test]

@@ -224,3 +224,36 @@ async fn mcp_speaks_json_rpc_over_stdio() {
         "{names:?}"
     );
 }
+
+#[tokio::test]
+async fn replay_compares_cache_policies_on_a_search_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("searches.jsonl");
+    let line = |ts: &str, q: &str| json!({"ts": ts, "query": q, "mode": "standard", "hits": [{"url": "https://a.org/1"}, {"url": "https://a.org/2"}]});
+    let log = [
+        line("2025-01-01T00:00:00+00:00", "rust async runtime"),
+        line("2025-01-01T00:00:10+00:00", "Rust async runtime"),
+        line("2025-01-01T00:00:20+00:00", "async runtime rust"),
+    ]
+    .map(|v| v.to_string())
+    .join("\n");
+    std::fs::write(&file, log).unwrap();
+
+    let out = run(seesea(&["--json", "replay", file.to_str().unwrap()])).await;
+    assert!(out.status.success(), "{}", stderr(&out));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ratio = |policy: &str| {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["policy"] == policy)
+            .unwrap()["hits"]
+            .as_u64()
+            .unwrap()
+    };
+    assert_eq!(ratio("exact"), 1);
+    assert_eq!(ratio("normalized"), 2);
+
+    let missing = run(seesea(&["replay", "/no/such/log"])).await;
+    assert_eq!(missing.status.code(), Some(2), "{}", stderr(&missing));
+}
