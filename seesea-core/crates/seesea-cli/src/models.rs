@@ -12,28 +12,54 @@ pub enum Role {
     Reranker,
 }
 
+/// Where a model can be fetched from. `sha256` is only known for the copy we host.
+pub struct Origin {
+    pub url: &'static str,
+    pub sha256: Option<&'static str>,
+}
+
 pub struct Spec {
     pub role: Role,
     pub key: &'static str,
     pub file: &'static str,
-    pub url: &'static str,
+    /// Tried in order.
+    pub origins: &'static [Origin],
     pub what: &'static str,
 }
 
-/// ModelScope mirrors the GGUF builds and is reachable where Hugging Face often is not.
+/// The project's own GitHub release comes first (it is reachable almost everywhere GitHub is, and
+/// the hash is checked); ModelScope is the fallback.
 pub const CATALOG: [Spec; 2] = [
     Spec {
         role: Role::Embedding,
         key: "embedding",
         file: "bge-m3-Q4_0.gguf",
-        url: "https://www.modelscope.cn/models/gpustack/bge-m3-GGUF/resolve/master/bge-m3-Q4_0.gguf",
+        origins: &[
+            Origin {
+                url: "https://github.com/nostalgiatan/SeeSea/releases/download/models-v1/bge-m3-Q4_0.gguf",
+                sha256: Some("1ccece341ce41e42400dddf9267d1f013c783896f0eb368155c7dffd760daeb1"),
+            },
+            Origin {
+                url: "https://www.modelscope.cn/models/gpustack/bge-m3-GGUF/resolve/master/bge-m3-Q4_0.gguf",
+                sha256: None,
+            },
+        ],
         what: "bge-m3 embeddings: semantic reranking and section choice (~420 MB)",
     },
     Spec {
         role: Role::Reranker,
         key: "reranker",
         file: "bge-reranker-v2-m3-Q4_K_M.gguf",
-        url: "https://www.modelscope.cn/models/gpustack/bge-reranker-v2-m3-GGUF/resolve/master/bge-reranker-v2-m3-Q4_K_M.gguf",
+        origins: &[
+            Origin {
+                url: "https://github.com/nostalgiatan/SeeSea/releases/download/models-v1/bge-reranker-v2-m3-Q4_K_M.gguf",
+                sha256: Some("d3bf2bcefb880e17231c067f8d0442c58ede5396a20686f23fdfa1090ad49d58"),
+            },
+            Origin {
+                url: "https://www.modelscope.cn/models/gpustack/bge-reranker-v2-m3-GGUF/resolve/master/bge-reranker-v2-m3-Q4_K_M.gguf",
+                sha256: None,
+            },
+        ],
         what: "bge-reranker-v2-m3 cross-encoder: the most precise relevance (~440 MB)",
     },
 ];
@@ -50,12 +76,21 @@ impl Spec {
         }
     }
 
-    pub fn url(&self, cfg: &FileConfig) -> String {
+    /// Where to fetch from, in order: only the configured URL when there is one (its hash is
+    /// unknown), else the built-in origins.
+    pub fn origins(&self, cfg: &FileConfig) -> Vec<(String, Option<String>)> {
         let own = match self.role {
             Role::Embedding => &cfg.models.embedding_url,
             Role::Reranker => &cfg.models.reranker_url,
         };
-        own.clone().unwrap_or_else(|| self.url.to_string())
+        match own {
+            Some(u) => vec![(u.clone(), None)],
+            None => self
+                .origins
+                .iter()
+                .map(|o| (o.url.to_string(), o.sha256.map(String::from)))
+                .collect(),
+        }
     }
 
     /// The file to use: the configured one, else `file` in `dir` (the name's case does not matter).
@@ -148,14 +183,14 @@ pub fn discovered(cfg: &FileConfig) -> (Option<PathBuf>, Option<PathBuf>) {
     (found(Role::Embedding), found(Role::Reranker))
 }
 
-/// Download `spec` into the models directory. Written to a `.part` file and renamed once whole.
+/// Download `spec` into the models directory, trying each origin in turn. Written to a `.part`
+/// file and renamed once whole, GGUF-shaped and (where a hash is known) matching it.
 pub async fn download(spec: &Spec, cfg: &FileConfig, proxy: Option<&str>) -> Result<PathBuf> {
     let dir = models_dir(cfg);
     std::fs::create_dir_all(&dir)
         .map_err(|e| Error::Config(format!("cannot create {}: {e}", dir.display())))?;
     let target = dir.join(spec.file);
     let part = dir.join(format!("{}.part", spec.file));
-    let url = spec.url(cfg);
     let mut builder =
         reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(20));
     if let Some(p) = proxy {
@@ -166,44 +201,78 @@ pub async fn download(spec: &Spec, cfg: &FileConfig, proxy: Option<&str>) -> Res
     let client = builder
         .build()
         .map_err(|e| Error::Config(format!("cannot create the HTTP client: {e}")))?;
+    let mut failures = Vec::new();
+    for (url, sha256) in spec.origins(cfg) {
+        eprintln!("downloading {} from {url}", spec.key);
+        match fetch_one(&client, &url, sha256.as_deref(), &part, spec.file).await {
+            Ok(()) => {
+                std::fs::rename(&part, &target)
+                    .map_err(|e| Error::Config(format!("cannot move into place: {e}")))?;
+                return Ok(target);
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&part);
+                eprintln!("  failed: {e}");
+                failures.push(e);
+            }
+        }
+    }
+    Err(Error::Config(format!(
+        "no origin worked for {}: {}",
+        spec.key,
+        failures.join("; ")
+    )))
+}
+
+async fn fetch_one(
+    client: &reqwest::Client,
+    url: &str,
+    sha256: Option<&str>,
+    part: &Path,
+    label: &str,
+) -> std::result::Result<(), String> {
+    use sha2::{Digest, Sha256};
     let mut resp = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map_err(|e| Error::Config(format!("download of {url} failed: {e}")))?;
+        .map_err(|e| format!("{url}: {e}"))?;
     let total = resp.content_length();
-    let mut file = std::fs::File::create(&part)
-        .map_err(|e| Error::Config(format!("cannot write {}: {e}", part.display())))?;
-    let (mut done, mut shown) = (0u64, 0u64);
+    let mut file =
+        std::fs::File::create(part).map_err(|e| format!("cannot write {}: {e}", part.display()))?;
+    let (mut done, mut shown, mut hash) = (0u64, 0u64, Sha256::new());
     while let Some(chunk) = resp
         .chunk()
         .await
-        .map_err(|e| Error::Config(format!("download of {url} broke off: {e}")))?
+        .map_err(|e| format!("{url} broke off: {e}"))?
     {
         file.write_all(&chunk)
-            .map_err(|e| Error::Config(format!("cannot write {}: {e}", part.display())))?;
+            .map_err(|e| format!("cannot write {}: {e}", part.display()))?;
+        hash.update(&chunk);
         done += chunk.len() as u64;
         if done - shown >= 20 << 20 {
             shown = done;
             match total {
-                Some(t) => eprintln!("  {} {} / {} MB", spec.file, done >> 20, t >> 20),
-                None => eprintln!("  {} {} MB", spec.file, done >> 20),
+                Some(t) => eprintln!("  {label} {} / {} MB", done >> 20, t >> 20),
+                None => eprintln!("  {label} {} MB", done >> 20),
             }
         }
     }
     drop(file);
-    if !is_gguf(&part) {
-        let _ = std::fs::remove_file(&part);
-        return Err(Error::Config(format!("{url} did not return a GGUF file")));
+    if !is_gguf(part) {
+        return Err(format!("{url} did not return a GGUF file"));
     }
     if let Some(t) = total.filter(|t| *t != done) {
-        let _ = std::fs::remove_file(&part);
-        return Err(Error::Config(format!("{url}: got {done} of {t} bytes")));
+        return Err(format!("{url}: got {done} of {t} bytes"));
     }
-    std::fs::rename(&part, &target)
-        .map_err(|e| Error::Config(format!("cannot move into place: {e}")))?;
-    Ok(target)
+    if let Some(want) = sha256 {
+        let got: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        if got != want {
+            return Err(format!("{url}: checksum {got} does not match {want}"));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -252,6 +321,30 @@ mod tests {
             sock.write_all(body).await.unwrap();
         });
         format!("http://{addr}/m.gguf")
+    }
+
+    #[tokio::test]
+    async fn a_bad_origin_falls_through_to_the_next_and_hashes_are_checked() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = FileConfig::default();
+        cfg.models.dir = Some(dir.path().to_path_buf());
+        // Two catalog-style origins: the first serves the wrong bytes, the second is fine.
+        let bad = serve_once(b"GGUF-wrong").await;
+        let good = serve_once(b"GGUF-right").await;
+        let client = reqwest::Client::new();
+        let part = dir.path().join("x.part");
+        use sha2::{Digest, Sha256};
+        let want: String = Sha256::digest(b"GGUF-right")
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let err = fetch_one(&client, &bad, Some(&want), &part, "x")
+            .await
+            .unwrap_err();
+        assert!(err.contains("checksum"), "{err}");
+        fetch_one(&client, &good, Some(&want), &part, "x")
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
