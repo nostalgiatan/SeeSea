@@ -102,7 +102,6 @@ pub mod result_visualization;
 pub mod vector_scoring;
 
 /// 主要接口定义，提供统一的搜索服务接口
-pub mod on;
 
 // 统一导出核心组件，方便外部使用
 
@@ -127,7 +126,6 @@ pub use engine_config::{EngineListConfig, EngineMode};
 pub use engine_manager::{EngineManager, EngineState};
 
 /// 主要搜索接口，提供统一的搜索服务
-pub use on::{SearchInterface, SearchStats, SearchStatsResult};
 
 /// 搜索结果时间排序相关组件
 pub use result_visualization::{TimeSortStats, TimeSortedResult, TimeSorter};

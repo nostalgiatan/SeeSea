@@ -5,7 +5,6 @@ members = [
     "crates/seesea-errors",
     "crates/seesea-net",
     "crates/seesea-config",
-    "crates/seesea-cache",
     "crates/seesea-search",
     "crates/seesea-sys",
     "crates/seesea-cleaner",
