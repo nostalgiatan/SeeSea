@@ -47,6 +47,7 @@ pub struct Stats {
     pub shards: usize,
     pub items: u64,
     pub bytes: u64,
+    pub embedded: u64,
     pub oldest_day: Option<String>,
     pub newest_day: Option<String>,
 }
@@ -111,8 +112,8 @@ pub fn fts_text(s: &str) -> String {
 
 const STOP: &[&str] = &["the", "a", "an", "of", "to", "in", "on", "and", "or", "is", "for", "what", "how", "why", "with"];
 
-/// An OR query over the words, with each CJK run as a phrase; `None` when nothing is searchable.
-pub fn fts_query(q: &str) -> Option<String> {
+/// The searchable terms of a query: words, and for CJK runs pairs of neighbouring characters.
+pub fn fts_terms(q: &str) -> Vec<String> {
     let mut terms: Vec<String> = Vec::new();
     let (mut word, mut run) = (String::new(), Vec::<char>::new());
     let flush_word = |word: &mut String, terms: &mut Vec<String>| {
@@ -146,7 +147,29 @@ pub fn fts_query(q: &str) -> Option<String> {
     flush_word(&mut word, &mut terms);
     flush_run(&mut run, &mut terms);
     terms.dedup();
+    terms
+}
+
+/// An OR query over the terms; `None` when nothing is searchable.
+pub fn fts_query(q: &str) -> Option<String> {
+    let terms = fts_terms(q);
     (!terms.is_empty()).then(|| terms.join(" OR "))
+}
+
+/// Lowercase, everything but letters and digits as single spaces, CJK characters apart, padded so
+/// a quoted term can be looked for as `" term "`.
+fn normalised(s: &str) -> String {
+    let mut out = String::from(" ");
+    for c in fts_text(s).chars() {
+        let c = if c.is_alphanumeric() { c.to_lowercase().next().unwrap_or(c) } else { ' ' };
+        if c != ' ' || !out.ends_with(' ') {
+            out.push(c);
+        }
+    }
+    if !out.ends_with(' ') {
+        out.push(' ');
+    }
+    out
 }
 
 fn clip(s: &str, max: usize) -> String {
@@ -177,9 +200,11 @@ impl Store {
                  CREATE TABLE IF NOT EXISTS items(
                    id INTEGER PRIMARY KEY, key INTEGER NOT NULL UNIQUE, tkey INTEGER NOT NULL UNIQUE,
                    url TEXT NOT NULL, title TEXT NOT NULL, lead TEXT NOT NULL,
-                   published INTEGER, fetched INTEGER NOT NULL, source TEXT NOT NULL, host TEXT NOT NULL);
+                   published INTEGER, fetched INTEGER NOT NULL, source TEXT NOT NULL, host TEXT NOT NULL, vec BLOB);
                  CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(title, lead, content='', tokenize='unicode61 remove_diacritics 2');",
             )?;
+            // Shards written before vectors existed lack the column.
+            let _ = conn.execute("ALTER TABLE items ADD COLUMN vec BLOB", []);
             if open.len() >= OPEN_SHARDS {
                 open.clear();
             }
@@ -240,32 +265,131 @@ impl Store {
         days
     }
 
-    /// Best matches (BM25, title counting triple) among items published since `since`.
-    /// Scores are per shard, so across days the order is approximate.
+    /// Best matches among items published since `since`. Each day's index only picks candidates;
+    /// they are then scored together with document frequencies summed over all the days searched
+    /// (BM25-style: rarer terms count more, a title hit counts three times a lead hit), so a
+    /// result is not favoured or hurt by which day's file it lives in.
     pub fn search(&self, query: &str, since: Option<i64>, limit: usize) -> Result<Vec<Stored>> {
-        let Some(q) = fts_query(query) else { return Ok(Vec::new()) };
+        let terms = fts_terms(query);
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        let q = terms.join(" OR ");
         let first_day = since.map(|s| s / 86_400).unwrap_or(i64::MIN);
-        let mut found: Vec<(f64, Stored)> = Vec::new();
+        let mut total: f64 = 0.0;
+        let mut df = vec![0f64; terms.len()];
+        let mut found: Vec<Stored> = Vec::new();
+        for day in self.days().into_iter().filter(|d| *d >= first_day) {
+            let shard = self.with_shard(day, false, |c| {
+                let n: i64 = c.query_row("SELECT count(*) FROM items", [], |r| r.get(0))?;
+                let mut counts = Vec::with_capacity(terms.len());
+                for t in &terms {
+                    counts.push(c.query_row("SELECT count(*) FROM fts WHERE fts MATCH ?1", [t], |r| r.get::<_, i64>(0))?);
+                }
+                let mut st = c.prepare(
+                    "SELECT items.url, items.title, items.lead, items.published, items.source, items.host FROM fts
+                     JOIN items ON items.id = fts.rowid
+                     WHERE fts MATCH ?1 AND (?2 IS NULL OR COALESCE(items.published, items.fetched) >= ?2)
+                     ORDER BY bm25(fts,3.0,1.0) LIMIT ?3",
+                )?;
+                let rows = st
+                    .query_map(params![q, since, (limit * 3) as i64], |r| {
+                        Ok(Stored { url: r.get(0)?, title: r.get(1)?, lead: r.get(2)?, published: r.get(3)?, source: r.get(4)?, host: r.get(5)? })
+                    })?
+                    .collect::<Result<Vec<_>>>()?;
+                Ok((n, counts, rows))
+            })?;
+            if let Some((n, counts, rows)) = shard {
+                total += n as f64;
+                for (d, c) in df.iter_mut().zip(counts) {
+                    *d += c as f64;
+                }
+                found.extend(rows);
+            }
+        }
+        let idf: Vec<f64> = df.iter().map(|d| (1.0 + (total - d + 0.5) / (d + 0.5)).ln()).collect();
+        let phrases: Vec<String> = terms.iter().map(|t| format!(" {} ", normalised(t.trim_matches('"')).trim())).collect();
+        let mut scored: Vec<(f64, Stored)> = found
+            .into_iter()
+            .map(|s| {
+                let (title, lead) = (normalised(&s.title), normalised(&s.lead));
+                let score: f64 = phrases
+                    .iter()
+                    .zip(&idf)
+                    .map(|(p, w)| w * (3.0 * f64::from(title.contains(p.as_str())) + f64::from(lead.contains(p.as_str()))))
+                    .sum();
+                (score, s)
+            })
+            .collect();
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal).then(b.1.published.cmp(&a.1.published)));
+        Ok(scored.into_iter().take(limit).map(|(_, s)| s).collect())
+    }
+
+    /// Items without a vector yet, newest first, as `(day, id, text to embed)`.
+    pub fn unembedded(&self, limit: usize) -> Result<Vec<(i64, i64, String)>> {
+        let mut out = Vec::new();
+        for day in self.days() {
+            if out.len() >= limit {
+                break;
+            }
+            let want = (limit - out.len()) as i64;
+            let rows = self.with_shard(day, false, |c| {
+                let mut st = c.prepare("SELECT id, title || ' ' || lead FROM items WHERE vec IS NULL ORDER BY COALESCE(published, fetched) DESC LIMIT ?")?;
+                st.query_map([want], |r| Ok((day, r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?.collect::<Result<Vec<_>>>()
+            })?;
+            out.extend(rows.unwrap_or_default());
+        }
+        Ok(out)
+    }
+
+    pub fn set_vectors(&self, vectors: &[(i64, i64, Vec<u8>)]) -> Result<()> {
+        let mut by_day: HashMap<i64, Vec<(i64, &Vec<u8>)>> = HashMap::new();
+        for (day, id, v) in vectors {
+            by_day.entry(*day).or_default().push((*id, v));
+        }
+        for (day, rows) in by_day {
+            self.with_shard(day, false, |c| {
+                let tx = c.unchecked_transaction()?;
+                for (id, v) in &rows {
+                    tx.execute("UPDATE items SET vec=? WHERE id=?", params![v, id])?;
+                }
+                tx.commit()
+            })?;
+        }
+        Ok(())
+    }
+
+    /// The `k` items whose vectors are closest to `query` in Hamming distance (a brute-force scan:
+    /// 128 bytes per item, so a month of news is a few million popcounts), with the distance.
+    /// Items farther than `max_distance` bits are not returned.
+    pub fn nearest(&self, query: &[u8], since: Option<i64>, k: usize, max_distance: u32) -> Result<Vec<(Stored, u32)>> {
+        let first_day = since.map(|s| s / 86_400).unwrap_or(i64::MIN);
+        let mut best: Vec<(u32, Stored)> = Vec::new();
         for day in self.days().into_iter().filter(|d| *d >= first_day) {
             let rows = self.with_shard(day, false, |c| {
                 let mut st = c.prepare(
-                    "SELECT bm25(fts,3.0,1.0), items.url, items.title, items.lead, items.published, items.source, items.host FROM fts
-                     JOIN items ON items.id = fts.rowid
-                     WHERE fts MATCH ?1 AND (?2 IS NULL OR COALESCE(items.published, items.fetched) >= ?2)
-                     ORDER BY 1 LIMIT ?3",
+                    "SELECT url,title,lead,published,source,host,vec FROM items WHERE vec IS NOT NULL
+                     AND (?1 IS NULL OR COALESCE(published, fetched) >= ?1)",
                 )?;
-                let rows = st.query_map(params![q, since, limit as i64], |r| {
-                    Ok((
-                        r.get::<_, f64>(0)?,
-                        Stored { url: r.get(1)?, title: r.get(2)?, lead: r.get(3)?, published: r.get(4)?, source: r.get(5)?, host: r.get(6)? },
-                    ))
-                })?;
-                rows.collect::<Result<Vec<_>>>()
+                let mut rows = st.query([since])?;
+                let mut local: Vec<(u32, Stored)> = Vec::new();
+                while let Some(r) = rows.next()? {
+                    let v: Vec<u8> = r.get(6)?;
+                    if v.len() != query.len() {
+                        continue;
+                    }
+                    let d: u32 = v.iter().zip(query).map(|(a, b)| (a ^ b).count_ones()).sum();
+                    if d <= max_distance {
+                        local.push((d, Stored { url: r.get(0)?, title: r.get(1)?, lead: r.get(2)?, published: r.get(3)?, source: r.get(4)?, host: r.get(5)? }));
+                    }
+                }
+                Ok(local)
             })?;
-            found.extend(rows.unwrap_or_default());
+            best.extend(rows.unwrap_or_default());
+            best.sort_by_key(|(d, _)| *d);
+            best.truncate(k);
         }
-        found.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal).then(b.1.published.cmp(&a.1.published)));
-        Ok(found.into_iter().take(limit).map(|(_, s)| s).collect())
+        Ok(best.into_iter().map(|(d, s)| (s, d)).collect())
     }
 
     pub fn stats(&self) -> Stats {
@@ -275,7 +399,13 @@ impl Store {
         s.newest_day = days.first().map(|d| day_name(*d));
         for d in &days {
             s.bytes += shard_bytes(&self.path(*d));
-            s.items += self.with_shard(*d, false, |c| c.query_row("SELECT count(*) FROM items", [], |r| r.get::<_, i64>(0))).ok().flatten().unwrap_or(0) as u64;
+            let (n, e) = self
+                .with_shard(*d, false, |c| c.query_row("SELECT count(*), count(vec) FROM items", [], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))))
+                .ok()
+                .flatten()
+                .unwrap_or((0, 0));
+            s.items += n as u64;
+            s.embedded += e as u64;
         }
         s
     }
@@ -374,6 +504,20 @@ mod tests {
         assert!(recent.iter().all(|h| h.url != "https://b.com/2"), "{recent:?}");
         let st = s.stats();
         assert_eq!((st.shards, st.items), (2, 3));
+    }
+
+    #[test]
+    fn ranking_does_not_depend_on_which_day_an_item_lives_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::new(dir.path().into());
+        // Yesterday's file holds many "tokio" items, so "tokio" is common there but "quasar" is rare;
+        // per-file BM25 would over-reward the item alone in today's file.
+        let mut items: Vec<Item> = (0..30).map(|i| item(&format!("https://a.com/t{i}"), &format!("tokio story {i}"), "tokio news", 1)).collect();
+        items.push(item("https://a.com/q", "quasar discovered", "tokio mention", 1));
+        items.push(item("https://b.com/t", "tokio runtime tuning", "", 0));
+        s.ingest(&items).unwrap();
+        let hits = s.search("quasar tokio", None, 3).unwrap();
+        assert_eq!(hits[0].url, "https://a.com/q", "{hits:?}");
     }
 
     #[test]

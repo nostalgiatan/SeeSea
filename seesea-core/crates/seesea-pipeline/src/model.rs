@@ -186,6 +186,17 @@ pub struct Hit {
     /// Why no content is attached although the mode asked for it.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub content_error: Option<String>,
+    /// Other outlets reporting the same event, folded into this hit.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub related: Vec<Related>,
+}
+
+/// A hit folded into another because it tells the same story.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Related {
+    pub url: String,
+    pub title: String,
+    pub host: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

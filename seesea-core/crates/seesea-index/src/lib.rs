@@ -11,9 +11,11 @@ pub mod poller;
 pub mod registry;
 pub mod source;
 pub mod store;
+pub mod websub;
+pub mod vectors;
 
 pub use poller::{PollConfig, PollReport, Poller};
-pub use registry::{Feed, Registry, Status};
+pub use registry::{Feed, Registry, Status, Sub};
 pub use source::IndexSource;
 pub use store::{IngestReport, Item, Stats, Store, Stored};
 

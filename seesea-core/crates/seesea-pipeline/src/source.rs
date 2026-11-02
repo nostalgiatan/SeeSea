@@ -46,5 +46,11 @@ pub trait Source: Send + Sync {
         false
     }
 
+    /// A local store rather than a search engine: an empty answer from it does not make up for
+    /// every real source being down.
+    fn auxiliary(&self) -> bool {
+        false
+    }
+
     async fn search(&self, query: &SourceQuery) -> Result<Vec<RawHit>, SourceError>;
 }

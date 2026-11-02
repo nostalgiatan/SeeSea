@@ -723,3 +723,32 @@ fn breaking_queries_prefer_hours_old_over_days_old() {
     };
     assert!(gap("breaking earthquake today") > 2.0 * gap("rust ownership"), "{} {}", gap("breaking earthquake today"), gap("rust ownership"));
 }
+
+struct Local(Vec<RawHit>);
+
+#[async_trait]
+impl Source for Local {
+    fn name(&self) -> &str {
+        "local"
+    }
+    fn auxiliary(&self) -> bool {
+        true
+    }
+    async fn search(&self, _q: &SourceQuery) -> Result<Vec<RawHit>, seesea_pipeline::error::SourceError> {
+        Ok(self.0.clone())
+    }
+}
+
+#[tokio::test]
+async fn an_empty_local_index_does_not_hide_a_web_outage() {
+    let down = FakeSource::failing("web", FailureKind::Http);
+    let p = standard_pipeline(vec![down.clone(), Arc::new(Local(vec![]))], FakePages::new(&[]));
+    let mut req = SearchRequest::new("anything");
+    req.mode = Mode::Fast;
+    assert_eq!(p.search(&req).await.unwrap_err().code(), "all_sources_failed");
+    // With something in the index the answer is the index's, marked degraded.
+    let p = standard_pipeline(vec![down, Arc::new(Local(vec![hit("https://l.example/1", "Anything local", "x")]))], FakePages::new(&[]));
+    let r = p.search(&req).await.unwrap();
+    assert_eq!(r.hits.len(), 1);
+    assert!(!r.degraded.is_empty());
+}

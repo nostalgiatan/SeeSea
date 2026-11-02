@@ -28,6 +28,10 @@ fn hit_markdown(i: usize, h: &Hit, out: &mut String) {
     if !h.snippet.trim().is_empty() {
         let _ = writeln!(out, "\n> {}", h.snippet.trim().replace('\n', " "));
     }
+    if !h.related.is_empty() {
+        let links: Vec<String> = h.related.iter().map(|r| format!("[{}]({})", r.host, r.url)).collect();
+        let _ = writeln!(out, "\nAlso reported by: {}", links.join(", "));
+    }
     if let Some(c) = &h.content {
         if let Some(md) = &c.markdown {
             let _ = writeln!(out, "\n{md}");
@@ -155,6 +159,7 @@ mod tests {
                 truncated: true,
             }),
             content_error: None,
+            related: vec![],
         }
     }
 

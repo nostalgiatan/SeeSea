@@ -4,6 +4,7 @@
 //! rerank on page content → select the sections that answer the query. Every stage after fusion
 //! can be skipped or can fail without failing the search; the response says what was degraded.
 
+pub mod cluster;
 pub mod content;
 pub mod cross;
 pub mod error;
@@ -23,7 +24,7 @@ pub mod store;
 pub mod text;
 
 pub use error::{Error, ErrorBody, FailureKind, Result, SourceError, SourceFailure};
-pub use model::{
+pub use model::{Related, 
     Attribution, Content, Hit, Mode, ScoreParts, SearchRequest, SearchResponse, SelectedSection,
     StageTiming, TimeRange,
 };

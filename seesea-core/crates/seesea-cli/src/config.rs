@@ -115,6 +115,9 @@ pub fn build_poller(settings: &Settings, index: Arc<seesea_index::Index>) -> Res
             ..Default::default()
         },
     );
+    if let Some(m) = settings.model_dir.as_deref().filter(|m| m.exists()) {
+        poller = poller.embedder(crate::embedding::shared_embedder(m));
+    }
     if let Some(r) = (!settings.no_render).then(|| seesea_fetch::render::Renderer::discover(settings.lightpanda.as_deref())).flatten() {
         poller = poller.renderer(Arc::new(seesea_pipeline::content::RenderFetcher { renderer: r, options: fetch }));
     }
@@ -124,9 +127,6 @@ pub fn build_poller(settings: &Settings, index: Arc<seesea_index::Index>) -> Res
 pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
     let client = http_client(settings)?;
     let mut sources = build_sources(&settings.sources, client);
-    if let Some(dir) = &settings.index_dir {
-        sources.push(Arc::new(seesea_index::IndexSource::new(seesea_index::Index::open(dir))));
-    }
     let fetch = fetch_options(settings);
     let cache: Arc<dyn Cache> = if settings.no_cache {
         Arc::new(NoCache)
@@ -171,6 +171,13 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
     let renderer = (!settings.no_render)
         .then(|| seesea_fetch::render::Renderer::discover(settings.lightpanda.as_deref()))
         .flatten();
+    if let Some(dir) = &settings.index_dir {
+        let mut local = seesea_index::IndexSource::new(seesea_index::Index::open(dir));
+        if let Some(m) = &settings.model_dir {
+            local = local.embedder(crate::embedding::shared_embedder(m));
+        }
+        sources.push(Arc::new(local));
+    }
     let mut pipeline = Pipeline::with_net_fetcher(sources, fetch.clone())
         .config(PipelineConfig {
             fuzzy_cache_threshold: settings.fuzzy_cache,
@@ -231,5 +238,30 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+}
+
+/// Sends WebSub subscription requests with the process's HTTP client settings.
+pub struct ReqwestHub {
+    client: reqwest::Client,
+}
+
+impl ReqwestHub {
+    pub fn new(settings: &Settings) -> Result<Self> {
+        let mut b = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent("seesea/0.1 (WebSub subscriber)");
+        if let Some(p) = &settings.proxy {
+            b = b.proxy(reqwest::Proxy::all(p).map_err(|e| Error::Config(format!("proxy: {e}")))?);
+        }
+        Ok(Self { client: b.build().map_err(|e| Error::Config(e.to_string()))? })
+    }
+}
+
+#[async_trait::async_trait]
+impl seesea_index::websub::HubClient for ReqwestHub {
+    async fn post_form(&self, url: &str, form: &[(&str, &str)]) -> std::result::Result<u16, String> {
+        self.client.post(url).form(form).send().await.map(|r| r.status().as_u16()).map_err(|e| e.to_string())
     }
 }

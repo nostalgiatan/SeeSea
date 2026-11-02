@@ -268,6 +268,9 @@ enum Command {
         /// Poll the index's feeds in the background at this interval (e.g. 15m); `0` turns it off.
         #[arg(long, default_value = "15m")]
         poll_every: String,
+        /// The address hubs can reach this server at (e.g. https://seesea.example.com); turns on WebSub push subscriptions.
+        #[arg(long, env = "SEESEA_PUBLIC_URL")]
+        public_url: Option<String>,
     },
     /// Run as an MCP server over standard input and output.
     Mcp,
@@ -295,6 +298,14 @@ enum FeedsAction {
 #[derive(Subcommand)]
 enum IndexAction {
     Prune,
+    /// Give every item without a vector one now (otherwise a batch per poll).
+    Embed,
+    /// The items closest in meaning to a query, with their Hamming distance in bits.
+    Near {
+        query: String,
+        #[arg(short, default_value_t = 5)]
+        k: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -517,6 +528,24 @@ async fn run_index_command(cli: &Cli, long_lived: bool, use_model: bool) -> Resu
             }
         }
         Command::Index { action } => {
+            if let Some(IndexAction::Embed) = action {
+                let poller = seesea_cli::config::build_poller(&settings, Arc::clone(&index))?;
+                if settings.model_dir.is_none() {
+                    return Err(Error::Config("no embedding model: run `seesea models download` or set --model-dir".into()));
+                }
+                let n = poller.embed_pending(usize::MAX).await;
+                println!("embedded {n} items");
+            }
+            if let Some(IndexAction::Near { query, k }) = action {
+                let m = settings.model_dir.clone().ok_or_else(|| Error::Config("no embedding model".into()))?;
+                let embedder = seesea_cli::embedding::shared_embedder(&m);
+                let bits = seesea_index::vectors::query_bits(&index, &*embedder, query)
+                    .ok_or_else(|| Error::Config("the index has no vectors yet (`seesea index embed`)".into()))?;
+                for (s, d) in index.store.nearest(&bits, None, *k, u32::MAX).map_err(db)? {
+                    println!("{d:>4}  {}  {}", s.host, s.title);
+                }
+                return Ok(());
+            }
             if let Some(IndexAction::Prune) = action {
                 let n = index.store.prune(settings.retention_days.unwrap_or(30), settings.index_quota_mb.unwrap_or(512) * 1024 * 1024);
                 println!("dropped {n} days");
@@ -525,7 +554,7 @@ async fn run_index_command(cli: &Cli, long_lived: bool, use_model: bool) -> Resu
             if json {
                 return print_json(&st);
             }
-            println!("{} items in {} days ({} .. {}), {:.1} MB, {}", st.items, st.shards, st.oldest_day.as_deref().unwrap_or("-"), st.newest_day.as_deref().unwrap_or("-"), st.bytes as f64 / 1e6, dir.display());
+            println!("{} items ({} with vectors) in {} days ({} .. {}), {:.1} MB, {}", st.items, st.embedded, st.shards, st.oldest_day.as_deref().unwrap_or("-"), st.newest_day.as_deref().unwrap_or("-"), st.bytes as f64 / 1e6, dir.display());
         }
         _ => unreachable!(),
     }
@@ -667,7 +696,8 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         Command::Search { mode, .. } | Command::Eval { mode, .. } => {
             !mode.eq_ignore_ascii_case("fast")
         }
-        Command::Serve { .. } | Command::Mcp => true,
+        Command::Serve { .. } | Command::Mcp | Command::Poll { .. } => true,
+        Command::Index { action: Some(IndexAction::Embed | IndexAction::Near { .. }) } => true,
         // Models only help `extract` choose sections for a query.
         Command::Extract { query, .. } => query.is_some(),
         _ => false,
@@ -1024,6 +1054,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             max_concurrent,
             allow_open,
             poll_every,
+            public_url,
         } => {
             let store = open_auth(&cli.net)?;
             let mut state_index = None;
@@ -1032,8 +1063,18 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                 state_index = Some(Arc::clone(&index));
                 let every = parse_interval(&poll_every)?;
                 if !every.is_zero() {
-                    let poller = seesea_cli::config::build_poller(&pipeline_settings, index)?;
+                    let poller = seesea_cli::config::build_poller(&pipeline_settings, Arc::clone(&index))?;
                     tokio::spawn(async move { poller.run(every).await });
+                    if let Some(public) = public_url.clone() {
+                        let hub = seesea_cli::config::ReqwestHub::new(&pipeline_settings)?;
+                        let index = Arc::clone(&index);
+                        tokio::spawn(async move {
+                            loop {
+                                seesea_index::websub::subscribe_due(&index, &hub, &public).await;
+                                tokio::time::sleep(every.min(std::time::Duration::from_secs(3600))).await;
+                            }
+                        });
+                    }
                 }
             }
             let access = seesea_cli::access::Access::new(Some(store), file.plans.clone(), api_key);
