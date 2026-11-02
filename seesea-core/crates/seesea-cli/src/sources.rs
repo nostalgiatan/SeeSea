@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use seesea_derive::{SearchEngine, SearchQuery, TimeRange as EngineTimeRange};
 use seesea_pipeline::error::{FailureKind, SourceError};
 use seesea_pipeline::{Attribution, RawHit, Source, SourceQuery, TimeRange};
-use seesea_search::search::engines::{BingEngine, BraveEngine, SearxngEngine, SogouEngine};
+use seesea_search::search::engines::{BingEngine, BraveEngine, SearxngEngine};
 use std::sync::Arc;
 
 pub struct EngineSource {
@@ -156,7 +156,7 @@ impl Source for EngineSource {
 pub struct SourceSettings {
     pub searxng_url: Option<String>,
     pub brave_key: Option<String>,
-    /// Include the built-in scraping engines (Bing, Sogou).
+    /// Include the built-in scraping engines (Bing).
     pub native_engines: bool,
 }
 
@@ -186,13 +186,7 @@ pub fn build_sources(
         out.push(Arc::new(EngineSource::new(
             "bing",
             1.0,
-            Arc::new(BingEngine::with_client(Arc::clone(&client))),
-            false,
-        )));
-        out.push(Arc::new(EngineSource::new(
-            "sogou",
-            0.8,
-            Arc::new(SogouEngine::with_client(client)),
+            Arc::new(BingEngine::with_client(client)),
             false,
         )));
     }

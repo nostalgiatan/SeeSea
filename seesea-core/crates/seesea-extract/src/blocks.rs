@@ -41,7 +41,101 @@ pub struct Block {
     /// Fraction of this block's characters that are inside a `cc-select` region (training label).
     pub pos_frac: f32,
     pub feats: Vec<f32>,
+    /// Where the block sits in a table, if it does (used to rebuild rows and columns).
+    pub cell: Option<Cell>,
 }
+
+/// A table cell a block belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cell {
+    pub table: NodeId,
+    pub row: NodeId,
+    pub cell: NodeId,
+    pub header: bool,
+}
+
+fn cell_of(node: NodeRef<Node>) -> Option<Cell> {
+    let mut cell = None;
+    let mut row = None;
+    for a in std::iter::once(node).chain(node.ancestors()) {
+        match elem_name(a) {
+            Some("td" | "th") if cell.is_none() => cell = Some(a),
+            Some("tr") if row.is_none() && cell.is_some() => row = Some(a),
+            Some("table") => {
+                let (c, r) = (cell?, row?);
+                return Some(Cell {
+                    table: a.id(),
+                    row: r.id(),
+                    cell: c.id(),
+                    header: elem_name(c) == Some("th"),
+                });
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Join the Markdown of the blocks at `idx`, turning consecutive table cells back into a Markdown
+/// table. A table with a single column is layout, not data, and stays as plain paragraphs.
+pub fn join_blocks(blocks: &[Block], idx: &[usize]) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < idx.len() {
+        let b = &blocks[idx[i]];
+        let Some(first) = b.cell else {
+            out.push(b.md.clone());
+            i += 1;
+            continue;
+        };
+        let mut j = i;
+        while j < idx.len() && blocks[idx[j]].cell.is_some_and(|c| c.table == first.table) {
+            j += 1;
+        }
+        // rows -> cells -> text, in document order
+        let mut rows: Vec<(NodeId, bool, Vec<(NodeId, String)>)> = Vec::new();
+        for &k in &idx[i..j] {
+            let blk = &blocks[k];
+            let c = blk.cell.expect("checked above");
+            if rows.last().is_none_or(|r| r.0 != c.row) {
+                rows.push((c.row, c.header, Vec::new()));
+            }
+            let row = rows.last_mut().expect("just pushed");
+            let text = blk
+                .text
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .replace('|', "\\|");
+            match row.2.last_mut() {
+                Some((id, t)) if *id == c.cell => {
+                    t.push(' ');
+                    t.push_str(&text);
+                }
+                _ => row.2.push((c.cell, text)),
+            }
+        }
+        let width = rows.iter().map(|r| r.2.len()).max().unwrap_or(0);
+        if width < 2 {
+            out.extend(idx[i..j].iter().map(|&k| blocks[k].md.clone()));
+        } else {
+            let line = |cells: Vec<&str>| format!("| {} |", cells.join(" | "));
+            let mut lines = Vec::new();
+            for (n, (_, _, cells)) in rows.iter().enumerate() {
+                let mut texts: Vec<&str> = cells.iter().map(|c| c.1.as_str()).collect();
+                texts.resize(width, "");
+                lines.push(line(texts));
+                if n == 0 {
+                    lines.push(line(vec!["---"; width]));
+                }
+            }
+            out.push(lines.join("\n"));
+        }
+        i = j;
+    }
+    out.join("\n\n")
+}
+
 
 const SKIP: &[&str] = &["script", "style", "noscript", "head", "template", "svg", "iframe"];
 
@@ -217,7 +311,8 @@ fn push_md(md: &mut String, raw: &str, node: NodeRef<Node>) {
             "code" | "kbd" | "samp" | "tt" => piece = format!("`{piece}`"),
             "a" => {
                 if let Some(h) = a.value().as_element().and_then(|e| e.attr("href")) {
-                    if !h.starts_with('#') && !h.starts_with("javascript:") { piece = format!("[{piece}]({h})"); }
+                    let h = clean_href(h);
+                    if !h.is_empty() && !h.starts_with('#') && !h.starts_with("javascript:") { piece = format!("[{piece}]({h})"); }
                 }
             }
             _ => {}
@@ -226,6 +321,16 @@ fn push_md(md: &mut String, raw: &str, node: NodeRef<Node>) {
     if raw.starts_with(char::is_whitespace) && !md.is_empty() && !md.ends_with(' ') { md.push(' '); }
     md.push_str(&piece);
     if raw.ends_with(char::is_whitespace) { md.push(' '); }
+}
+
+/// Some CMSs write Markdown into the attribute itself (`//[www.x.com](https://www.x.com)`): keep the
+/// real address, which is the one in the parentheses.
+fn clean_href(href: &str) -> &str {
+    let h = href.trim();
+    match h.rfind("](") {
+        Some(i) => h[i + 2..].trim_end_matches(')').trim(),
+        None => h,
+    }
 }
 
 fn render_md(block: NodeRef<Node>, body: &str) -> String {
@@ -471,7 +576,7 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
         debug_assert_eq!(f.len(), names_len);
         before += chars;
         let md = render_md(node, &r.md);
-        blocks.push(Block { text, md, tokens, pos_frac: r.pos_chars as f32 / c, feats: f });
+        blocks.push(Block { text, md, tokens, pos_frac: r.pos_chars as f32 / c, feats: f, cell: cell_of(node) });
     }
     blocks
 }

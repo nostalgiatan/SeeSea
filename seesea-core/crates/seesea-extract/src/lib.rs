@@ -152,6 +152,11 @@ impl Extractor {
         let thr = self.threshold(opts);
 
         let mut keep: Vec<bool> = probs.iter().map(|p| *p >= thr).collect();
+        // The classifier keeps some promotional call-outs that sit inside the article.
+        let promo: Vec<usize> = (0..blocks.len()).filter(|i| keep[*i] && is_promo(&blocks[*i].text)).collect();
+        if promo.len() < keep.iter().filter(|k| **k).count() {
+            for i in promo { keep[i] = false; }
+        }
         let fallback = !keep.iter().any(|k| *k) && !blocks.is_empty();
         if fallback {
             if let Some((i, _)) = probs.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()) { keep[i] = true; }
@@ -161,7 +166,7 @@ impl Extractor {
         let selected_chars: usize = selected.iter().map(|i| chars(&blocks[*i])).sum();
         let visible_chars: usize = blocks.iter().map(chars).sum();
 
-        let core = selected.iter().map(|i| blocks[*i].md.as_str()).collect::<Vec<_>>().join("\n\n");
+        let core = blocks::join_blocks(&blocks, &selected);
         let sections = sections(&blocks, &keep);
 
         let confidence = if selected_chars == 0 { 0.0 } else {
@@ -198,6 +203,17 @@ fn sections(blocks: &[Block], keep: &[bool]) -> Vec<Section> {
         }
     }
     out
+}
+
+/// A short block that is a call to action rather than content: event sign-ups, QR codes, "buy now".
+fn is_promo(text: &str) -> bool {
+    const PHRASES: &[&str] = &[
+        "点击报名", "立即报名", "扫码报名", "名额有限", "扫描二维码", "长按识别", "关注公众号", "点击关注", "点击阅读原文", "立即购买", "限时优惠",
+        "buy now", "sign up now", "register now", "subscribe now", "limited time offer",
+    ];
+    if text.chars().count() > 300 { return false; }
+    let lower = text.to_lowercase();
+    PHRASES.iter().any(|p| lower.contains(p))
 }
 
 /// A compressed or mis-decoded body shows up as replacement and control characters.

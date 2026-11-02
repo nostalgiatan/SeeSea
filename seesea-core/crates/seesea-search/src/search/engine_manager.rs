@@ -244,18 +244,10 @@ impl EngineManager {
                 .expect("Shared client must be initialized"),
         );
 
-        // 抓取型引擎只保留 Bing、百度、搜狗；其余来源走官方 API 和 SearXNG
+        // 抓取型引擎只保留 Bing；其余来源走官方 API 和 SearXNG
         self.register_engine(
             "bing",
             Box::new(BingEngine::with_client(Arc::clone(&client))),
-        );
-        self.register_engine(
-            "baidu",
-            Box::new(BaiduEngine::with_client(Arc::clone(&client))),
-        );
-        self.register_engine(
-            "sogou",
-            Box::new(SogouEngine::with_client(Arc::clone(&client))),
         );
 
         // SearXNG 上游：设置了 SEESEA_SEARXNG_URL 才注册
@@ -502,17 +494,16 @@ mod tests {
         let manager = EngineManager::new(EngineMode::Global, vec![]);
 
         assert_eq!(manager.get_mode(), EngineMode::Global);
-        assert_eq!(manager.engines.len(), 3); // Bing, Baidu, Sogou
+        assert_eq!(manager.engines.len(), 1); // Bing
     }
 
     #[tokio::test]
     async fn test_engine_manager_configured_mode() {
-        let configured = vec!["baidu".to_string(), "bing".to_string()];
+        let configured = vec!["bing".to_string()];
         let manager = EngineManager::new(EngineMode::Configured, configured.clone());
 
         let active = manager.get_active_engines().await;
-        assert_eq!(active.len(), 2);
-        assert!(active.contains(&"baidu".to_string()));
+        assert_eq!(active.len(), 1);
         assert!(active.contains(&"bing".to_string()));
     }
 
@@ -521,6 +512,6 @@ mod tests {
         let manager = EngineManager::new(EngineMode::Global, vec![]);
 
         let active = manager.get_active_engines().await;
-        assert_eq!(active.len(), 3); // 三个引擎都应该可用
+        assert_eq!(active.len(), 1); // 只有 Bing 注册
     }
 }
