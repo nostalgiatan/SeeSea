@@ -15,6 +15,7 @@ members = [
     "crates/seesea-cli",
     "crates/seesea-embed",
     "crates/seesea-auth",
+    "crates/seesea-index",
     "crates/error",
     "crates/error-derive",
 ]

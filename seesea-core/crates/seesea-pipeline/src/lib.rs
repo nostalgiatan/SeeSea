@@ -27,6 +27,7 @@ pub use model::{
     Attribution, Content, Hit, Mode, ScoreParts, SearchRequest, SearchResponse, SelectedSection,
     StageTiming, TimeRange,
 };
+pub use rank::Recency;
 pub use learn::{LearnConfig, Learner};
 pub use pipeline::{host_of, ExtractedPage, Pipeline, PipelineConfig, SourceProbe};
 pub use source::{RawHit, Source, SourceQuery};

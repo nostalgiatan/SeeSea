@@ -34,25 +34,74 @@ impl Default for RankConfig {
     }
 }
 
+/// How much the age of an answer matters for a query.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Recency {
+    /// Timeless: documentation, concepts, history.
+    Evergreen,
+    /// Recent releases, versions and years: days to weeks matter.
+    Recent,
+    /// News and live events: hours matter.
+    Breaking,
+}
+
+impl Recency {
+    pub fn of(query: &str) -> Self {
+        let q = query.to_lowercase();
+        let has = |words: &[&str]| words.iter().any(|w| q.contains(w));
+        if has(&[
+            "breaking", "just now", "right now", "live", "today", "tonight", "this morning",
+            "刚刚", "突发", "实时", "今天", "今日", "今晚", "现在",
+        ]) {
+            Recency::Breaking
+        } else if has(&[
+            "latest", "news", "recent", "this week", "yesterday", "update", "release", "announce",
+            "最新", "新闻", "近期", "本周", "昨天", "发布", "动态", "快讯",
+        ]) || mentions_current_year(&q)
+        {
+            Recency::Recent
+        } else {
+            Recency::Evergreen
+        }
+    }
+
+    /// Age at which a dated result's freshness halves, in days.
+    pub fn half_life_days(self, default: f64) -> f64 {
+        match self {
+            Recency::Breaking => 0.5,
+            Recency::Recent => 14.0,
+            Recency::Evergreen => default,
+        }
+    }
+
+    /// Multiplier on the freshness weight.
+    pub fn weight_factor(self) -> f64 {
+        match self {
+            Recency::Breaking => 8.0,
+            Recency::Recent => 4.0,
+            Recency::Evergreen => 1.0,
+        }
+    }
+}
+
+/// A four-digit year within a year of today in the query ("rust 2026 roadmap").
+fn mentions_current_year(q: &str) -> bool {
+    let year = chrono::Datelike::year(&Utc::now());
+    (year - 1..=year + 1).any(|y| q.contains(&y.to_string()))
+}
+
 pub struct QueryInfo {
     pub raw: String,
     pub tokens: HashSet<String>,
-    /// The query asks for recent material, so age matters more.
-    pub time_sensitive: bool,
+    pub recency: Recency,
 }
 
 impl QueryInfo {
     pub fn new(query: &str) -> Self {
-        let lower = query.to_lowercase();
-        let time_sensitive = [
-            "latest", "news", "today", "recent", "breaking", "最新", "今天", "新闻", "近期",
-        ]
-        .iter()
-        .any(|w| lower.contains(w));
         Self {
             raw: query.to_string(),
             tokens: token_set(query),
-            time_sensitive,
+            recency: Recency::of(query),
         }
     }
 }
@@ -90,12 +139,8 @@ pub fn score(cand: &Candidate, q: &QueryInfo, cfg: &RankConfig, now: DateTime<Ut
     let snippet_overlap = coverage(&q.tokens, &token_set(&cand.snippet));
     let title_match = coverage(&q.tokens, &token_set(&cand.title));
     let title = title_match * title_trust(&cand.title, &cand.snippet);
-    let fresh = freshness(cand.published, now, cfg.half_life_days);
-    let fresh_weight = if q.time_sensitive {
-        cfg.w_freshness * 4.0
-    } else {
-        cfg.w_freshness
-    };
+    let fresh = freshness(cand.published, now, q.recency.half_life_days(cfg.half_life_days));
+    let fresh_weight = cfg.w_freshness * q.recency.weight_factor();
     let h = host(&cand.url);
     let boost: f64 = cfg
         .domain_boost
@@ -229,9 +274,11 @@ mod tests {
 
     #[test]
     fn time_sensitive_queries_weight_freshness_more() {
-        assert!(QueryInfo::new("latest rust release").time_sensitive);
-        assert!(QueryInfo::new("今天的新闻").time_sensitive);
-        assert!(!QueryInfo::new("rust ownership").time_sensitive);
+        assert_eq!(QueryInfo::new("latest rust release").recency, Recency::Recent);
+        assert_eq!(QueryInfo::new("今天的新闻").recency, Recency::Breaking);
+        assert_eq!(QueryInfo::new("breaking: earthquake").recency, Recency::Breaking);
+        assert_eq!(QueryInfo::new("rust ownership").recency, Recency::Evergreen);
+        assert_eq!(QueryInfo::new(&format!("rust {} roadmap", chrono::Datelike::year(&Utc::now()))).recency, Recency::Recent);
         let now = Utc::now();
         let mut c = cand("https://a.org/1", "t", "", 0.5);
         c.published = Some(now);

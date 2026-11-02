@@ -98,10 +98,11 @@ async fn failures_map_to_distinct_exit_codes() {
         stderr(&bad_mode)
     );
 
-    let no_sources = run(seesea(&["--no-native", "search", "x"])).await;
+    let no_sources = run(seesea(&["--no-native", "--no-index", "search", "x"])).await;
     assert_eq!(no_sources.status.code(), Some(3), "{}", stderr(&no_sources));
 
     let dead = run(seesea(&[
+        "--no-index",
         "--searxng",
         "http://127.0.0.1:1",
         "--no-native",

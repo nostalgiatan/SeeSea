@@ -110,6 +110,15 @@ struct NetArgs {
     /// Chance (0..1) per search of also reading one lower-ranked result.
     #[arg(long, env = "SEESEA_EXPLORE", global = true)]
     explore: Option<f64>,
+    /// Do not keep or search the local index of fresh articles.
+    #[arg(long, global = true)]
+    no_index: bool,
+    #[arg(long, env = "SEESEA_INDEX_DIR", global = true)]
+    index_dir: Option<PathBuf>,
+    #[arg(skip)]
+    retention_days: Option<i64>,
+    #[arg(skip)]
+    index_quota_mb: Option<u64>,
     #[arg(long, global = true)]
     no_cache: bool,
     /// Allow fetching loopback and private addresses.
@@ -228,6 +237,22 @@ enum Command {
         #[command(subcommand)]
         action: LearnAction,
     },
+    /// Manage the RSS/Atom feeds that fill the local index.
+    Feeds {
+        #[command(subcommand)]
+        action: FeedsAction,
+    },
+    /// Fetch the feeds that are due into the local index (`--every 15m` keeps going).
+    Poll {
+        /// Repeat at this interval, e.g. 90s, 15m, 2h.
+        #[arg(long)]
+        every: Option<String>,
+    },
+    /// Size and age of the local index, or `index prune` to apply retention now.
+    Index {
+        #[command(subcommand)]
+        action: Option<IndexAction>,
+    },
     /// Run the HTTP server (JSON API and MCP on /mcp).
     Serve {
         #[arg(long, default_value = "127.0.0.1:8080")]
@@ -240,9 +265,36 @@ enum Command {
         /// Listen on a non-loopback address although no API key or user exists.
         #[arg(long)]
         allow_open: bool,
+        /// Poll the index's feeds in the background at this interval (e.g. 15m); `0` turns it off.
+        #[arg(long, default_value = "15m")]
+        poll_every: String,
     },
     /// Run as an MCP server over standard input and output.
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum FeedsAction {
+    /// Register a feed address as it is (trusted at once).
+    Add { url: String },
+    /// Find the feeds a site offers and register them; `--dry-run` only lists them.
+    Discover {
+        site: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Every feed with its state.
+    List,
+    Remove { url: String },
+    /// Turn a switched-off feed back on (on probation).
+    Revive { url: String },
+    /// Add the built-in English and Chinese starter feeds (on probation).
+    Seed,
+}
+
+#[derive(Subcommand)]
+enum IndexAction {
+    Prune,
 }
 
 #[derive(Subcommand)]
@@ -308,6 +360,10 @@ fn apply_file(net: &mut NetArgs, f: &FileConfig, use_model: bool) {
     fill(&mut net.auth_db, &f.auth_db);
     net.no_render |= f.no_render.unwrap_or(false);
     net.no_learn |= f.no_learn.unwrap_or(false);
+    net.no_index |= f.no_index.unwrap_or(false);
+    fill(&mut net.index_dir, &f.index_dir);
+    net.retention_days = f.retention_days;
+    net.index_quota_mb = f.index_quota_mb;
     fill(&mut net.explore, &f.explore);
     fill(&mut net.cache_dir, &f.cache_dir);
     fill(&mut net.fuzzy_cache, &f.fuzzy_cache);
@@ -359,7 +415,121 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         no_render: net.no_render,
         learn_file: (!net.no_learn).then(userconfig::default_learn_file),
         explore: net.explore.unwrap_or(0.0),
+        index_dir: (!net.no_index).then(|| net.index_dir.clone().unwrap_or_else(userconfig::default_index_dir)),
+        retention_days: net.retention_days,
+        index_quota_mb: net.index_quota_mb,
     }
+}
+
+/// `90s`, `15m`, `2h`, or a bare number of seconds.
+fn parse_interval(s: &str) -> Result<std::time::Duration, Error> {
+    let s = s.trim();
+    let (num, unit) = s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
+    let n: u64 = num.parse().map_err(|_| Error::InvalidRequest(format!("not an interval: {s}")))?;
+    let mult = match unit {
+        "" | "s" => 1,
+        "m" => 60,
+        "h" => 3600,
+        _ => return Err(Error::InvalidRequest(format!("not an interval: {s} (use 90s, 15m or 2h)"))),
+    };
+    Ok(std::time::Duration::from_secs(n * mult))
+}
+
+async fn run_index_command(cli: &Cli, long_lived: bool, use_model: bool) -> Result<(), Error> {
+    let settings = settings(&cli.net, long_lived, use_model);
+    let json = cli.net.json;
+    let Some(dir) = settings.index_dir.clone() else {
+        return Err(Error::Config("the index is turned off (--no-index / no_index)".into()));
+    };
+    let index = seesea_index::Index::open(dir.clone());
+    fn db(e: impl std::fmt::Display) -> Error {
+        Error::Config(format!("index: {e}"))
+    }
+    match &cli.command {
+        Command::Feeds { action } => match action {
+            FeedsAction::Add { url } => {
+                let new = index.registry.add(url, "user", seesea_index::Status::Active).map_err(db)?;
+                println!("{url}: {}", if new { "added" } else { "already known" });
+            }
+            FeedsAction::Remove { url } => {
+                println!("{url}: {}", if index.registry.remove(url).map_err(db)? { "removed" } else { "not known" });
+            }
+            FeedsAction::Revive { url } => {
+                index.registry.revive(url).map_err(db)?;
+                println!("{url}: back on probation");
+            }
+            FeedsAction::Seed => {
+                let n = seesea_cli::seeds::SEEDS.iter().filter(|u| index.registry.add(u, "seed", seesea_index::Status::Probation).unwrap_or(false)).count();
+                println!("added {n} of {} starter feeds (they are polled by `seesea poll`)", seesea_cli::seeds::SEEDS.len());
+            }
+            FeedsAction::Discover { site, dry_run } => {
+                let poller = seesea_cli::config::build_poller(&settings, Arc::clone(&index))?;
+                let site = if site.contains("://") { site.clone() } else { format!("https://{site}/") };
+                if *dry_run {
+                    let found = poller.discover(&site).await;
+                    for (url, p) in &found {
+                        println!("{url}  ({} items) {}", p.items.len(), p.title);
+                    }
+                    if found.is_empty() {
+                        println!("no feed found at {site}");
+                    }
+                } else {
+                    let added = poller.add_site(&site, "user").await;
+                    for u in &added {
+                        println!("added {u}");
+                    }
+                    if added.is_empty() {
+                        println!("no new feed at {site}");
+                    }
+                }
+            }
+            FeedsAction::List => {
+                let feeds = index.registry.list().map_err(db)?;
+                if json {
+                    return print_json(&feeds);
+                }
+                for f in feeds {
+                    let when = |t: Option<i64>| t.and_then(|t| chrono::DateTime::from_timestamp(t, 0)).map(|d| d.format("%m-%d %H:%M").to_string()).unwrap_or_else(|| "never".into());
+                    println!("{:<9} fails {} items {:>5} last ok {}  {}  {}", format!("{:?}", f.status).to_lowercase(), f.fails, f.total, when(f.last_ok), f.url, f.title);
+                    if let Some(e) = &f.last_error {
+                        println!("          ↳ {e}");
+                    }
+                }
+            }
+        },
+        Command::Poll { every } => {
+            let poller = seesea_cli::config::build_poller(&settings, index)?;
+            let every = every.as_deref().map(parse_interval).transpose()?;
+            loop {
+                let r = poller.poll_once().await;
+                if json {
+                    print_json(&r)?;
+                } else {
+                    println!(
+                        "polled {} feeds ({} failed): {} new items, {} already known; looked at {} sites and found {} feeds; {} old days dropped",
+                        r.polled, r.failed, r.added, r.duplicates, r.sites_searched, r.feeds_found, r.shards_pruned
+                    );
+                }
+                match every {
+                    Some(d) => tokio::time::sleep(d).await,
+                    None => break,
+                }
+            }
+        }
+        Command::Index { action } => {
+            if let Some(IndexAction::Prune) = action {
+                let n = index.store.prune(settings.retention_days.unwrap_or(30), settings.index_quota_mb.unwrap_or(512) * 1024 * 1024);
+                println!("dropped {n} days");
+            }
+            let st = index.store.stats();
+            if json {
+                return print_json(&st);
+            }
+            println!("{} items in {} days ({} .. {}), {:.1} MB, {}", st.items, st.shards, st.oldest_day.as_deref().unwrap_or("-"), st.newest_day.as_deref().unwrap_or("-"), st.bytes as f64 / 1e6, dir.display());
+        }
+        _ => unreachable!(),
+    }
+    Ok(())
 }
 
 fn open_auth(net: &NetArgs) -> Result<seesea_auth::Store, Error> {
@@ -615,6 +785,9 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         }
         _ => {}
     }
+    if let Command::Feeds { .. } | Command::Poll { .. } | Command::Index { .. } = &cli.command {
+        return run_index_command(&cli, long_lived, use_model).await;
+    }
     match &cli.command {
         Command::Users { .. } | Command::Keys { .. } | Command::Usage { .. } => {
             let store = open_auth(&cli.net)?;
@@ -850,10 +1023,23 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             api_key,
             max_concurrent,
             allow_open,
+            poll_every,
         } => {
             let store = open_auth(&cli.net)?;
+            let mut state_index = None;
+            if let Some(dir) = pipeline_settings.index_dir.clone() {
+                let index = seesea_index::Index::open(dir);
+                state_index = Some(Arc::clone(&index));
+                let every = parse_interval(&poll_every)?;
+                if !every.is_zero() {
+                    let poller = seesea_cli::config::build_poller(&pipeline_settings, index)?;
+                    tokio::spawn(async move { poller.run(every).await });
+                }
+            }
             let access = seesea_cli::access::Access::new(Some(store), file.plans.clone(), api_key);
-            server::serve(addr, AppState::with_access(pipeline, access), max_concurrent, allow_open).await
+            let mut state = AppState::with_access(pipeline, access);
+            state.index = state_index;
+            server::serve(addr, state, max_concurrent, allow_open).await
         }
         Command::Config { .. }
         | Command::Models { .. }
@@ -861,7 +1047,10 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         | Command::Keys { .. }
         | Command::Usage { .. }
         | Command::Feedback { .. }
-        | Command::Learn { .. } => unreachable!("handled above"),
+        | Command::Learn { .. }
+        | Command::Feeds { .. }
+        | Command::Poll { .. }
+        | Command::Index { .. } => unreachable!("handled above"),
         Command::Mcp => {
             // Standard output belongs to the protocol; anything else goes to standard error.
             eprintln!("seesea MCP server ready on stdio");

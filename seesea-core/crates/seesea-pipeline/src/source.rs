@@ -41,5 +41,10 @@ pub trait Source: Send + Sync {
         true
     }
 
+    /// Asked only when the query is about recent events (news, releases), not for timeless ones.
+    fn recency_only(&self) -> bool {
+        false
+    }
+
     async fn search(&self, query: &SourceQuery) -> Result<Vec<RawHit>, SourceError>;
 }

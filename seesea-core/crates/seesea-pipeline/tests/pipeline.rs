@@ -665,3 +665,61 @@ async fn stage_one_learns_which_hosts_deliver() {
     assert!(learned(bait) < 0.0);
     assert_eq!(learner.report(5).hosts, 2);
 }
+
+struct NewsOnly(Arc<FakeSource>);
+
+#[async_trait]
+impl Source for NewsOnly {
+    fn name(&self) -> &str {
+        "news"
+    }
+    fn recency_only(&self) -> bool {
+        true
+    }
+    async fn search(&self, q: &SourceQuery) -> Result<Vec<RawHit>, seesea_pipeline::error::SourceError> {
+        self.0.search(q).await
+    }
+}
+
+#[tokio::test]
+async fn news_sources_are_asked_only_about_recent_things() {
+    let general = FakeSource::ok("web", vec![hit("https://w.example/1", "Rust ownership", "explained")]);
+    let news_inner = FakeSource::ok("news", vec![hit("https://n.example/1", "Rust release", "announced today")]);
+    let p = standard_pipeline(vec![general, Arc::new(NewsOnly(Arc::clone(&news_inner)))], FakePages::new(&[]));
+    let mut timeless = SearchRequest::new("rust ownership");
+    timeless.mode = Mode::Fast;
+    let r = p.search(&timeless).await.unwrap();
+    assert_eq!(news_inner.calls.load(Ordering::SeqCst), 0, "{r:?}");
+    let mut recent = SearchRequest::new("rust latest release");
+    recent.mode = Mode::Fast;
+    p.search(&recent).await.unwrap();
+    assert_eq!(news_inner.calls.load(Ordering::SeqCst), 1);
+    // Naming it asks for it whatever the query.
+    let mut named = SearchRequest::new("rust ownership");
+    named.mode = Mode::Fast;
+    named.sources = vec!["news".into()];
+    p.search(&named).await.unwrap();
+    assert_eq!(news_inner.calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn breaking_queries_prefer_hours_old_over_days_old() {
+    use chrono::{Duration as D, Utc};
+    use seesea_pipeline::rank::{QueryInfo, RankConfig, score};
+    let cand = |age: D| seesea_pipeline::fusion::Candidate {
+        key: "k".into(),
+        url: "https://a.example/x".into(),
+        title: "t".into(),
+        snippet: "s".into(),
+        published: Some(Utc::now() - age),
+        found_by: vec![],
+        fusion: 0.5,
+    };
+    let cfg = RankConfig::default();
+    let gap = |q: &str| {
+        let q = QueryInfo::new(q);
+        let now = Utc::now();
+        score(&cand(D::hours(2)), &q, &cfg, now).stage1 - score(&cand(D::days(3)), &q, &cfg, now).stage1
+    };
+    assert!(gap("breaking earthquake today") > 2.0 * gap("rust ownership"), "{} {}", gap("breaking earthquake today"), gap("rust ownership"));
+}
