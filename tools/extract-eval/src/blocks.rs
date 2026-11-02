@@ -73,6 +73,9 @@ pub fn feature_names() -> Vec<String> {
         v.push(format!("nb_{off}_logchars"));
         v.push(format!("nb_{off}_link"));
     }
+    for n in ["has_price", "has_datetime", "has_cta", "has_forum_word", "nb_p1_datetime", "nb_n1_datetime"] {
+        v.push(n.to_string());
+    }
     v
 }
 
@@ -106,6 +109,19 @@ struct Raw {
     text: String,
     link_chars: usize,
     pos_chars: usize,
+}
+
+const CTA: &[&str] = &["add to cart", "buy now", "add to bag", "checkout", "in stock", "sold out", "加入购物车", "立即购买", "库存", "加购"];
+const FORUM_WORDS: &[&str] = &["reply", "replies", "wrote:", "posted", "quote", "joined", "posts:", "回复", "发表", "楼主", "引用", "沙发"];
+
+fn has_price(t: &str) -> bool {
+    t.chars().any(|c| matches!(c, '$' | '€' | '£' | '¥' | '￥' | '₹' | '元')) && t.chars().any(|c| c.is_ascii_digit())
+}
+
+fn has_datetime(lower: &str) -> bool {
+    let digits = lower.chars().filter(|c| c.is_ascii_digit()).count();
+    (digits >= 3 && lower.contains(':')) || (lower.contains('年') && lower.contains('月')) || lower.contains(" ago") || lower.contains("分钟前") || lower.contains("小时前")
+        || (digits >= 4 && (lower.contains('/') || lower.contains('-')) && lower.chars().count() < 40)
 }
 
 pub fn segment(html: &str) -> Vec<Block> {
@@ -260,6 +276,16 @@ pub fn segment(html: &str) -> Vec<Block> {
                 f.push(0.0);
                 f.push(0.0);
             }
+        }
+        let lower = text.to_lowercase();
+        f.push(has_price(&text) as u8 as f32);
+        f.push(has_datetime(&lower) as u8 as f32);
+        f.push(CTA.iter().any(|w| lower.contains(w)) as u8 as f32);
+        f.push(FORUM_WORDS.iter().any(|w| lower.contains(w)) as u8 as f32);
+        for off in [-1i64, 1] {
+            let j = idx as i64 + off;
+            let hit = j >= 0 && (j as usize) < n_blocks && has_datetime(&raws[&order[j as usize]].text.to_lowercase());
+            f.push(hit as u8 as f32);
         }
         debug_assert_eq!(f.len(), names_len);
         before += chars;

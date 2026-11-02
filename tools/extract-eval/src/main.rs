@@ -128,6 +128,11 @@ fn main() {
         labels::audit(std::path::Path::new(path), limit).unwrap_or_else(|e| die(&e));
         return;
     }
+    if raw.get(1).map(String::as_str) == Some("timing") {
+        let arg = |k: &str| raw.iter().position(|a| a == k).and_then(|i| raw.get(i + 1)).cloned();
+        mixed::timing(std::path::Path::new(&arg("--wcxb").unwrap_or_else(|| die("timing --wcxb DIR"))), arg("--limit").and_then(|v| v.parse().ok()).unwrap_or(300)).unwrap_or_else(|e| die(&e));
+        return;
+    }
     if raw.get(1).map(String::as_str) == Some("mixed") {
         let arg = |k: &str| raw.iter().position(|a| a == k).and_then(|i| raw.get(i + 1)).cloned();
         let w = arg("--webmainbench").unwrap_or_else(|| die("mixed --webmainbench <file.jsonl> --wcxb DIR [--limit N]"));

@@ -47,6 +47,8 @@ pub(crate) struct Sel {
     pub(crate) ext: bool,
     pub(crate) page: bool,
     pub(crate) conv: bool,
+    /// Only the cheap html-extractor features (skip rs-trafilatura, ~5x the cost).
+    pub(crate) html_only: bool,
     /// Override the convention flag at prediction time.
     pub(crate) force_conv: Option<f32>,
 }
@@ -58,7 +60,10 @@ impl Sel {
 impl PageData {
     fn row(&self, i: usize, sel: Sel) -> Vec<f32> {
         let mut f = self.structural[i].clone();
-        if sel.ext { f.extend_from_slice(&self.ext[i]); }
+        if sel.ext {
+            let e = &self.ext[i];
+            if sel.html_only { f.extend_from_slice(&[e[0], e[2]]); } else { f.extend_from_slice(e); }
+        }
         if sel.page { f.extend_from_slice(&self.pf); }
         if sel.conv { f.push(sel.force_conv.unwrap_or(self.conv)); }
         f

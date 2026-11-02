@@ -94,13 +94,13 @@ pub fn run(wmb_path: &Path, limit: usize, wcxb_root: &Path) -> Result<(), String
     }
 
     let ext = Sel::ext(true);
+    let full = Sel { ext: true, page: true, conv: true, ..Sel::default() };
     let specs = [
         Spec { name: "WMB only, ext", train_wmb: true, train_wcxb: false, sel: ext },
         Spec { name: "WCXB only, ext", train_wmb: false, train_wcxb: true, sel: ext },
-        Spec { name: "mixed, ext", train_wmb: true, train_wcxb: true, sel: ext },
-        Spec { name: "mixed, ext + page", train_wmb: true, train_wcxb: true, sel: Sel { ext: true, page: true, ..Sel::default() } },
-        Spec { name: "mixed, page only (no extractors)", train_wmb: true, train_wcxb: true, sel: Sel { page: true, ..Sel::default() } },
-        Spec { name: "mixed, ext + page + convention flag", train_wmb: true, train_wcxb: true, sel: Sel { ext: true, page: true, conv: true, force_conv: None } },
+        Spec { name: "mixed, ext + page + convention flag", train_wmb: true, train_wcxb: true, sel: full },
+        Spec { name: "mixed, html-extractor only + page + flag", train_wmb: true, train_wcxb: true, sel: Sel { html_only: true, ..full } },
+        Spec { name: "mixed, no extractors + page + flag", train_wmb: true, train_wcxb: true, sel: Sel { ext: false, ..full } },
     ];
 
     let body: Vec<(Vec<f64>, Vec<f64>)> = {
@@ -135,7 +135,7 @@ pub fn run(wmb_path: &Path, limit: usize, wcxb_root: &Path) -> Result<(), String
     let diff = |a: &[f64], b: &[f64]| { let d: Vec<f64> = a.iter().zip(b).map(|(x, y)| x - y).collect(); let (m, lo, hi) = ci(&d); format!("{m:+.3} [{lo:+.3}, {hi:+.3}]") };
     println!("\nPaired differences (mean, 95% bootstrap CI):\n\n| comparison | WebMainBench test | WCXB test |\n|---|---|---|");
     let get = |n: &str| results.iter().find(|r| r.0 == n).unwrap();
-    for cand in ["mixed, ext", "mixed, ext + page", "mixed, ext + page + convention flag"] {
+    for cand in ["mixed, ext + page + convention flag", "mixed, html-extractor only + page + flag", "mixed, no extractors + page + flag"] {
         let c = get(cand);
         println!("| {cand} − rs-trafilatura | {} | {} |", diff(&c.5, &body[2].0), diff(&c.6, &body[2].1));
         println!("| {cand} − WMB-only | {} | {} |", diff(&c.5, &get("WMB only, ext").5), diff(&c.6, &get("WMB only, ext").6));
@@ -169,6 +169,27 @@ pub fn run(wmb_path: &Path, limit: usize, wcxb_root: &Path) -> Result<(), String
     for flag in [0.0f32, 1.0] {
         let sel = Sel { force_conv: Some(flag), ..c.1 };
         println!("| {} | {:.3} | {:.3} |", if flag == 0.0 { "WebMainBench" } else { "WCXB" }, avg(&f1s(&c.2, sel, c.3, &w_te)), avg(&f1s(&c.2, sel, c.4, &x_te)));
+    }
+    Ok(())
+}
+
+/// Single-threaded per-stage latency on WCXB pages (ms/page, mean and p95).
+pub fn timing(wcxb_root: &Path, n: usize) -> Result<(), String> {
+    use std::time::Instant;
+    let mut pages = crate::wcxb::load(wcxb_root, "dev")?;
+    pages.truncate(n);
+    let mut t: Vec<(&str, Vec<f64>)> = ["segment", "page features", "html-extractor", "rs-trafilatura"].iter().map(|k| (*k, Vec::new())).collect();
+    let ms = |i: Instant| i.elapsed().as_secs_f64() * 1000.0;
+    for p in &pages {
+        let i = Instant::now(); let bl = crate::blocks::segment(&p.html); t[0].1.push(ms(i));
+        let i = Instant::now(); let _ = crate::pagefeat::page_features(&p.url, &p.html, &bl); t[1].1.push(ms(i));
+        let i = Instant::now(); let _ = crate::adapters::by_name("html-extractor").unwrap().extract(p); t[2].1.push(ms(i));
+        let i = Instant::now(); let _ = crate::adapters::by_name("rs-trafilatura-text").unwrap().extract(p); t[3].1.push(ms(i));
+    }
+    println!("{} pages, single thread\n\n| stage | mean ms | p95 ms |\n|---|---|---|", pages.len());
+    for (k, mut v) in t {
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        println!("| {k} | {:.1} | {:.1} |", avg(&v), v[(v.len() as f64 * 0.95) as usize]);
     }
     Ok(())
 }
