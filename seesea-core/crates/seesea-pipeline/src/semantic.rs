@@ -25,8 +25,9 @@ pub struct SemanticConfig {
     /// Passages shorter than this are merged into their neighbour; longer ones are split.
     pub min_chars: usize,
     pub max_chars: usize,
-    /// Cosine similarity mapped to 0 and to 1. Model-specific: the defaults suit BGE-style models,
-    /// whose cosines for related text sit between about 0.5 and 0.85.
+    /// Cosine similarity mapped to 0 and to 1. Model-specific: the defaults suit bge-m3, where
+    /// related text scores about 0.5 to 0.75 and unrelated text 0.3 to 0.4 (BGE-small English models
+    /// sit higher: use about 0.45 and 0.85).
     pub cos_floor: f32,
     pub cos_ceil: f32,
 }
@@ -34,12 +35,12 @@ pub struct SemanticConfig {
 impl Default for SemanticConfig {
     fn default() -> Self {
         Self {
-            weight: 0.6,
+            weight: 0.8,
             max_passages: 4,
             min_chars: 120,
             max_chars: 700,
-            cos_floor: 0.45,
-            cos_ceil: 0.85,
+            cos_floor: 0.3,
+            cos_ceil: 0.75,
         }
     }
 }

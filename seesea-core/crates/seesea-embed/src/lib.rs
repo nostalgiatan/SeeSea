@@ -115,9 +115,9 @@ impl Embedder {
     }
 
     fn load_gguf(path: &Path) -> Result<Self> {
-        let model = gguf::GgufBert::load(path, DEFAULT_GGUF_TOKENS)?;
+        let (model, tokenizer) = gguf::GgufBert::load(path, DEFAULT_GGUF_TOKENS)?;
         Ok(Self {
-            tokenizer: model.tokenizer.clone(),
+            tokenizer,
             pooling: model.pooling,
             dim: model.hidden(),
             device: Device::Cpu,

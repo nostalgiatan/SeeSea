@@ -1,0 +1,8 @@
+{"query": "how does the tokio scheduler work", "relevant": [{"url": "http://127.0.0.1:18765/a0", "grade": 2}, {"url": "http://127.0.0.1:18765/b0", "grade": 1}]}
+{"query": "why does python have a global interpreter lock", "relevant": [{"url": "http://127.0.0.1:18765/a1", "grade": 2}, {"url": "http://127.0.0.1:18765/b1", "grade": 1}]}
+{"query": "postgres vacuum dead tuples bloat", "relevant": [{"url": "http://127.0.0.1:18765/a2", "grade": 2}, {"url": "http://127.0.0.1:18765/b2", "grade": 1}]}
+{"query": "kubernetes pod eviction memory pressure", "relevant": [{"url": "http://127.0.0.1:18765/a3", "grade": 2}, {"url": "http://127.0.0.1:18765/b3", "grade": 1}]}
+{"query": "\u7ea2\u70e7\u8089\u600e\u4e48\u505a\u624d\u8f6f\u7cef", "relevant": [{"url": "http://127.0.0.1:18765/a4", "grade": 2}, {"url": "http://127.0.0.1:18765/b4", "grade": 1}]}
+{"query": "\u5149\u5408\u4f5c\u7528\u7684\u5149\u53cd\u5e94\u548c\u6697\u53cd\u5e94", "relevant": [{"url": "http://127.0.0.1:18765/a5", "grade": 2}, {"url": "http://127.0.0.1:18765/b5", "grade": 1}]}
+{"query": "how to make braised pork belly", "relevant": [{"url": "http://127.0.0.1:18765/a6", "grade": 2}, {"url": "http://127.0.0.1:18765/b6", "grade": 1}]}
+{"query": "how to fix a car that will not start", "relevant": [{"url": "http://127.0.0.1:18765/a7", "grade": 2}, {"url": "http://127.0.0.1:18765/b7", "grade": 1}]}

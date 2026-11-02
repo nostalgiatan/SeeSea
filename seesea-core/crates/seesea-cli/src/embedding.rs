@@ -4,27 +4,77 @@ use seesea_embed::{Embedder, Kind};
 use seesea_pipeline::semantic::{SemanticConfig, SemanticReranker, TextEmbedder};
 use seesea_pipeline::{Error, Result};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 
-pub struct EmbedderAdapter(pub Embedder);
+/// The model loads on a background thread started with the pipeline, so the 1 to 2 seconds it takes
+/// (and the GPU kernel warm-up) overlap with the network round trips of the search itself. The first
+/// rerank waits for it if it is not done yet. A broken model file therefore shows up as a
+/// "degraded" note on the search, not as a startup failure.
+pub struct EmbedderAdapter {
+    slot: Arc<(
+        Mutex<Option<std::result::Result<Embedder, String>>>,
+        Condvar,
+    )>,
+    name: String,
+}
+
+impl EmbedderAdapter {
+    pub fn spawn(path: &Path) -> Self {
+        let slot = Arc::new((Mutex::new(None), Condvar::new()));
+        let (s, p) = (Arc::clone(&slot), path.to_path_buf());
+        std::thread::spawn(move || {
+            let loaded =
+                Embedder::load(&p).map_err(|e| format!("cannot load '{}': {e}", p.display()));
+            if let Ok(e) = &loaded {
+                // Compile the GPU kernels now rather than during the first search.
+                let _ = e.embed(
+                    &["warm up", "a second, slightly longer text for the warm up"],
+                    Kind::Passage,
+                );
+            }
+            *s.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(loaded);
+            s.1.notify_all();
+        });
+        let name = path
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        Self { slot, name }
+    }
+
+    fn with<T>(
+        &self,
+        f: impl FnOnce(&Embedder) -> std::result::Result<T, String>,
+    ) -> std::result::Result<T, String> {
+        let (lock, ready) = &*self.slot;
+        let mut guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        while guard.is_none() {
+            guard = ready.wait(guard).unwrap_or_else(|e| e.into_inner());
+        }
+        match guard.as_ref() {
+            Some(Ok(e)) => f(e),
+            Some(Err(e)) => Err(e.clone()),
+            None => unreachable!("waited for the loader"),
+        }
+    }
+}
 
 impl TextEmbedder for EmbedderAdapter {
     fn name(&self) -> &str {
-        self.0.name()
+        &self.name
     }
 
     fn embed_query(&self, text: &str) -> std::result::Result<Vec<f32>, String> {
-        self.0
-            .embed(&[text], Kind::Query)
-            .map_err(|e| e.to_string())?
-            .pop()
-            .ok_or_else(|| "no vector returned".to_string())
+        self.with(|e| {
+            e.embed(&[text], Kind::Query)
+                .map_err(|e| e.to_string())?
+                .pop()
+                .ok_or_else(|| "no vector returned".to_string())
+        })
     }
 
     fn embed_passages(&self, texts: &[&str]) -> std::result::Result<Vec<Vec<f32>>, String> {
-        self.0
-            .embed(texts, Kind::Passage)
-            .map_err(|e| e.to_string())
+        self.with(|e| e.embed(texts, Kind::Passage).map_err(|e| e.to_string()))
     }
 }
 
@@ -35,8 +85,12 @@ pub fn semantic_reranker(
     passages: Option<usize>,
     range: Option<(f32, f32)>,
 ) -> Result<Arc<SemanticReranker>> {
-    let embedder = Embedder::load(dir)
-        .map_err(|e| Error::Config(format!("cannot load the model in '{}': {e}", dir.display())))?;
+    if !dir.exists() {
+        return Err(Error::Config(format!(
+            "the model '{}' does not exist",
+            dir.display()
+        )));
+    }
     let mut cfg = SemanticConfig::default();
     if let Some(w) = weight {
         cfg.weight = w;
@@ -49,7 +103,7 @@ pub fn semantic_reranker(
         cfg.cos_ceil = ceil;
     }
     Ok(Arc::new(SemanticReranker::new(
-        Arc::new(EmbedderAdapter(embedder)),
+        Arc::new(EmbedderAdapter::spawn(dir)),
         cfg,
     )))
 }

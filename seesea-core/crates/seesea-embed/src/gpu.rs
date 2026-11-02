@@ -14,7 +14,7 @@ struct Linear {
 
 impl Linear {
     fn forward(&self, x: Tensor<2>) -> Tensor<2> {
-        x.matmul(self.weight.clone()) + self.bias.clone()
+        x.matmul(self.weight.clone().transpose()) + self.bias.clone()
     }
 }
 
@@ -51,7 +51,7 @@ pub struct GpuLayers {
     hidden: usize,
 }
 
-/// A layer's weights as plain f32 buffers: `(in, out)` row-major matrices and vectors.
+/// A layer's weights as plain f32 buffers: `(out, in)` row-major matrices (as stored in GGUF) and vectors.
 pub struct LinearData {
     pub weight: Vec<f32>,
     pub bias: Vec<f32>,
@@ -77,7 +77,7 @@ pub struct LayerData {
 
 impl GpuLayers {
     /// Open the default GPU. Returns `None` when there is no usable adapter (wgpu panics then).
-    pub fn open(heads: usize, hidden: usize) -> Option<Self> {
+    pub fn open() -> Option<Self> {
         let device =
             std::panic::catch_unwind(|| -> Device { WgpuDevice::default().into() }).ok()?;
         // Force adapter initialisation now, so a missing GPU shows up here and not mid-search.
@@ -89,15 +89,22 @@ impl GpuLayers {
         Some(Self {
             device,
             layers: Vec::new(),
-            heads,
-            hidden,
+            heads: 0,
+            hidden: 0,
         })
+    }
+
+    /// Set the model's shape; call before pushing layers.
+    pub fn shaped(mut self, heads: usize, hidden: usize) -> Self {
+        self.heads = heads;
+        self.hidden = hidden;
+        self
     }
 
     pub fn push(&mut self, eps: f64, l: LayerData) {
         let dev = &self.device;
         let lin = |d: LinearData| Linear {
-            weight: Tensor::from_data(TensorData::new(d.weight, [d.inputs, d.outputs]), dev),
+            weight: Tensor::from_data(TensorData::new(d.weight, [d.outputs, d.inputs]), dev),
             bias: Tensor::from_data(TensorData::new(d.bias, [1, d.outputs]), dev),
         };
         let h = self.hidden;
@@ -211,7 +218,7 @@ mod tests {
             for o in 0..l.outputs {
                 y[r * l.outputs + o] = l.bias[o]
                     + (0..l.inputs)
-                        .map(|i| x[r * l.inputs + i] * l.weight[i * l.outputs + o])
+                        .map(|i| x[r * l.inputs + i] * l.weight[o * l.inputs + i])
                         .sum::<f32>();
             }
         }
@@ -288,7 +295,7 @@ mod tests {
 
     #[test]
     fn a_layer_on_the_gpu_matches_a_plain_rust_reference() {
-        let Some(mut gpu) = GpuLayers::open(HEADS, H) else {
+        let Some(mut gpu) = GpuLayers::open().map(|g| g.shaped(HEADS, H)) else {
             eprintln!("no GPU adapter here; skipping");
             return;
         };

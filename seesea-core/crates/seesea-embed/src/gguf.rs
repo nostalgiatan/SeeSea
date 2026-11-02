@@ -11,6 +11,7 @@ use candle_core::{Device, Tensor};
 use candle_nn::{LayerNorm, Module};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::sync::Arc;
 use tokenizers::Tokenizer;
 
 enum Weight {
@@ -49,49 +50,6 @@ struct Layer {
     out_norm: LayerNorm,
 }
 
-#[cfg(feature = "gpu")]
-impl Linear {
-    fn to_data(&self) -> Result<crate::gpu::LinearData> {
-        let Weight::Dense(w) = &self.weight else {
-            return Err(bad("GPU execution needs dense weights"));
-        };
-        let (inputs, outputs) = w.dims2()?;
-        Ok(crate::gpu::LinearData {
-            weight: w.flatten_all()?.to_vec1()?,
-            bias: self.bias.to_vec1()?,
-            inputs,
-            outputs,
-        })
-    }
-}
-
-#[cfg(feature = "gpu")]
-fn norm_data(n: &LayerNorm) -> Result<crate::gpu::NormData> {
-    Ok(crate::gpu::NormData {
-        weight: n.weight().to_vec1()?,
-        bias: n
-            .bias()
-            .ok_or_else(|| bad("layer norm without bias"))?
-            .to_vec1()?,
-    })
-}
-
-#[cfg(feature = "gpu")]
-impl Layer {
-    fn to_data(&self) -> Result<crate::gpu::LayerData> {
-        Ok(crate::gpu::LayerData {
-            q: self.q.to_data()?,
-            k: self.k.to_data()?,
-            v: self.v.to_data()?,
-            out: self.out.to_data()?,
-            attn_norm: norm_data(&self.attn_norm)?,
-            up: self.up.to_data()?,
-            down: self.down.to_data()?,
-            out_norm: norm_data(&self.out_norm)?,
-        })
-    }
-}
-
 pub struct GgufBert {
     layers: Vec<Layer>,
     #[cfg(feature = "gpu")]
@@ -108,7 +66,6 @@ pub struct GgufBert {
     embed_norm: LayerNorm,
     device: Device,
     pub pooling: Pooling,
-    pub tokenizer: Tokenizer,
 }
 
 fn bad(e: impl ToString) -> EmbedError {
@@ -237,7 +194,77 @@ struct Reader<'a> {
     dequantize: bool,
 }
 
+/// One layer's tensors still in their stored (quantized) form, in a fixed order.
+#[cfg(feature = "gpu")]
+struct RawLayer(Vec<candle_core::quantized::QTensor>);
+
+#[cfg(feature = "gpu")]
+impl RawLayer {
+    fn decode(self) -> Result<crate::gpu::LayerData> {
+        let v = |t: &candle_core::quantized::QTensor| -> Result<Vec<f32>> {
+            Ok(t.dequantize(&Device::Cpu)?.flatten_all()?.to_vec1()?)
+        };
+        let lin = |w: &candle_core::quantized::QTensor, b: &candle_core::quantized::QTensor| {
+            let dims = w.shape().dims().to_vec();
+            Ok::<_, EmbedError>(crate::gpu::LinearData {
+                weight: v(w)?,
+                bias: v(b)?,
+                outputs: dims[0],
+                inputs: dims[1],
+            })
+        };
+        let t = &self.0;
+        let norm = |w, b| {
+            Ok::<_, EmbedError>(crate::gpu::NormData {
+                weight: v(w)?,
+                bias: v(b)?,
+            })
+        };
+        Ok(crate::gpu::LayerData {
+            q: lin(&t[0], &t[1])?,
+            k: lin(&t[2], &t[3])?,
+            v: lin(&t[4], &t[5])?,
+            out: lin(&t[6], &t[7])?,
+            attn_norm: norm(&t[8], &t[9])?,
+            up: lin(&t[10], &t[11])?,
+            down: lin(&t[12], &t[13])?,
+            out_norm: norm(&t[14], &t[15])?,
+        })
+    }
+}
+
 impl Reader<'_> {
+    #[cfg(feature = "gpu")]
+    fn raw_layer(&mut self, i: usize) -> Result<RawLayer> {
+        const NAMES: [&str; 16] = [
+            "attn_q.weight",
+            "attn_q.bias",
+            "attn_k.weight",
+            "attn_k.bias",
+            "attn_v.weight",
+            "attn_v.bias",
+            "attn_output.weight",
+            "attn_output.bias",
+            "attn_output_norm.weight",
+            "attn_output_norm.bias",
+            "ffn_up.weight",
+            "ffn_up.bias",
+            "ffn_down.weight",
+            "ffn_down.bias",
+            "layer_output_norm.weight",
+            "layer_output_norm.bias",
+        ];
+        NAMES
+            .iter()
+            .map(|n| {
+                self.c
+                    .tensor(self.file, &format!("blk.{i}.{n}"), self.device)
+                    .map_err(bad)
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(RawLayer)
+    }
+
     fn dense(&mut self, name: &str) -> Result<Tensor> {
         let q = self.c.tensor(self.file, name, self.device).map_err(bad)?;
         Ok(q.dequantize(self.device)?)
@@ -269,14 +296,18 @@ impl Reader<'_> {
 }
 
 impl GgufBert {
-    pub fn load(path: &Path, max_tokens: usize) -> Result<Self> {
+    pub fn load(path: &Path, max_tokens: usize) -> Result<(Self, Tokenizer)> {
         let device = Device::Cpu;
+        // Opening the adapter takes about half a second; do it while the file's metadata is parsed.
+        #[cfg(feature = "gpu")]
+        let gpu_opening = (!std::env::var("SEESEA_EMBED_DEVICE").is_ok_and(|v| v == "cpu"))
+            .then(|| std::thread::spawn(crate::gpu::GpuLayers::open));
         let io = |source| EmbedError::Io {
             path: path.display().to_string(),
             source,
         };
         let mut file = std::fs::File::open(path).map_err(io)?;
-        let c = Content::read(&mut file).map_err(bad)?;
+        let c = Arc::new(Content::read(&mut file).map_err(bad)?);
         let arch = meta(&c, "general.architecture")?.to_string().map_err(bad)?;
         if arch != "bert" {
             return Err(bad(format!(
@@ -299,6 +330,17 @@ impl GgufBert {
             return Err(bad("hidden size is not a multiple of the head count"));
         }
 
+        let position_rows = c
+            .tensor_infos
+            .get("position_embd.weight")
+            .map(|i| i.shape.dims()[0])
+            .ok_or_else(|| bad("missing tensor 'position_embd.weight'"))?;
+        let max_tokens = max_tokens.clamp(8, position_rows.min(context));
+        // Building the 250k-entry vocabulary is slow and independent of the weights: do it alongside.
+        let tokenizer_job = {
+            let c = Arc::clone(&c);
+            std::thread::spawn(move || build_tokenizer(&c, max_tokens))
+        };
         let mut r = Reader {
             c: &c,
             file: &mut file,
@@ -307,34 +349,42 @@ impl GgufBert {
             dequantize: std::env::var_os("SEESEA_EMBED_QUANTIZED").is_none(),
         };
         #[cfg(feature = "gpu")]
-        let mut gpu = if std::env::var("SEESEA_EMBED_DEVICE").is_ok_and(|v| v == "cpu") {
-            None
-        } else {
-            crate::gpu::GpuLayers::open(heads, hidden)
-        };
+        let mut gpu = gpu_opening
+            .and_then(|t| t.join().ok().flatten())
+            .map(|g| g.shaped(heads, hidden));
         #[cfg(feature = "gpu")]
-        if gpu.is_some() {
-            r.dequantize = true;
-        }
+        let on_gpu = gpu.is_some();
+        #[cfg(not(feature = "gpu"))]
+        let on_gpu = false;
         let mut layers = Vec::with_capacity(n_layers);
-        for i in 0..n_layers {
-            let p = format!("blk.{i}");
-            let layer = Layer {
-                q: r.linear(&format!("{p}.attn_q"))?,
-                k: r.linear(&format!("{p}.attn_k"))?,
-                v: r.linear(&format!("{p}.attn_v"))?,
-                out: r.linear(&format!("{p}.attn_output"))?,
-                attn_norm: r.norm(&format!("{p}.attn_output_norm"))?,
-                up: r.linear(&format!("{p}.ffn_up"))?,
-                down: r.linear(&format!("{p}.ffn_down"))?,
-                out_norm: r.norm(&format!("{p}.layer_output_norm"))?,
-            };
-            #[cfg(feature = "gpu")]
-            if let Some(g) = gpu.as_mut() {
-                g.push(eps, layer.to_data()?);
-                continue;
+        #[cfg(feature = "gpu")]
+        if let Some(g) = gpu.as_mut() {
+            // Decode every layer on all cores (decoding 4-bit weights is the slow part of loading),
+            // then upload them in order.
+            use rayon::prelude::*;
+            let raw: Vec<RawLayer> = (0..n_layers)
+                .map(|i| r.raw_layer(i))
+                .collect::<Result<_>>()?;
+            let decoded: Vec<Result<crate::gpu::LayerData>> =
+                raw.into_par_iter().map(RawLayer::decode).collect();
+            for d in decoded {
+                g.push(eps, d?);
             }
-            layers.push(layer);
+        }
+        if !on_gpu {
+            for i in 0..n_layers {
+                let p = format!("blk.{i}");
+                layers.push(Layer {
+                    q: r.linear(&format!("{p}.attn_q"))?,
+                    k: r.linear(&format!("{p}.attn_k"))?,
+                    v: r.linear(&format!("{p}.attn_v"))?,
+                    out: r.linear(&format!("{p}.attn_output"))?,
+                    attn_norm: r.norm(&format!("{p}.attn_output_norm"))?,
+                    up: r.linear(&format!("{p}.ffn_up"))?,
+                    down: r.linear(&format!("{p}.ffn_down"))?,
+                    out_norm: r.norm(&format!("{p}.layer_output_norm"))?,
+                });
+            }
         }
         let positions = r.dense("position_embd.weight")?;
         let type_embedding = r.dense("token_types.weight")?;
@@ -355,8 +405,10 @@ impl GgufBert {
             .map_err(io)?;
         file.read_exact(&mut tok_raw).map_err(io)?;
 
-        let max_tokens = max_tokens.clamp(8, positions.dims2()?.0.min(context));
-        Ok(Self {
+        let tokenizer = tokenizer_job
+            .join()
+            .map_err(|_| EmbedError::Tokenizer("the tokenizer builder panicked".into()))??;
+        let model = Self {
             layers,
             #[cfg(feature = "gpu")]
             gpu,
@@ -371,8 +423,8 @@ impl GgufBert {
             embed_norm,
             device,
             pooling,
-            tokenizer: build_tokenizer(&c, max_tokens)?,
-        })
+        };
+        Ok((model, tokenizer))
     }
 
     /// Whether the layers run on a GPU.
