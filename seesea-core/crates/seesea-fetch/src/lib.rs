@@ -1,8 +1,15 @@
 //! Fetch one page for extraction.
 //!
 //! Only public http/https targets are fetched. The check covers the host name and IP literals, and
-//! is repeated on the final URL after redirects. A host name that resolves to a private address
-//! (DNS rebinding) is not caught here; that needs a check at connection time.
+//! is repeated on the final URL after redirects. A host name is also resolved and every address it
+//! maps to is checked, so a public-looking name that points at a private address is refused.
+//!
+//! The DNS check is deliberately forgiving, because it must not make the tool unusable in odd
+//! networks: addresses in `198.18.0.0/15` (the "fake IP" range that Clash-style TUN proxies answer
+//! every lookup with) count as public, a lookup that fails or takes too long is not a reason to
+//! refuse, and with a proxy configured the proxy does the resolving, so there is nothing to check.
+//! It is a check before connecting, not at connection time: a name that changes its answer between
+//! the check and the connection is not caught.
 
 use seesea_net::HttpClient;
 use seesea_net::privacy::retryable;
@@ -129,6 +136,41 @@ fn check_ip(ip: IpAddr) -> Result<(), FetchError> {
     }
 }
 
+/// The first resolved address that is private, if any.
+fn first_private(addrs: &[IpAddr]) -> Option<IpAddr> {
+    addrs.iter().copied().find(|ip| check_ip(*ip).is_err())
+}
+
+/// Resolve the host of `url` and refuse it if any of its addresses is private.
+async fn check_resolved(
+    url: &Url,
+    opts: &FetchOptions,
+    client: &HttpClient,
+) -> Result<(), FetchError> {
+    if opts.allow_private || client.config().await.proxy.enabled {
+        return Ok(());
+    }
+    let Some(Host::Domain(domain)) = url.host() else {
+        return Ok(());
+    };
+    let port = url.port_or_known_default().unwrap_or(443);
+    let lookup = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        tokio::net::lookup_host((domain.to_string(), port)),
+    )
+    .await;
+    let Ok(Ok(addrs)) = lookup else {
+        return Ok(());
+    };
+    let addrs: Vec<IpAddr> = addrs.map(|a| a.ip()).collect();
+    match first_private(&addrs) {
+        Some(ip) => Err(FetchError::Blocked(format!(
+            "{domain} resolves to a private address ({ip})"
+        ))),
+        None => Ok(()),
+    }
+}
+
 /// Attempts per page: the first, plus up to two as a different browser.
 const ATTEMPTS: usize = 3;
 
@@ -145,6 +187,7 @@ pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchErro
     let client = HttpClient::instance()
         .await
         .map_err(|e| FetchError::Network(e.to_string()))?;
+    check_resolved(&url, opts, &client).await?;
     let started = std::time::Instant::now();
     let budget = std::time::Duration::from_secs(opts.timeout_secs.max(1));
 
@@ -179,7 +222,8 @@ pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchErro
 
     // A redirect may have led somewhere private; do not hand its content back.
     let final_url = response.url().to_string();
-    check_target_with(&final_url, opts.allow_private)?;
+    let final_parsed = check_target_with(&final_url, opts.allow_private)?;
+    check_resolved(&final_parsed, opts, &client).await?;
 
     let status = response.status().as_u16();
     if !response.status().is_success() {
@@ -207,6 +251,34 @@ pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchErro
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolved_addresses_are_judged_but_the_fake_ip_range_is_public() {
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        // What a TUN-style proxy answers for every name.
+        assert_eq!(first_private(&[ip("198.18.5.140"), ip("198.19.0.1")]), None);
+        assert_eq!(
+            first_private(&[ip("93.184.216.34"), ip("2606:2800:220:1::1")]),
+            None
+        );
+        assert_eq!(
+            first_private(&[ip("93.184.216.34"), ip("10.0.0.5")]),
+            Some(ip("10.0.0.5"))
+        );
+        for bad in [
+            "127.0.0.1",
+            "192.168.1.1",
+            "172.16.0.9",
+            "169.254.169.254",
+            "0.0.0.0",
+            "::1",
+            "fd00::1",
+            "fe80::1",
+            "::ffff:10.0.0.1",
+        ] {
+            assert!(first_private(&[ip(bad)]).is_some(), "{bad}");
+        }
+    }
 
     #[test]
     fn rejects_non_http_and_local_targets() {

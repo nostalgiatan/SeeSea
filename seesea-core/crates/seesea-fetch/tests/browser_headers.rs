@@ -121,3 +121,18 @@ async fn browser_headers_can_be_turned_off() {
     assert!(fetch(&url, &off).await.is_err());
     assert_eq!(seen.lock().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn a_lookup_that_fails_is_not_a_reason_to_refuse() {
+    // Not a private address and not resolvable: the request itself fails, as a network error,
+    // not as a policy block.
+    let r = fetch(
+        "http://no-such-host.invalid/",
+        &FetchOptions {
+            timeout_secs: 5,
+            ..Default::default()
+        },
+    )
+    .await;
+    assert!(matches!(r, Err(FetchError::Network(_))), "{r:?}");
+}

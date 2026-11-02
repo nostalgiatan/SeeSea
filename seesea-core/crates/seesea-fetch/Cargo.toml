@@ -7,7 +7,7 @@ license = "AGPL-3.0-or-later"
 
 [dependencies]
 seesea-net = { path = "../seesea-net" }
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "net"] }
 url = "2"
 
 [dev-dependencies]
