@@ -31,6 +31,9 @@ struct Cli {
 
 #[derive(Args)]
 struct NetArgs {
+    /// SQLite file with users and API keys (default: next to the models).
+    #[arg(long, env = "SEESEA_AUTH_DB", global = true)]
+    auth_db: Option<PathBuf>,
     /// Config file (default ~/.config/seesea/config.toml). Flags and SEESEA_* variables win over it.
     #[arg(long, env = "SEESEA_CONFIG", global = true)]
     config: Option<PathBuf>,
@@ -192,6 +195,22 @@ enum Command {
         #[command(subcommand)]
         action: Option<ModelsAction>,
     },
+    /// Manage API users (accounts) for `seesea serve`.
+    Users {
+        #[command(subcommand)]
+        action: UsersAction,
+    },
+    /// Manage API keys.
+    Keys {
+        #[command(subcommand)]
+        action: KeysAction,
+    },
+    /// Credits a user spent per day.
+    Usage {
+        user: String,
+        #[arg(long, default_value_t = 14)]
+        days: u32,
+    },
     /// Run the HTTP server (JSON API and MCP on /mcp).
     Serve {
         #[arg(long, default_value = "127.0.0.1:8080")]
@@ -201,9 +220,44 @@ enum Command {
         api_key: Option<String>,
         #[arg(long, default_value_t = 64)]
         max_concurrent: usize,
+        /// Listen on a non-loopback address although no API key or user exists.
+        #[arg(long)]
+        allow_open: bool,
     },
     /// Run as an MCP server over standard input and output.
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum UsersAction {
+    /// Create a user. The plan is one defined in the config file (default: `default`).
+    Add {
+        name: String,
+        #[arg(long, default_value = "default")]
+        plan: String,
+    },
+    List,
+    /// Refuse every key of this user until `enable`.
+    Disable { name: String },
+    Enable { name: String },
+    /// Move a user to another plan.
+    Plan { name: String, plan: String },
+}
+
+#[derive(Subcommand)]
+enum KeysAction {
+    /// Create a key; it is printed once and cannot be shown again.
+    Create {
+        user: String,
+        /// A label to tell keys apart.
+        #[arg(long, default_value = "default")]
+        name: String,
+        #[arg(long)]
+        expires_days: Option<u32>,
+    },
+    List { user: String },
+    /// Revoke a key by its public id (`ss_xxxxxxxx`, shown by `keys list`).
+    Revoke { id: String },
 }
 
 #[derive(Subcommand)]
@@ -223,6 +277,7 @@ fn apply_file(net: &mut NetArgs, f: &FileConfig, use_model: bool) {
     fill(&mut net.brave_key, &f.brave_key);
     fill(&mut net.proxy, &f.proxy);
     fill(&mut net.lightpanda, &f.lightpanda);
+    fill(&mut net.auth_db, &f.auth_db);
     net.no_render |= f.no_render.unwrap_or(false);
     fill(&mut net.cache_dir, &f.cache_dir);
     fill(&mut net.fuzzy_cache, &f.fuzzy_cache);
@@ -273,6 +328,107 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         lightpanda: net.lightpanda.clone(),
         no_render: net.no_render,
     }
+}
+
+fn open_auth(net: &NetArgs) -> Result<seesea_auth::Store, Error> {
+    let path = net.auth_db.clone().unwrap_or_else(userconfig::default_auth_db);
+    seesea_auth::Store::open(&path)
+        .map_err(|e| Error::Config(format!("{}: {e}", path.display())))
+}
+
+fn account_error(e: seesea_auth::AuthError) -> Error {
+    match e {
+        seesea_auth::AuthError::NotFound(_) | seesea_auth::AuthError::Exists(_) => Error::InvalidRequest(e.to_string()),
+        other => Error::Config(other.to_string()),
+    }
+}
+
+fn when(t: i64) -> String {
+    chrono::DateTime::from_timestamp(t, 0).map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default()
+}
+
+fn manage_accounts(command: &Command, store: &seesea_auth::Store, file: &FileConfig, json: bool) -> Result<(), Error> {
+    let known_plans = {
+        let mut p = seesea_auth::default_plans();
+        p.extend(file.plans.clone());
+        p
+    };
+    match command {
+        Command::Users { action } => match action {
+            UsersAction::Add { name, plan } => {
+                if !known_plans.contains_key(plan) {
+                    let mut names: Vec<_> = known_plans.keys().cloned().collect();
+                    names.sort();
+                    return Err(Error::InvalidRequest(format!("unknown plan '{plan}' (defined: {})", names.join(", "))));
+                }
+                let u = store.create_user(name, plan).map_err(account_error)?;
+                println!("created user {} (plan {}); `seesea keys create {}` makes a key", u.name, u.plan, u.name);
+            }
+            UsersAction::List => {
+                let users = store.users().map_err(account_error)?;
+                if json {
+                    let rows: Vec<_> = users.iter().map(|u| serde_json::json!({"name": u.name, "plan": u.plan, "disabled": u.disabled})).collect();
+                    return print_json(&rows);
+                }
+                for u in users {
+                    println!("{:<20} plan {:<12} {}  created {}", u.name, u.plan, if u.disabled { "DISABLED" } else { "active  " }, when(u.created));
+                }
+            }
+            UsersAction::Disable { name } => {
+                store.set_disabled(name, true).map_err(account_error)?;
+                println!("{name} is disabled");
+            }
+            UsersAction::Enable { name } => {
+                store.set_disabled(name, false).map_err(account_error)?;
+                println!("{name} is enabled");
+            }
+            UsersAction::Plan { name, plan } => {
+                if !known_plans.contains_key(plan) {
+                    return Err(Error::InvalidRequest(format!("unknown plan '{plan}'")));
+                }
+                store.set_plan(name, plan).map_err(account_error)?;
+                println!("{name} is on plan {plan}");
+            }
+        },
+        Command::Keys { action } => match action {
+            KeysAction::Create { user, name, expires_days } => {
+                let (info, key) = store.create_key(user, name, *expires_days).map_err(account_error)?;
+                if json {
+                    return print_json(&serde_json::json!({"id": info.public_id, "key": key}));
+                }
+                println!("{key}\n\nkey {} for {user}: this is the only time it is shown. Send it as `Authorization: Bearer <key>`.", info.public_id);
+            }
+            KeysAction::List { user } => {
+                for k in store.keys(user).map_err(account_error)? {
+                    println!(
+                        "{}  {:<16} {}  created {}  last used {}",
+                        k.public_id,
+                        k.name,
+                        if k.revoked { "REVOKED" } else if k.expires.is_some_and(|e| e <= chrono::Utc::now().timestamp()) { "EXPIRED" } else { "active " },
+                        when(k.created),
+                        k.last_used.map(when).unwrap_or_else(|| "never".into())
+                    );
+                }
+            }
+            KeysAction::Revoke { id } => {
+                store.revoke_key(id).map_err(account_error)?;
+                println!("{id} is revoked");
+            }
+        },
+        Command::Usage { user, days } => {
+            let history = store.usage_history(user, *days).map_err(account_error)?;
+            if json {
+                let rows: Vec<_> = history.iter().map(|(d, c)| serde_json::json!({"day": d, "credits": c})).collect();
+                return print_json(&rows);
+            }
+            for (day, credits) in history {
+                let date = chrono::DateTime::from_timestamp(day as i64 * 86400, 0).map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default();
+                println!("{date}  {credits} credits");
+            }
+        }
+        _ => unreachable!(),
+    }
+    Ok(())
 }
 
 fn print_json<T: Serialize>(value: &T) -> Result<(), Error> {
@@ -385,6 +541,13 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                 println!("{}: saved {}", spec.key, path.display());
             }
             return Ok(());
+        }
+        _ => {}
+    }
+    match &cli.command {
+        Command::Users { .. } | Command::Keys { .. } | Command::Usage { .. } => {
+            let store = open_auth(&cli.net)?;
+            return manage_accounts(&cli.command, &store, &file, json);
         }
         _ => {}
     }
@@ -610,8 +773,17 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             addr,
             api_key,
             max_concurrent,
-        } => server::serve(addr, AppState::new(pipeline, api_key), max_concurrent).await,
-        Command::Config { .. } | Command::Models { .. } => unreachable!("handled above"),
+            allow_open,
+        } => {
+            let store = open_auth(&cli.net)?;
+            let access = seesea_cli::access::Access::new(Some(store), file.plans.clone(), api_key);
+            server::serve(addr, AppState::with_access(pipeline, access), max_concurrent, allow_open).await
+        }
+        Command::Config { .. }
+        | Command::Models { .. }
+        | Command::Users { .. }
+        | Command::Keys { .. }
+        | Command::Usage { .. } => unreachable!("handled above"),
         Command::Mcp => {
             // Standard output belongs to the protocol; anything else goes to standard error.
             eprintln!("seesea MCP server ready on stdio");

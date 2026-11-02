@@ -24,6 +24,12 @@ pub struct FileConfig {
     pub lightpanda: Option<PathBuf>,
     /// Never render, even when Lightpanda is installed.
     pub no_render: Option<bool>,
+    /// The SQLite file with users and API keys (default: next to the models).
+    pub auth_db: Option<PathBuf>,
+    /// Plans for API users, by name: `[plans.free] per_minute = 20`. `default` and `unlimited`
+    /// exist unless redefined.
+    #[serde(default)]
+    pub plans: std::collections::HashMap<String, seesea_auth::Plan>,
     #[serde(default)]
     pub models: Models,
     #[serde(default)]
@@ -82,16 +88,22 @@ pub fn default_path() -> PathBuf {
     })
 }
 
+/// `<data dir>/seesea`.
+pub fn data_dir() -> PathBuf {
+    env_path("XDG_DATA_HOME")
+        .or_else(|| env_path("LOCALAPPDATA"))
+        .or_else(|| env_path("HOME").map(|h| h.join(".local").join("share")))
+        .unwrap_or_else(std::env::temp_dir)
+        .join("seesea")
+}
+
 /// `<data dir>/seesea/models` unless the config says otherwise.
 pub fn default_models_dir() -> PathBuf {
-    env_path("SEESEA_MODELS_DIR").unwrap_or_else(|| {
-        env_path("XDG_DATA_HOME")
-            .or_else(|| env_path("LOCALAPPDATA"))
-            .or_else(|| env_path("HOME").map(|h| h.join(".local").join("share")))
-            .unwrap_or_else(std::env::temp_dir)
-            .join("seesea")
-            .join("models")
-    })
+    env_path("SEESEA_MODELS_DIR").unwrap_or_else(|| data_dir().join("models"))
+}
+
+pub fn default_auth_db() -> PathBuf {
+    data_dir().join("auth.db")
 }
 
 /// `~/x` is `$HOME/x`; a TOML file has no other way to say it.
@@ -152,6 +164,18 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # no_render = false
 # fuzzy_cache = 0.8          # reuse cached results for similar queries
 # cache_dir = "~/.cache/seesea"
+
+# Users and API keys for `seesea serve` live in this SQLite file (see `seesea users`, `seesea keys`).
+# auth_db = "~/.local/share/seesea/auth.db"
+
+# Plans for API users. `default` (60 credits/min, burst 30, 5000/day, 4 at once) and `unlimited`
+# exist already; a fast search costs 1 credit, a standard one 2, a deep one 5.
+# [plans.free]
+# per_minute = 20
+# burst = 10
+# per_day = 500
+# max_concurrent = 2
+# deep = false
 
 [models]
 # `seesea models` checks and downloads into this directory (default ~/.local/share/seesea/models).

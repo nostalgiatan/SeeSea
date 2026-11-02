@@ -1,7 +1,8 @@
 //! The HTTP server: JSON endpoints for search, extract and sources, plus MCP over `POST /mcp`.
 
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Query, Request, State};
+use crate::access::{Access, Grant, Refusal, base_cost, mode_extra};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Extension, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -19,16 +20,22 @@ use tower::limit::ConcurrencyLimitLayer;
 pub struct AppState {
     pub pipeline: Arc<Pipeline>,
     pub mcp: Arc<McpServer>,
-    /// When set, every endpoint except `/health` needs `Authorization: Bearer <key>`.
-    pub api_key: Option<Arc<str>>,
+    /// Keys, plans and limits. When a key or user exists, every endpoint except `/health` needs
+    /// `Authorization: Bearer <key>` (or `X-API-Key`).
+    pub access: Arc<Access>,
 }
 
 impl AppState {
+    /// A server with at most one shared key and no limits.
     pub fn new(pipeline: Arc<Pipeline>, api_key: Option<String>) -> Self {
+        Self::with_access(pipeline, Access::with_root_key(api_key))
+    }
+
+    pub fn with_access(pipeline: Arc<Pipeline>, access: Access) -> Self {
         Self {
             mcp: Arc::new(McpServer::new(Arc::clone(&pipeline))),
             pipeline,
-            api_key: api_key.filter(|k| !k.is_empty()).map(Into::into),
+            access: Arc::new(access),
         }
     }
 }
@@ -57,34 +64,73 @@ fn parse_body<T: serde::de::DeserializeOwned>(body: &Bytes) -> Result<T, Error> 
         .map_err(|e| Error::InvalidRequest(format!("invalid JSON body: {e}")))
 }
 
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+fn presented_key(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .or_else(|| headers.get("x-api-key").and_then(|v| v.to_str().ok()))
+        .map(str::trim)
 }
 
-async fn auth(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    req: Request,
-    next: Next,
-) -> Response {
-    if let Some(key) = &state.api_key
-        && req.uri().path() != "/health"
-    {
-        let given = headers
-            .get(header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "));
-        if !given.is_some_and(|g| constant_time_eq(g.as_bytes(), key.as_bytes())) {
-            let body = json!({"code": "unauthorized", "message": "missing or wrong bearer token"});
-            return (
-                StatusCode::UNAUTHORIZED,
-                [(header::WWW_AUTHENTICATE, "Bearer")],
-                Json(body),
-            )
-                .into_response();
+fn refusal_response(r: Refusal) -> Response {
+    match r {
+        Refusal::Unauthorized(message) => (
+            StatusCode::UNAUTHORIZED,
+            [(header::WWW_AUTHENTICATE, "Bearer".to_string())],
+            Json(json!({"code": "unauthorized", "message": message})),
+        )
+            .into_response(),
+        Refusal::Limited { denied, code, message, retry_after } => {
+            let status = if code == "internal_error" {
+                StatusCode::INTERNAL_SERVER_ERROR
+            } else {
+                StatusCode::TOO_MANY_REQUESTS
+            };
+            let mut headers = HeaderMap::new();
+            headers.insert(header::RETRY_AFTER, retry_after.into());
+            if let Some(d) = denied {
+                headers.insert("x-ratelimit-limit", d.limit_per_minute.into());
+                headers.insert("x-ratelimit-remaining", 0.into());
+            }
+            (status, headers, Json(json!({"code": code, "message": message, "retry_after": retry_after}))).into_response()
         }
     }
-    next.run(req).await
+}
+
+async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Request, next: Next) -> Response {
+    if req.uri().path() == "/health" || !state.access.required() {
+        return next.run(req).await;
+    }
+    let ip = req.extensions().get::<ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip());
+    let cost = base_cost(req.uri().path());
+    let allowed = match state.access.admit(presented_key(&headers), ip, cost) {
+        Ok(a) => a,
+        Err(r) => return refusal_response(r),
+    };
+    req.extensions_mut().insert(allowed.grant.clone());
+    let mut response = next.run(req).await;
+    for (k, v) in allowed.headers {
+        if let Ok(v) = header::HeaderValue::from_str(&v) {
+            response.headers_mut().insert(header::HeaderName::from_static(k), v);
+        }
+    }
+    drop(allowed.permit);
+    response
+}
+
+/// Apply the plan to a search: `deep` may be off, and dearer modes cost more.
+fn meter_search(s: &AppState, grant: &Option<Extension<Grant>>, mode: Mode) -> Result<(), Error> {
+    if let Some(Extension(g)) = grant {
+        if mode == Mode::Deep && !g.plan.deep {
+            return Err(Error::InvalidRequest(format!(
+                "mode=deep is not part of the plan of '{}'",
+                g.name
+            )));
+        }
+        s.access.charge(g, mode_extra(mode));
+    }
+    Ok(())
 }
 
 async fn health(State(s): State<AppState>) -> Json<Value> {
@@ -139,16 +185,21 @@ impl SearchParams {
 
 async fn search_get(
     State(s): State<AppState>,
+    grant: Option<Extension<Grant>>,
     Query(p): Query<SearchParams>,
 ) -> ApiResult<seesea_pipeline::SearchResponse> {
-    Ok(Json(s.pipeline.search(&p.into_request()?).await?))
+    let req = p.into_request()?;
+    meter_search(&s, &grant, req.mode)?;
+    Ok(Json(s.pipeline.search(&req).await?))
 }
 
 async fn search_post(
     State(s): State<AppState>,
+    grant: Option<Extension<Grant>>,
     body: Bytes,
 ) -> ApiResult<seesea_pipeline::SearchResponse> {
     let req: SearchRequest = parse_body(&body)?;
+    meter_search(&s, &grant, req.mode)?;
     Ok(Json(s.pipeline.search(&req).await?))
 }
 
@@ -266,16 +317,38 @@ pub async fn serve(
     addr: std::net::SocketAddr,
     state: AppState,
     max_concurrent: usize,
+    allow_open: bool,
 ) -> Result<(), Error> {
+    if !addr.ip().is_loopback() && !state.access.required() && !allow_open {
+        return Err(Error::Config(format!(
+            "refusing to listen on {addr} without any API key: create one (`seesea users add NAME`, `seesea keys create NAME`), pass --api-key, or --allow-open"
+        )));
+    }
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|e| Error::Config(format!("cannot listen on {addr}: {e}")))?;
     eprintln!("seesea listening on http://{}", listener.local_addr()?);
-    axum::serve(listener, router(state, max_concurrent))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
+    let access = Arc::clone(&state.access);
+    let flusher = tokio::spawn({
+        let access = Arc::clone(&access);
+        async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                access.flush();
+            }
+        }
+    });
+    let served = axum::serve(
+        listener,
+        router(state, max_concurrent).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
+    .await;
+    flusher.abort();
+    access.flush();
+    served?;
     Ok(())
 }
 
@@ -284,10 +357,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn constant_time_eq_compares_content_and_length() {
-        assert!(constant_time_eq(b"secret", b"secret"));
-        assert!(!constant_time_eq(b"secret", b"secreT"));
-        assert!(!constant_time_eq(b"secret", b"secre"));
+    fn keys_are_read_from_either_header() {
+        let mut h = HeaderMap::new();
+        assert_eq!(presented_key(&h), None);
+        h.insert("x-api-key", "k1".parse().unwrap());
+        assert_eq!(presented_key(&h), Some("k1"));
+        h.insert(header::AUTHORIZATION, "Bearer k2".parse().unwrap());
+        assert_eq!(presented_key(&h), Some("k2"));
+        h.insert(header::AUTHORIZATION, "Basic abc".parse().unwrap());
+        assert_eq!(presented_key(&h), Some("k1"), "only Bearer counts");
     }
 
     #[test]

@@ -15,6 +15,7 @@ members = [
     "crates/seesea-mcp",
     "crates/seesea-cli",
     "crates/seesea-embed",
+    "crates/seesea-auth",
     "crates/error",
     "crates/error-derive",
 ]

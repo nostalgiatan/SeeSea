@@ -28,6 +28,7 @@ seesea-search = { path = "../seesea-search" }
 seesea-derive = { path = "../seesea-derive" }
 seesea-net = { path = "../seesea-net" }
 seesea-config = { path = "../seesea-config" }
+seesea-auth = { path = "../seesea-auth" }
 async-trait = "0.1.89"
 axum = { version = "0.8.7", features = ["json"] }
 chrono = { version = "0.4.42", features = ["serde"] }
