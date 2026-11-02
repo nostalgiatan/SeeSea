@@ -40,6 +40,7 @@ Exit codes: 0 ok, 1 other, 2 bad usage, 3 configuration or no sources, 4 network
 
 - The SearXNG and Brave parsers are tested against hand-written fixtures, not live services. Run `seesea sources --check` against yours.
 - The scrape engines (Bing, Baidu, Sogou) are unverified from the build sandbox and fragile by nature.
+- The model may also be a single `.gguf` file (BERT/XLM-R layout, e.g. bge-m3 Q4_0, about 400 MB): read and decoded in pure Rust, with linear layers expanded to f32 in memory (about 1.5 GB). bge-m3 is accurate and cross-lingual (an English query finds a Chinese passage) but costs roughly 5 ms per token on CPU, so encoding dozens of passages takes tens of seconds; use `--semantic-passages 1 --semantic-range 0.3,0.75` and only when quality matters most. Day to day, a small-class model is about twenty times cheaper. `CANDLE_NUM_THREADS=32` helps on many-core machines.
 - Semantic reranking needs a BERT-style embedding model in `--model-dir` (config.json, tokenizer.json, model.safetensors; e.g. BAAI/bge-small-en-v1.5, with a `seesea-embed.json` setting pooling and prefixes). It runs on the CPU via candle, no C/C++ runtime. Without a model, reranking is lexical (BM25 plus title-support). The score mapping (`cos_floor`/`cos_ceil`) is tuned for BGE-style models and not yet validated on a judged set.
 - `deep` mode reads more pages but does not rewrite queries yet.
 - SSRF guard checks the target and redirects but does not pin DNS results.

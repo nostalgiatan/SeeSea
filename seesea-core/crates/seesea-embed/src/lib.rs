@@ -14,6 +14,8 @@
 //! Without it the pooling is read from the sentence-transformers `1_Pooling/config.json` when
 //! present and is mean pooling otherwise.
 
+mod gguf;
+
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config};
@@ -66,8 +68,13 @@ struct Sidecar {
     max_tokens: Option<usize>,
 }
 
+enum Backend {
+    Bert(BertModel),
+    Gguf(Box<gguf::GgufBert>),
+}
+
 pub struct Embedder {
-    model: BertModel,
+    model: Backend,
     tokenizer: Tokenizer,
     device: Device,
     pooling: Pooling,
@@ -78,6 +85,7 @@ pub struct Embedder {
 }
 
 const DEFAULT_MAX_TOKENS: usize = 256;
+const DEFAULT_GGUF_TOKENS: usize = 512;
 const BATCH: usize = 16;
 
 fn read(path: &Path) -> Result<Vec<u8>> {
@@ -95,8 +103,33 @@ fn invalid(what: &'static str, e: impl ToString) -> EmbedError {
 }
 
 impl Embedder {
-    pub fn load(dir: impl AsRef<Path>) -> Result<Self> {
-        let dir = dir.as_ref();
+    /// Load a model directory (safetensors) or a single `.gguf` file.
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        if gguf::is_gguf(path) {
+            return Self::load_gguf(path);
+        }
+        Self::load_dir(path)
+    }
+
+    fn load_gguf(path: &Path) -> Result<Self> {
+        let model = gguf::GgufBert::load(path, DEFAULT_GGUF_TOKENS)?;
+        Ok(Self {
+            tokenizer: model.tokenizer.clone(),
+            pooling: model.pooling,
+            dim: model.hidden(),
+            device: Device::Cpu,
+            query_prefix: String::new(),
+            passage_prefix: String::new(),
+            name: path
+                .file_stem()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "embedder".into()),
+            model: Backend::Gguf(Box::new(model)),
+        })
+    }
+
+    fn load_dir(dir: &Path) -> Result<Self> {
         let config: Config = serde_json::from_slice(&read(&dir.join("config.json"))?)
             .map_err(|e| invalid("config.json", e))?;
         let dim = config.hidden_size;
@@ -130,7 +163,7 @@ impl Embedder {
         let device = Device::Cpu;
         let weights = read(&dir.join("model.safetensors"))?;
         let vb = VarBuilder::from_buffered_safetensors(weights, DType::F32, &device)?;
-        let model = BertModel::load(vb, &config)?;
+        let model = Backend::Bert(BertModel::load(vb, &config)?);
 
         Ok(Self {
             model,
@@ -201,8 +234,13 @@ impl Embedder {
             .collect();
         let ids = Tensor::from_vec(ids, (rows, width), &self.device)?;
         let mask = Tensor::from_vec(mask, (rows, width), &self.device)?;
-        let types = ids.zeros_like()?;
-        let hidden = self.model.forward(&ids, &types, Some(&mask))?;
+        let hidden = match &self.model {
+            Backend::Bert(m) => m.forward(&ids, &ids.zeros_like()?, Some(&mask))?,
+            Backend::Gguf(m) => {
+                let flat = |t: &Tensor| t.flatten_all()?.to_vec1::<u32>();
+                m.forward(&flat(&ids)?, &flat(&mask)?, rows, width)?
+            }
+        };
 
         let pooled = match self.pooling {
             Pooling::Cls => hidden.narrow(1, 0, 1)?.squeeze(1)?,

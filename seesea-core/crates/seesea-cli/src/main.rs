@@ -58,6 +58,12 @@ struct NetArgs {
     /// Share of content relevance taken from the embedding score, 0..1 (default 0.6).
     #[arg(long, env = "SEESEA_SEMANTIC_WEIGHT", global = true)]
     semantic_weight: Option<f64>,
+    /// Passages embedded per page: the opening one plus the best matches (default 4). Lower is faster.
+    #[arg(long, env = "SEESEA_SEMANTIC_PASSAGES", global = true)]
+    semantic_passages: Option<usize>,
+    /// FLOOR,CEIL: cosine similarities mapped to relevance 0 and 1 (BGE-small ~0.45,0.85; bge-m3 ~0.3,0.75).
+    #[arg(long, env = "SEESEA_SEMANTIC_RANGE", global = true)]
+    semantic_range: Option<String>,
     #[arg(long, global = true)]
     no_cache: bool,
     /// Allow fetching loopback and private addresses.
@@ -168,6 +174,8 @@ fn settings(net: &NetArgs, memory_cache: bool) -> Settings {
         fuzzy_cache: net.fuzzy_cache,
         model_dir: net.model_dir.clone(),
         semantic_weight: net.semantic_weight,
+        semantic_passages: net.semantic_passages,
+        semantic_range: net.semantic_range.clone(),
     }
 }
 

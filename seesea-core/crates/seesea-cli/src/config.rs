@@ -24,6 +24,10 @@ pub struct Settings {
     pub model_dir: Option<PathBuf>,
     /// Share of content relevance that comes from the embedding score (default 0.6).
     pub semantic_weight: Option<f64>,
+    /// Passages embedded per page (the opening one plus the best matches); fewer is faster.
+    pub semantic_passages: Option<usize>,
+    /// `FLOOR,CEIL` cosine similarities that map to relevance 0 and 1 (model specific).
+    pub semantic_range: Option<String>,
 }
 
 /// `~/.cache/seesea` (or the platform equivalent).
@@ -90,7 +94,19 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
     let reranker = settings
         .model_dir
         .as_deref()
-        .map(|d| crate::embedding::semantic_reranker(d, settings.semantic_weight))
+        .map(|d| {
+            let range = settings
+                .semantic_range
+                .as_deref()
+                .map(crate::embedding::parse_range)
+                .transpose()?;
+            crate::embedding::semantic_reranker(
+                d,
+                settings.semantic_weight,
+                settings.semantic_passages,
+                range,
+            )
+        })
         .transpose()?;
     let mut pipeline = Pipeline::with_net_fetcher(sources, fetch)
         .config(PipelineConfig {

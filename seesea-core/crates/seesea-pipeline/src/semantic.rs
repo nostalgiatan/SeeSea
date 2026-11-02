@@ -6,6 +6,7 @@
 //! embedded, so a title that promises more than the page delivers cannot lift a page here either.
 
 use crate::rerank::{DocView, LexicalReranker, RerankScore, Reranker, strip_title_echo};
+use crate::text::{coverage, token_set};
 use std::sync::Arc;
 
 /// Turns text into unit-length vectors. Implementations may be slow (they run on a blocking thread).
@@ -34,9 +35,9 @@ impl Default for SemanticConfig {
     fn default() -> Self {
         Self {
             weight: 0.6,
-            max_passages: 16,
+            max_passages: 4,
             min_chars: 120,
-            max_chars: 900,
+            max_chars: 700,
             cos_floor: 0.45,
             cos_ceil: 0.85,
         }
@@ -95,6 +96,32 @@ pub fn passages(body: &str, min_chars: usize, max_chars: usize) -> Vec<String> {
     out
 }
 
+/// Keep at most `keep` passages: the first one (what a page opens with is usually its summary) and
+/// the ones sharing most words with the query, in page order. An encoder costs time per token, so
+/// this is what keeps a large model affordable; with few enough passages nothing is dropped.
+pub fn preselect(passages: Vec<String>, query: &str, keep: usize) -> Vec<String> {
+    if passages.len() <= keep.max(1) {
+        return passages;
+    }
+    let q = token_set(query);
+    let mut ranked: Vec<(usize, f64)> = passages
+        .iter()
+        .enumerate()
+        .skip(1)
+        .map(|(i, p)| (i, coverage(&q, &token_set(p))))
+        .collect();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let mut chosen: Vec<usize> = std::iter::once(0)
+        .chain(ranked.into_iter().take(keep.max(1) - 1).map(|(i, _)| i))
+        .collect();
+    chosen.sort_unstable();
+    let mut passages = passages;
+    chosen
+        .into_iter()
+        .map(|i| std::mem::take(&mut passages[i]))
+        .collect()
+}
+
 impl SemanticReranker {
     pub fn new(embedder: Arc<dyn TextEmbedder>, cfg: SemanticConfig) -> Self {
         let name = format!("semantic:{}", embedder.name());
@@ -112,9 +139,8 @@ impl SemanticReranker {
             .iter()
             .map(|d| {
                 let body = strip_title_echo(d.body, d.title);
-                let mut p = passages(&body, self.cfg.min_chars, self.cfg.max_chars);
-                p.truncate(self.cfg.max_passages);
-                p
+                let p = passages(&body, self.cfg.min_chars, self.cfg.max_chars);
+                preselect(p, query, self.cfg.max_passages)
             })
             .collect();
         let flat: Vec<&str> = per_doc.iter().flatten().map(String::as_str).collect();
@@ -287,6 +313,35 @@ mod tests {
             LexicalReranker.rerank("tokio runtime", &docs)
         );
         assert_eq!(r.name(), "semantic:topic");
+    }
+
+    #[test]
+    fn preselect_keeps_the_opening_and_the_best_matches_in_page_order() {
+        let ps: Vec<String> = [
+            "intro text",
+            "gardening soil",
+            "tokio scheduler thread pool",
+            "weather today",
+            "tokio runtime overview",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let kept = preselect(ps.clone(), "tokio scheduler", 3);
+        assert_eq!(
+            kept,
+            vec![
+                "intro text",
+                "tokio scheduler thread pool",
+                "tokio runtime overview"
+            ]
+        );
+        assert_eq!(
+            preselect(ps.clone(), "tokio", 10),
+            ps,
+            "nothing dropped when few"
+        );
+        assert_eq!(preselect(ps, "tokio", 1), vec!["intro text"]);
     }
 
     #[test]
