@@ -187,6 +187,17 @@ fn score_sections(sections: &[Section], query: &str) -> Vec<f64> {
         .collect()
 }
 
+/// A chunk that is only a label: a few short lines such as a bold number and a title, with no text
+/// under them. Kept next to the text it introduces, but never on its own.
+fn is_stub(markdown: &str) -> bool {
+    let paras: Vec<&str> = markdown
+        .split("\n\n")
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect();
+    paras.iter().all(|p| p.chars().count() <= 60) && markdown.chars().count() < 120
+}
+
 fn cut_at_paragraph(text: &str, budget: usize) -> String {
     let mut out = String::new();
     for para in text.split("\n\n") {
@@ -289,6 +300,11 @@ pub fn select_with(
             }
         }
         chosen.sort_by_key(|(i, _)| *i);
+        // A label whose text was not chosen (a heading cut off from its section) says nothing.
+        if chosen.len() > 1 {
+            let picked: HashSet<usize> = chosen.iter().map(|(i, _)| *i).collect();
+            chosen.retain(|(i, md)| !is_stub(md) || picked.contains(&(i + 1)));
+        }
         (chosen, truncated || false)
     };
     let truncated = truncated || chosen.len() < sections.len();
@@ -459,5 +475,21 @@ mod tests {
         let plain = select(doc, query, 120);
         assert_eq!(fallback.0.len(), plain.0.len());
         assert_eq!(fallback.0[0].markdown, plain.0[0].markdown);
+    }
+
+    #[test]
+    fn a_label_without_its_text_is_dropped_and_one_with_its_text_is_kept() {
+        let body = "The talks resume in November and both sides have agreed to set up a channel for reporting incidents, with details to follow. ".repeat(4);
+        let doc = format!(
+            "{body}\n\n**04**\n\n**People and bodies**\n\n{body}\n\n**05**\n\n**Who wants what**\n\n{}",
+            "Unrelated filler text about something else entirely. ".repeat(30)
+        );
+        let (sel, _) = select(&doc, "talks resume incidents channel", 1000);
+        let text: String = sel
+            .iter()
+            .map(|s| s.markdown.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!text.trim_end().ends_with("**Who wants what**"), "{text}");
     }
 }

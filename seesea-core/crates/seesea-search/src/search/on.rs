@@ -996,8 +996,6 @@ impl SearchInterface {
 
         let engine: Arc<dyn seesea_derive::SearchEngine + Send + Sync> = match engine_name {
             "bing" => Arc::new(BingEngine::with_client(Arc::clone(&self.http_client))),
-            "baidu" => Arc::new(BaiduEngine::with_client(Arc::clone(&self.http_client))),
-            "sogou" => Arc::new(SogouEngine::with_client(Arc::clone(&self.http_client))),
             _ => return Err(format!("Unknown engine: {engine_name}").into()),
         };
 

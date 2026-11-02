@@ -23,7 +23,7 @@
 //!
 //! - **utils**：引擎工具函数和通用引擎实现
 //! - **define_engine!**：引擎生成宏，用于简化引擎开发
-//! - 各种搜索引擎实现：包括 Bing、Baidu、Sogou 三个保留的抓取型引擎
+//! - 各种搜索引擎实现：包括保留的抓取型引擎 Bing
 //!
 //! ## 引擎生成宏
 //!
@@ -190,12 +190,6 @@ macro_rules! define_engine {
 /// Bing 搜索引擎实现
 pub mod bing;
 
-/// 百度搜索引擎实现
-pub mod baidu;
-
-/// 搜狗搜索引擎实现
-pub mod sogou;
-
 /// SearXNG 上游来源
 pub mod searxng;
 
@@ -207,15 +201,8 @@ pub mod brave;
 /// Bing 搜索引擎
 pub use bing::BingEngine;
 
-/// 百度搜索引擎
-pub use baidu::BaiduEngine;
-
-/// 搜狗搜索引擎
-pub use sogou::SogouEngine;
-
 /// SearXNG 上游来源
 pub use searxng::SearxngEngine;
 
 /// Brave Search 官方 API 来源
 pub use brave::BraveEngine;
-

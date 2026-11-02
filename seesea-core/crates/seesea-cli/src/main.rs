@@ -40,7 +40,7 @@ struct NetArgs {
         hide_env_values = true
     )]
     brave_key: Option<String>,
-    /// Do not use the built-in scraping engines (Bing, Sogou).
+    /// Do not use the built-in Bing scraper.
     #[arg(long, global = true)]
     no_native: bool,
     /// Proxy for all requests: http://, https://, socks4:// or socks5:// followed by host:port.

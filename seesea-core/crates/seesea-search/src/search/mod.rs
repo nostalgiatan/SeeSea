@@ -62,7 +62,7 @@
 //! // 创建搜索请求
 //! let request = SearchRequest {
 //!     query: "Rust 编程".to_string(),
-//!     engines: vec!["bing", "baidu"].into_iter().collect(),
+//!     engines: vec!["bing"].into_iter().collect(),
 //!     page: 1,
 //!     ..Default::default()
 //! };
@@ -136,4 +136,3 @@ pub use result_visualization::{TimeSortStats, TimeSortedResult, TimeSorter};
 pub use vector_scoring::{
     VectorScorer, VectorScoringWeights, get_vector_cache, is_vector_scoring_available,
 };
-
