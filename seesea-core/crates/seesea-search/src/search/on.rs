@@ -997,15 +997,7 @@ impl SearchInterface {
         let engine: Arc<dyn seesea_derive::SearchEngine + Send + Sync> = match engine_name {
             "bing" => Arc::new(BingEngine::with_client(Arc::clone(&self.http_client))),
             "baidu" => Arc::new(BaiduEngine::with_client(Arc::clone(&self.http_client))),
-            "yandex" => Arc::new(YandexEngine::with_client(Arc::clone(&self.http_client))),
-            "so" => Arc::new(SoEngine::with_client(Arc::clone(&self.http_client))),
-            "unsplash" => Arc::new(UnsplashEngine::with_client(Arc::clone(&self.http_client))),
-            "bing_images" => Arc::new(BingImagesEngine::with_client(Arc::clone(&self.http_client))),
-            "bilibili" => Arc::new(BilibiliEngine::with_client(Arc::clone(&self.http_client))),
             "sogou" => Arc::new(SogouEngine::with_client(Arc::clone(&self.http_client))),
-            "sogou_videos" => Arc::new(SogouVideosEngine::with_client(Arc::clone(
-                &self.http_client,
-            ))),
             _ => {
                 // 尝试从Python注册表获取引擎
                 #[cfg(feature = "python")]
@@ -1150,11 +1142,6 @@ impl SearchInterface {
 
                         // 根据引擎类型和查询类型设置不同的TTL
                         let ttl = match engine_name.as_str() {
-                            // 图片和视频搜索结果可以缓存更长时间
-                            "unsplash" | "bing_images" | "bilibili" | "bing_videos"
-                            | "sogou_videos" => {
-                                Some(Duration::from_secs(24 * 3600)) // 24小时
-                            }
                             // 新闻搜索结果缓存时间较短
                             "bing_news" => {
                                 Some(Duration::from_secs(3600)) // 1小时

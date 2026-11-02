@@ -55,44 +55,19 @@ impl Default for EngineListConfig {
         // 定义所有引擎及其类型
         let mut engine_type_map = HashMap::new();
 
-        // 通用搜索引擎
+        // 通用搜索引擎（抓取型只保留 bing、baidu、sogou）
         engine_type_map.insert(
             "general".to_string(),
             vec![
-                "yandex".to_string(),
                 "bing".to_string(),
                 "baidu".to_string(),
-                "so".to_string(),
                 "sogou".to_string(),
                 "xinhua".to_string(),
             ],
         );
 
-        // 图片搜索引擎
-        engine_type_map.insert(
-            "image".to_string(),
-            vec![
-                "unsplash".to_string(),
-                "bing_images".to_string(),
-                "sogou_images".to_string(),
-            ],
-        );
-
-        // 视频搜索引擎
-        engine_type_map.insert(
-            "video".to_string(),
-            vec![
-                "bilibili".to_string(),
-                "bing_videos".to_string(),
-                "sogou_videos".to_string(),
-            ],
-        );
-
         // 新闻搜索引擎
         engine_type_map.insert("news".to_string(), vec!["bing_news".to_string()]);
-
-        // 社交搜索引擎
-        engine_type_map.insert("social".to_string(), vec!["sogou_wechat".to_string()]);
 
         let all_engines: Vec<String> = engine_type_map
             .values()
@@ -100,12 +75,9 @@ impl Default for EngineListConfig {
             .collect();
 
         let global_engines = vec![
-            "yandex".to_string(),
             "bing".to_string(),
             "baidu".to_string(),
-            "so".to_string(),
             "sogou".to_string(),
-            "bilibili".to_string(),
             "xinhua".to_string(),
         ];
 
