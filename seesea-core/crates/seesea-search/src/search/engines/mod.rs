@@ -196,6 +196,9 @@ pub mod baidu;
 /// 搜狗搜索引擎实现
 pub mod sogou;
 
+/// SearXNG 上游来源
+pub mod searxng;
+
 // 统一导出引擎类型，方便外部使用
 
 /// Bing 搜索引擎
@@ -206,4 +209,7 @@ pub use baidu::BaiduEngine;
 
 /// 搜狗搜索引擎
 pub use sogou::SogouEngine;
+
+/// SearXNG 上游来源
+pub use searxng::SearxngEngine;
 
