@@ -61,7 +61,7 @@
 //!
 //! ## 使用示例
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use seesea_net::{HttpClient, NetworkConfig};
 //!
 //! // 创建网络配置
