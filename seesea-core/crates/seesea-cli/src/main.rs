@@ -2,6 +2,8 @@
 
 use clap::{Args, Parser, Subcommand};
 use seesea_cli::config::{Settings, build_pipeline};
+use seesea_cli::userconfig::{self, FileConfig};
+use seesea_cli::models;
 use seesea_cli::server::{self, AppState, parse_scope};
 use seesea_cli::sources::SourceSettings;
 use seesea_mcp::McpServer;
@@ -29,6 +31,9 @@ struct Cli {
 
 #[derive(Args)]
 struct NetArgs {
+    /// Config file (default ~/.config/seesea/config.toml). Flags and SEESEA_* variables win over it.
+    #[arg(long, env = "SEESEA_CONFIG", global = true)]
+    config: Option<PathBuf>,
     /// Address of a SearXNG instance with the json format enabled.
     #[arg(long, env = "SEESEA_SEARXNG_URL", global = true)]
     searxng: Option<String>,
@@ -171,6 +176,16 @@ enum Command {
         /// The model directory (defaults to --model-dir / SEESEA_MODEL_DIR).
         dir: Option<PathBuf>,
     },
+    /// Show where the config file is, or with --init write a commented template there.
+    Config {
+        #[arg(long)]
+        init: bool,
+    },
+    /// Check the models seesea can use; `models download` fetches the missing ones.
+    Models {
+        #[command(subcommand)]
+        action: Option<ModelsAction>,
+    },
     /// Run the HTTP server (JSON API and MCP on /mcp).
     Serve {
         #[arg(long, default_value = "127.0.0.1:8080")]
@@ -183,6 +198,44 @@ enum Command {
     },
     /// Run as an MCP server over standard input and output.
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum ModelsAction {
+    /// Download models (embedding, reranker; all of them when none is named) unless already present.
+    Download { names: Vec<String> },
+}
+
+/// Fill what flags and environment left empty from the config file, then from models found on disk.
+fn apply_file(net: &mut NetArgs, f: &FileConfig, use_model: bool) {
+    fn fill<T: Clone>(slot: &mut Option<T>, from: &Option<T>) {
+        if slot.is_none() {
+            slot.clone_from(from);
+        }
+    }
+    fill(&mut net.searxng, &f.searxng);
+    fill(&mut net.brave_key, &f.brave_key);
+    fill(&mut net.proxy, &f.proxy);
+    fill(&mut net.cache_dir, &f.cache_dir);
+    fill(&mut net.fuzzy_cache, &f.fuzzy_cache);
+    fill(&mut net.model_dir, &f.models.embedding);
+    fill(&mut net.rerank_model, &f.models.reranker);
+    fill(&mut net.semantic_weight, &f.semantic.weight);
+    fill(&mut net.semantic_passages, &f.semantic.passages);
+    fill(&mut net.semantic_range, &f.semantic.range);
+    fill(&mut net.rerank_weight, &f.rerank.weight);
+    fill(&mut net.rerank_passages, &f.rerank.passages);
+    fill(&mut net.rerank_center, &f.rerank.center);
+    fill(&mut net.rerank_scale, &f.rerank.scale);
+    net.no_native |= f.no_native.unwrap_or(false);
+    net.allow_private |= f.allow_private.unwrap_or(false);
+    net.plain_headers |= f.plain_headers.unwrap_or(false);
+    net.lexical_sections |= f.lexical_sections.unwrap_or(false);
+    if use_model {
+        let (embedding, reranker) = models::discovered(f);
+        fill(&mut net.model_dir, &embedding);
+        fill(&mut net.rerank_model, &reranker);
+    }
 }
 
 fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
@@ -236,8 +289,10 @@ async fn append_log(path: &PathBuf, resp: &SearchResponse) -> Result<(), Error> 
     Ok(())
 }
 
-async fn run(cli: Cli) -> Result<(), Error> {
+async fn run(mut cli: Cli) -> Result<(), Error> {
     let json = cli.net.json;
+    let config_path = cli.net.config.clone().unwrap_or_else(userconfig::default_path);
+    let file = userconfig::load(&config_path)?.unwrap_or_default();
     let long_lived = matches!(cli.command, Command::Serve { .. } | Command::Mcp);
     // The model is only loaded (in the background) for commands that rerank page content.
     let use_model = match &cli.command {
@@ -249,6 +304,77 @@ async fn run(cli: Cli) -> Result<(), Error> {
         Command::Extract { query, .. } => query.is_some(),
         _ => false,
     };
+    apply_file(&mut cli.net, &file, use_model);
+
+    match &cli.command {
+        Command::Config { init } => {
+            let exists = config_path.exists();
+            if *init && !exists {
+                if let Some(dir) = config_path.parent() {
+                    std::fs::create_dir_all(dir)?;
+                }
+                std::fs::write(&config_path, userconfig::TEMPLATE)?;
+                println!("wrote {}", config_path.display());
+            } else if *init {
+                println!("{} already exists; not touching it", config_path.display());
+            } else {
+                println!(
+                    "{} ({})",
+                    config_path.display(),
+                    if exists { "in use" } else { "not there; `seesea config --init` writes a template" }
+                );
+            }
+            return Ok(());
+        }
+        Command::Models { action } => {
+            let wanted: Vec<String> = match action {
+                Some(ModelsAction::Download { names }) => names.clone(),
+                None => {
+                    let st = models::status(&file);
+                    if json {
+                        return print_json(&st);
+                    }
+                    println!("models directory: {}", models::models_dir(&file).display());
+                    for s in &st {
+                        println!(
+                            "{:<10} {:<8} {}  {}",
+                            s.model,
+                            match (s.present, s.valid) {
+                                (true, true) => "ok",
+                                (true, false) => "BROKEN",
+                                _ => "missing",
+                            },
+                            s.path.as_deref().map(|p| p.display().to_string()).unwrap_or_default(),
+                            s.note
+                        );
+                    }
+                    return Ok(());
+                }
+            };
+            for name in &wanted {
+                if !models::CATALOG.iter().any(|s| s.key == name) {
+                    return Err(Error::InvalidRequest(format!(
+                        "unknown model '{name}' (embedding, reranker)"
+                    )));
+                }
+            }
+            let st = models::status(&file);
+            for (spec, state) in models::CATALOG.iter().zip(&st) {
+                if !wanted.is_empty() && !wanted.iter().any(|n| n == spec.key) {
+                    continue;
+                }
+                if state.valid {
+                    println!("{}: already at {}", spec.key, state.path.as_deref().map(|p| p.display().to_string()).unwrap_or_default());
+                    continue;
+                }
+                eprintln!("downloading {} from {}", spec.key, spec.url(&file));
+                let path = models::download(spec, &file, cli.net.proxy.as_deref()).await?;
+                println!("{}: saved {}", spec.key, path.display());
+            }
+            return Ok(());
+        }
+        _ => {}
+    }
     let pipeline = Arc::new(build_pipeline(&settings(&cli.net, long_lived, use_model))?);
 
     match cli.command {
@@ -472,6 +598,7 @@ async fn run(cli: Cli) -> Result<(), Error> {
             api_key,
             max_concurrent,
         } => server::serve(addr, AppState::new(pipeline, api_key), max_concurrent).await,
+        Command::Config { .. } | Command::Models { .. } => unreachable!("handled above"),
         Command::Mcp => {
             // Standard output belongs to the protocol; anything else goes to standard error.
             eprintln!("seesea MCP server ready on stdio");
