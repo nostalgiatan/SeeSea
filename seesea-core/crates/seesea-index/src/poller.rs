@@ -48,6 +48,7 @@ pub struct PollReport {
     pub sites_searched: usize,
     pub feeds_found: usize,
     pub shards_pruned: usize,
+    pub embedded: usize,
 }
 
 pub struct Poller {
@@ -55,12 +56,19 @@ pub struct Poller {
     fetcher: Arc<dyn PageFetcher>,
     /// A headless browser, tried for a site's front page when plain HTML advertises nothing.
     render: Option<Arc<dyn PageFetcher>>,
+    /// Gives new items a vector (a batch per round, off the async threads).
+    embedder: Option<Arc<dyn seesea_pipeline::semantic::TextEmbedder>>,
     cfg: PollConfig,
 }
 
 impl Poller {
     pub fn new(index: Arc<Index>, fetcher: Arc<dyn PageFetcher>, cfg: PollConfig) -> Self {
-        Self { index, fetcher, render: None, cfg }
+        Self { index, fetcher, render: None, embedder: None, cfg }
+    }
+
+    pub fn embedder(mut self, e: Arc<dyn seesea_pipeline::semantic::TextEmbedder>) -> Self {
+        self.embedder = Some(e);
+        self
     }
 
     pub fn renderer(mut self, render: Arc<dyn PageFetcher>) -> Self {
@@ -96,6 +104,13 @@ impl Poller {
         Ok((parsed, r.added, r.duplicates))
     }
 
+    /// Embed up to `max` items without a vector now; 0 without an embedder.
+    pub async fn embed_pending(&self, max: usize) -> usize {
+        let Some(e) = self.embedder.clone() else { return 0 };
+        let index = Arc::clone(&self.index);
+        tokio::task::spawn_blocking(move || crate::vectors::embed_pending(&index, &e, max)).await.unwrap_or(0)
+    }
+
     /// Feeds a site offers: advertised ones, else the usual places; only those that parse and hold items.
     pub async fn discover(&self, site: &str) -> Vec<(String, feed::Parsed)> {
         let mut candidates = match self.get(&self.fetcher, site).await {
@@ -111,7 +126,15 @@ impl Poller {
         if candidates.is_empty() {
             candidates = feed::usual_places(site);
         }
-        candidates.truncate(8);
+        // News sitemaps carry titles and dates too: those named in robots.txt, then the usual names.
+        if let Some(robots) = url::Url::parse(site).ok().and_then(|u| u.join("/robots.txt").ok()) {
+            if let Ok(text) = self.get(&self.fetcher, robots.as_str()).await {
+                candidates.extend(feed::robots_sitemaps(&text, site).into_iter().filter(|u| u.contains("news")));
+            }
+        }
+        candidates.extend(feed::usual_news_sitemaps(site));
+        candidates.dedup();
+        candidates.truncate(12);
         let mut found = Vec::new();
         for url in candidates {
             if let Ok(body) = self.get(&self.fetcher, &url).await
@@ -155,6 +178,9 @@ impl Poller {
                     report.added += added;
                     report.duplicates += dup;
                     let _ = self.index.registry.record(&url, Ok((added, Some(&parsed.title))));
+                    if let Some(hub) = &parsed.hub {
+                        let _ = self.index.registry.set_hub(&url, hub);
+                    }
                 }
                 Err(e) => {
                     report.failed += 1;
@@ -168,6 +194,7 @@ impl Poller {
             report.feeds_found += n;
             let _ = self.index.registry.host_done(&host, n);
         }
+        report.embedded = self.embed_pending(256).await;
         let index = Arc::clone(&self.index);
         let (days, quota) = (self.cfg.retention_days, self.cfg.quota_bytes);
         report.shards_pruned = tokio::task::spawn_blocking(move || index.store.prune(days, quota)).await.unwrap_or(0);

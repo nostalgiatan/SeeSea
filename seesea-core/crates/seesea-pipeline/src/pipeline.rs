@@ -438,7 +438,10 @@ impl Pipeline {
             stage: "search".into(),
             ms: ms(t),
         });
-        if results.is_empty() {
+        let auxiliary: Vec<&str> = sources.iter().filter(|s| s.auxiliary()).map(|s| s.name()).collect();
+        let only_empty_auxiliary = !failures.is_empty()
+            && results.iter().all(|r| auxiliary.contains(&r.source.as_str()) && r.hits.is_empty());
+        if results.is_empty() || only_empty_auxiliary {
             return Err(Error::AllSourcesFailed(failures));
         }
         if !failures.is_empty() {
@@ -666,6 +669,7 @@ impl Pipeline {
                 found_by: cand.found_by,
                 content,
                 content_error,
+                related: Vec::new(),
             });
         }
         hits.sort_by(|a, b| {
@@ -673,6 +677,8 @@ impl Pipeline {
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
+        let hits = crate::cluster::group_events(hits);
+        let mut hits = hits;
         hits.truncate(req.limit);
         stages.push(StageTiming {
             stage: "assemble".into(),

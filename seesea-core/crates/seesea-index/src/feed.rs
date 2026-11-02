@@ -5,6 +5,8 @@ use chrono::DateTime;
 
 #[derive(Debug, Clone, Default)]
 pub struct Parsed {
+    /// The WebSub hub the feed announces, if any.
+    pub hub: Option<String>,
     pub title: String,
     pub items: Vec<Item>,
 }
@@ -57,6 +59,9 @@ pub fn parse(body: &str, feed_url: &str, source: &str) -> Result<Parsed, String>
     let opts = roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() };
     let doc = roxmltree::Document::parse_with_options(&clean, opts).map_err(|e| format!("not a feed: {e}"))?;
     let root = doc.root_element();
+    if root.tag_name().name() == "urlset" {
+        return Ok(parse_news_sitemap(root, feed_url, source));
+    }
     if !matches!(root.tag_name().name(), "rss" | "RDF" | "feed") {
         return Err(format!("not a feed: <{}>", root.tag_name().name()));
     }
@@ -90,14 +95,68 @@ pub fn parse(body: &str, feed_url: &str, source: &str) -> Result<Parsed, String>
         let published = child_text(n, &["pubDate", "published", "updated", "date"]).and_then(|d| parse_date(&d));
         items.push(Item { url, title: item_title, lead, published, source: source.to_string() });
     }
-    Ok(Parsed { title, items })
+    let hub = root
+        .descendants()
+        .find(|n| n.is_element() && n.tag_name().name() == "link" && n.attribute("rel") == Some("hub"))
+        .and_then(|n| n.attribute("href"))
+        .and_then(|h| resolve(feed_url, h));
+    Ok(Parsed { hub, title, items })
+}
+
+/// A Google News sitemap: `<url><loc/><news:news><news:title/><news:publication_date/></news:news></url>`.
+/// Ordinary sitemaps carry no titles, so their entries are skipped.
+fn parse_news_sitemap(root: roxmltree::Node, base: &str, source: &str) -> Parsed {
+    let text = |n: roxmltree::Node, name: &str| -> Option<String> {
+        n.descendants().find(|c| c.is_element() && c.tag_name().name() == name).and_then(|c| c.text()).map(|t| t.trim().to_string()).filter(|t| !t.is_empty())
+    };
+    let items = root
+        .children()
+        .filter(|n| n.is_element() && n.tag_name().name() == "url")
+        .filter_map(|n| {
+            let url = resolve(base, &text(n, "loc")?)?;
+            Some(Item {
+                url,
+                title: plain_text(&text(n, "title")?),
+                lead: text(n, "keywords").map(|k| plain_text(&k)).unwrap_or_default(),
+                published: text(n, "publication_date").or_else(|| text(n, "lastmod")).and_then(|d| parse_date(&d)),
+                source: source.to_string(),
+            })
+        })
+        .collect();
+    Parsed { hub: None, title: String::new(), items }
+}
+
+/// `Sitemap:` lines of a robots.txt.
+pub fn robots_sitemaps(robots: &str, site: &str) -> Vec<String> {
+    robots
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix_ci("sitemap:"))
+        .filter_map(|u| resolve(site, u))
+        .collect()
+}
+
+trait StripCi {
+    fn strip_prefix_ci(&self, prefix: &str) -> Option<&str>;
+}
+
+impl StripCi for str {
+    fn strip_prefix_ci(&self, prefix: &str) -> Option<&str> {
+        self.get(..prefix.len()).filter(|h| h.eq_ignore_ascii_case(prefix)).map(|_| &self[prefix.len()..])
+    }
+}
+
+/// Where news sitemaps usually are.
+pub fn usual_news_sitemaps(site: &str) -> Vec<String> {
+    ["/news-sitemap.xml", "/sitemap-news.xml", "/sitemap_news.xml", "/news_sitemap.xml"].iter().filter_map(|p| resolve(site, p)).collect()
 }
 
 fn parse_json(body: &str, feed_url: &str, source: &str) -> Result<Parsed, String> {
     let v: serde_json::Value = serde_json::from_str(body).map_err(|e| format!("not a feed: {e}"))?;
     let items = v.get("items").and_then(|i| i.as_array()).ok_or("not a feed: no items")?;
     let text = |i: &serde_json::Value, k: &str| i.get(k).and_then(|x| x.as_str()).map(String::from);
+    let hub = v.get("hubs").and_then(|h| h.as_array()).and_then(|h| h.first()).and_then(|h| h.get("url")).and_then(|u| u.as_str()).map(String::from);
     Ok(Parsed {
+        hub,
         title: text(&v, "title").unwrap_or_default(),
         items: items
             .iter()
@@ -158,6 +217,9 @@ mod tests {
         assert_eq!(p.items[0].published, Some(1793613600));
         assert_eq!(p.items[1].url, "https://x.org/g");
         assert_eq!(p.items[1].lead, "Body text");
+        assert_eq!(p.hub, None);
+        let with_hub = r#"<rss xmlns:atom="http://www.w3.org/2005/Atom"><channel><atom:link rel="hub" href="https://hub.example/"/><atom:link rel="self" href="https://x.org/f"/><item><link>https://x.org/1</link><title>T</title></item></channel></rss>"#;
+        assert_eq!(parse(with_hub, "https://x.org/f", "x").unwrap().hub.as_deref(), Some("https://hub.example/"));
     }
 
     #[test]
@@ -173,6 +235,19 @@ mod tests {
         let json = r#"{"title":"J","items":[{"url":"https://j.org/1","title":"One","content_text":"hi","date_published":"2026-11-02T08:30:00Z"}]}"#;
         let p = parse(json, "https://j.org/feed.json", "j").unwrap();
         assert_eq!((p.title.as_str(), p.items[0].lead.as_str()), ("J", "hi"));
+    }
+
+    #[test]
+    fn news_sitemaps_give_items_and_plain_ones_none() {
+        let news = r#"<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+          <url><loc>https://n.org/a</loc><news:news><news:publication><news:name>N</news:name></news:publication>
+          <news:publication_date>2026-11-02T08:30:00+00:00</news:publication_date><news:title>Quake hits city</news:title></news:news></url>
+          <url><loc>https://n.org/untitled</loc><lastmod>2026-11-01</lastmod></url></urlset>"#;
+        let p = parse(news, "https://n.org/news-sitemap.xml", "n").unwrap();
+        assert_eq!(p.items.len(), 1);
+        assert_eq!((p.items[0].title.as_str(), p.items[0].published), ("Quake hits city", Some(1793608200)));
+        assert!(parse(r#"<urlset><url><loc>https://n.org/x</loc></url></urlset>"#, "https://n.org/s.xml", "n").unwrap().items.is_empty());
+        assert_eq!(robots_sitemaps("User-agent: *\nSITEMAP: https://n.org/s.xml\nsitemap: /b.xml", "https://n.org/"), ["https://n.org/s.xml", "https://n.org/b.xml"]);
     }
 
     #[test]

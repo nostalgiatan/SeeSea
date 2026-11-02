@@ -54,6 +54,28 @@ const MAX_INTERVAL: i64 = 6 * 3600;
 const MAX_BACKOFF: i64 = 24 * 3600;
 const PROMOTE_AFTER_ITEMS: i64 = 3;
 
+#[derive(Debug, Clone)]
+pub struct Sub {
+    /// Part of the callback address; unguessable.
+    pub id: String,
+    pub topic: String,
+    pub hub: String,
+    pub secret: String,
+    pub status: String,
+    pub lease_until: i64,
+}
+
+fn sub_row(r: &rusqlite::Row) -> Result<Sub> {
+    Ok(Sub { id: r.get(0)?, topic: r.get(1)?, hub: r.get(2)?, secret: r.get(3)?, status: r.get(4)?, lease_until: r.get(5)? })
+}
+
+fn random_hex(bytes: usize) -> String {
+    use rand::RngCore;
+    let mut b = vec![0u8; bytes];
+    rand::rng().fill_bytes(&mut b);
+    hex::encode(b)
+}
+
 pub struct Registry {
     path: PathBuf,
     conn: Mutex<Option<Connection>>,
@@ -79,6 +101,8 @@ impl Registry {
                  CREATE TABLE IF NOT EXISTS feeds(url TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', origin TEXT NOT NULL,
                    status TEXT NOT NULL, added INTEGER NOT NULL, last_try INTEGER, last_ok INTEGER, fails INTEGER NOT NULL DEFAULT 0,
                    next_due INTEGER NOT NULL DEFAULT 0, interval INTEGER NOT NULL, total INTEGER NOT NULL DEFAULT 0, last_error TEXT);
+                 CREATE TABLE IF NOT EXISTS subs(id TEXT PRIMARY KEY, topic TEXT NOT NULL UNIQUE, hub TEXT NOT NULL, secret TEXT NOT NULL,
+                   status TEXT NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, asked INTEGER NOT NULL DEFAULT 0, received INTEGER NOT NULL DEFAULT 0);
                  CREATE TABLE IF NOT EXISTS hosts(host TEXT PRIMARY KEY, queued INTEGER NOT NULL, tried INTEGER, found INTEGER NOT NULL DEFAULT 0);",
             )?;
             *g = Some(c);
@@ -174,6 +198,70 @@ impl Registry {
             Ok(())
         })?;
         Ok(())
+    }
+
+    /// Remember that a feed announces a WebSub hub.
+    pub fn set_hub(&self, url: &str, hub: &str) -> Result<()> {
+        self.with(true, |c| {
+            c.execute("INSERT OR IGNORE INTO subs(id,topic,hub,secret,status) VALUES(?,?,?,?,'new')", params![random_hex(12), url, hub, random_hex(24)])?;
+            c.execute("UPDATE subs SET hub=? WHERE topic=? AND hub<>?", params![hub, url, hub])?;
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    /// Subscriptions that need a (re-)request: never asked, or the lease ends within `margin` seconds,
+    /// and not asked in the last 10 minutes.
+    pub fn subs_to_request(&self, now: i64, margin: i64) -> Result<Vec<Sub>> {
+        Ok(self
+            .with(false, |c| {
+                let mut st = c.prepare("SELECT id,topic,hub,secret,status,lease_until FROM subs WHERE (status<>'active' OR lease_until < ?1 + ?2) AND asked < ?1 - 600")?;
+                let rows = st.query_map(params![now, margin], sub_row)?;
+                rows.collect()
+            })?
+            .unwrap_or_default())
+    }
+
+    pub fn sub_asked(&self, id: &str) -> Result<()> {
+        self.with(true, |c| {
+            c.execute("UPDATE subs SET asked=?, status=CASE WHEN status='active' THEN 'active' ELSE 'pending' END WHERE id=?", params![crate::now(), id])?;
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    pub fn sub(&self, id: &str) -> Result<Option<Sub>> {
+        Ok(self
+            .with(false, |c| c.query_row("SELECT id,topic,hub,secret,status,lease_until FROM subs WHERE id=?", [id], sub_row).optional())?
+            .flatten())
+    }
+
+    /// The hub confirmed the subscription for `lease` seconds.
+    pub fn sub_confirmed(&self, id: &str, lease: i64) -> Result<()> {
+        self.with(true, |c| {
+            c.execute("UPDATE subs SET status='active', lease_until=? WHERE id=?", params![crate::now() + lease, id])?;
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    pub fn sub_received(&self, id: &str) -> Result<()> {
+        self.with(true, |c| {
+            c.execute("UPDATE subs SET received=received+1 WHERE id=?", [id])?;
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    /// Feeds with a live push subscription, which need polling only as a safety net.
+    pub fn pushed_topics(&self, now: i64) -> Result<Vec<String>> {
+        Ok(self
+            .with(false, |c| {
+                let mut st = c.prepare("SELECT topic FROM subs WHERE status='active' AND lease_until > ?")?;
+                let rows = st.query_map([now], |r| r.get(0))?;
+                rows.collect()
+            })?
+            .unwrap_or_default())
     }
 
     /// Re-enable a feed switched off earlier.

@@ -132,6 +132,19 @@ impl PairScorer for CrossAdapter {
     }
 }
 
+/// The encoder in `dir`, loaded once per process however many parts (reranker, index vectors)
+/// ask for it: the model takes about 1.5 GB.
+pub fn shared_embedder(dir: &Path) -> Arc<EmbedderAdapter> {
+    static LOADED: std::sync::OnceLock<Mutex<Vec<(std::path::PathBuf, Arc<EmbedderAdapter>)>>> = std::sync::OnceLock::new();
+    let mut all = LOADED.get_or_init(|| Mutex::new(Vec::new())).lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, e)) = all.iter().find(|(p, _)| p == dir) {
+        return Arc::clone(e);
+    }
+    let e = Arc::new(EmbedderAdapter::spawn(dir));
+    all.push((dir.to_path_buf(), Arc::clone(&e)));
+    e
+}
+
 /// Load the encoder in `dir` and wrap it as the pipeline's reranker.
 pub fn semantic_reranker(
     dir: &Path,
@@ -157,7 +170,7 @@ pub fn semantic_reranker(
         cfg.cos_ceil = ceil;
     }
     Ok(Arc::new(SemanticReranker::new(
-        Arc::new(EmbedderAdapter::spawn(dir)),
+        shared_embedder(dir),
         cfg,
     )))
 }

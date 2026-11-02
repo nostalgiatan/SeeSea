@@ -2,7 +2,7 @@
 
 use axum::body::Bytes;
 use crate::access::{Access, Grant, Refusal, base_cost, mode_extra};
-use axum::extract::{ConnectInfo, DefaultBodyLimit, Extension, Query, Request, State};
+use axum::extract::{Path, ConnectInfo, DefaultBodyLimit, Extension, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -102,7 +102,8 @@ fn refusal_response(r: Refusal) -> Response {
 }
 
 async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Request, next: Next) -> Response {
-    if req.uri().path() == "/health" || !state.access.required() {
+    // WebSub hubs cannot send API keys: those requests are checked by challenge and signature instead.
+    if req.uri().path() == "/health" || req.uri().path().starts_with("/v1/websub/") || !state.access.required() {
         return next.run(req).await;
     }
     let ip = req.extensions().get::<ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip());
@@ -307,6 +308,48 @@ async fn ingest(State(s): State<AppState>, body: Bytes) -> ApiResult<Value> {
     Ok(Json(json!(report)))
 }
 
+#[derive(Deserialize)]
+struct WebSubQuery {
+    #[serde(rename = "hub.mode")]
+    mode: Option<String>,
+    #[serde(rename = "hub.topic")]
+    topic: Option<String>,
+    #[serde(rename = "hub.challenge")]
+    challenge: Option<String>,
+    #[serde(rename = "hub.lease_seconds")]
+    lease: Option<i64>,
+}
+
+/// The hub asks whether we really subscribed: echo its challenge if we did.
+async fn websub_verify(State(s): State<AppState>, Path(id): Path<String>, Query(q): Query<WebSubQuery>) -> Response {
+    let Some(index) = s.index.clone() else { return StatusCode::NOT_FOUND.into_response() };
+    let answer = tokio::task::spawn_blocking(move || {
+        seesea_index::websub::verify_intent(&index, &id, q.mode.as_deref().unwrap_or(""), q.topic.as_deref().unwrap_or(""), q.challenge.as_deref().unwrap_or(""), q.lease)
+    })
+    .await
+    .ok()
+    .flatten();
+    match answer {
+        Some(c) => (StatusCode::OK, c).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// The hub pushes new entries, signed with the secret we gave it.
+async fn websub_deliver(State(s): State<AppState>, Path(id): Path<String>, headers: HeaderMap, body: Bytes) -> StatusCode {
+    use seesea_index::websub::DeliveryError;
+    let Some(index) = s.index.clone() else { return StatusCode::NOT_FOUND };
+    let sig = headers.get("x-hub-signature").and_then(|v| v.to_str().ok()).map(String::from);
+    let r = tokio::task::spawn_blocking(move || seesea_index::websub::receive(&index, &id, sig.as_deref(), &body)).await;
+    match r {
+        Ok(Ok(_)) => StatusCode::NO_CONTENT,
+        Ok(Err(DeliveryError::UnknownSubscription)) => StatusCode::NOT_FOUND,
+        // The spec wants 2xx for deliveries the subscriber merely ignores; a bad signature is dropped silently.
+        Ok(Err(DeliveryError::BadSignature | DeliveryError::NotAFeed(_))) => StatusCode::NO_CONTENT,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
 async fn index_info(State(s): State<AppState>) -> ApiResult<Value> {
     let Some(index) = s.index.clone() else {
         return Err(Error::InvalidRequest("the index is turned off".into()).into());
@@ -382,6 +425,7 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
         .route("/v1/stats", get(stats))
         .route("/v1/feedback", post(feedback))
         .route("/v1/ingest", post(ingest))
+        .route("/v1/websub/{id}", get(websub_verify).post(websub_deliver))
         .route("/v1/index", get(index_info))
         .route("/mcp", post(mcp))
         .fallback(not_found)

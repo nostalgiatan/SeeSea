@@ -536,3 +536,38 @@ async fn pushed_items_are_searchable_through_the_local_source() {
     let queued = seesea_index::Index::open(dir.path().join("index")).registry.pending_hosts(5).unwrap();
     assert_eq!(queued, vec!["wire.example"]);
 }
+
+#[tokio::test]
+async fn websub_callbacks_need_no_api_key_but_prove_themselves_by_challenge() {
+    let base = spawn_site().await;
+    let dir = tempfile::tempdir().unwrap();
+    let index = seesea_index::Index::open(dir.path());
+    index.registry.set_hub("https://news.example/feed", "https://hub.example/").unwrap();
+    let sub = index.registry.subs_to_request(chrono::Utc::now().timestamp(), 0).unwrap().remove(0);
+    index.registry.sub_asked(&sub.id).unwrap();
+
+    let pipeline = Arc::new(build_pipeline(&settings(&base)).unwrap());
+    let mut state = AppState::new(pipeline, Some("secret".into()));
+    state.index = Some(Arc::clone(&index));
+    let app = router(state, 8);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let http = reqwest::Client::new();
+
+    assert_eq!(http.get(format!("{api}/v1/index")).send().await.unwrap().status(), 401);
+    let verify = |id: &str, topic: &str| {
+        http.get(format!("{api}/v1/websub/{id}"))
+            .query(&[("hub.mode", "subscribe"), ("hub.topic", topic), ("hub.challenge", "abc123"), ("hub.lease_seconds", "86400")])
+            .send()
+    };
+    assert_eq!(verify("unknown", "https://news.example/feed").await.unwrap().status(), 404);
+    assert_eq!(verify(&sub.id, "https://wrong.example/feed").await.unwrap().status(), 404);
+    let ok = verify(&sub.id, "https://news.example/feed").await.unwrap();
+    assert_eq!(ok.status(), 200);
+    assert_eq!(ok.text().await.unwrap(), "abc123");
+    // An unsigned push is accepted silently and adds nothing.
+    let r = http.post(format!("{api}/v1/websub/{}", sub.id)).body("<rss><channel><item><title>x</title><link>https://news.example/1</link></item></channel></rss>").send().await.unwrap();
+    assert_eq!(r.status(), 204);
+    assert_eq!(index.store.stats().items, 0);
+}
