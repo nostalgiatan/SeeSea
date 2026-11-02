@@ -6,7 +6,7 @@ use crate::fusion::{self, FusionConfig, SourceResults};
 use crate::model::*;
 use crate::rank::{self, QueryInfo, RankConfig};
 use crate::rerank::{DocView, LexicalReranker, Reranker};
-use crate::sections;
+use crate::sections::{self, SectionScorer};
 use crate::source::{Source, SourceQuery};
 use crate::store::{Cache, CacheCounts, Metered, NoCache};
 use crate::text::{jaccard, normalize_query, token_set};
@@ -63,6 +63,7 @@ pub struct Pipeline {
     fetcher: Arc<dyn PageFetcher>,
     extractor: OnceLock<Arc<Extractor>>,
     reranker: Arc<dyn Reranker>,
+    section_scorer: Option<Arc<dyn SectionScorer>>,
     cache: Arc<dyn Cache>,
     metered: Option<Arc<Metered>>,
     recent_queries: Mutex<VecDeque<RecentQuery>>,
@@ -117,6 +118,7 @@ impl Pipeline {
             fetcher,
             extractor: OnceLock::new(),
             reranker: Arc::new(LexicalReranker),
+            section_scorer: None,
             cache: Arc::new(NoCache),
             metered: None,
             recent_queries: Mutex::new(VecDeque::new()),
@@ -140,6 +142,28 @@ impl Pipeline {
     pub fn reranker(mut self, reranker: Arc<dyn Reranker>) -> Self {
         self.reranker = reranker;
         self
+    }
+
+    /// Choose page sections by meaning instead of by shared words alone.
+    pub fn section_scorer(mut self, scorer: Arc<dyn SectionScorer>) -> Self {
+        self.section_scorer = Some(scorer);
+        self
+    }
+
+    /// Select sections on a blocking thread (a model may be involved).
+    async fn select_sections(
+        &self,
+        core: String,
+        query: String,
+        budget: usize,
+    ) -> (Vec<SelectedSection>, bool) {
+        let scorer = self.section_scorer.clone();
+        let lexical = (core.clone(), query.clone());
+        tokio::task::spawn_blocking(move || {
+            sections::select_with(&core, &query, budget, scorer.as_deref())
+        })
+        .await
+        .unwrap_or_else(|_| sections::select(&lexical.0, &lexical.1, budget))
     }
 
     pub fn extractor(self, extractor: Arc<Extractor>) -> Self {
@@ -495,6 +519,20 @@ impl Pipeline {
 
         // Stage 5: assemble.
         let t = Instant::now();
+        let mut selections: Vec<Option<(Vec<SelectedSection>, bool)>> = Vec::new();
+        if !req.full_content {
+            for &j in &ok_idx {
+                let core = loaded[j]
+                    .as_ref()
+                    .and_then(|l| l.as_ref().ok())
+                    .map(|l| l.result.core.clone())
+                    .unwrap_or_default();
+                selections.push(Some(
+                    self.select_sections(core, req.query.clone(), req.max_chars_per_result)
+                        .await,
+                ));
+            }
+        }
         for (i, (cand, mut parts)) in scored.into_iter().enumerate() {
             let s1n = parts.stage1 / max_stage1;
             let mut content_error = None;
@@ -509,11 +547,10 @@ impl Pipeline {
                         .as_ref()
                         .and_then(|l| l.as_ref().ok())
                         .expect("index came from the ok list");
-                    let (selected, truncated) = if req.full_content {
-                        (Vec::new(), false)
-                    } else {
-                        sections::select(&l.result.core, &req.query, req.max_chars_per_result)
-                    };
+                    let (selected, truncated) = selections
+                        .get_mut(pos)
+                        .and_then(Option::take)
+                        .unwrap_or_default();
                     content = Some(Content {
                         sections: selected,
                         markdown: req.full_content.then(|| l.result.core.clone()),
@@ -603,7 +640,8 @@ impl Pipeline {
             self.cfg.page_timeout,
         )
         .await?;
-        Ok(Self::page_from(url, loaded, query, max_chars))
+        let selection = self.selection_for(&loaded, query, max_chars).await;
+        Ok(Self::page_from(url, loaded, selection))
     }
 
     /// Build the response for HTML that is already in hand (a local file, or a page fetched elsewhere).
@@ -634,30 +672,37 @@ impl Pipeline {
                 "the input is not text (compressed or binary data)".into(),
             ));
         }
-        Ok(Self::page_from(
-            url,
-            Loaded {
-                final_url: url.to_string(),
-                result,
-            },
-            query,
-            max_chars,
-        ))
+        let loaded = Loaded {
+            final_url: url.to_string(),
+            result,
+        };
+        let selection = self.selection_for(&loaded, query, max_chars).await;
+        Ok(Self::page_from(url, loaded, selection))
+    }
+
+    /// Sections for `query`, or `None` when there is no query (the whole page is returned).
+    async fn selection_for(
+        &self,
+        loaded: &Loaded,
+        query: Option<&str>,
+        max_chars: usize,
+    ) -> Option<(Vec<SelectedSection>, bool)> {
+        let q = query.filter(|q| !q.trim().is_empty())?;
+        Some(
+            self.select_sections(loaded.result.core.clone(), q.to_string(), max_chars.max(1))
+                .await,
+        )
     }
 
     fn page_from(
         url: &str,
         loaded: Loaded,
-        query: Option<&str>,
-        max_chars: usize,
+        selection: Option<(Vec<SelectedSection>, bool)>,
     ) -> ExtractedPage {
         let r = loaded.result;
-        let (selected, truncated, markdown) = match query {
-            Some(q) if !q.trim().is_empty() => {
-                let (s, t) = sections::select(&r.core, q, max_chars.max(1));
-                (s, t, None)
-            }
-            _ => (Vec::new(), false, Some(r.core.clone())),
+        let (selected, truncated, markdown) = match selection {
+            Some((s, t)) => (s, t, None),
+            None => (Vec::new(), false, Some(r.core.clone())),
         };
         ExtractedPage {
             url: url.to_string(),

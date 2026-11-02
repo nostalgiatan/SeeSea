@@ -170,7 +170,7 @@ pub fn cross_reranker(
     weight: Option<f64>,
     passages: Option<usize>,
     (center, scale): (Option<f32>, Option<f32>),
-) -> Result<Arc<dyn Reranker>> {
+) -> Result<Arc<CrossReranker>> {
     if !path.is_file() {
         return Err(Error::Config(format!(
             "the reranker model '{}' does not exist",

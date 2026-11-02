@@ -8,6 +8,16 @@ use crate::model::SelectedSection;
 use crate::text::{content_tokens, coverage, token_set};
 use std::collections::{HashMap, HashSet};
 
+/// Judges how well pieces of a page answer a query by meaning (an embedding or cross-encoder
+/// model). Implementations may be slow, so callers run them on a blocking thread.
+pub trait SectionScorer: Send + Sync {
+    /// One score in 0..1 per text, in order.
+    fn score(&self, query: &str, texts: &[&str]) -> Result<Vec<f64>, String>;
+}
+
+/// Chunks the lexical scorer sends on to the model: the model only sees the most promising ones.
+const MODEL_CANDIDATES: usize = 12;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Section {
     pub path: Vec<String>,
@@ -198,14 +208,49 @@ fn cut_at_paragraph(text: &str, budget: usize) -> String {
 /// Choose sections for `query` within `budget` characters, returned in document order.
 /// The flag says whether anything was left out or cut.
 pub fn select(markdown: &str, query: &str, budget: usize) -> (Vec<SelectedSection>, bool) {
+    select_with(markdown, query, budget, None)
+}
+
+/// Like [`select`], but when the page does not fit the budget the most promising chunks (by words)
+/// are re-scored by `scorer` and the choice follows meaning: a section can answer the query without
+/// sharing its words. If the scorer fails the lexical order is kept.
+pub fn select_with(
+    markdown: &str,
+    query: &str,
+    budget: usize,
+    scorer: Option<&dyn SectionScorer>,
+) -> (Vec<SelectedSection>, bool) {
     let chunks = chunk(split(markdown), budget);
     if chunks.is_empty() {
         return (Vec::new(), false);
     }
     let origins: Vec<usize> = chunks.iter().map(|(o, _)| *o).collect();
     let sections: Vec<Section> = chunks.into_iter().map(|(_, s)| s).collect();
-    let scores = score_sections(&sections, query);
+    let mut scores = score_sections(&sections, query);
     let total: usize = sections.iter().map(|s| s.markdown.chars().count()).sum();
+    if let Some(scorer) = scorer.filter(|_| total > budget && sections.len() > 1) {
+        // Heading-only stubs carry nothing for a model to judge.
+        let mut cand: Vec<usize> = (0..sections.len())
+            .filter(|&i| !sections[i].body.trim().is_empty())
+            .collect();
+        cand.sort_by(|a, b| scores[*b].total_cmp(&scores[*a]).then(a.cmp(b)));
+        cand.truncate(MODEL_CANDIDATES);
+        let texts: Vec<&str> = cand
+            .iter()
+            .map(|&i| sections[i].markdown.as_str())
+            .collect();
+        if let Ok(sem) = scorer.score(query, &texts) {
+            if sem.len() == cand.len() {
+                // Everything the model did not see ranks below everything it did.
+                for s in scores.iter_mut() {
+                    *s *= 0.3;
+                }
+                for (&i, m) in cand.iter().zip(sem) {
+                    scores[i] += 0.7 * m.clamp(0.0, 1.0);
+                }
+            }
+        }
+    }
 
     let (chosen, truncated): (Vec<(usize, String)>, bool) = if total <= budget {
         (
@@ -379,5 +424,40 @@ mod tests {
     fn empty_input_selects_nothing() {
         let (sel, truncated) = select("", "q", 100);
         assert!(sel.is_empty() && !truncated);
+    }
+
+    struct Meaning;
+    impl SectionScorer for Meaning {
+        fn score(&self, _q: &str, texts: &[&str]) -> Result<Vec<f64>, String> {
+            // Pretends to know that "battery" text answers a question about a car that won't start.
+            Ok(texts
+                .iter()
+                .map(|t| if t.contains("battery") { 1.0 } else { 0.0 })
+                .collect())
+        }
+    }
+
+    #[test]
+    fn a_scorer_can_pick_the_section_that_shares_no_words_with_the_query() {
+        let doc = "# Maintenance\n\nChange the oil and rotate the tyres every service, and keep a log of everything you did for the car.\n\n# Diagnosis\n\nIf the engine only clicks, the battery is the likely cause; test the voltage at the terminals.";
+        let query = "how to fix a car that will not start";
+        let (lex, _) = select(doc, query, 120);
+        assert!(
+            lex[0].markdown.contains("oil"),
+            "words alone choose maintenance: {lex:?}"
+        );
+        let (sem, truncated) = select_with(doc, query, 120, Some(&Meaning));
+        assert!(truncated);
+        assert!(sem[0].markdown.contains("battery"), "{sem:?}");
+        struct Broken;
+        impl SectionScorer for Broken {
+            fn score(&self, _: &str, _: &[&str]) -> Result<Vec<f64>, String> {
+                Err("down".into())
+            }
+        }
+        let fallback = select_with(doc, query, 120, Some(&Broken));
+        let plain = select(doc, query, 120);
+        assert_eq!(fallback.0.len(), plain.0.len());
+        assert_eq!(fallback.0[0].markdown, plain.0[0].markdown);
     }
 }

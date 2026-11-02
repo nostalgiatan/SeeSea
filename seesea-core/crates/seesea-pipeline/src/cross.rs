@@ -6,6 +6,7 @@
 //! only the opening passage and the best query matches of each page are scored.
 
 use crate::rerank::{DocView, RerankScore, Reranker, strip_title_echo};
+use crate::sections::SectionScorer;
 use crate::semantic::{passages, preselect};
 use crate::text::distinctness;
 use std::sync::Arc;
@@ -144,6 +145,20 @@ impl Reranker for CrossReranker {
             }
         }
         (scores, note)
+    }
+}
+
+impl SectionScorer for CrossReranker {
+    fn score(&self, query: &str, texts: &[&str]) -> Result<Vec<f64>, String> {
+        let logits = self.scorer.score(query, texts)?;
+        if logits.len() != texts.len() {
+            return Err("the scorer returned the wrong number of scores".into());
+        }
+        Ok(logits
+            .iter()
+            .zip(texts)
+            .map(|(&l, t)| sigmoid((l - self.cfg.center) / self.cfg.scale) * distinctness(t))
+            .collect())
     }
 }
 

@@ -2,6 +2,7 @@
 
 use crate::sources::{SourceSettings, build_sources};
 use seesea_config::{NetworkConfig, ProxyType};
+use seesea_pipeline::rerank::Reranker;
 use seesea_pipeline::store::{Cache, FileCache, MemoryCache, NoCache};
 use seesea_pipeline::{Error, Pipeline, PipelineConfig, Result};
 use std::path::PathBuf;
@@ -37,6 +38,8 @@ pub struct Settings {
     /// Logit mapped to relevance 0.5, and the logit distance of one sigmoid step.
     pub rerank_center: Option<f32>,
     pub rerank_scale: Option<f32>,
+    /// Choose page sections by shared words only, even when a model is loaded.
+    pub lexical_sections: bool,
 }
 
 /// `~/.cache/seesea` (or the platform equivalent).
@@ -117,25 +120,38 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
             )
         })
         .transpose()?;
-    let reranker: Option<Arc<dyn seesea_pipeline::rerank::Reranker>> = match &settings.rerank_model
-    {
-        Some(path) => Some(crate::embedding::cross_reranker(
-            path,
-            reranker.map(|r| r as Arc<dyn seesea_pipeline::rerank::Reranker>),
-            settings.rerank_weight,
-            settings.rerank_passages,
-            (settings.rerank_center, settings.rerank_scale),
-        )?),
-        None => reranker.map(|r| r as Arc<dyn seesea_pipeline::rerank::Reranker>),
-    };
+    let semantic = reranker;
+    let cross = settings
+        .rerank_model
+        .as_deref()
+        .map(|path| {
+            crate::embedding::cross_reranker(
+                path,
+                semantic.clone().map(|r| r as Arc<dyn Reranker>),
+                settings.rerank_weight,
+                settings.rerank_passages,
+                (settings.rerank_center, settings.rerank_scale),
+            )
+        })
+        .transpose()?;
     let mut pipeline = Pipeline::with_net_fetcher(sources, fetch)
         .config(PipelineConfig {
             fuzzy_cache_threshold: settings.fuzzy_cache,
             ..Default::default()
         })
         .cache(cache);
-    if let Some(r) = reranker {
-        pipeline = pipeline.reranker(r);
+    // Choosing which sections to return uses the same models (already loaded), the more precise first.
+    if !settings.lexical_sections {
+        if let Some(c) = &cross {
+            pipeline = pipeline.section_scorer(c.clone());
+        } else if let Some(m) = &semantic {
+            pipeline = pipeline.section_scorer(m.clone());
+        }
+    }
+    if let Some(c) = cross {
+        pipeline = pipeline.reranker(c);
+    } else if let Some(m) = semantic {
+        pipeline = pipeline.reranker(m);
     }
     Ok(pipeline)
 }
