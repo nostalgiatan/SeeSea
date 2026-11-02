@@ -20,6 +20,10 @@ pub struct Settings {
     pub allow_private: bool,
     /// Reuse cached results for queries whose words overlap this much (0..1). Off when unset.
     pub fuzzy_cache: Option<f64>,
+    /// Directory of a BERT-style embedding model; enables semantic reranking.
+    pub model_dir: Option<PathBuf>,
+    /// Share of content relevance that comes from the embedding score (default 0.6).
+    pub semantic_weight: Option<f64>,
 }
 
 /// `~/.cache/seesea` (or the platform equivalent).
@@ -83,12 +87,21 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
             settings.cache_dir.clone().unwrap_or_else(default_cache_dir),
         ))
     };
-    Ok(Pipeline::with_net_fetcher(sources, fetch)
+    let reranker = settings
+        .model_dir
+        .as_deref()
+        .map(|d| crate::embedding::semantic_reranker(d, settings.semantic_weight))
+        .transpose()?;
+    let mut pipeline = Pipeline::with_net_fetcher(sources, fetch)
         .config(PipelineConfig {
             fuzzy_cache_threshold: settings.fuzzy_cache,
             ..Default::default()
         })
-        .cache(cache))
+        .cache(cache);
+    if let Some(r) = reranker {
+        pipeline = pipeline.reranker(r);
+    }
+    Ok(pipeline)
 }
 
 #[cfg(test)]

@@ -147,6 +147,7 @@ members = [
     "crates/seesea-pipeline",
     "crates/seesea-mcp",
     "crates/seesea-cli",
+    "crates/seesea-embed",
     "crates/seesea-event",
     "crates/seesea-raming",
     "crates/error",

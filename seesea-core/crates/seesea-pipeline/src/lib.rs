@@ -15,6 +15,7 @@ pub mod render;
 pub mod replay;
 pub mod rerank;
 pub mod sections;
+pub mod semantic;
 pub mod source;
 pub mod store;
 pub mod text;

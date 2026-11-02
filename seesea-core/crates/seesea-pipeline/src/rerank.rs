@@ -29,6 +29,15 @@ pub trait Reranker: Send + Sync {
     fn name(&self) -> &str;
     /// One score per document, in the same order. Scores are comparable within one call.
     fn rerank(&self, query: &str, docs: &[DocView<'_>]) -> Vec<RerankScore>;
+
+    /// Like `rerank`, plus a note when the reranker had to fall back to something weaker.
+    fn rerank_noted(
+        &self,
+        query: &str,
+        docs: &[DocView<'_>],
+    ) -> (Vec<RerankScore>, Option<String>) {
+        (self.rerank(query, docs), None)
+    }
 }
 
 #[derive(Default)]

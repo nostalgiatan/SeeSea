@@ -257,3 +257,50 @@ async fn replay_compares_cache_policies_on_a_search_log() {
     let missing = run(seesea(&["replay", "/no/such/log"])).await;
     assert_eq!(missing.status.code(), Some(2), "{}", stderr(&missing));
 }
+
+#[tokio::test]
+async fn model_check_and_semantic_search_run_with_a_local_model() {
+    let dir = tempfile::tempdir().unwrap();
+    seesea_embed::testing::write_tiny_model(dir.path(), None);
+    let model = dir.path().to_str().unwrap();
+
+    let out = run(seesea(&["--json", "model", model])).await;
+    assert!(out.status.success(), "{}", stderr(&out));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["dim"], 32, "{v}");
+
+    // A search with the model loaded still completes and ranks the page that backs up its title first.
+    let base = spawn_site().await;
+    let out = run(seesea(&[
+        "--searxng",
+        &base,
+        "--no-native",
+        "--no-cache",
+        "--allow-private",
+        "--json",
+        "--model-dir",
+        model,
+        "search",
+        "rust async runtime",
+    ]))
+    .await;
+    assert!(out.status.success(), "{}", stderr(&out));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["hits"][0]["url"], format!("{base}/a/tokio"), "{v}");
+
+    let bad = run(seesea(&[
+        "--model-dir",
+        "/no/such/model",
+        "--searxng",
+        &base,
+        "search",
+        "x",
+    ]))
+    .await;
+    assert_eq!(bad.status.code(), Some(3), "{}", stderr(&bad));
+    assert!(
+        stderr(&bad).contains("error[config_error]"),
+        "{}",
+        stderr(&bad)
+    );
+}

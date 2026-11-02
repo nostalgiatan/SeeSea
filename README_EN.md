@@ -27,6 +27,8 @@ seesea eval judgments.jsonl -k 10                    # nDCG / recall / MRR
 seesea search --log s.jsonl "query"                   # keep a search log
 seesea replay s.jsonl --ttl 600                      # cache policies on that log: hit ratio vs result drift
 seesea serve --addr 127.0.0.1:8080                   # SEESEA_API_KEY enables bearer auth
+seesea model ./bge-small-en-v1.5                     # check that an embedding model loads and separates related from unrelated text
+seesea --model-dir ./bge-small-en-v1.5 search "query"  # semantic reranking (pure-Rust inference; you supply the model)
 seesea mcp                                           # MCP over stdio
 ```
 
@@ -38,7 +40,7 @@ Exit codes: 0 ok, 1 other, 2 bad usage, 3 configuration or no sources, 4 network
 
 - The SearXNG and Brave parsers are tested against hand-written fixtures, not live services. Run `seesea sources --check` against yours.
 - The scrape engines (Bing, Baidu, Sogou) are unverified from the build sandbox and fragile by nature.
-- Reranking is lexical (BM25 plus title-support); there is no cross-encoder or embedding model yet. The `Reranker` trait is the seam.
+- Semantic reranking needs a BERT-style embedding model in `--model-dir` (config.json, tokenizer.json, model.safetensors; e.g. BAAI/bge-small-en-v1.5, with a `seesea-embed.json` setting pooling and prefixes). It runs on the CPU via candle, no C/C++ runtime. Without a model, reranking is lexical (BM25 plus title-support). The score mapping (`cos_floor`/`cos_ceil`) is tuned for BGE-style models and not yet validated on a judged set.
 - `deep` mode reads more pages but does not rewrite queries yet.
 - SSRF guard checks the target and redirects but does not pin DNS results.
 - Caching: queries are keyed by their meaningful words (case, order and stopwords don't matter); cached pages live longer or shorter per URL depending on whether they changed when refetched; `--fuzzy-cache 0.8` (off by default) reuses results for near-identical queries, so check its cost with `seesea replay` first; the server's `GET /v1/stats` reports hit ratios.
