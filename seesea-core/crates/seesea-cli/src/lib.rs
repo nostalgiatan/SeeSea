@@ -4,3 +4,5 @@ pub mod config;
 pub mod embedding;
 pub mod server;
 pub mod sources;
+pub mod models;
+pub mod userconfig;
