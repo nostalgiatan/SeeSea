@@ -31,7 +31,7 @@ use super::handlers::{
     cache, get_static_html_path, handle_cache_clear_pattern, handle_cache_keys,
     handle_cache_stats_detail, handle_config_get, handle_config_update, handle_connections_stats,
     handle_controller_action, handle_engine_toggle, handle_engines_batch, handle_engines_list,
-    handle_engines_list_full, handle_engines_status, handle_favicon, handle_health,
+    handle_engines_list_full, handle_engines_status, handle_extract, handle_favicon, handle_health,
     handle_health_detail, handle_hot_all, handle_hot_multiple, handle_hot_platform,
     handle_hot_platforms_list, handle_index, handle_logs_directory, handle_logs_errors,
     handle_logs_files, handle_logs_read, handle_logs_tail, handle_magic_link_generate,
@@ -327,6 +327,7 @@ impl ApiInterface {
             .route("/search", get(handle_search))
             .route("/search", post(handle_search_post))
             .route("/engines", get(handle_engines_list))
+            .route("/extract", post(handle_extract))
             .route("/hot", get(handle_hot_all))
             .route("/hot/all", get(handle_hot_all))
             .route("/hot/platforms", get(handle_hot_platforms_list))

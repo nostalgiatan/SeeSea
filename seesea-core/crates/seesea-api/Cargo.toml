@@ -27,6 +27,8 @@ seesea-sys = { path = "../seesea-sys" }
 seesea-derive = { path = "../seesea-derive" }
 seesea-event = { path = "../seesea-event" }
 seesea-stock = { path = "../seesea-stock" }
+seesea-fetch = { path = "../seesea-fetch" }
+seesea-extract = { path = "../seesea-extract", default-features = false }
 lazy_static = "1.5"
 serde_urlencoded = "0.7"
 reqwest = { version = "0.12", features = ["json"] }

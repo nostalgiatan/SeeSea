@@ -63,7 +63,6 @@ const KEYWORDS: &[(&str, &[&str])] = &[
     ("pager", &["pagination", "pager", "paging", "page-"]),
 ];
 
-const BLOCK_TAGS: &[&str] = &["p", "li", "td", "th", "pre", "blockquote", "dd", "dt", "figcaption", "div"];
 
 /// Column names of `Block::feats`.
 pub fn feature_names() -> Vec<String> {
@@ -117,7 +116,7 @@ fn is_inline(name: &str) -> bool {
         | "strike" | "nobr" | "wbr" | "marked" | "img")
 }
 
-fn elem_name(n: NodeRef<Node>) -> Option<&str> {
+fn elem_name(n: NodeRef<'_, Node>) -> Option<&str> {
     n.value().as_element().map(|e| e.name())
 }
 
