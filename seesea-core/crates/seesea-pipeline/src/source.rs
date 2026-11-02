@@ -35,5 +35,11 @@ pub trait Source: Send + Sync {
         1.0
     }
 
+    /// Whether a search that names no sources uses this one. Specialised sources (code Q&A,
+    /// papers, repositories) answer only their own kind of question, so they are asked for by name.
+    fn on_by_default(&self) -> bool {
+        true
+    }
+
     async fn search(&self, query: &SourceQuery) -> Result<Vec<RawHit>, SourceError>;
 }

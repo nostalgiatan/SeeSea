@@ -67,6 +67,22 @@ impl Source for FakeSource {
     }
 }
 
+/// A specialised source: only used when a search names it.
+struct OptIn(Arc<FakeSource>);
+
+#[async_trait]
+impl Source for OptIn {
+    fn name(&self) -> &str {
+        self.0.name
+    }
+    fn on_by_default(&self) -> bool {
+        false
+    }
+    async fn search(&self, q: &SourceQuery) -> Result<Vec<RawHit>, SourceError> {
+        self.0.search(q).await
+    }
+}
+
 struct FakePages {
     pages: HashMap<String, String>,
     requested: Mutex<Vec<String>>,
@@ -343,6 +359,25 @@ async fn source_filter_limit_and_empty_results() {
 
     req.sources.clear();
     assert_eq!(p.search(&req).await.unwrap().hits.len(), 3);
+}
+
+#[tokio::test]
+async fn specialised_sources_are_used_only_when_named() {
+    let general = FakeSource::ok("web", vec![hit("https://x.org/1", "One", "first")]);
+    let niche = FakeSource::ok("papers", vec![hit("https://arxiv.org/abs/1", "Paper", "abstract")]);
+    let niche_probe = niche.clone();
+    let p = standard_pipeline(vec![general, Arc::new(OptIn(niche))], FakePages::new(&[]));
+
+    let mut req = SearchRequest::new("one");
+    req.mode = Mode::Fast;
+    let resp = p.search(&req).await.unwrap();
+    assert_eq!(resp.hits.len(), 1);
+    assert_eq!(niche_probe.calls.load(Ordering::SeqCst), 0);
+
+    req.sources = vec!["papers".into()];
+    let resp = p.search(&req).await.unwrap();
+    assert_eq!(resp.hits[0].url, "https://arxiv.org/abs/1");
+    assert_eq!(niche_probe.calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
