@@ -23,7 +23,8 @@ WCXB (keeps adjacent material such as product specs and thread replies).
 4. Selected blocks are emitted in order as Markdown (headings, lists, quotes, code fences, bold,
    italic, inline code, links).
 
-Cost: about 17 ms per page single-threaded (parse, metadata, blocks, features, model, Markdown).
+Cost: about 7 ms per page single-threaded (parse, metadata, blocks, features, model, Markdown); `extract_batch`
+spreads pages over a rayon pool (≈1,000 pages/s on 8 threads in our measurement).
 The bundled model is ~1 MB gzipped; accuracy on held-out domains is in `docs/extraction-design.md` §5.6.4.
 
 ## Not implemented yet

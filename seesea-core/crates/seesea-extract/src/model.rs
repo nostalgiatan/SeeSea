@@ -31,6 +31,27 @@ impl Model {
         Ok(Model { booster, n_features: f.n_features, thr_core: f.thr_core, thr_extended: f.thr_extended })
     }
 
+    /// Same as `predict`, building the column-major matrix straight from block features plus the
+    /// page-level features and the convention flag (no per-row copies).
+    pub fn predict_blocks(&self, feats: &[&[f32]], page: &[f32], flag: f32) -> Vec<f32> {
+        let n = feats.len();
+        if n == 0 {
+            return Vec::new();
+        }
+        let d = self.n_features;
+        let w = d - page.len() - 1;
+        let mut data = vec![0.0f64; n * d];
+        for (i, f) in feats.iter().enumerate() {
+            debug_assert_eq!(f.len(), w);
+            for (j, v) in f.iter().enumerate() { data[j * n + i] = *v as f64; }
+            for (j, v) in page.iter().enumerate() { data[(w + j) * n + i] = *v as f64; }
+            data[(d - 1) * n + i] = flag as f64;
+        }
+        let m = Matrix::new(&data, n, d);
+        // tiny pages: threads cost more than they save
+        self.booster.predict(&m, n >= 2000).into_iter().map(|z| (1.0 / (1.0 + (-z).exp())) as f32).collect()
+    }
+
     /// Probability that each row (one per block) is main content.
     pub fn predict(&self, rows: &[Vec<f32>]) -> Vec<f32> {
         if rows.is_empty() {

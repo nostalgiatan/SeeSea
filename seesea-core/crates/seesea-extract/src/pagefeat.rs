@@ -2,7 +2,7 @@
 //! (URL shape, structured-data types, tag mix, share of text in comment/product/list/table blocks)
 //! and learns whatever helps; no page-type annotation is needed at inference.
 
-use crate::blocks::{feature_names, Block};
+use crate::blocks::{names_cached, Block};
 
 const URL_GROUPS: &[&[&str]] = &[
     &["forum", "thread", "topic", "viewtopic", "question", "answers", "discuss", "community", "/t/", "showthread"],
@@ -26,7 +26,7 @@ const HTML_MARKS: &[&[&str]] = &[
 pub const N_PAGE_FEATURES: usize = 18 + 7 + 6 + 3 + 6;
 
 pub fn page_features(url: &str, html: &str, blocks: &[Block]) -> Vec<f32> {
-    let names = feature_names();
+    let names = names_cached();
     let ix = |n: &str| names.iter().position(|x| x == n).unwrap();
     let total: f32 = blocks.iter().map(|b| b.text.chars().count() as f32).sum::<f32>().max(1.0);
     // share of page text whose block feature `n` is > 0.5
@@ -58,14 +58,22 @@ pub fn page_features(url: &str, html: &str, blocks: &[Block]) -> Vec<f32> {
         blocks.iter().map(|b| b.feats[ix("tag_h2")]).sum::<f32>(),
         wmean("tag_class_repeat"),
     ];
-    let lower = html.to_lowercase();
-    for tag in ["<article", "<li", "<table", "<form", "<textarea", "<pre", "<img"] {
-        v.push(((lower.matches(tag).count() + 1) as f32).ln());
+    let lower = html.to_ascii_lowercase();
+    // one pass over the '<' bytes counts every tag prefix (same counts as str::matches per needle)
+    const TAGS: [&[u8]; 7] = [b"<article", b"<li", b"<table", b"<form", b"<textarea", b"<pre", b"<img"];
+    let mut counts = [0usize; 7];
+    let bytes = lower.as_bytes();
+    let mut at = 0;
+    while let Some(off) = bytes[at..].iter().position(|b| *b == b'<') {
+        let rest = &bytes[at + off..];
+        for (i, t) in TAGS.iter().enumerate() { if rest.starts_with(t) { counts[i] += 1; } }
+        at += off + 1;
     }
+    for c in counts { v.push(((c + 1) as f32).ln()); }
     for group in HTML_MARKS {
         v.push(group.iter().any(|m| lower.contains(m)) as u8 as f32);
     }
-    let u = url.to_lowercase();
+    let u = url.to_ascii_lowercase();
     let path = u.split("://").nth(1).unwrap_or(&u).splitn(2, '/').nth(1).unwrap_or("");
     v.push(path.trim_matches('/').split('/').filter(|s| !s.is_empty()).count() as f32);
     v.push(path.chars().filter(|c| c.is_ascii_digit()).count() as f32 / path.len().max(1) as f32);
