@@ -20,6 +20,10 @@ pub struct FileConfig {
     pub allow_private: Option<bool>,
     pub plain_headers: Option<bool>,
     pub lexical_sections: Option<bool>,
+    /// The Lightpanda binary, for pages that only show their content after JavaScript runs.
+    pub lightpanda: Option<PathBuf>,
+    /// Never render, even when Lightpanda is installed.
+    pub no_render: Option<bool>,
     #[serde(default)]
     pub models: Models,
     #[serde(default)]
@@ -141,6 +145,11 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # allow_private = false      # let `extract` reach loopback and private addresses
 # plain_headers = false      # do not imitate a browser when fetching pages
 # lexical_sections = false   # choose page sections by shared words only
+
+# Pages whose content only appears after JavaScript runs are rendered with Lightpanda
+# (https://github.com/lightpanda-io/browser) when it is on PATH or named here.
+# lightpanda = "/usr/local/bin/lightpanda"
+# no_render = false
 # fuzzy_cache = 0.8          # reuse cached results for similar queries
 # cache_dir = "~/.cache/seesea"
 

@@ -95,6 +95,12 @@ struct NetArgs {
     /// Fetch pages with plain headers instead of browser-like ones (SEESEA_USER_AGENT sets the user agent otherwise).
     #[arg(long, global = true)]
     plain_headers: bool,
+    /// Lightpanda binary used to render pages that need JavaScript (default: `lightpanda` on PATH).
+    #[arg(long, env = "SEESEA_LIGHTPANDA", global = true)]
+    lightpanda: Option<PathBuf>,
+    /// Never render pages with a headless browser.
+    #[arg(long, global = true)]
+    no_render: bool,
     #[arg(long, global = true)]
     no_cache: bool,
     /// Allow fetching loopback and private addresses.
@@ -216,6 +222,8 @@ fn apply_file(net: &mut NetArgs, f: &FileConfig, use_model: bool) {
     fill(&mut net.searxng, &f.searxng);
     fill(&mut net.brave_key, &f.brave_key);
     fill(&mut net.proxy, &f.proxy);
+    fill(&mut net.lightpanda, &f.lightpanda);
+    net.no_render |= f.no_render.unwrap_or(false);
     fill(&mut net.cache_dir, &f.cache_dir);
     fill(&mut net.fuzzy_cache, &f.fuzzy_cache);
     fill(&mut net.model_dir, &f.models.embedding);
@@ -262,6 +270,8 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         rerank_scale: net.rerank_scale,
         lexical_sections: net.lexical_sections,
         plain_headers: net.plain_headers,
+        lightpanda: net.lightpanda.clone(),
+        no_render: net.no_render,
     }
 }
 
@@ -335,6 +345,10 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                         return print_json(&st);
                     }
                     println!("models directory: {}", models::models_dir(&file).display());
+                    match seesea_fetch::render::Renderer::discover(cli.net.lightpanda.as_deref()) {
+                        Some(r) => println!("renderer   ok       {}  Lightpanda renders pages that need JavaScript", r.binary().display()),
+                        None => println!("renderer   missing  Lightpanda not found: put `lightpanda` on PATH or set `lightpanda` in the config (optional)"),
+                    }
                     for s in &st {
                         println!(
                             "{:<10} {:<8} {}  {}",

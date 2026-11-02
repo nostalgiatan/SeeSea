@@ -42,6 +42,11 @@ pub struct Settings {
     pub lexical_sections: bool,
     /// Do not send browser-like headers or retry refusals as another browser.
     pub plain_headers: bool,
+    /// Lightpanda binary for pages that need JavaScript; found on `PATH` or in
+    /// `SEESEA_LIGHTPANDA` when unset.
+    pub lightpanda: Option<PathBuf>,
+    /// Never render, even when Lightpanda is installed.
+    pub no_render: bool,
 }
 
 /// `~/.cache/seesea` (or the platform equivalent).
@@ -137,12 +142,21 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
             )
         })
         .transpose()?;
-    let mut pipeline = Pipeline::with_net_fetcher(sources, fetch)
+    let renderer = (!settings.no_render)
+        .then(|| seesea_fetch::render::Renderer::discover(settings.lightpanda.as_deref()))
+        .flatten();
+    let mut pipeline = Pipeline::with_net_fetcher(sources, fetch.clone())
         .config(PipelineConfig {
             fuzzy_cache_threshold: settings.fuzzy_cache,
             ..Default::default()
         })
         .cache(cache);
+    if let Some(renderer) = renderer {
+        pipeline = pipeline.renderer(Arc::new(seesea_pipeline::content::RenderFetcher {
+            renderer,
+            options: fetch,
+        }));
+    }
     // Choosing which sections to return uses the same models (already loaded), the more precise first.
     if !settings.lexical_sections {
         if let Some(c) = &cross {

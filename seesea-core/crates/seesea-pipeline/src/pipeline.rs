@@ -61,6 +61,8 @@ impl Default for PipelineConfig {
 pub struct Pipeline {
     sources: Vec<Arc<dyn Source>>,
     fetcher: Arc<dyn PageFetcher>,
+    /// Fetches pages through a headless browser; used when the static HTML holds no content.
+    renderer: Option<Arc<dyn PageFetcher>>,
     extractor: OnceLock<Arc<Extractor>>,
     reranker: Arc<dyn Reranker>,
     section_scorer: Option<Arc<dyn SectionScorer>>,
@@ -93,6 +95,9 @@ pub struct ExtractedPage {
     pub asides: Vec<seesea_extract::Section>,
     pub confidence: f32,
     pub needs_render: bool,
+    /// The content was produced by a headless browser running the page's scripts.
+    #[serde(default)]
+    pub rendered: bool,
     pub truncated: bool,
 }
 
@@ -116,6 +121,7 @@ impl Pipeline {
         Self {
             sources,
             fetcher,
+            renderer: None,
             extractor: OnceLock::new(),
             reranker: Arc::new(LexicalReranker),
             section_scorer: None,
@@ -132,6 +138,29 @@ impl Pipeline {
         options: seesea_fetch::FetchOptions,
     ) -> Self {
         Self::new(sources, Arc::new(NetFetcher::new(options)))
+    }
+
+    /// Fetch pages whose static HTML holds no content again through `renderer` (a headless
+    /// browser). Its pages are cached like any other.
+    pub fn renderer(mut self, renderer: Arc<dyn PageFetcher>) -> Self {
+        self.renderer = Some(self.cached_renderer(renderer));
+        self
+    }
+
+    fn cached_renderer(&self, renderer: Arc<dyn PageFetcher>) -> Arc<dyn PageFetcher> {
+        if self.metered.is_none() {
+            return renderer;
+        }
+        Arc::new(
+            CachedFetcher::with_ttl_range(
+                renderer,
+                Arc::clone(&self.cache),
+                self.cfg.page_cache_ttl,
+                self.cfg.page_ttl_min,
+                self.cfg.page_ttl_max,
+            )
+            .with_prefix("render:"),
+        )
     }
 
     pub fn config(mut self, cfg: PipelineConfig) -> Self {
@@ -184,6 +213,9 @@ impl Pipeline {
         ));
         self.cache = cache;
         self.metered = Some(metered);
+        if let Some(r) = self.renderer.take() {
+            self.renderer = Some(self.cached_renderer(r));
+        }
         self
     }
 
@@ -440,6 +472,7 @@ impl Pipeline {
                 .collect();
             let outs = content::load_pages(
                 &self.fetcher,
+                self.renderer.as_ref(),
                 self.extractor_handle(),
                 &urls,
                 Scope::Core,
@@ -635,6 +668,7 @@ impl Pipeline {
         }
         let loaded = content::load_page(
             self.fetcher.as_ref(),
+            self.renderer.as_deref(),
             self.extractor_handle(),
             url,
             scope,
@@ -676,6 +710,7 @@ impl Pipeline {
         let loaded = Loaded {
             final_url: url.to_string(),
             result,
+            rendered: false,
         };
         let selection = self.selection_for(&loaded, query, max_chars).await;
         Ok(Self::page_from(url, loaded, selection))
@@ -714,6 +749,7 @@ impl Pipeline {
             asides: r.sections,
             confidence: r.confidence,
             needs_render: r.needs_render,
+            rendered: loaded.rendered,
             truncated,
         }
     }

@@ -11,6 +11,8 @@
 //! It is a check before connecting, not at connection time: a name that changes its answer between
 //! the check and the connection is not caught.
 
+pub mod render;
+
 use seesea_net::HttpClient;
 use seesea_net::privacy::retryable;
 use std::fmt;
