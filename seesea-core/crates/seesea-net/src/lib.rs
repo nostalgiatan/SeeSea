@@ -62,23 +62,10 @@
 //! ## 使用示例
 //!
 //! ```rust,no_run
-//! use seesea_net::{HttpClient, NetworkConfig, PrivacyConfig};
-//!
-//! // 创建隐私配置
-//! let privacy_config = PrivacyConfig {
-//!     tls_fingerprint_obfuscation: true,
-//!     user_agent_rotation: true,
-//!     doh_providers: vec!["cloudflare", "google"],
-//!     ..Default::default()
-//! };
+//! use seesea_net::{HttpClient, NetworkConfig};
 //!
 //! // 创建网络配置
-//! let network_config = NetworkConfig {
-//!     timeout_secs: 30,
-//!     connection_pool_size: 50,
-//!     privacy: privacy_config,
-//!     ..Default::default()
-//! };
+//! let network_config = NetworkConfig::default();
 //!
 //! // 创建HTTP客户端
 //! let client = HttpClient::new(network_config)?;
@@ -115,12 +102,11 @@ pub use seesea_errors;
 
 // 导出核心配置类型
 pub use seesea_config::{
-    DnsConfig, FingerprintLevel, NetworkConfig, PoolConfig, PrivacyConfig, ProxyConfig, ProxyType,
+    DnsConfig, FingerprintLevel, NetworkConfig, PoolConfig, ProxyConfig, ProxyType,
     RequestOptions, TlsConfig, TlsVersion,
 };
 
 // 导出隐私配置类型
-pub use seesea_config::privacy::UaRotationStrategy;
 
 // 导出网络接口
 pub use interface::NetworkInterface;
