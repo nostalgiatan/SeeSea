@@ -241,7 +241,8 @@ impl Pipeline {
             return Err(Error::NoSources);
         }
         if wanted.is_empty() {
-            return Ok(self.sources.clone());
+            let general: Vec<_> = self.sources.iter().filter(|s| s.on_by_default()).cloned().collect();
+            return Ok(if general.is_empty() { self.sources.clone() } else { general });
         }
         let known = self.source_names();
         if let Some(bad) = wanted

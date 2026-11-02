@@ -49,18 +49,6 @@ pub fn classify(message: &str) -> FailureKind {
     {
         FailureKind::Blocked
     } else if [
-        "parse",
-        "json",
-        "expected value",
-        "invalid type",
-        "missing field",
-        "eof",
-    ]
-    .iter()
-    .any(|k| m.contains(k))
-    {
-        FailureKind::Parse
-    } else if [
         "status",
         "http",
         "request failed",
@@ -72,6 +60,18 @@ pub fn classify(message: &str) -> FailureKind {
     .any(|k| m.contains(k))
     {
         FailureKind::Http
+    } else if [
+        "parse",
+        "json",
+        "expected value",
+        "invalid type",
+        "missing field",
+        "eof",
+    ]
+    .iter()
+    .any(|k| m.contains(k))
+    {
+        FailureKind::Parse
     } else {
         FailureKind::Other
     }
@@ -156,7 +156,8 @@ impl Source for EngineSource {
 pub struct SourceSettings {
     pub searxng_url: Option<String>,
     pub brave_key: Option<String>,
-    /// Include the built-in scraping engines (Bing).
+    /// Include the built-in sources that need no account: Bing, DuckDuckGo, Mojeek, Wikipedia and,
+    /// when named, Stack Overflow, arXiv and GitHub.
     pub native_engines: bool,
 }
 
@@ -186,9 +187,10 @@ pub fn build_sources(
         out.push(Arc::new(EngineSource::new(
             "bing",
             1.0,
-            Arc::new(BingEngine::with_client(client)),
+            Arc::new(BingEngine::with_client(Arc::clone(&client))),
             false,
         )));
+        out.extend(crate::keyless::keyless_sources(client));
     }
     out
 }
@@ -199,6 +201,11 @@ mod tests {
 
     #[test]
     fn classify_recognises_common_failures() {
+        // A URL with `format=json` in it is still a failed request, not a parse error.
+        assert_eq!(
+            classify("GET request failed: error sending request for url (https://x.org/?format=json)"),
+            FailureKind::Http
+        );
         assert_eq!(classify("operation timed out"), FailureKind::Timeout);
         assert_eq!(
             classify("Brave API returned 429 Too Many Requests"),
