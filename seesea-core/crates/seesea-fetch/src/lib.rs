@@ -4,7 +4,9 @@
 //! is repeated on the final URL after redirects. A host name that resolves to a private address
 //! (DNS rebinding) is not caught here; that needs a check at connection time.
 
-use seesea_net::{HttpClient, RequestOptions};
+mod profile;
+
+use seesea_net::HttpClient;
 use std::fmt;
 use std::net::IpAddr;
 use url::{Host, Url};
@@ -16,6 +18,9 @@ pub struct FetchOptions {
     pub max_bytes: usize,
     /// Allow loopback and private addresses. Off by default; meant for tests and intranet use.
     pub allow_private: bool,
+    /// Send browser-like headers and, after a refusal (403, 429, 503), retry as another browser.
+    /// `SEESEA_USER_AGENT` replaces the user agent. Headers only: no TLS imitation, scripts or CAPTCHAs.
+    pub browser_headers: bool,
 }
 
 impl Default for FetchOptions {
@@ -24,6 +29,7 @@ impl Default for FetchOptions {
             timeout_secs: 15,
             max_bytes: 5 * 1024 * 1024,
             allow_private: false,
+            browser_headers: true,
         }
     }
 }
@@ -124,19 +130,65 @@ fn check_ip(ip: IpAddr) -> Result<(), FetchError> {
     }
 }
 
+/// Attempts per page: the first, plus up to two as a different browser.
+const ATTEMPTS: usize = 3;
+
+/// A wait that is not always the same, so repeated retries do not form a pattern.
+fn jitter_ms(base: u64) -> u64 {
+    let n = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos() as u64);
+    base + n % base
+}
+
 pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchError> {
     let url = check_target_with(raw_url, opts.allow_private)?;
     let client = HttpClient::instance()
         .await
         .map_err(|e| FetchError::Network(e.to_string()))?;
-    let request = RequestOptions {
-        timeout_secs: Some(opts.timeout_secs),
-        ..Default::default()
+    let inner = client.inner().await;
+    let host = url.host_str().unwrap_or_default().to_string();
+    let custom_ua = std::env::var("SEESEA_USER_AGENT").ok();
+    let started = std::time::Instant::now();
+    let budget = std::time::Duration::from_secs(opts.timeout_secs.max(1));
+
+    let mut attempt = 0;
+    let response = loop {
+        let mut request = inner.get(url.as_str()).timeout(
+            budget
+                .saturating_sub(started.elapsed())
+                .max(std::time::Duration::from_secs(1)),
+        );
+        if opts.browser_headers {
+            for (k, v) in profile::profile_for(&host, attempt, custom_ua.as_deref()).headers {
+                request = request.header(k, v);
+            }
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|e| FetchError::Network(e.to_string()))?;
+        let status = response.status().as_u16();
+        attempt += 1;
+        let again = opts.browser_headers
+            && profile::retryable(status)
+            && attempt < ATTEMPTS
+            && started.elapsed() < budget / 2;
+        if !again {
+            break response;
+        }
+        // Honour Retry-After, within reason; otherwise wait a short, uneven time.
+        let asked = response
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .map(|s| s.min(3) * 1000);
+        tokio::time::sleep(std::time::Duration::from_millis(
+            asked.unwrap_or_else(|| jitter_ms(300)),
+        ))
+        .await;
     };
-    let response = client
-        .get(url.as_str(), Some(request))
-        .await
-        .map_err(|e| FetchError::Network(e.to_string()))?;
 
     // A redirect may have led somewhere private; do not hand its content back.
     let final_url = response.url().to_string();

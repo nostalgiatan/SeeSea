@@ -45,97 +45,144 @@ pub struct Block {
     pub cell: Option<Cell>,
 }
 
-/// A table cell a block belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The table a block's text sits in, if any. The first block of each table carries the whole table
+/// rendered as Markdown (built from the DOM, so empty cells, `colspan` and `rowspan` keep the
+/// columns aligned); the other blocks of that table are covered by it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
     pub table: NodeId,
-    pub row: NodeId,
-    pub cell: NodeId,
-    pub header: bool,
+    pub markdown: Option<String>,
 }
 
-fn cell_of(node: NodeRef<Node>) -> Option<Cell> {
-    let mut cell = None;
-    let mut row = None;
+fn table_of(node: NodeRef<Node>) -> Option<NodeId> {
+    let mut in_cell = false;
     for a in std::iter::once(node).chain(node.ancestors()) {
         match elem_name(a) {
-            Some("td" | "th") if cell.is_none() => cell = Some(a),
-            Some("tr") if row.is_none() && cell.is_some() => row = Some(a),
-            Some("table") => {
-                let (c, r) = (cell?, row?);
-                return Some(Cell {
-                    table: a.id(),
-                    row: r.id(),
-                    cell: c.id(),
-                    header: elem_name(c) == Some("th"),
-                });
-            }
+            Some("td" | "th") => in_cell = true,
+            Some("table") => return in_cell.then(|| a.id()),
             _ => {}
         }
     }
     None
 }
 
-/// Join the Markdown of the blocks at `idx`, turning consecutive table cells back into a Markdown
-/// table. A table with a single column is layout, not data, and stays as plain paragraphs.
+const SUP: &[(char, char)] = &[('0','⁰'),('1','¹'),('2','²'),('3','³'),('4','⁴'),('5','⁵'),('6','⁶'),('7','⁷'),('8','⁸'),('9','⁹'),('+','⁺'),('-','⁻'),('−','⁻'),('(','⁽'),(')','⁾'),('n','ⁿ'),('i','ⁱ')];
+const SUB: &[(char, char)] = &[('0','₀'),('1','₁'),('2','₂'),('3','₃'),('4','₄'),('5','₅'),('6','₆'),('7','₇'),('8','₈'),('9','₉'),('+','₊'),('-','₋'),('−','₋'),('(','₍'),(')','₎'),('a','ₐ'),('e','ₑ'),('o','ₒ'),('x','ₓ'),('h','ₕ'),('k','ₖ'),('l','ₗ'),('m','ₘ'),('n','ₙ'),('p','ₚ'),('s','ₛ'),('t','ₜ'),('i','ᵢ')];
+
+/// `text` as Unicode super- or subscript characters; falls back to `^(text)` / `_(text)` when a
+/// character has no such form.
+fn script(text: &str, sup: bool) -> String {
+    let t = text.split_whitespace().collect::<String>();
+    let table = if sup { SUP } else { SUB };
+    let mapped: Option<String> = t.chars().map(|c| table.iter().find(|(f, _)| *f == c).map(|(_, to)| *to)).collect();
+    match mapped {
+        Some(m) if !t.is_empty() => m,
+        _ if t.is_empty() => String::new(),
+        _ => format!("{}({t})", if sup { '^' } else { '_' }),
+    }
+}
+
+/// Plain text of an element for a table cell: sup/sub as Unicode, `<br>` and block boundaries as spaces.
+fn cell_text(node: NodeRef<Node>) -> String {
+    fn walk(n: NodeRef<Node>, out: &mut String) {
+        match n.value() {
+            Node::Text(t) => out.push_str(t),
+            Node::Element(e) => {
+                let name = e.name();
+                if SKIP.contains(&name) { return; }
+                let mut inner = String::new();
+                for c in n.children() { walk(c, &mut inner); }
+                match name {
+                    "sup" => out.push_str(&script(&inner, true)),
+                    "sub" => out.push_str(&script(&inner, false)),
+                    "br" => out.push(' '),
+                    _ if is_inline(name) => out.push_str(&inner),
+                    _ => { out.push(' '); out.push_str(&inner); out.push(' '); }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut s = String::new();
+    walk(node, &mut s);
+    s.split_whitespace().collect::<Vec<_>>().join(" ").replace('|', "\\|")
+}
+
+fn span(e: &scraper::node::Element, attr: &str) -> usize {
+    e.attr(attr).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(1).clamp(1, 100)
+}
+
+/// A table as Markdown, or `None` for layout tables (a single column, a single row or no text).
+fn render_table(table: NodeRef<Node>) -> Option<String> {
+    let rows: Vec<NodeRef<Node>> = table
+        .descendants()
+        .filter(|n| elem_name(*n) == Some("tr") && n.ancestors().find(|a| elem_name(*a) == Some("table")).map(|a| a.id()) == Some(table.id()))
+        .collect();
+    let mut grid: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
+    let mut taken: StdHashMap<(usize, usize), String> = StdHashMap::new();
+    for (r, row) in rows.iter().enumerate() {
+        let mut c = 0;
+        let put = |grid: &mut Vec<Vec<String>>, taken: &mut StdHashMap<(usize, usize), String>, r: usize, c: &mut usize| {
+            while let Some(t) = taken.remove(&(r, *c)) {
+                if grid[r].len() <= *c { grid[r].resize(*c + 1, String::new()); }
+                grid[r][*c] = t;
+                *c += 1;
+            }
+        };
+        for cell in row.children().filter(|n| matches!(elem_name(*n), Some("td" | "th"))) {
+            put(&mut grid, &mut taken, r, &mut c);
+            let e = cell.value().as_element()?;
+            let (cs, rs) = (span(e, "colspan"), span(e, "rowspan"));
+            let text = cell_text(cell);
+            if grid[r].len() < c + cs { grid[r].resize(c + cs, String::new()); }
+            grid[r][c] = text.clone();
+            for dr in 1..rs {
+                if r + dr < rows.len() {
+                    taken.insert((r + dr, c), text.clone());
+                    for dc in 1..cs { taken.insert((r + dr, c + dc), String::new()); }
+                }
+            }
+            c += cs;
+        }
+        put(&mut grid, &mut taken, r, &mut c);
+    }
+    let width = grid.iter().map(Vec::len).max().unwrap_or(0);
+    let grid: Vec<Vec<String>> = grid.into_iter().filter(|r| r.iter().any(|c| !c.is_empty())).collect();
+    if width < 2 || grid.len() < 2 { return None; }
+    let line = |cells: &[String]| {
+        let mut v: Vec<&str> = cells.iter().map(String::as_str).collect();
+        v.resize(width, "");
+        format!("| {} |", v.join(" | "))
+    };
+    let mut out = vec![line(&grid[0]), line(&vec!["---".to_string(); width])];
+    out.extend(grid[1..].iter().map(|r| line(r)));
+    Some(out.join("\n"))
+}
+
+/// Join the Markdown of the blocks at `idx`; the blocks of one table become that table's Markdown.
 pub fn join_blocks(blocks: &[Block], idx: &[usize]) -> String {
     let mut out: Vec<String> = Vec::new();
     let mut i = 0;
     while i < idx.len() {
-        let b = &blocks[idx[i]];
-        let Some(first) = b.cell else {
-            out.push(b.md.clone());
+        let Some(first) = blocks[idx[i]].cell.as_ref() else {
+            out.push(blocks[idx[i]].md.clone());
             i += 1;
             continue;
         };
         let mut j = i;
-        while j < idx.len() && blocks[idx[j]].cell.is_some_and(|c| c.table == first.table) {
+        let mut table_md = None;
+        while j < idx.len() && blocks[idx[j]].cell.as_ref().is_some_and(|c| c.table == first.table) {
+            table_md = table_md.or_else(|| blocks[idx[j]].cell.as_ref().and_then(|c| c.markdown.clone()));
             j += 1;
         }
-        // rows -> cells -> text, in document order
-        let mut rows: Vec<(NodeId, bool, Vec<(NodeId, String)>)> = Vec::new();
-        for &k in &idx[i..j] {
-            let blk = &blocks[k];
-            let c = blk.cell.expect("checked above");
-            if rows.last().is_none_or(|r| r.0 != c.row) {
-                rows.push((c.row, c.header, Vec::new()));
-            }
-            let row = rows.last_mut().expect("just pushed");
-            let text = blk
-                .text
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .replace('|', "\\|");
-            match row.2.last_mut() {
-                Some((id, t)) if *id == c.cell => {
-                    t.push(' ');
-                    t.push_str(&text);
-                }
-                _ => row.2.push((c.cell, text)),
-            }
-        }
-        let width = rows.iter().map(|r| r.2.len()).max().unwrap_or(0);
-        if width < 2 {
-            out.extend(idx[i..j].iter().map(|&k| blocks[k].md.clone()));
-        } else {
-            let line = |cells: Vec<&str>| format!("| {} |", cells.join(" | "));
-            let mut lines = Vec::new();
-            for (n, (_, _, cells)) in rows.iter().enumerate() {
-                let mut texts: Vec<&str> = cells.iter().map(|c| c.1.as_str()).collect();
-                texts.resize(width, "");
-                lines.push(line(texts));
-                if n == 0 {
-                    lines.push(line(vec!["---"; width]));
-                }
-            }
-            out.push(lines.join("\n"));
+        match table_md {
+            Some(md) => out.push(md),
+            None => out.extend(idx[i..j].iter().map(|&k| blocks[k].md.clone())),
         }
         i = j;
     }
     out.join("\n\n")
 }
-
 
 const SKIP: &[&str] = &["script", "style", "noscript", "head", "template", "svg", "iframe"];
 
@@ -306,6 +353,8 @@ fn push_md(md: &mut String, raw: &str, node: NodeRef<Node>) {
         let Some(name) = elem_name(a) else { continue };
         if !is_inline(name) { break; }
         match name {
+            "sup" => piece = script(&piece, true),
+            "sub" => piece = script(&piece, false),
             "strong" | "b" => piece = format!("**{piece}**"),
             "em" | "i" => piece = format!("*{piece}*"),
             "code" | "kbd" | "samp" | "tt" => piece = format!("`{piece}`"),
@@ -442,6 +491,7 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
     let n_blocks = order.len();
     let mut info_cache: HashMap<NodeId, Info> = HashMap::default();
     let mut seen_h1 = false;
+    let mut seen_tables: std::collections::HashSet<NodeId> = std::collections::HashSet::new();
     let mut ancestors: Vec<NodeRef<Node>> = Vec::new();
 
     // sibling repeat key counts: (parent id, tag, class)
@@ -576,7 +626,8 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
         debug_assert_eq!(f.len(), names_len);
         before += chars;
         let md = render_md(node, &r.md);
-        blocks.push(Block { text, md, tokens, pos_frac: r.pos_chars as f32 / c, feats: f, cell: cell_of(node) });
+        let cell = table_of(node).map(|t| Cell { table: t, markdown: if seen_tables.insert(t) { render_table(doc.tree.get(t).expect("table node")) } else { None } });
+        blocks.push(Block { text, md, tokens, pos_frac: r.pos_chars as f32 / c, feats: f, cell });
     }
     blocks
 }

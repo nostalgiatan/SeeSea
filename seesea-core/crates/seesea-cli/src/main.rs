@@ -87,6 +87,9 @@ struct NetArgs {
     /// Choose page sections by shared words only, even when a model is loaded (faster).
     #[arg(long, env = "SEESEA_LEXICAL_SECTIONS", global = true)]
     lexical_sections: bool,
+    /// Fetch pages with plain headers instead of browser-like ones (SEESEA_USER_AGENT sets the user agent otherwise).
+    #[arg(long, global = true)]
+    plain_headers: bool,
     #[arg(long, global = true)]
     no_cache: bool,
     /// Allow fetching loopback and private addresses.
@@ -205,6 +208,7 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         rerank_center: net.rerank_center,
         rerank_scale: net.rerank_scale,
         lexical_sections: net.lexical_sections,
+        plain_headers: net.plain_headers,
     }
 }
 
