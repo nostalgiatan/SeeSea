@@ -35,7 +35,10 @@ impl NetFetcher {
 impl PageFetcher for NetFetcher {
     async fn fetch(&self, url: &str) -> std::result::Result<FetchedPage, FetchError> {
         let page = seesea_fetch::fetch(url, &self.options).await?;
-        Ok(FetchedPage { final_url: page.final_url, html: page.html })
+        Ok(FetchedPage {
+            final_url: page.final_url,
+            html: page.html,
+        })
     }
 }
 
@@ -49,7 +52,12 @@ pub struct CachedFetcher {
 
 impl CachedFetcher {
     pub fn new(inner: Arc<dyn PageFetcher>, cache: Arc<dyn Cache>, ttl: Duration) -> Self {
-        Self { inner, cache, ttl, max_cached_bytes: 2 * 1024 * 1024 }
+        Self {
+            inner,
+            cache,
+            ttl,
+            max_cached_bytes: 2 * 1024 * 1024,
+        }
     }
 }
 
@@ -61,11 +69,20 @@ impl PageFetcher for CachedFetcher {
             && let Ok(text) = String::from_utf8(bytes)
             && let Some((final_url, html)) = text.split_once('\n')
         {
-            return Ok(FetchedPage { final_url: final_url.to_string(), html: html.to_string() });
+            return Ok(FetchedPage {
+                final_url: final_url.to_string(),
+                html: html.to_string(),
+            });
         }
         let page = self.inner.fetch(url).await?;
         if page.html.len() <= self.max_cached_bytes {
-            self.cache.put(&key, format!("{}\n{}", page.final_url, page.html).into_bytes(), self.ttl).await;
+            self.cache
+                .put(
+                    &key,
+                    format!("{}\n{}", page.final_url, page.html).into_bytes(),
+                    self.ttl,
+                )
+                .await;
         }
         Ok(page)
     }
@@ -87,16 +104,28 @@ pub async fn load_page(
 ) -> Result<Loaded> {
     let page = tokio::time::timeout(timeout, fetcher.fetch(url))
         .await
-        .map_err(|_| Error::Timeout { stage: "fetch", ms: timeout.as_millis() as u64 })??;
+        .map_err(|_| Error::Timeout {
+            stage: "fetch",
+            ms: timeout.as_millis() as u64,
+        })??;
     let extractor = Arc::clone(extractor);
     let final_url = page.final_url.clone();
     let result = tokio::task::spawn_blocking(move || {
-        extractor.extract(&page.html, &page.final_url, &Options { scope, ..Options::default() })
+        extractor.extract(
+            &page.html,
+            &page.final_url,
+            &Options {
+                scope,
+                ..Options::default()
+            },
+        )
     })
     .await
     .map_err(|e| Error::Extract(e.to_string()))?;
     if result.diagnostics.not_text {
-        return Err(Error::Extract("the response is not text (compressed or binary data)".into()));
+        return Err(Error::Extract(
+            "the response is not text (compressed or binary data)".into(),
+        ));
     }
     Ok(Loaded { final_url, result })
 }
@@ -136,7 +165,14 @@ pub(crate) mod testing {
 
     impl MockFetcher {
         pub fn new(pages: &[(&str, &str)]) -> Self {
-            Self { pages: pages.iter().map(|(u, h)| (u.to_string(), h.to_string())).collect(), delay: None, calls: Mutex::new(Vec::new()) }
+            Self {
+                pages: pages
+                    .iter()
+                    .map(|(u, h)| (u.to_string(), h.to_string()))
+                    .collect(),
+                delay: None,
+                calls: Mutex::new(Vec::new()),
+            }
         }
     }
 
@@ -148,7 +184,10 @@ pub(crate) mod testing {
                 tokio::time::sleep(d).await;
             }
             match self.pages.get(url) {
-                Some(html) => Ok(FetchedPage { final_url: url.to_string(), html: html.clone() }),
+                Some(html) => Ok(FetchedPage {
+                    final_url: url.to_string(),
+                    html: html.clone(),
+                }),
                 None => Err(FetchError::Status(404)),
             }
         }
@@ -173,12 +212,34 @@ mod tests {
 
     #[tokio::test]
     async fn extracts_main_content_and_keeps_order() {
-        let fetcher: Arc<dyn PageFetcher> = Arc::new(MockFetcher::new(&[("https://a.org/1", &article("One", &[P1, P2])), ("https://a.org/2", &article("Two", &[P2, P1]))]));
+        let fetcher: Arc<dyn PageFetcher> = Arc::new(MockFetcher::new(&[
+            ("https://a.org/1", &article("One", &[P1, P2])),
+            ("https://a.org/2", &article("Two", &[P2, P1])),
+        ]));
         let extractor = Arc::new(Extractor::new());
-        let urls = vec!["https://a.org/2".to_string(), "https://a.org/missing".to_string(), "https://a.org/1".to_string()];
-        let out = load_pages(&fetcher, &extractor, &urls, Scope::Core, 4, Duration::from_secs(5)).await;
+        let urls = vec![
+            "https://a.org/2".to_string(),
+            "https://a.org/missing".to_string(),
+            "https://a.org/1".to_string(),
+        ];
+        let out = load_pages(
+            &fetcher,
+            &extractor,
+            &urls,
+            Scope::Core,
+            4,
+            Duration::from_secs(5),
+        )
+        .await;
         assert_eq!(out.len(), 3);
-        assert!(out[0].as_ref().unwrap().result.core.contains("asynchronous runtime"));
+        assert!(
+            out[0]
+                .as_ref()
+                .unwrap()
+                .result
+                .core
+                .contains("asynchronous runtime")
+        );
         assert_eq!(out[1].as_ref().unwrap_err().code(), "fetch_failed");
         assert!(out[2].as_ref().unwrap().result.core.contains("flexibility"));
     }
@@ -187,27 +248,55 @@ mod tests {
     async fn slow_pages_time_out() {
         let mut mock = MockFetcher::new(&[("https://a.org/1", &article("One", &[P1]))]);
         mock.delay = Some(Duration::from_millis(200));
-        let err = load_page(&mock, &Arc::new(Extractor::new()), "https://a.org/1", Scope::Core, Duration::from_millis(20)).await.unwrap_err();
+        let err = load_page(
+            &mock,
+            &Arc::new(Extractor::new()),
+            "https://a.org/1",
+            Scope::Core,
+            Duration::from_millis(20),
+        )
+        .await
+        .unwrap_err();
         assert_eq!(err.code(), "timeout");
     }
 
     #[tokio::test]
     async fn binary_bodies_are_an_extract_error_not_content() {
-        let garbage: String = (0..3000u32).map(|i| char::from_u32(if i % 2 == 0 { 0xFFFD } else { 2 }).unwrap()).collect();
+        let garbage: String = (0..3000u32)
+            .map(|i| char::from_u32(if i % 2 == 0 { 0xFFFD } else { 2 }).unwrap())
+            .collect();
         let mock = MockFetcher::new(&[("https://a.org/bin", &garbage)]);
-        let err = load_page(&mock, &Arc::new(Extractor::new()), "https://a.org/bin", Scope::Core, Duration::from_secs(5)).await.unwrap_err();
+        let err = load_page(
+            &mock,
+            &Arc::new(Extractor::new()),
+            "https://a.org/bin",
+            Scope::Core,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap_err();
         assert_eq!(err.code(), "extract_failed");
     }
 
     #[tokio::test]
     async fn cached_fetcher_hits_the_network_once() {
-        let mock = Arc::new(MockFetcher::new(&[("https://a.org/1", &article("One", &[P1]))]));
-        let cached = CachedFetcher::new(mock.clone(), Arc::new(MemoryCache::new(10)), Duration::from_secs(60));
+        let mock = Arc::new(MockFetcher::new(&[(
+            "https://a.org/1",
+            &article("One", &[P1]),
+        )]));
+        let cached = CachedFetcher::new(
+            mock.clone(),
+            Arc::new(MemoryCache::new(10)),
+            Duration::from_secs(60),
+        );
         let first = cached.fetch("https://a.org/1").await.unwrap();
         let second = cached.fetch("https://a.org/1").await.unwrap();
         assert_eq!(first.html, second.html);
         assert_eq!(second.final_url, "https://a.org/1");
         assert_eq!(mock.calls.lock().unwrap().len(), 1);
-        assert!(cached.fetch("https://a.org/missing").await.is_err(), "failures are not cached");
+        assert!(
+            cached.fetch("https://a.org/missing").await.is_err(),
+            "failures are not cached"
+        );
     }
 }

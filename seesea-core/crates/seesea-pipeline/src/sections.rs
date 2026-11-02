@@ -38,7 +38,11 @@ pub fn split(markdown: &str) -> Vec<Section> {
 
     let flush = |out: &mut Vec<Section>, path: &Vec<String>, md: &mut String, body: &mut String| {
         if !md.trim().is_empty() {
-            out.push(Section { path: path.clone(), markdown: md.trim_end().to_string(), body: body.trim().to_string() });
+            out.push(Section {
+                path: path.clone(),
+                markdown: md.trim_end().to_string(),
+                body: body.trim().to_string(),
+            });
         }
         md.clear();
         body.clear();
@@ -88,13 +92,21 @@ fn chunk(sections: Vec<Section>, limit: usize) -> Vec<(usize, Section)> {
         let mut current = String::new();
         let mut body = String::new();
         let mut first = true;
-        let mut push = |current: &mut String, body: &mut String, out: &mut Vec<(usize, Section)>| {
-            if !current.trim().is_empty() {
-                out.push((i, Section { path: s.path.clone(), markdown: current.trim_end().to_string(), body: body.trim().to_string() }));
-            }
-            current.clear();
-            body.clear();
-        };
+        let mut push =
+            |current: &mut String, body: &mut String, out: &mut Vec<(usize, Section)>| {
+                if !current.trim().is_empty() {
+                    out.push((
+                        i,
+                        Section {
+                            path: s.path.clone(),
+                            markdown: current.trim_end().to_string(),
+                            body: body.trim().to_string(),
+                        },
+                    ));
+                }
+                current.clear();
+                body.clear();
+            };
         for para in s.markdown.split("\n\n") {
             let is_heading = first && heading(para.trim()).is_some();
             first = false;
@@ -141,7 +153,8 @@ fn score_sections(sections: &[Section], query: &str) -> Vec<f64> {
                 .map(|t| {
                     let f = tf.get(t.as_str()).copied().unwrap_or(0.0);
                     let d = df.get(t.as_str()).copied().unwrap_or(0.0);
-                    (1.0 + (n - d + 0.5) / (d + 0.5)).ln() * f * 2.2 / (f + 1.2 * (0.25 + 0.75 * b.len() as f64 / avg))
+                    (1.0 + (n - d + 0.5) / (d + 0.5)).ln() * f * 2.2
+                        / (f + 1.2 * (0.25 + 0.75 * b.len() as f64 / avg))
                 })
                 .sum()
         })
@@ -155,7 +168,10 @@ fn score_sections(sections: &[Section], query: &str) -> Vec<f64> {
         .map(|((s, r), b)| {
             let body_set: HashSet<String> = b.iter().cloned().collect();
             let body_cov = coverage(&q_set, &body_set);
-            let head_cov = s.path.last().map_or(0.0, |h| coverage(&q_set, &token_set(h)));
+            let head_cov = s
+                .path
+                .last()
+                .map_or(0.0, |h| coverage(&q_set, &token_set(h)));
             let bm25 = if max > 0.0 { r / max } else { 0.0 };
             0.7 * bm25 + 0.3 * body_cov + 0.3 * head_cov * f64::min(1.0, body_cov * 2.0)
         })
@@ -193,11 +209,23 @@ pub fn select(markdown: &str, query: &str, budget: usize) -> (Vec<SelectedSectio
     let total: usize = sections.iter().map(|s| s.markdown.chars().count()).sum();
 
     let (chosen, truncated): (Vec<(usize, String)>, bool) = if total <= budget {
-        (sections.iter().enumerate().map(|(i, s)| (i, s.markdown.clone())).collect(), false)
+        (
+            sections
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (i, s.markdown.clone()))
+                .collect(),
+            false,
+        )
     } else {
         let mut order: Vec<usize> = (0..sections.len()).collect();
         if scores.iter().any(|s| *s > 0.0) {
-            order.sort_by(|a, b| scores[*b].partial_cmp(&scores[*a]).unwrap_or(std::cmp::Ordering::Equal).then(a.cmp(b)));
+            order.sort_by(|a, b| {
+                scores[*b]
+                    .partial_cmp(&scores[*a])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(a.cmp(b))
+            });
             order.retain(|i| scores[*i] > 0.0);
         }
         let mut chosen: Vec<(usize, String)> = Vec::new();
@@ -231,7 +259,11 @@ pub fn select(markdown: &str, query: &str, budget: usize) -> (Vec<SelectedSectio
                 prev.markdown.push_str(&markdown);
                 prev.score = prev.score.max(scores[i]);
             }
-            _ => out.push(SelectedSection { path: sections[i].path.clone(), markdown, score: scores[i] }),
+            _ => out.push(SelectedSection {
+                path: sections[i].path.clone(),
+                markdown,
+                score: scores[i],
+            }),
         }
         last = Some(i);
     }
@@ -247,8 +279,20 @@ mod tests {
     #[test]
     fn split_builds_heading_paths() {
         let s = split(DOC);
-        let paths: Vec<Vec<&str>> = s.iter().map(|x| x.path.iter().map(String::as_str).collect()).collect();
-        assert_eq!(paths, vec![vec![], vec!["Guide"], vec!["Guide", "Installation"], vec!["Guide", "Async runtime"], vec!["FAQ"]]);
+        let paths: Vec<Vec<&str>> = s
+            .iter()
+            .map(|x| x.path.iter().map(String::as_str).collect())
+            .collect();
+        assert_eq!(
+            paths,
+            vec![
+                vec![],
+                vec!["Guide"],
+                vec!["Guide", "Installation"],
+                vec!["Guide", "Async runtime"],
+                vec!["FAQ"]
+            ]
+        );
         assert!(s[3].markdown.starts_with("## Async runtime"));
         assert!(!s[3].body.contains("##"));
     }
@@ -294,13 +338,21 @@ mod tests {
 
     #[test]
     fn a_long_section_yields_only_the_paragraphs_that_match() {
-        let filler = |n: usize| format!("Gardening note {n}: soil, compost and watering schedules for vegetables grown in raised beds through the whole season.");
+        let filler = |n: usize| {
+            format!(
+                "Gardening note {n}: soil, compost and watering schedules for vegetables grown in raised beds through the whole season."
+            )
+        };
         let mut paras: Vec<String> = (0..8).map(filler).collect();
         paras.insert(5, "The scheduler is a work-stealing thread pool that drives timers and sockets for async tasks.".to_string());
         let doc = format!("# Notes\n\n{}", paras.join("\n\n"));
         let (sel, truncated) = select(&doc, "work-stealing thread pool scheduler", 300);
         assert!(truncated);
-        let text: String = sel.iter().map(|s| s.markdown.as_str()).collect::<Vec<_>>().join("\n");
+        let text: String = sel
+            .iter()
+            .map(|s| s.markdown.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("work-stealing"), "{text}");
         assert!(text.chars().count() <= 320, "{}", text.chars().count());
         assert!(sel.iter().all(|s| s.path == vec!["Notes"]));
@@ -309,9 +361,18 @@ mod tests {
     #[test]
     fn neighbouring_chunks_of_one_section_are_merged() {
         let para = |w: &str| format!("{w} ").repeat(60);
-        let doc = format!("# Doc\n\n{}\n\n{}\n\n{}", para("alpha"), para("alpha beta"), para("gamma"));
+        let doc = format!(
+            "# Doc\n\n{}\n\n{}\n\n{}",
+            para("alpha"),
+            para("alpha beta"),
+            para("gamma")
+        );
         let (sel, _) = select(&doc, "alpha beta", 100_000);
-        assert_eq!(sel.len(), 1, "everything fits, so one merged piece per section");
+        assert_eq!(
+            sel.len(),
+            1,
+            "everything fits, so one merged piece per section"
+        );
         assert!(sel[0].markdown.contains("gamma") && sel[0].markdown.starts_with("# Doc"));
     }
 

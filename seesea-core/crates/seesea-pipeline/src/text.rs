@@ -5,8 +5,9 @@ use std::collections::HashSet;
 pub use seesea_extract::text::tokenize;
 
 const STOPWORDS: &[&str] = &[
-    "a", "an", "the", "and", "or", "of", "to", "in", "on", "for", "with", "is", "are", "was", "were", "be", "by", "at", "as", "it",
-    "this", "that", "from", "how", "what", "why", "do", "does", "vs", "的", "了", "是", "在", "和", "与", "及", "吗", "呢", "么",
+    "a", "an", "the", "and", "or", "of", "to", "in", "on", "for", "with", "is", "are", "was",
+    "were", "be", "by", "at", "as", "it", "this", "that", "from", "how", "what", "why", "do",
+    "does", "vs", "的", "了", "是", "在", "和", "与", "及", "吗", "呢", "么",
 ];
 
 /// Tokens that carry meaning: stopwords and single ASCII characters are dropped.
@@ -30,8 +31,19 @@ pub fn coverage(query: &HashSet<String>, text: &HashSet<String>) -> f64 {
 }
 
 const CLICKBAIT: &[&str] = &[
-    "you won't believe", "you wont believe", "shocking", "this one trick", "doctors hate", "what happened next", "震惊", "必看", "速看",
-    "不转不是", "绝对想不到", "惊呆", "细思极恐",
+    "you won't believe",
+    "you wont believe",
+    "shocking",
+    "this one trick",
+    "doctors hate",
+    "what happened next",
+    "震惊",
+    "必看",
+    "速看",
+    "不转不是",
+    "绝对想不到",
+    "惊呆",
+    "细思极恐",
 ];
 
 /// How clickbait-like a title looks, 0..1. Deliberately blunt: it only feeds a discount, never a filter.
@@ -41,12 +53,20 @@ pub fn clickbait_score(title: &str) -> f64 {
     if CLICKBAIT.iter().any(|p| lower.contains(p)) {
         score += 0.5;
     }
-    let marks = title.chars().filter(|c| matches!(c, '!' | '！' | '?' | '？')).count();
+    let marks = title
+        .chars()
+        .filter(|c| matches!(c, '!' | '！' | '?' | '？'))
+        .count();
     if marks >= 2 {
         score += 0.3;
     }
-    let letters: Vec<char> = title.chars().filter(|c| c.is_alphabetic() && c.is_ascii()).collect();
-    if letters.len() >= 8 && letters.iter().filter(|c| c.is_uppercase()).count() * 10 >= letters.len() * 7 {
+    let letters: Vec<char> = title
+        .chars()
+        .filter(|c| c.is_alphabetic() && c.is_ascii())
+        .collect();
+    if letters.len() >= 8
+        && letters.iter().filter(|c| c.is_uppercase()).count() * 10 >= letters.len() * 7
+    {
         score += 0.2;
     }
     f64::min(score, 1.0)
@@ -58,8 +78,14 @@ mod tests {
 
     #[test]
     fn content_tokens_drop_stopwords_and_keep_cjk_characters() {
-        assert_eq!(content_tokens("How to use the Rust async runtime"), vec!["use", "rust", "async", "runtime"]);
-        assert_eq!(content_tokens("异步运行时的使用"), vec!["异", "步", "运", "行", "时", "使", "用"]);
+        assert_eq!(
+            content_tokens("How to use the Rust async runtime"),
+            vec!["use", "rust", "async", "runtime"]
+        );
+        assert_eq!(
+            content_tokens("异步运行时的使用"),
+            vec!["异", "步", "运", "行", "时", "使", "用"]
+        );
     }
 
     #[test]

@@ -10,7 +10,9 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use url::Url;
 
-const TRACKING_PARAMS: &[&str] = &["fbclid", "gclid", "msclkid", "mc_cid", "mc_eid", "igshid", "spm", "yclid", "_hsenc", "_hsmi"];
+const TRACKING_PARAMS: &[&str] = &[
+    "fbclid", "gclid", "msclkid", "mc_cid", "mc_eid", "igshid", "spm", "yclid", "_hsenc", "_hsmi",
+];
 
 /// A stable key for "the same page": scheme folded to https, `www.` and fragment dropped, tracking
 /// parameters removed, query parameters sorted, trailing slash removed.
@@ -61,7 +63,10 @@ pub struct FusionConfig {
 
 impl Default for FusionConfig {
     fn default() -> Self {
-        Self { rrf_k: 60.0, agreement_bonus: 0.2 }
+        Self {
+            rrf_k: 60.0,
+            agreement_bonus: 0.2,
+        }
     }
 }
 
@@ -89,7 +94,10 @@ pub fn fuse(results: &[SourceResults], cfg: &FusionConfig) -> Vec<Candidate> {
                 continue;
             }
             let rank = i as u32 + 1;
-            let mut attributions = vec![Attribution { source: sr.source.clone(), rank }];
+            let mut attributions = vec![Attribution {
+                source: sr.source.clone(),
+                rank,
+            }];
             attributions.extend(hit.upstream.iter().cloned());
 
             let cand = by_key.entry(key.clone()).or_insert_with(|| {
@@ -113,7 +121,10 @@ pub fn fuse(results: &[SourceResults], cfg: &FusionConfig) -> Vec<Candidate> {
             if hit.url.starts_with("https://") && !cand.url.starts_with("https://") {
                 cand.url = hit.url.clone();
             }
-            if cand.title.is_empty() || (hit.title.chars().count() > cand.title.chars().count() && hit.title.chars().count() <= 200) {
+            if cand.title.is_empty()
+                || (hit.title.chars().count() > cand.title.chars().count()
+                    && hit.title.chars().count() <= 200)
+            {
                 cand.title = hit.title.clone();
             }
             if hit.snippet.chars().count() > cand.snippet.chars().count() {
@@ -123,12 +134,20 @@ pub fn fuse(results: &[SourceResults], cfg: &FusionConfig) -> Vec<Candidate> {
         }
     }
 
-    let mut out: Vec<Candidate> = order.into_iter().filter_map(|k| by_key.remove(&k)).collect();
+    let mut out: Vec<Candidate> = order
+        .into_iter()
+        .filter_map(|k| by_key.remove(&k))
+        .collect();
     for c in &mut out {
         let extra = c.found_by.len().saturating_sub(1) as f64;
         c.fusion *= 1.0 + cfg.agreement_bonus * extra;
     }
-    out.sort_by(|a, b| b.fusion.partial_cmp(&a.fusion).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.key.cmp(&b.key)));
+    out.sort_by(|a, b| {
+        b.fusion
+            .partial_cmp(&a.fusion)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.key.cmp(&b.key))
+    });
     if let Some(max) = out.first().map(|c| c.fusion).filter(|m| *m > 0.0) {
         for c in &mut out {
             c.fusion /= max;
@@ -142,11 +161,20 @@ mod tests {
     use super::*;
 
     fn hit(url: &str, title: &str) -> RawHit {
-        RawHit { url: url.into(), title: title.into(), snippet: format!("snippet of {title}"), ..Default::default() }
+        RawHit {
+            url: url.into(),
+            title: title.into(),
+            snippet: format!("snippet of {title}"),
+            ..Default::default()
+        }
     }
 
     fn results(name: &str, urls: &[&str]) -> SourceResults {
-        SourceResults { source: name.into(), weight: 1.0, hits: urls.iter().map(|u| hit(u, u)).collect() }
+        SourceResults {
+            source: name.into(),
+            weight: 1.0,
+            hits: urls.iter().map(|u| hit(u, u)).collect(),
+        }
     }
 
     #[test]
@@ -160,7 +188,10 @@ mod tests {
             assert_eq!(canonical_url(u), want, "{u}");
         }
         assert_eq!(canonical_url("https://example.com/"), "https://example.com");
-        assert_ne!(canonical_url("https://example.com:8080/a"), canonical_url("https://example.com/a"));
+        assert_ne!(
+            canonical_url("https://example.com:8080/a"),
+            canonical_url("https://example.com/a")
+        );
         assert_eq!(canonical_url("not a url"), "not a url");
     }
 
@@ -172,7 +203,11 @@ mod tests {
         ];
         let out = fuse(&r, &FusionConfig::default());
         assert_eq!(out.len(), 3);
-        assert_eq!(out[0].key, canonical_url("https://x.org/2"), "found by both sources should lead");
+        assert_eq!(
+            out[0].key,
+            canonical_url("https://x.org/2"),
+            "found by both sources should lead"
+        );
         assert_eq!(out[0].found_by.len(), 2);
         assert_eq!(out[0].fusion, 1.0);
         assert!(out.windows(2).all(|w| w[0].fusion >= w[1].fusion));
@@ -180,7 +215,10 @@ mod tests {
 
     #[test]
     fn duplicates_within_one_source_count_once() {
-        let r = vec![results("a", &["https://x.org/1", "https://x.org/1/", "https://x.org/2"])];
+        let r = vec![results(
+            "a",
+            &["https://x.org/1", "https://x.org/1/", "https://x.org/2"],
+        )];
         let out = fuse(&r, &FusionConfig::default());
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].found_by.len(), 1);
@@ -189,9 +227,22 @@ mod tests {
     #[test]
     fn upstream_engines_count_as_independent_sources() {
         let mut h = hit("https://x.org/1", "one");
-        h.upstream = vec![Attribution { source: "searxng/google".into(), rank: 1 }, Attribution { source: "searxng/brave".into(), rank: 3 }];
+        h.upstream = vec![
+            Attribution {
+                source: "searxng/google".into(),
+                rank: 1,
+            },
+            Attribution {
+                source: "searxng/brave".into(),
+                rank: 3,
+            },
+        ];
         let r = vec![
-            SourceResults { source: "searxng".into(), weight: 1.0, hits: vec![h, hit("https://x.org/2", "two")] },
+            SourceResults {
+                source: "searxng".into(),
+                weight: 1.0,
+                hits: vec![h, hit("https://x.org/2", "two")],
+            },
             results("bing", &["https://x.org/2"]),
         ];
         let out = fuse(&r, &FusionConfig::default());
@@ -215,7 +266,21 @@ mod tests {
         a.snippet = "short".into();
         let mut b = hit("https://x.org/1", "t");
         b.snippet = "a much longer snippet".into();
-        let out = fuse(&[SourceResults { source: "a".into(), weight: 1.0, hits: vec![a] }, SourceResults { source: "b".into(), weight: 1.0, hits: vec![b] }], &FusionConfig::default());
+        let out = fuse(
+            &[
+                SourceResults {
+                    source: "a".into(),
+                    weight: 1.0,
+                    hits: vec![a],
+                },
+                SourceResults {
+                    source: "b".into(),
+                    weight: 1.0,
+                    hits: vec![b],
+                },
+            ],
+            &FusionConfig::default(),
+        );
         assert_eq!(out[0].url, "https://x.org/1");
         assert_eq!(out[0].snippet, "a much longer snippet");
     }

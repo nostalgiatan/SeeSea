@@ -23,7 +23,14 @@ pub struct RankConfig {
 
 impl Default for RankConfig {
     fn default() -> Self {
-        Self { w_fusion: 0.55, w_snippet: 0.25, w_title: 0.15, w_freshness: 0.05, half_life_days: 365.0, domain_boost: HashMap::new() }
+        Self {
+            w_fusion: 0.55,
+            w_snippet: 0.25,
+            w_title: 0.15,
+            w_freshness: 0.05,
+            half_life_days: 365.0,
+            domain_boost: HashMap::new(),
+        }
     }
 }
 
@@ -37,8 +44,16 @@ pub struct QueryInfo {
 impl QueryInfo {
     pub fn new(query: &str) -> Self {
         let lower = query.to_lowercase();
-        let time_sensitive = ["latest", "news", "today", "recent", "breaking", "最新", "今天", "新闻", "近期"].iter().any(|w| lower.contains(w));
-        Self { raw: query.to_string(), tokens: token_set(query), time_sensitive }
+        let time_sensitive = [
+            "latest", "news", "today", "recent", "breaking", "最新", "今天", "新闻", "近期",
+        ]
+        .iter()
+        .any(|w| lower.contains(w));
+        Self {
+            raw: query.to_string(),
+            tokens: token_set(query),
+            time_sensitive,
+        }
     }
 }
 
@@ -57,11 +72,18 @@ pub fn title_trust(title: &str, snippet: &str) -> f64 {
 pub fn freshness(published: Option<DateTime<Utc>>, now: DateTime<Utc>, half_life_days: f64) -> f64 {
     let Some(p) = published else { return 0.0 };
     let age_days = (now - p).num_seconds() as f64 / 86_400.0;
-    if age_days <= 0.0 { 1.0 } else { (-std::f64::consts::LN_2 * age_days / half_life_days.max(1.0)).exp() }
+    if age_days <= 0.0 {
+        1.0
+    } else {
+        (-std::f64::consts::LN_2 * age_days / half_life_days.max(1.0)).exp()
+    }
 }
 
 fn host(url: &str) -> String {
-    url::Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase())).unwrap_or_default()
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+        .unwrap_or_default()
 }
 
 pub fn score(cand: &Candidate, q: &QueryInfo, cfg: &RankConfig, now: DateTime<Utc>) -> ScoreParts {
@@ -69,11 +91,31 @@ pub fn score(cand: &Candidate, q: &QueryInfo, cfg: &RankConfig, now: DateTime<Ut
     let title_match = coverage(&q.tokens, &token_set(&cand.title));
     let title = title_match * title_trust(&cand.title, &cand.snippet);
     let fresh = freshness(cand.published, now, cfg.half_life_days);
-    let fresh_weight = if q.time_sensitive { cfg.w_freshness * 4.0 } else { cfg.w_freshness };
+    let fresh_weight = if q.time_sensitive {
+        cfg.w_freshness * 4.0
+    } else {
+        cfg.w_freshness
+    };
     let h = host(&cand.url);
-    let boost: f64 = cfg.domain_boost.iter().filter(|(d, _)| h == **d || h.ends_with(&format!(".{d}"))).map(|(_, b)| *b).sum();
-    let stage1 = cfg.w_fusion * cand.fusion + cfg.w_snippet * snippet_overlap + cfg.w_title * title + fresh_weight * fresh + boost;
-    ScoreParts { fusion: cand.fusion, snippet_overlap, title, freshness: fresh, stage1, ..Default::default() }
+    let boost: f64 = cfg
+        .domain_boost
+        .iter()
+        .filter(|(d, _)| h == **d || h.ends_with(&format!(".{d}")))
+        .map(|(_, b)| *b)
+        .sum();
+    let stage1 = cfg.w_fusion * cand.fusion
+        + cfg.w_snippet * snippet_overlap
+        + cfg.w_title * title
+        + fresh_weight * fresh
+        + boost;
+    ScoreParts {
+        fusion: cand.fusion,
+        snippet_overlap,
+        title,
+        freshness: fresh,
+        stage1,
+        ..Default::default()
+    }
 }
 
 #[cfg(test)]
@@ -89,20 +131,35 @@ mod tests {
             title: title.into(),
             snippet: snippet.into(),
             published: None,
-            found_by: vec![Attribution { source: "s".into(), rank: 1 }],
+            found_by: vec![Attribution {
+                source: "s".into(),
+                rank: 1,
+            }],
             fusion,
         }
     }
 
     #[test]
     fn title_trust_drops_for_unsupported_and_clickbait_titles() {
-        let supported = title_trust("Tokio async runtime guide", "A guide to the Tokio async runtime for Rust.");
-        let unsupported = title_trust("Tokio async runtime guide", "Buy cheap watches online today.");
-        let bait = title_trust("You won't believe this Tokio trick!!", "A guide to the Tokio async runtime for Rust.");
+        let supported = title_trust(
+            "Tokio async runtime guide",
+            "A guide to the Tokio async runtime for Rust.",
+        );
+        let unsupported = title_trust(
+            "Tokio async runtime guide",
+            "Buy cheap watches online today.",
+        );
+        let bait = title_trust(
+            "You won't believe this Tokio trick!!",
+            "A guide to the Tokio async runtime for Rust.",
+        );
         assert!(supported > 0.9, "{supported}");
         assert!(unsupported < supported - 0.3, "{unsupported}");
         assert!(bait < supported - 0.3, "{bait}");
-        assert!((title_trust("x", "") - 0.7).abs() < 1e-9, "no snippet means neutral doubt");
+        assert!(
+            (title_trust("x", "") - 0.7).abs() < 1e-9,
+            "no snippet means neutral doubt"
+        );
     }
 
     #[test]
@@ -119,10 +176,34 @@ mod tests {
         let q = QueryInfo::new("rust async runtime");
         let cfg = RankConfig::default();
         let now = Utc::now();
-        let good = score(&cand("https://a.org/1", "Async runtimes in Rust", "How the Rust async runtime schedules tasks.", 1.0), &q, &cfg, now);
-        let titled_only = score(&cand("https://b.org/1", "Rust async runtime", "Click here for great deals.", 0.3), &q, &cfg, now);
+        let good = score(
+            &cand(
+                "https://a.org/1",
+                "Async runtimes in Rust",
+                "How the Rust async runtime schedules tasks.",
+                1.0,
+            ),
+            &q,
+            &cfg,
+            now,
+        );
+        let titled_only = score(
+            &cand(
+                "https://b.org/1",
+                "Rust async runtime",
+                "Click here for great deals.",
+                0.3,
+            ),
+            &q,
+            &cfg,
+            now,
+        );
         assert!(good.stage1 > titled_only.stage1);
-        assert!(titled_only.title < 0.9, "an unsupported title match is discounted: {}", titled_only.title);
+        assert!(
+            titled_only.title < 0.9,
+            "an unsupported title match is discounted: {}",
+            titled_only.title
+        );
     }
 
     #[test]
@@ -131,8 +212,18 @@ mod tests {
         let mut cfg = RankConfig::default();
         cfg.domain_boost.insert("wikipedia.org".into(), 0.1);
         let now = Utc::now();
-        let on = score(&cand("https://en.wikipedia.org/wiki/Rust", "Rust", "", 0.5), &q, &cfg, now);
-        let off = score(&cand("https://notwikipedia.org/x", "Rust", "", 0.5), &q, &cfg, now);
+        let on = score(
+            &cand("https://en.wikipedia.org/wiki/Rust", "Rust", "", 0.5),
+            &q,
+            &cfg,
+            now,
+        );
+        let off = score(
+            &cand("https://notwikipedia.org/x", "Rust", "", 0.5),
+            &q,
+            &cfg,
+            now,
+        );
         assert!((on.stage1 - off.stage1 - 0.1).abs() < 1e-9);
     }
 

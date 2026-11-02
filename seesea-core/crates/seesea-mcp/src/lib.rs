@@ -39,7 +39,11 @@ fn tool_result(text: String, structured: Value, is_error: bool) -> Value {
 
 fn tool_error(e: &Error) -> Value {
     let body = e.body();
-    tool_result(format!("{}: {}", body.code, body.message), serde_json::to_value(&body).unwrap_or(Value::Null), true)
+    tool_result(
+        format!("{}: {}", body.code, body.message),
+        serde_json::to_value(&body).unwrap_or(Value::Null),
+        true,
+    )
 }
 
 /// The tool definitions, with JSON Schema for the arguments.
@@ -108,7 +112,9 @@ impl McpServer {
     /// Handle one JSON-RPC message, or a batch of them. Notifications produce no reply.
     pub async fn handle(&self, message: Value) -> Option<Value> {
         match message {
-            Value::Array(items) if items.is_empty() => Some(error_reply(Value::Null, INVALID_REQUEST, "empty batch")),
+            Value::Array(items) if items.is_empty() => {
+                Some(error_reply(Value::Null, INVALID_REQUEST, "empty batch"))
+            }
             Value::Array(items) => {
                 let mut replies = Vec::new();
                 for item in items {
@@ -126,14 +132,22 @@ impl McpServer {
     pub async fn handle_text(&self, text: &str) -> Option<String> {
         let reply = match serde_json::from_str::<Value>(text) {
             Ok(v) => self.handle(v).await,
-            Err(e) => Some(error_reply(Value::Null, PARSE_ERROR, format!("parse error: {e}"))),
+            Err(e) => Some(error_reply(
+                Value::Null,
+                PARSE_ERROR,
+                format!("parse error: {e}"),
+            )),
         };
         reply.map(|v| v.to_string())
     }
 
     async fn handle_one(&self, msg: Value) -> Option<Value> {
         let Some(obj) = msg.as_object() else {
-            return Some(error_reply(Value::Null, INVALID_REQUEST, "a message must be a JSON object"));
+            return Some(error_reply(
+                Value::Null,
+                INVALID_REQUEST,
+                "a message must be a JSON object",
+            ));
         };
         let id = obj.get("id").cloned();
         let Some(method) = obj.get("method").and_then(Value::as_str) else {
@@ -147,8 +161,15 @@ impl McpServer {
 
         Some(match method {
             "initialize" => {
-                let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or("");
-                let version = SUPPORTED_VERSIONS.iter().find(|v| **v == asked).copied().unwrap_or(SUPPORTED_VERSIONS[0]);
+                let asked = params
+                    .get("protocolVersion")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let version = SUPPORTED_VERSIONS
+                    .iter()
+                    .find(|v| **v == asked)
+                    .copied()
+                    .unwrap_or(SUPPORTED_VERSIONS[0]);
                 ok_reply(
                     id,
                     json!({
@@ -170,11 +191,18 @@ impl McpServer {
         let Some(name) = params.get("name").and_then(Value::as_str) else {
             return error_reply(id, INVALID_PARAMS, "tools/call needs a tool name");
         };
-        let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+        let args = params
+            .get("arguments")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
         let result = match name {
             "search" => match serde_json::from_value::<SearchRequest>(args) {
                 Ok(req) => match self.pipeline.search(&req).await {
-                    Ok(resp) => tool_result(search_markdown(&resp), serde_json::to_value(&resp).unwrap_or(Value::Null), false),
+                    Ok(resp) => tool_result(
+                        search_markdown(&resp),
+                        serde_json::to_value(&resp).unwrap_or(Value::Null),
+                        false,
+                    ),
                     Err(e) => tool_error(&e),
                 },
                 Err(e) => tool_error(&Error::InvalidRequest(e.to_string())),
@@ -184,11 +212,21 @@ impl McpServer {
                     let scope = match a.scope.as_deref() {
                         None | Some("core") => Ok(Scope::Core),
                         Some("extended") => Ok(Scope::Extended),
-                        Some(o) => Err(Error::InvalidRequest(format!("unknown scope '{o}', expected core or extended"))),
+                        Some(o) => Err(Error::InvalidRequest(format!(
+                            "unknown scope '{o}', expected core or extended"
+                        ))),
                     };
                     match scope {
-                        Ok(scope) => match self.pipeline.extract(&a.url, scope, a.query.as_deref(), a.max_chars).await {
-                            Ok(page) => tool_result(extract_markdown(&page), serde_json::to_value(&page).unwrap_or(Value::Null), false),
+                        Ok(scope) => match self
+                            .pipeline
+                            .extract(&a.url, scope, a.query.as_deref(), a.max_chars)
+                            .await
+                        {
+                            Ok(page) => tool_result(
+                                extract_markdown(&page),
+                                serde_json::to_value(&page).unwrap_or(Value::Null),
+                                false,
+                            ),
                             Err(e) => tool_error(&e),
                         },
                         Err(e) => tool_error(&e),
@@ -216,7 +254,10 @@ impl McpServer {
         let writer = tokio::spawn(async move {
             let mut output = output;
             while let Some(line) = rx.recv().await {
-                if output.write_all(line.as_bytes()).await.is_err() || output.write_all(b"\n").await.is_err() || output.flush().await.is_err() {
+                if output.write_all(line.as_bytes()).await.is_err()
+                    || output.write_all(b"\n").await.is_err()
+                    || output.flush().await.is_err()
+                {
                     break;
                 }
             }

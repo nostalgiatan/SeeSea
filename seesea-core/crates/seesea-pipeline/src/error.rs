@@ -26,7 +26,10 @@ pub struct SourceError {
 
 impl SourceError {
     pub fn new(kind: FailureKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into() }
+        Self {
+            kind,
+            message: message.into(),
+        }
     }
 }
 
@@ -141,16 +144,67 @@ mod tests {
     #[test]
     fn codes_statuses_and_exit_codes_are_consistent() {
         let cases: Vec<(Error, &str, u16, i32, bool)> = vec![
-            (Error::InvalidRequest("x".into()), "invalid_request", 400, 2, false),
+            (
+                Error::InvalidRequest("x".into()),
+                "invalid_request",
+                400,
+                2,
+                false,
+            ),
             (Error::NoSources, "no_sources", 503, 3, false),
-            (Error::AllSourcesFailed(vec![]), "all_sources_failed", 502, 4, true),
-            (Error::Fetch(FetchError::InvalidUrl("x".into())), "invalid_url", 400, 2, false),
-            (Error::Fetch(FetchError::Blocked("x".into())), "target_not_allowed", 403, 4, false),
-            (Error::Fetch(FetchError::Network("x".into())), "fetch_failed", 502, 4, true),
-            (Error::Fetch(FetchError::Status(503)), "fetch_failed", 502, 4, true),
-            (Error::Fetch(FetchError::Status(404)), "fetch_failed", 502, 4, false),
+            (
+                Error::AllSourcesFailed(vec![]),
+                "all_sources_failed",
+                502,
+                4,
+                true,
+            ),
+            (
+                Error::Fetch(FetchError::InvalidUrl("x".into())),
+                "invalid_url",
+                400,
+                2,
+                false,
+            ),
+            (
+                Error::Fetch(FetchError::Blocked("x".into())),
+                "target_not_allowed",
+                403,
+                4,
+                false,
+            ),
+            (
+                Error::Fetch(FetchError::Network("x".into())),
+                "fetch_failed",
+                502,
+                4,
+                true,
+            ),
+            (
+                Error::Fetch(FetchError::Status(503)),
+                "fetch_failed",
+                502,
+                4,
+                true,
+            ),
+            (
+                Error::Fetch(FetchError::Status(404)),
+                "fetch_failed",
+                502,
+                4,
+                false,
+            ),
             (Error::Extract("x".into()), "extract_failed", 500, 1, false),
-            (Error::Timeout { stage: "search", ms: 10 }, "timeout", 504, 4, true),
+            (
+                Error::Timeout {
+                    stage: "search",
+                    ms: 10,
+                },
+                "timeout",
+                504,
+                4,
+                true,
+            ),
             (Error::Config("x".into()), "config_error", 500, 3, false),
         ];
         for (err, code, status, exit, retry) in cases {
@@ -173,6 +227,11 @@ mod tests {
         assert_eq!(body.failures.len(), 1);
         let json = serde_json::to_value(&body).unwrap();
         assert_eq!(json["failures"][0]["kind"], "timeout");
-        assert!(serde_json::to_value(Error::NoSources.body()).unwrap().get("failures").is_none());
+        assert!(
+            serde_json::to_value(Error::NoSources.body())
+                .unwrap()
+                .get("failures")
+                .is_none()
+        );
     }
 }

@@ -20,7 +20,11 @@ pub struct FetchOptions {
 
 impl Default for FetchOptions {
     fn default() -> Self {
-        Self { timeout_secs: 15, max_bytes: 5 * 1024 * 1024, allow_private: false }
+        Self {
+            timeout_secs: 15,
+            max_bytes: 5 * 1024 * 1024,
+            allow_private: false,
+        }
     }
 }
 
@@ -65,10 +69,16 @@ pub fn check_target(raw: &str) -> Result<Url, FetchError> {
 pub fn check_target_with(raw: &str, allow_private: bool) -> Result<Url, FetchError> {
     let url = Url::parse(raw).map_err(|e| FetchError::InvalidUrl(e.to_string()))?;
     if !matches!(url.scheme(), "http" | "https") {
-        return Err(FetchError::Blocked("only http and https urls are allowed".into()));
+        return Err(FetchError::Blocked(
+            "only http and https urls are allowed".into(),
+        ));
     }
     if allow_private {
-        return if url.host().is_some() { Ok(url) } else { Err(FetchError::InvalidUrl("url has no host".into())) };
+        return if url.host().is_some() {
+            Ok(url)
+        } else {
+            Err(FetchError::InvalidUrl("url has no host".into()))
+        };
     }
     match url.host() {
         None => Err(FetchError::InvalidUrl("url has no host".into())),
@@ -88,24 +98,45 @@ pub fn check_target_with(raw: &str, allow_private: bool) -> Result<Url, FetchErr
 fn check_ip(ip: IpAddr) -> Result<(), FetchError> {
     let blocked = match ip {
         IpAddr::V4(v4) => {
-            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified() || v4.is_broadcast()
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
         }
         IpAddr::V6(v6) => {
             if let Some(v4) = v6.to_ipv4_mapped() {
                 return check_ip(IpAddr::V4(v4));
             }
             let first = v6.segments()[0];
-            v6.is_loopback() || v6.is_unspecified() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80
         }
     };
-    if blocked { Err(FetchError::Blocked("private addresses are not allowed".into())) } else { Ok(()) }
+    if blocked {
+        Err(FetchError::Blocked(
+            "private addresses are not allowed".into(),
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchError> {
     let url = check_target_with(raw_url, opts.allow_private)?;
-    let client = HttpClient::instance().await.map_err(|e| FetchError::Network(e.to_string()))?;
-    let request = RequestOptions { timeout_secs: Some(opts.timeout_secs), ..Default::default() };
-    let response = client.get(url.as_str(), Some(request)).await.map_err(|e| FetchError::Network(e.to_string()))?;
+    let client = HttpClient::instance()
+        .await
+        .map_err(|e| FetchError::Network(e.to_string()))?;
+    let request = RequestOptions {
+        timeout_secs: Some(opts.timeout_secs),
+        ..Default::default()
+    };
+    let response = client
+        .get(url.as_str(), Some(request))
+        .await
+        .map_err(|e| FetchError::Network(e.to_string()))?;
 
     // A redirect may have led somewhere private; do not hand its content back.
     let final_url = response.url().to_string();
@@ -115,7 +146,10 @@ pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchErro
     if !response.status().is_success() {
         return Err(FetchError::Status(status));
     }
-    let mut html = response.text().await.map_err(|e| FetchError::Read(e.to_string()))?;
+    let mut html = response
+        .text()
+        .await
+        .map_err(|e| FetchError::Read(e.to_string()))?;
     if html.len() > opts.max_bytes {
         let mut cut = opts.max_bytes;
         while !html.is_char_boundary(cut) {
@@ -123,7 +157,12 @@ pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchErro
         }
         html.truncate(cut);
     }
-    Ok(Page { url: url.to_string(), final_url, status, html })
+    Ok(Page {
+        url: url.to_string(),
+        final_url,
+        status,
+        html,
+    })
 }
 
 #[cfg(test)]
