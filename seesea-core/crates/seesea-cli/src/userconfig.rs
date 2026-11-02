@@ -80,25 +80,80 @@ fn env_path(key: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Os {
+    Linux,
+    MacOs,
+    Windows,
+}
+
+impl Os {
+    pub fn current() -> Self {
+        if cfg!(windows) {
+            Os::Windows
+        } else if cfg!(target_os = "macos") {
+            Os::MacOs
+        } else {
+            Os::Linux
+        }
+    }
+}
+
+/// Where each kind of file goes on `os`, given an environment lookup. Linux follows the XDG
+/// variables; macOS keeps the config in `~/.config` (what command-line tools there use) but data
+/// and cache in the system's `Library` folders; Windows uses `%APPDATA%` for the config and
+/// `%LOCALAPPDATA%` for the rest.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Dirs {
+    pub config: PathBuf,
+    pub data: PathBuf,
+    pub cache: PathBuf,
+}
+
+pub fn dirs_for(os: Os, env: &dyn Fn(&str) -> Option<PathBuf>) -> Dirs {
+    let home = env("HOME").or_else(|| env("USERPROFILE"));
+    let under_home = |rel: &[&str]| {
+        let mut p = home.clone().unwrap_or_else(|| PathBuf::from("."));
+        p.extend(rel);
+        p
+    };
+    let app = |p: PathBuf| p.join("seesea");
+    match os {
+        Os::Windows => {
+            let local = env("LOCALAPPDATA").unwrap_or_else(|| under_home(&["AppData", "Local"]));
+            let roaming = env("APPDATA").unwrap_or_else(|| under_home(&["AppData", "Roaming"]));
+            Dirs { config: app(roaming), data: app(local.clone()), cache: app(local).join("cache") }
+        }
+        Os::MacOs => Dirs {
+            config: app(env("XDG_CONFIG_HOME").unwrap_or_else(|| under_home(&[".config"]))),
+            data: app(under_home(&["Library", "Application Support"])),
+            cache: app(under_home(&["Library", "Caches"])),
+        },
+        Os::Linux => Dirs {
+            config: app(env("XDG_CONFIG_HOME").unwrap_or_else(|| under_home(&[".config"]))),
+            data: app(env("XDG_DATA_HOME").unwrap_or_else(|| under_home(&[".local", "share"]))),
+            cache: app(env("XDG_CACHE_HOME").unwrap_or_else(|| under_home(&[".cache"]))),
+        },
+    }
+}
+
+fn dirs() -> Dirs {
+    dirs_for(Os::current(), &env_path)
+}
+
 /// `$SEESEA_CONFIG`, else `<config dir>/seesea/config.toml`.
 pub fn default_path() -> PathBuf {
-    env_path("SEESEA_CONFIG").unwrap_or_else(|| {
-        env_path("XDG_CONFIG_HOME")
-            .or_else(|| env_path("APPDATA"))
-            .or_else(|| env_path("HOME").map(|h| h.join(".config")))
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("seesea")
-            .join("config.toml")
-    })
+    env_path("SEESEA_CONFIG").unwrap_or_else(|| dirs().config.join("config.toml"))
 }
 
 /// `<data dir>/seesea`.
 pub fn data_dir() -> PathBuf {
-    env_path("XDG_DATA_HOME")
-        .or_else(|| env_path("LOCALAPPDATA"))
-        .or_else(|| env_path("HOME").map(|h| h.join(".local").join("share")))
-        .unwrap_or_else(std::env::temp_dir)
-        .join("seesea")
+    dirs().data
+}
+
+/// `$SEESEA_CACHE_DIR`, else `<cache dir>/seesea`.
+pub fn default_cache_dir() -> PathBuf {
+    env_path("SEESEA_CACHE_DIR").unwrap_or_else(|| dirs().cache)
 }
 
 /// `<data dir>/seesea/models` unless the config says otherwise.
@@ -117,7 +172,7 @@ pub fn default_auth_db() -> PathBuf {
 
 /// `~/x` is `$HOME/x`; a TOML file has no other way to say it.
 fn expand(path: &mut PathBuf) {
-    if let (Ok(rest), Some(home)) = (path.strip_prefix("~"), env_path("HOME")) {
+    if let (Ok(rest), Some(home)) = (path.strip_prefix("~"), env_path("HOME").or_else(|| env_path("USERPROFILE"))) {
         *path = home.join(rest);
     }
 }
@@ -176,7 +231,7 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # no_learn = false
 # explore = 0.05             # now and then read a lower-ranked result too, so ranks are not judged by hearsay
 # fuzzy_cache = 0.8          # reuse cached results for similar queries
-# cache_dir = "~/.cache/seesea"
+# cache_dir = "~/.cache/seesea"   # default depends on the OS (~/Library/Caches on macOS, %LOCALAPPDATA% on Windows)
 
 # Users and API keys for `seesea serve` live in this SQLite file (see `seesea users`, `seesea keys`).
 # auth_db = "~/.local/share/seesea/auth.db"
@@ -244,5 +299,25 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn each_os_gets_its_own_conventional_folders() {
+        use std::collections::HashMap;
+        let table = |pairs: &[(&str, &str)]| {
+            let m: HashMap<String, PathBuf> = pairs.iter().map(|(k, v)| (k.to_string(), PathBuf::from(v))).collect();
+            move |k: &str| m.get(k).cloned()
+        };
+        let p = |s: &str| PathBuf::from(s);
+        let linux = dirs_for(Os::Linux, &table(&[("HOME", "/home/a")]));
+        assert_eq!(linux, Dirs { config: p("/home/a/.config/seesea"), data: p("/home/a/.local/share/seesea"), cache: p("/home/a/.cache/seesea") });
+        let xdg = dirs_for(Os::Linux, &table(&[("HOME", "/h"), ("XDG_CONFIG_HOME", "/c"), ("XDG_DATA_HOME", "/d"), ("XDG_CACHE_HOME", "/k")]));
+        assert_eq!(xdg, Dirs { config: p("/c/seesea"), data: p("/d/seesea"), cache: p("/k/seesea") });
+        let mac = dirs_for(Os::MacOs, &table(&[("HOME", "/Users/a")]));
+        assert_eq!(mac, Dirs { config: p("/Users/a/.config/seesea"), data: p("/Users/a/Library/Application Support/seesea"), cache: p("/Users/a/Library/Caches/seesea") });
+        let win = dirs_for(Os::Windows, &table(&[("APPDATA", "C:/R"), ("LOCALAPPDATA", "C:/L")]));
+        assert_eq!(win, Dirs { config: p("C:/R/seesea"), data: p("C:/L/seesea"), cache: p("C:/L/seesea/cache") });
+        let bare = dirs_for(Os::Windows, &table(&[("USERPROFILE", "C:/Users/a")]));
+        assert_eq!(bare.data, p("C:/Users/a/AppData/Local/seesea"));
     }
 }
