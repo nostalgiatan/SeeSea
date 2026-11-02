@@ -31,7 +31,6 @@ use super::vector_scoring::VectorScorer;
 use seesea_cache::CacheInterface;
 use seesea_cache::cache::types::CacheImplConfig;
 use seesea_derive::SearchResult;
-use seesea_net::privacy::PrivacyStats;
 
 /// 引擎实例元数据
 ///
@@ -1448,16 +1447,6 @@ impl SearchInterface {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.engine_cache.remove(engine_name);
         Ok(())
-    }
-
-    /// 获取隐私保护统计信息
-    pub async fn get_privacy_stats(&self) -> Option<PrivacyStats> {
-        // 从 HTTP 客户端获取隐私管理器
-        if let Some(privacy_mgr) = self.http_client.privacy_manager().await {
-            Some(privacy_mgr.get_stats().await)
-        } else {
-            None
-        }
     }
 }
 
