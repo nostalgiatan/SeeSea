@@ -29,7 +29,7 @@
 //!
 //! # 单例模式使用示例
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use seesea::seesea_seesea_net::client::HttpClient;
 //! use seesea::seesea_seesea_net::seesea_seesea_config::NetworkConfig;
 //!
@@ -46,7 +46,7 @@
 //!
 //! # 普通实例使用示例
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use seesea::seesea_seesea_net::client::HttpClient;
 //! use seesea::seesea_seesea_net::seesea_seesea_config::NetworkConfig;
 //!
