@@ -104,20 +104,35 @@ impl Extractor {
         Ok(Extractor { model })
     }
 
-    pub fn extract(&self, html: &str, url: &str, opts: &Options) -> ExtractResult {
-        let doc = Html::parse_document(html);
-        let meta = meta::extract(&doc);
-        let blocks = blocks::segment_doc(&doc);
-        let flag = if opts.scope == Scope::Extended { 1.0f32 } else { 0.0 };
-        let pf = pagefeat::page_features(url, html, &blocks);
+    /// Decision threshold in effect for these options.
+    pub fn threshold(&self, opts: &Options) -> f32 {
+        opts.threshold.unwrap_or(if opts.scope == Scope::Extended { self.model.thr_extended } else { self.model.thr_core })
+    }
+
+    /// Per-block probability of being main content, in `blocks::segment` order (used to pre-label evaluation pages).
+    pub fn block_probabilities(&self, html: &str, url: &str, opts: &Options) -> Vec<f32> {
+        let blocks = blocks::segment(html);
+        self.probabilities(&blocks, html, url, opts.scope)
+    }
+
+    fn probabilities(&self, blocks: &[Block], html: &str, url: &str, scope: Scope) -> Vec<f32> {
+        let flag = if scope == Scope::Extended { 1.0f32 } else { 0.0 };
+        let pf = pagefeat::page_features(url, html, blocks);
         let rows: Vec<Vec<f32>> = blocks.iter().map(|b| {
             let mut r = b.feats.clone();
             r.extend_from_slice(&pf);
             r.push(flag);
             r
         }).collect();
-        let probs = self.model.predict(&rows);
-        let thr = opts.threshold.unwrap_or(if opts.scope == Scope::Extended { self.model.thr_extended } else { self.model.thr_core });
+        self.model.predict(&rows)
+    }
+
+    pub fn extract(&self, html: &str, url: &str, opts: &Options) -> ExtractResult {
+        let doc = Html::parse_document(html);
+        let meta = meta::extract(&doc);
+        let blocks = blocks::segment_doc(&doc);
+        let probs = self.probabilities(&blocks, html, url, opts.scope);
+        let thr = self.threshold(opts);
 
         let mut keep: Vec<bool> = probs.iter().map(|p| *p >= thr).collect();
         let fallback = !keep.iter().any(|k| *k) && !blocks.is_empty();

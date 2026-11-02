@@ -13,6 +13,7 @@ mod blockclf;
 pub use seesea_extract::blocks;
 mod labels;
 mod metrics;
+mod evalset;
 mod mixed;
 pub use seesea_extract::pagefeat;
 mod wcxb;
@@ -128,6 +129,11 @@ fn main() {
         labels::audit(std::path::Path::new(path), limit).unwrap_or_else(|e| die(&e));
         return;
     }
+    if raw.get(1).map(String::as_str) == Some("prelabel") {
+        let dir = raw.get(2).unwrap_or_else(|| die("prelabel <dir with *.html>"));
+        evalset::prelabel(std::path::Path::new(dir)).unwrap_or_else(|e| die(&e));
+        return;
+    }
     if raw.get(1).map(String::as_str) == Some("train-export") {
         let arg = |k: &str| raw.iter().position(|a| a == k).and_then(|i| raw.get(i + 1)).cloned();
         let w = arg("--webmainbench").unwrap_or_else(|| die("train-export --webmainbench F --wcxb DIR --out model.json"));
@@ -140,7 +146,7 @@ fn main() {
         let arg = |k: &str| raw.iter().position(|a| a == k).and_then(|i| raw.get(i + 1)).cloned();
         let w = arg("--webmainbench").unwrap_or_else(|| die("crate-eval --webmainbench F --wcxb DIR [--model model.json]"));
         let x = arg("--wcxb").unwrap_or_else(|| die("crate-eval needs --wcxb DIR"));
-        mixed::crate_eval(std::path::Path::new(&w), std::path::Path::new(&x), arg("--model").as_deref().map(std::path::Path::new)).unwrap_or_else(|e| die(&e));
+        mixed::crate_eval(std::path::Path::new(&w), std::path::Path::new(&x), arg("--model").as_deref().map(std::path::Path::new), arg("--own").as_deref().map(std::path::Path::new)).unwrap_or_else(|e| die(&e));
         return;
     }
     if raw.get(1).map(String::as_str) == Some("timing") {
