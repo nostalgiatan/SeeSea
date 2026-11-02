@@ -24,6 +24,7 @@ pub struct WebSource {
     name: &'static str,
     weight: f64,
     default_on: bool,
+    recency_only: bool,
     client: Arc<seesea_net::client::HttpClient>,
     headers: HashMap<String, String>,
     build: Build,
@@ -46,6 +47,10 @@ impl Source for WebSource {
 
     fn on_by_default(&self) -> bool {
         self.default_on
+    }
+
+    fn recency_only(&self) -> bool {
+        self.recency_only
     }
 
     async fn search(&self, q: &SourceQuery) -> Result<Vec<RawHit>, SourceError> {
@@ -117,13 +122,25 @@ pub fn keyless_sources(client: Arc<seesea_net::client::HttpClient>) -> Vec<Arc<d
             name,
             weight,
             default_on,
+            recency_only: false,
             client: Arc::clone(&client),
             headers: headers.clone(),
             build,
             parse,
         })
     };
+    let news: Arc<dyn Source> = Arc::new(WebSource {
+        name: "bingnews",
+        weight: 1.1,
+        default_on: true,
+        recency_only: true,
+        client: Arc::clone(&client),
+        headers: html.clone(),
+        build: bing_news_url,
+        parse: |b, _| parse_bing_news(b),
+    });
     vec![
+        news,
         make("duckduckgo", 1.0, true, &html, duckduckgo_url, |b, _| {
             parse_duckduckgo(b)
         }),
@@ -153,6 +170,42 @@ pub fn keyless_sources(client: Arc<seesea_net::client::HttpClient>) -> Vec<Arc<d
             parse_github(b)
         }),
     ]
+}
+
+fn bing_news_url(q: &SourceQuery) -> Option<String> {
+    // interval: 7 = past day, 8 = past week, 9 = past month.
+    let interval = match q.time_range {
+        Some(TimeRange::Day) => "&qft=interval%3d%227%22",
+        Some(TimeRange::Week) => "&qft=interval%3d%228%22",
+        Some(TimeRange::Month) => "&qft=interval%3d%229%22",
+        _ => "",
+    };
+    Some(format!("https://www.bing.com/news/search?q={}&format=rss{interval}", enc(&q.query)))
+}
+
+/// Bing News links go through a click-tracking redirect; the article address is in `url=`.
+fn real_news_url(link: &str) -> String {
+    url::Url::parse(link)
+        .ok()
+        .filter(|u| u.path().contains("apiclick"))
+        .and_then(|u| u.query_pairs().find(|(k, _)| k == "url").map(|(_, v)| v.into_owned()))
+        .unwrap_or_else(|| link.to_string())
+}
+
+pub fn parse_bing_news(body: &str) -> Result<Vec<RawHit>, SourceError> {
+    let feed = seesea_index::feed::parse(body, "https://www.bing.com/news/search", "bingnews")
+        .map_err(|e| err(FailureKind::Parse, e))?;
+    Ok(feed
+        .items
+        .into_iter()
+        .map(|i| RawHit {
+            url: real_news_url(&i.url),
+            title: i.title,
+            snippet: i.lead,
+            published: i.published.and_then(|p| DateTime::from_timestamp(p, 0)),
+            upstream: Vec::new(),
+        })
+        .collect())
 }
 
 fn enc(s: &str) -> String {

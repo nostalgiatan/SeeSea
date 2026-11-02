@@ -23,6 +23,8 @@ pub struct AppState {
     /// Keys, plans and limits. When a key or user exists, every endpoint except `/health` needs
     /// `Authorization: Bearer <key>` (or `X-API-Key`).
     pub access: Arc<Access>,
+    /// The local fresh-news index, when there is one: receives pushes and learns which sites to look for feeds on.
+    pub index: Option<Arc<seesea_index::Index>>,
 }
 
 impl AppState {
@@ -36,6 +38,7 @@ impl AppState {
             mcp: Arc::new(McpServer::new(Arc::clone(&pipeline))),
             pipeline,
             access: Arc::new(access),
+            index: None,
         }
     }
 }
@@ -190,7 +193,9 @@ async fn search_get(
 ) -> ApiResult<seesea_pipeline::SearchResponse> {
     let req = p.into_request()?;
     meter_search(&s, &grant, req.mode)?;
-    Ok(Json(s.pipeline.search(&req).await?))
+    let resp = s.pipeline.search(&req).await?;
+    remember_sites(&s, &resp);
+    Ok(Json(resp))
 }
 
 async fn search_post(
@@ -200,7 +205,20 @@ async fn search_post(
 ) -> ApiResult<seesea_pipeline::SearchResponse> {
     let req: SearchRequest = parse_body(&body)?;
     meter_search(&s, &grant, req.mode)?;
-    Ok(Json(s.pipeline.search(&req).await?))
+    let resp = s.pipeline.search(&req).await?;
+    remember_sites(&s, &resp);
+    Ok(Json(resp))
+}
+
+/// Sites of the best results are queued so the poller can look for feeds there.
+fn remember_sites(s: &AppState, resp: &seesea_pipeline::SearchResponse) {
+    let Some(index) = s.index.clone() else { return };
+    let hosts: Vec<String> = resp.hits.iter().take(5).map(|h| seesea_pipeline::host_of(&h.url)).filter(|h| !h.is_empty()).collect();
+    tokio::task::spawn_blocking(move || {
+        for h in hosts {
+            let _ = index.registry.queue_host(&h);
+        }
+    });
 }
 
 #[derive(Deserialize)]
@@ -268,6 +286,41 @@ async fn feedback(State(s): State<AppState>, body: Bytes) -> ApiResult<Value> {
     Ok(Json(json!({"host": host, "verdict": b.verdict})))
 }
 
+#[derive(Deserialize)]
+struct IngestBody {
+    items: Vec<seesea_index::Item>,
+}
+
+/// Push articles into the local index; at most 1000 per call.
+async fn ingest(State(s): State<AppState>, body: Bytes) -> ApiResult<Value> {
+    let b: IngestBody = parse_body(&body)?;
+    let Some(index) = s.index.clone() else {
+        return Err(Error::InvalidRequest("the index is turned off".into()).into());
+    };
+    if b.items.len() > 1000 {
+        return Err(Error::InvalidRequest("at most 1000 items per call".into()).into());
+    }
+    let report = tokio::task::spawn_blocking(move || index.store.ingest(&b.items))
+        .await
+        .map_err(|e| Error::Config(e.to_string()))?
+        .map_err(|e| Error::Config(e.to_string()))?;
+    Ok(Json(json!(report)))
+}
+
+async fn index_info(State(s): State<AppState>) -> ApiResult<Value> {
+    let Some(index) = s.index.clone() else {
+        return Err(Error::InvalidRequest("the index is turned off".into()).into());
+    };
+    let feeds = tokio::task::spawn_blocking(move || {
+        let list = index.registry.list().unwrap_or_default();
+        let active = list.iter().filter(|f| f.status == seesea_index::Status::Active).count();
+        json!({"store": index.store.stats(), "feeds": {"total": list.len(), "active": active}})
+    })
+    .await
+    .map_err(|e| Error::Config(e.to_string()))?;
+    Ok(Json(feeds))
+}
+
 async fn stats(State(s): State<AppState>) -> Json<Value> {
     let cache: serde_json::Map<String, Value> = s
         .pipeline
@@ -328,6 +381,8 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
         .route("/v1/sources/check", get(sources_check))
         .route("/v1/stats", get(stats))
         .route("/v1/feedback", post(feedback))
+        .route("/v1/ingest", post(ingest))
+        .route("/v1/index", get(index_info))
         .route("/mcp", post(mcp))
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(1024 * 1024))

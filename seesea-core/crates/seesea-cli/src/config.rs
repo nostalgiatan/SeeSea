@@ -50,6 +50,10 @@ pub struct Settings {
     /// Where stage 1 keeps what it learned; none means it does not learn.
     pub learn_file: Option<PathBuf>,
     pub explore: f64,
+    /// Folder of the local fresh-news index; none means no `local` source.
+    pub index_dir: Option<PathBuf>,
+    pub retention_days: Option<i64>,
+    pub index_quota_mb: Option<u64>,
 }
 
 pub use crate::userconfig::default_cache_dir;
@@ -76,7 +80,7 @@ pub fn parse_proxy(raw: &str) -> Result<(ProxyType, String)> {
     }
 }
 
-pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
+fn http_client(settings: &Settings) -> Result<Arc<seesea_net::client::HttpClient>> {
     let mut net = NetworkConfig::default();
     if let Some(p) = &settings.proxy {
         let (kind, address) = parse_proxy(p)?;
@@ -85,14 +89,45 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
         net.proxy.address = address;
     }
     // The fetcher shares this client through the process-wide instance.
-    let client = seesea_net::client::HttpClient::instance_with_network_config(net)
-        .map_err(|e| Error::Config(format!("cannot create the HTTP client: {e}")))?;
-    let sources = build_sources(&settings.sources, client);
-    let fetch = seesea_fetch::FetchOptions {
+    seesea_net::client::HttpClient::instance_with_network_config(net)
+        .map_err(|e| Error::Config(format!("cannot create the HTTP client: {e}")))
+}
+
+fn fetch_options(settings: &Settings) -> seesea_fetch::FetchOptions {
+    seesea_fetch::FetchOptions {
         allow_private: settings.allow_private,
         browser_headers: !settings.plain_headers,
         ..Default::default()
-    };
+    }
+}
+
+/// Polls feeds into `index` with the same fetching rules (SSRF check, headers, proxy, rendering)
+/// as searches.
+pub fn build_poller(settings: &Settings, index: Arc<seesea_index::Index>) -> Result<seesea_index::Poller> {
+    http_client(settings)?;
+    let fetch = fetch_options(settings);
+    let mut poller = seesea_index::Poller::new(
+        index,
+        Arc::new(seesea_pipeline::content::NetFetcher::new(fetch.clone())),
+        seesea_index::PollConfig {
+            retention_days: settings.retention_days.unwrap_or(30),
+            quota_bytes: settings.index_quota_mb.unwrap_or(512) * 1024 * 1024,
+            ..Default::default()
+        },
+    );
+    if let Some(r) = (!settings.no_render).then(|| seesea_fetch::render::Renderer::discover(settings.lightpanda.as_deref())).flatten() {
+        poller = poller.renderer(Arc::new(seesea_pipeline::content::RenderFetcher { renderer: r, options: fetch }));
+    }
+    Ok(poller)
+}
+
+pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
+    let client = http_client(settings)?;
+    let mut sources = build_sources(&settings.sources, client);
+    if let Some(dir) = &settings.index_dir {
+        sources.push(Arc::new(seesea_index::IndexSource::new(seesea_index::Index::open(dir))));
+    }
+    let fetch = fetch_options(settings);
     let cache: Arc<dyn Cache> = if settings.no_cache {
         Arc::new(NoCache)
     } else if settings.memory_cache {

@@ -490,3 +490,49 @@ async fn feedback_reaches_the_learner_and_is_refused_when_learning_is_off() {
         .unwrap();
     assert_eq!(r.status(), 400);
 }
+
+#[tokio::test]
+async fn pushed_items_are_searchable_through_the_local_source() {
+    let base = spawn_site().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = settings(&base);
+    s.index_dir = Some(dir.path().join("index"));
+    let pipeline = Arc::new(build_pipeline(&s).unwrap());
+    assert!(pipeline.source_names().contains(&"local".to_string()));
+    let mut state = AppState::new(Arc::clone(&pipeline), None);
+    state.index = Some(seesea_index::Index::open(dir.path().join("index")));
+    let app = router(state, 8);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let http = reqwest::Client::new();
+
+    let r = http
+        .post(format!("{api}/v1/ingest"))
+        .json(&json!({"items": [
+            {"url": "https://wire.example/quake", "title": "Earthquake strikes coastal city", "lead": "A magnitude 6 earthquake", "published": chrono::Utc::now().timestamp()},
+            {"url": "nonsense", "title": "bad"}
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let v: Value = r.json().await.unwrap();
+    assert_eq!((v["added"].as_u64(), v["rejected"].as_u64()), (Some(1), Some(1)));
+
+    let v: Value = http
+        .get(format!("{api}/v1/search"))
+        .query(&[("q", "earthquake coastal city"), ("mode", "fast"), ("sources", "local")])
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["hits"][0]["url"], "https://wire.example/quake", "{v}");
+    let info: Value = http.get(format!("{api}/v1/index")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(info["store"]["items"], 1);
+    // The search queued the site so the poller can look for its feeds.
+    let queued = seesea_index::Index::open(dir.path().join("index")).registry.pending_hosts(5).unwrap();
+    assert_eq!(queued, vec!["wire.example"]);
+}

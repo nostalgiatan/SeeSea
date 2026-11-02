@@ -289,12 +289,16 @@ impl Pipeline {
         self.extractor.get_or_init(|| Arc::new(Extractor::new()))
     }
 
-    fn select_sources(&self, wanted: &[String]) -> Result<Vec<Arc<dyn Source>>> {
+    fn select_sources(&self, wanted: &[String], recency: rank::Recency) -> Result<Vec<Arc<dyn Source>>> {
         if self.sources.is_empty() {
             return Err(Error::NoSources);
         }
         if wanted.is_empty() {
-            let general: Vec<_> = self.sources.iter().filter(|s| s.on_by_default()).cloned().collect();
+            let general: Vec<_> = self.sources
+                .iter()
+                .filter(|s| s.on_by_default() && (!s.recency_only() || recency > rank::Recency::Evergreen))
+                .cloned()
+                .collect();
             return Ok(if general.is_empty() { self.sources.clone() } else { general });
         }
         let known = self.source_names();
@@ -367,7 +371,7 @@ impl Pipeline {
     pub async fn search(&self, req: &SearchRequest) -> Result<SearchResponse> {
         req.validate()?;
         let started = Instant::now();
-        let sources = self.select_sources(&req.sources)?;
+        let sources = self.select_sources(&req.sources, rank::Recency::of(&req.query))?;
 
         let scope = Self::cache_scope(req, &sources);
         let tokens = token_set(&req.query);

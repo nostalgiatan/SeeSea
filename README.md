@@ -37,6 +37,10 @@ seesea --model-dir ./bge-small-en-v1.5 search "query"  # 语义精排（纯 Rust
 seesea --rerank-model ./bge-reranker-v2-m3-q4_k_m.gguf search "query"  # 交叉编码器精排（可与 --model-dir 叠加）
 seesea feedback https://example.org/a bad            # 告诉第一层排序这个结果好/坏（HTTP：POST /v1/feedback）
 seesea learn show                                    # 第一层学到的各主机/来源表现；`learn reset` 清空
+seesea feeds seed                                   # 加入内置的中英文起始订阅源（试用期，坏的会自动停用）
+seesea feeds add https://example.org/feed.xml        # 或 `feeds discover example.org` 自动发现站点的订阅源
+seesea poll --every 15m                              # 拉取订阅源写入本地索引（`serve` 默认每 15 分钟在后台做）
+seesea index                                         # 本地索引的条数、天数和体积
 seesea mcp                                           # stdio MCP
 ```
 
@@ -47,6 +51,8 @@ seesea mcp                                           # stdio MCP
 退出码：0 成功，1 其他，2 用法错误，3 配置错误或无可用来源，4 网络/上游失败。错误以 `error[code]: message` 输出。
 
 ## 已知限制
+
+- 实时层：问题按时效分三档（`Recency`：常青 / 近期 / 突发，看“最新、今天、breaking、年份”等词），时效权重和半衰期随档位变化（突发半衰期半天、权重 ×8；近期 14 天、×4；常青 365 天、×1）。`bingnews`（Bing 新闻 RSS）只在非常青的问题里自动参与，点名 `-s bingnews` 则总是参与。本地索引（`local` 来源）存标题、约 400 字的导语、日期、主机，不存正文（正文由流水线实时抓取，所以索引很小）；每天一个 SQLite 文件，标题加权的 FTS5 全文索引（中文按字拆分，查询用相邻两字），按 URL 归一化和“同站同标题”去重，默认保留 30 天、总量上限 512 MB（先删最旧的一天）。填充方式：RSS 2.0/RSS 1.0/Atom/JSON Feed 轮询（失败指数退避，试用期 3 次失败、正式 6 次失败后停用，间隔随有无新条目自适应 5 分钟～6 小时，并发 6、单个 2 MB 上限、15 秒超时，任何一个源出错都只影响它自己）；`POST /v1/ingest` 推送（每次最多 1000 条）；来源自动发现：搜索结果里出现过的站点会排队，轮询时每轮最多探 3 个站点（首页的 `<link rel=alternate>`，没有就试 /feed、/atom.xml 等常见位置，首页没有链接且装有 Lightpanda 时渲染后再找），发现的订阅源先进试用期。未做：WebSub/SSE/WebSocket 推送订阅、sitemap 与站内外链挖掘、每篇文章一个二进制向量（基准结果见 `tools/vecbench`，尚未接入索引）、同一事件的多篇报道聚合（只做了 URL 与标题去重）。内置起始订阅源是我按已知地址列的，部分在你的网络里可能连不上，可用 `seesea feeds list` 看每个源最近一次的错误。
 
 - 第一层排序会从日志学习：每次读了正文之后，第二层给出的相关度（0.7）与正文质量（0.3）记到该主机和来源名下（取不到正文记 0.15），指数衰减（半衰期 90 天）、向全局均值收缩、至少约 3 次观察后才生效，给第一层得分加一个有界的修正（主机最多约 ±0.075，来源 ±0.025；`score_parts.learned` 可见）。`feedback good/bad` 相当于 5 次观察。状态存在 `~/.local/share/seesea/learn.json`（原子写，服务进程每 30 秒落盘）；`--no-learn` 关闭，`eval` 不学习。偏差：只有被读取的候选才有观察，所以 `explore`（每次搜索以该概率换读一个排名靠后的结果）用来缓解。限制：未在标注集上证明能提高 nDCG（8 个查询的集合已饱和）；同一查询的缓存响应不会随学习更新；主机表上限 2 万。
 
