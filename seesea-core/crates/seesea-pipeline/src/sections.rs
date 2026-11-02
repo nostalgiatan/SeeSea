@@ -198,6 +198,24 @@ fn is_stub(markdown: &str) -> bool {
     paras.iter().all(|p| p.chars().count() <= 60) && markdown.chars().count() < 120
 }
 
+/// A short paragraph that only labels what follows: a heading, a bold line or a bare number.
+fn is_label(para: &str) -> bool {
+    let p = para.trim();
+    p.chars().count() <= 60
+        && (p.starts_with('#')
+            || (p.starts_with("**") && p.ends_with("**"))
+            || p.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// Remove labels from the end of a piece of text: they introduce what was left out after them.
+fn trim_trailing_labels(markdown: &str) -> String {
+    let mut paras: Vec<&str> = markdown.split("\n\n").collect();
+    while paras.len() > 1 && is_label(paras[paras.len() - 1]) {
+        paras.pop();
+    }
+    paras.join("\n\n")
+}
+
 fn cut_at_paragraph(text: &str, budget: usize) -> String {
     let mut out = String::new();
     for para in text.split("\n\n") {
@@ -312,7 +330,14 @@ pub fn select_with(
     // Neighbouring chunks of one section read better as one piece.
     let mut out: Vec<SelectedSection> = Vec::new();
     let mut last: Option<usize> = None;
+    let n_chunks = sections.len();
     for (i, markdown) in chosen {
+        // Only when something follows that was not chosen; the end of the page may end on a label.
+        let markdown = if truncated && i + 1 < n_chunks {
+            trim_trailing_labels(&markdown)
+        } else {
+            markdown
+        };
         match (out.last_mut(), last) {
             (Some(prev), Some(l)) if l + 1 == i && origins[l] == origins[i] => {
                 prev.markdown.push_str("\n\n");
@@ -491,5 +516,26 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(!text.trim_end().ends_with("**Who wants what**"), "{text}");
+    }
+
+    #[test]
+    fn labels_at_the_end_of_a_chosen_chunk_are_trimmed() {
+        assert_eq!(
+            trim_trailing_labels("Some real text here.\n\n**05**\n\n**Who wants what**"),
+            "Some real text here."
+        );
+        assert_eq!(trim_trailing_labels("**Only a label**"), "**Only a label**");
+        let body = "The talks resume in November and both sides have agreed to set up a channel for reporting incidents. ".repeat(5);
+        let tail = "Filler about something else entirely, nothing to do with the query at all. "
+            .repeat(30);
+        let doc = format!("{body}\n\n**05**\n\n**Who wants what**\n\n{tail}");
+        let (sel, truncated) = select(&doc, "talks resume incidents channel", 700);
+        assert!(truncated);
+        let text: String = sel
+            .iter()
+            .map(|s| s.markdown.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!text.contains("Who wants what"), "{text}");
     }
 }
