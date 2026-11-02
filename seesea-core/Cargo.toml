@@ -117,6 +117,7 @@ path = "crates/main.rs"
 opt-level = 3
 lto = true
 codegen-units = 1
+strip = true
 
 [features]
 default = ["scraper", "html5ever"]

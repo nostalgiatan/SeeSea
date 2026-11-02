@@ -55,13 +55,13 @@ struct NetArgs {
     /// Directory of an embedding model (config.json, tokenizer.json, model.safetensors) for semantic reranking.
     #[arg(long, env = "SEESEA_MODEL_DIR", global = true)]
     model_dir: Option<PathBuf>,
-    /// Share of content relevance taken from the embedding score, 0..1 (default 0.6).
+    /// Share of content relevance taken from the embedding score, 0..1 (default 0.8).
     #[arg(long, env = "SEESEA_SEMANTIC_WEIGHT", global = true)]
     semantic_weight: Option<f64>,
     /// Passages embedded per page: the opening one plus the best matches (default 4). Lower is faster.
     #[arg(long, env = "SEESEA_SEMANTIC_PASSAGES", global = true)]
     semantic_passages: Option<usize>,
-    /// FLOOR,CEIL: cosine similarities mapped to relevance 0 and 1 (BGE-small ~0.45,0.85; bge-m3 ~0.3,0.75).
+    /// FLOOR,CEIL: cosine similarities mapped to relevance 0 and 1 (default 0.3,0.75 suits bge-m3; BGE-small English ~0.45,0.85).
     #[arg(long, env = "SEESEA_SEMANTIC_RANGE", global = true)]
     semantic_range: Option<String>,
     #[arg(long, global = true)]
@@ -159,7 +159,7 @@ enum Command {
     Mcp,
 }
 
-fn settings(net: &NetArgs, memory_cache: bool) -> Settings {
+fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
     Settings {
         sources: SourceSettings {
             searxng_url: net.searxng.clone(),
@@ -172,7 +172,7 @@ fn settings(net: &NetArgs, memory_cache: bool) -> Settings {
         memory_cache,
         allow_private: net.allow_private,
         fuzzy_cache: net.fuzzy_cache,
-        model_dir: net.model_dir.clone(),
+        model_dir: net.model_dir.clone().filter(|_| use_model),
         semantic_weight: net.semantic_weight,
         semantic_passages: net.semantic_passages,
         semantic_range: net.semantic_range.clone(),
@@ -206,7 +206,15 @@ async fn append_log(path: &PathBuf, resp: &SearchResponse) -> Result<(), Error> 
 async fn run(cli: Cli) -> Result<(), Error> {
     let json = cli.net.json;
     let long_lived = matches!(cli.command, Command::Serve { .. } | Command::Mcp);
-    let pipeline = Arc::new(build_pipeline(&settings(&cli.net, long_lived))?);
+    // The model is only loaded (in the background) for commands that rerank page content.
+    let use_model = match &cli.command {
+        Command::Search { mode, .. } | Command::Eval { mode, .. } => {
+            !mode.eq_ignore_ascii_case("fast")
+        }
+        Command::Serve { .. } | Command::Mcp => true,
+        _ => false,
+    };
+    let pipeline = Arc::new(build_pipeline(&settings(&cli.net, long_lived, use_model))?);
 
     match cli.command {
         Command::Search {

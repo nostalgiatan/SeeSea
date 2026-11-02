@@ -42,7 +42,7 @@ seesea mcp                                           # stdio MCP
 
 - SearXNG 与 Brave 的解析只用手写样本测试过，未对真实服务验证；请用 `seesea sources --check` 检查你的实例。
 - 抓取型引擎（Bing、百度、搜狗）未在沙箱外验证，本质上也较脆弱。
-- 模型也可以是单个 `.gguf` 文件（BERT/XLM-R 布局，如 bge-m3 的 Q4_0，约 400 MB）：纯 Rust 读取并解码，线性层解成 f32 常驻内存（约 1.5 GB）。在有 Vulkan GPU 的机器上（默认构建已包含，纯 Rust：burn + wgpu），24 层 Transformer 跑在 GPU 上：RTX 5070 Laptop 上 32 个约 280 词元的段落 5 秒（CPU 约 50 秒），与 CPU 的相似度结果一致到小数点后三位；没有可用 GPU 时自动退回 CPU，`SEESEA_EMBED_DEVICE=cpu` 可强制 CPU，`cargo build --no-default-features` 可去掉 GPU 支持（二进制约 17 MB，带 GPU 约 57 MB）。bge-m3 质量好且跨语言（英文查询可命中中文段落），但在 CPU 上约 5 ms/词元，一次搜索若编码几十个段落要几十秒，所以建议 `--semantic-passages 1 --semantic-range 0.3,0.75` 并只在质量优先时使用；日常用 small 级模型（约二十分之一的计算量）。`CANDLE_NUM_THREADS=32` 可在多核机器上提速。
+- 模型也可以是单个 `.gguf` 文件（BERT/XLM-R 布局，如 bge-m3 的 Q4_0，约 400 MB）：纯 Rust 读取并解码，线性层解成 f32 常驻内存（约 1.5 GB）。在有 Vulkan GPU 的机器上（默认构建已包含，纯 Rust：burn + wgpu），24 层 Transformer 跑在 GPU 上：RTX 5070 Laptop 上 32 个约 280 词元的段落 3.5 秒（CPU 约 50 秒），相似度与 CPU 一致到小数点后三位；没有可用 GPU 时自动退回 CPU（`SEESEA_EMBED_DEVICE=cpu` 可强制）。模型在后台线程加载（约 1.7 秒，含 GPU 内核预热），与网络检索重叠，所以不拖慢单次搜索；`fast` 模式不加载模型。默认参数（权重 0.8、余弦映射 0.3–0.75）按 bge-m3 在 `tools/search-eval` 上调过。带 GPU 的二进制约 47 MB，`cargo build --no-default-features` 约 15 MB。bge-m3 质量好且跨语言（英文查询可命中中文段落）。
 - 语义精排需要 `--model-dir` 指向 BERT 类嵌入模型（config.json、tokenizer.json、model.safetensors，如 BAAI/bge-small-en-v1.5；可用 `seesea-embed.json` 设置 pooling 和前缀），基于 candle 在 CPU 上推理，无 C/C++ 运行时。不提供模型时退回词法精排（BM25 + 标题支撑度）。余弦到分数的映射（`cos_floor`/`cos_ceil`）按 BGE 类模型设定，尚未在标注集上验证。
 - `deep` 模式读取更多页面，但尚未做查询改写。
 - SSRF 防护检查目标与重定向，未固定 DNS 解析结果。
