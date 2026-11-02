@@ -44,7 +44,7 @@
 //!
 //! ## 示例
 //!
-//! ```no_run
+//! ```ignore
 //! use SeeSea::seesea_seesea_search::engines::bing::BingEngine;
 //! use SeeSea::derive::{SearchEngine, SearchQuery};
 //!

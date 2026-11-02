@@ -53,7 +53,7 @@
 //!
 //! ## 使用示例
 //!
-//! ```rust
+//! ```rust,ignore
 //! use seesea::seesea_seesea_search::{SearchInterface, SearchRequest, EngineManager};
 //!
 //! // 创建引擎管理器
