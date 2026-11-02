@@ -43,10 +43,27 @@ pub fn write_tiny_model(dir: &Path, extra: Option<&str>) {
     let varmap = VarMap::new();
     let vb = VarBuilder::from_varmap(&varmap, DType::F32, &Device::Cpu);
     BertModel::load(vb, &cfg).unwrap();
-    for var in varmap.data().lock().unwrap().values() {
-        let r = Tensor::randn(0f32, 0.3f32, var.shape(), &Device::Cpu).unwrap();
-        var.set(&r).unwrap();
+    // Deterministic weights (xorshift seeded by the variable's name), so tests never flake.
+    let data = varmap.data().lock().unwrap();
+    let mut names: Vec<&String> = data.keys().collect();
+    names.sort();
+    for name in names {
+        let var = &data[name];
+        let mut state = name.bytes().fold(0x9e3779b97f4a7c15u64, |h, b| {
+            (h ^ b as u64).wrapping_mul(0x100000001b3)
+        }) | 1;
+        let values: Vec<f32> = (0..var.elem_count())
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                ((state >> 11) as f64 / (1u64 << 53) as f64 - 0.5) as f32 * 0.8
+            })
+            .collect();
+        var.set(&Tensor::from_vec(values, var.shape(), &Device::Cpu).unwrap())
+            .unwrap();
     }
+    drop(data);
     varmap.save(dir.join("model.safetensors")).unwrap();
     if let Some(sidecar) = extra {
         std::fs::write(dir.join("seesea-embed.json"), sidecar).unwrap();
