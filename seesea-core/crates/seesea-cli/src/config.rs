@@ -52,19 +52,7 @@ pub struct Settings {
     pub explore: f64,
 }
 
-/// `~/.cache/seesea` (or the platform equivalent).
-pub fn default_cache_dir() -> PathBuf {
-    let from_env = |k: &str| {
-        std::env::var_os(k)
-            .filter(|v| !v.is_empty())
-            .map(PathBuf::from)
-    };
-    from_env("SEESEA_CACHE_DIR")
-        .or_else(|| from_env("XDG_CACHE_HOME").map(|p| p.join("seesea")))
-        .or_else(|| from_env("LOCALAPPDATA").map(|p| p.join("seesea")))
-        .or_else(|| from_env("HOME").map(|p| p.join(".cache").join("seesea")))
-        .unwrap_or_else(|| std::env::temp_dir().join("seesea-cache"))
-}
+pub use crate::userconfig::default_cache_dir;
 
 pub fn parse_proxy(raw: &str) -> Result<(ProxyType, String)> {
     let (scheme, rest) = raw
