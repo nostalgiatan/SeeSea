@@ -1,0 +1,37 @@
+[package]
+name = "seesea-cli"
+version = "0.1.0"
+edition = "2024"
+description = "The seesea command-line tool: search, extract, serve and MCP over one pipeline"
+license = "AGPL-3.0-or-later"
+
+[lib]
+name = "seesea_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "seesea"
+path = "src/main.rs"
+
+[dependencies]
+seesea-pipeline = { path = "../seesea-pipeline" }
+seesea-mcp = { path = "../seesea-mcp" }
+seesea-extract = { path = "../seesea-extract", default-features = false }
+seesea-fetch = { path = "../seesea-fetch" }
+seesea-search = { path = "../seesea-search" }
+seesea-derive = { path = "../seesea-derive" }
+seesea-net = { path = "../seesea-net" }
+seesea-config = { path = "../seesea-config" }
+async-trait = "0.1.89"
+axum = { version = "0.8.7", features = ["json"] }
+chrono = { version = "0.4.42", features = ["serde"] }
+clap = { version = "4.5.53", features = ["derive", "env"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+tokio = { version = "1.48.0", features = ["full"] }
+tower = { version = "0.5", features = ["limit"] }
+
+[dev-dependencies]
+reqwest = { version = "0.12.25", features = ["json", "rustls-tls"], default-features = false }
+tempfile = "3.23.0"
+flate2 = "1"
