@@ -65,3 +65,4 @@ building/
 # Test results and screenshots from get_xinhua_results.py
 xinhua_results_*.html
 xinhua_screenshot_*.png
+models/
