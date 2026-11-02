@@ -998,26 +998,7 @@ impl SearchInterface {
             "bing" => Arc::new(BingEngine::with_client(Arc::clone(&self.http_client))),
             "baidu" => Arc::new(BaiduEngine::with_client(Arc::clone(&self.http_client))),
             "sogou" => Arc::new(SogouEngine::with_client(Arc::clone(&self.http_client))),
-            _ => {
-                // 尝试从Python注册表获取引擎
-                #[cfg(feature = "python")]
-                {
-                    use seesea_python_bindings::py_engine_registry::try_get_python_engine_sync;
-                    if let Some(py_engine) = try_get_python_engine_sync(engine_name) {
-                        return Ok(py_engine as Arc<dyn seesea_derive::SearchEngine + Send + Sync>);
-                    }
-                    // Python引擎未注册，跳过该引擎
-                    return Err(format!(
-                        "Engine '{}' not found in Rust or Python registries",
-                        engine_name
-                    )
-                    .into());
-                }
-                #[cfg(not(feature = "python"))]
-                {
-                    return Err(format!("Unknown engine: {engine_name}").into());
-                }
-            }
+            _ => return Err(format!("Unknown engine: {engine_name}").into()),
         };
 
         Ok(engine)

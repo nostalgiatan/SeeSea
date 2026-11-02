@@ -20,13 +20,12 @@
 use axum::extract::connect_info::IntoMakeServiceWithConnectInfo;
 use axum::{
     Router,
-    routing::{any, get, get_service, post},
+    routing::{get, get_service, post},
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::info;
 
-use super::dynamic_router::{ThreadSafeDynamicRouter, new_dynamic_router};
 use super::handlers::{
     cache, get_static_html_path, handle_cache_clear_pattern, handle_cache_keys,
     handle_cache_stats_detail, handle_config_get, handle_config_update, handle_connections_stats,
@@ -35,8 +34,8 @@ use super::handlers::{
     handle_health_detail, handle_hot_all, handle_hot_multiple, handle_hot_platform,
     handle_hot_platforms_list, handle_index, handle_logs_directory, handle_logs_errors,
     handle_logs_files, handle_logs_read, handle_logs_tail, handle_magic_link_generate,
-    handle_metrics, handle_pro_api, handle_realtime_metrics, handle_search, handle_search_post,
-    handle_stats, handle_stock_api, handle_system_resources, handle_system_status, handle_version,
+    handle_metrics, handle_realtime_metrics, handle_search, handle_search_post,
+    handle_stats, handle_system_resources, handle_system_status, handle_version,
     handle_version_info, rss,
 };
 use super::metrics::{MetricsCollector, MetricsConfig};
@@ -127,8 +126,6 @@ pub struct ApiState {
     pub metrics: Arc<MetricsCollector>,
     /// 魔法链接状态
     pub magic_link: Arc<MagicLinkState>,
-    /// 动态路由匹配器
-    pub dynamic_router: ThreadSafeDynamicRouter,
     /// 前端 API 地址（空字符串表示使用同源）
     pub frontend_api_url: String,
     /// 缓存接口
@@ -192,7 +189,6 @@ impl ApiInterface {
     ) -> Self {
         let metrics = Arc::new(MetricsCollector::new(MetricsConfig::default()));
         let magic_link = Arc::new(MagicLinkState::new(MagicLinkConfig::default()));
-        let dynamic_router = new_dynamic_router();
 
         // 创建AsyncHotTrendClient，不在这里初始化，而是在第一次使用时初始化
         // 这里我们直接使用空的OnceCell，等待第一次使用时再初始化
@@ -204,7 +200,6 @@ impl ApiInterface {
             version,
             metrics,
             magic_link,
-            dynamic_router,
             frontend_api_url,
             cache,
             runtime_config: Arc::new(RuntimeConfigManager::new()),
@@ -269,7 +264,6 @@ impl ApiInterface {
         let search = Arc::new(SearchInterface::new(search_config)?);
         let metrics = Arc::new(MetricsCollector::new(MetricsConfig::default()));
         let magic_link = Arc::new(MagicLinkState::new(MagicLinkConfig::default()));
-        let dynamic_router = new_dynamic_router();
         let hot_client = Arc::new(OnceCell::new());
 
         let state = ApiState {
@@ -278,7 +272,6 @@ impl ApiInterface {
             version: env!("CARGO_PKG_VERSION").to_string(),
             metrics,
             magic_link,
-            dynamic_router,
             frontend_api_url: String::new(),
             cache,
             runtime_config: Arc::new(RuntimeConfigManager::new()),
@@ -345,9 +338,7 @@ impl ApiInterface {
             .route("/version", get(handle_version))
             .route("/metrics", get(handle_metrics))
             .route("/metrics/realtime", get(handle_realtime_metrics))
-            .route("/magic-link/generate", post(handle_magic_link_generate))
-            .route("/pro/{*path}", any(handle_pro_api))
-            .route("/stock/{*path}", any(handle_stock_api));
+            .route("/magic-link/generate", post(handle_magic_link_generate));
 
         // 内部管理路由组（仅限本地访问）
         let internal_router = Router::new()
@@ -444,9 +435,7 @@ impl ApiInterface {
             .route("/cache/stats", get(cache::handle_cache_stats))
             .route("/cache/clear", post(cache::handle_cache_clear))
             .route("/cache/cleanup", post(cache::handle_cache_cleanup))
-            .route("/metrics/realtime", get(handle_realtime_metrics))
-            .route("/pro/{*path}", any(handle_pro_api))
-            .route("/stock/{*path}", any(handle_stock_api));
+            .route("/metrics/realtime", get(handle_realtime_metrics));
 
         let swagger =
             SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi());
@@ -644,11 +633,6 @@ impl ApiInterface {
     /// 获取IP过滤器
     pub fn ip_filter(&self) -> &Arc<IpFilterState> {
         &self.ip_filter
-    }
-
-    /// 获取动态路由匹配器
-    pub fn dynamic_router(&self) -> &ThreadSafeDynamicRouter {
-        &self.state.dynamic_router
     }
 }
 
