@@ -6,6 +6,7 @@
 //! embedded, so a title that promises more than the page delivers cannot lift a page here either.
 
 use crate::rerank::{DocView, LexicalReranker, RerankScore, Reranker, strip_title_echo};
+use crate::sections::SectionScorer;
 use crate::text::{coverage, distinctness, token_set};
 use std::sync::Arc;
 
@@ -210,6 +211,25 @@ impl Reranker for SemanticReranker {
                 )),
             ),
         }
+    }
+}
+
+impl SectionScorer for SemanticReranker {
+    fn score(&self, query: &str, texts: &[&str]) -> Result<Vec<f64>, String> {
+        let q = self.embedder.embed_query(query)?;
+        let vectors = self.embedder.embed_passages(texts)?;
+        if vectors.len() != texts.len() || vectors.iter().any(|v| v.len() != q.len()) {
+            return Err("the embedder returned vectors of the wrong number or width".into());
+        }
+        let span = (self.cfg.cos_ceil - self.cfg.cos_floor).max(1e-6);
+        Ok(vectors
+            .iter()
+            .zip(texts)
+            .map(|(v, t)| {
+                let cos: f32 = v.iter().zip(&q).map(|(a, b)| a * b).sum();
+                ((cos - self.cfg.cos_floor) / span).clamp(0.0, 1.0) as f64 * distinctness(t)
+            })
+            .collect())
     }
 }
 

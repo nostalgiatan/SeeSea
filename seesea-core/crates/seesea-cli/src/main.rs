@@ -84,6 +84,9 @@ struct NetArgs {
     /// Logit distance of one sigmoid step (default 3). Larger spreads scores out, smaller sharpens them.
     #[arg(long, env = "SEESEA_RERANK_SCALE", global = true)]
     rerank_scale: Option<f32>,
+    /// Choose page sections by shared words only, even when a model is loaded (faster).
+    #[arg(long, env = "SEESEA_LEXICAL_SECTIONS", global = true)]
+    lexical_sections: bool,
     #[arg(long, global = true)]
     no_cache: bool,
     /// Allow fetching loopback and private addresses.
@@ -201,6 +204,7 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         rerank_passages: net.rerank_passages,
         rerank_center: net.rerank_center,
         rerank_scale: net.rerank_scale,
+        lexical_sections: net.lexical_sections,
     }
 }
 
@@ -237,6 +241,8 @@ async fn run(cli: Cli) -> Result<(), Error> {
             !mode.eq_ignore_ascii_case("fast")
         }
         Command::Serve { .. } | Command::Mcp => true,
+        // Models only help `extract` choose sections for a query.
+        Command::Extract { query, .. } => query.is_some(),
         _ => false,
     };
     let pipeline = Arc::new(build_pipeline(&settings(&cli.net, long_lived, use_model))?);
