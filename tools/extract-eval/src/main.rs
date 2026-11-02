@@ -10,11 +10,11 @@
 
 mod adapters;
 mod blockclf;
-mod blocks;
+pub use seesea_extract::blocks;
 mod labels;
 mod metrics;
 mod mixed;
-mod pagefeat;
+pub use seesea_extract::pagefeat;
 mod wcxb;
 mod webmainbench;
 
@@ -126,6 +126,21 @@ fn main() {
         let path = raw.get(2).unwrap_or_else(|| die("audit-labels <file.jsonl> [limit]"));
         let limit = raw.get(3).and_then(|x| x.parse().ok()).unwrap_or(usize::MAX);
         labels::audit(std::path::Path::new(path), limit).unwrap_or_else(|e| die(&e));
+        return;
+    }
+    if raw.get(1).map(String::as_str) == Some("train-export") {
+        let arg = |k: &str| raw.iter().position(|a| a == k).and_then(|i| raw.get(i + 1)).cloned();
+        let w = arg("--webmainbench").unwrap_or_else(|| die("train-export --webmainbench F --wcxb DIR --out model.json"));
+        let x = arg("--wcxb").unwrap_or_else(|| die("train-export needs --wcxb DIR"));
+        let o = arg("--out").unwrap_or_else(|| die("train-export needs --out"));
+        mixed::export(std::path::Path::new(&w), std::path::Path::new(&x), std::path::Path::new(&o)).unwrap_or_else(|e| die(&e));
+        return;
+    }
+    if raw.get(1).map(String::as_str) == Some("crate-eval") {
+        let arg = |k: &str| raw.iter().position(|a| a == k).and_then(|i| raw.get(i + 1)).cloned();
+        let w = arg("--webmainbench").unwrap_or_else(|| die("crate-eval --webmainbench F --wcxb DIR [--model model.json]"));
+        let x = arg("--wcxb").unwrap_or_else(|| die("crate-eval needs --wcxb DIR"));
+        mixed::crate_eval(std::path::Path::new(&w), std::path::Path::new(&x), arg("--model").as_deref().map(std::path::Path::new)).unwrap_or_else(|e| die(&e));
         return;
     }
     if raw.get(1).map(String::as_str) == Some("timing") {

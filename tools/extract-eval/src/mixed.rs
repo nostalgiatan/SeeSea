@@ -193,3 +193,57 @@ pub fn timing(wcxb_root: &Path, n: usize) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Train the deployable model (no third-party extractor features; page features and the
+/// convention flag on) and write it as a `seesea_extract::model::ModelFile`.
+pub fn export(wmb_path: &Path, wcxb_root: &Path, out: &Path) -> Result<(), String> {
+    let wmb = load_wmb(wmb_path, usize::MAX)?;
+    let mut wx = load_wcxb(wcxb_root)?;
+    let mixw: f64 = std::env::var("MIXW").ok().and_then(|v| v.parse().ok()).unwrap_or(3.0);
+    for p in &mut wx { p.wt = mixw; }
+    let (w_tr, w_va, x_tr, x_va) = (part(&wmb, 0), part(&wmb, 1), part(&wx, 0), part(&wx, 1));
+    let sel = Sel { page: true, conv: true, ..Sel::default() };
+    let tr: Vec<&PageData> = w_tr.iter().chain(&x_tr).copied().collect();
+    let va: Vec<&PageData> = w_va.iter().chain(&x_va).copied().collect();
+    let env = |k: &str, d: usize| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
+    let m = train_forust(&tr, &va, sel, env("ITERS", 1500), env("DEPTH", 10), 600_000);
+    let (thr_core, thr_extended) = (tune(&m, Sel { force_conv: Some(0.0), ..sel }, &w_va), tune(&m, Sel { force_conv: Some(1.0), ..sel }, &x_va));
+    let blockclf::Model::Forust(b) = &m else { return Err("expected a forust model".into()) };
+    let n_features = wmb[0].structural[0].len() + wmb[0].pf.len() + 1;
+    let file = seesea_extract::model::ModelFile { version: 1, n_features, thr_core, thr_extended, booster: b.json_dump().map_err(|e| e.to_string())? };
+    std::fs::write(out, serde_json::to_string(&file).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    println!("wrote {} ({} features, thr core {thr_core}, extended {thr_extended})", out.display(), n_features);
+    Ok(())
+}
+
+/// Evaluate the shipped extraction path (`seesea_extract::Extractor`, Markdown output) on the
+/// held-out domains of both datasets, so the number is for what a caller actually gets.
+pub fn crate_eval(wmb_path: &Path, wcxb_root: &Path, model: Option<&Path>) -> Result<(), String> {
+    use seesea_extract::{Extractor, Options, Scope};
+    let ex = match model {
+        Some(p) => Extractor::with_model(&std::fs::read_to_string(p).map_err(|e| e.to_string())?)?,
+        None => Extractor::new(),
+    };
+    let held = |p: &crate::adapters::Page| bucket(&domain(&p.url)) >= 8;
+    let wmb: Vec<_> = crate::webmainbench::load(wmb_path, None, None)?.into_iter().filter(|p| held(p)).collect();
+    let mut wx = Vec::new();
+    for s in ["dev", "test"] { wx.extend(crate::wcxb::load(wcxb_root, s)?); }
+    let wx: Vec<_> = wx.into_iter().filter(|p| held(p)).collect();
+    println!("held-out domains: WebMainBench {} pages, WCXB {} pages\n", wmb.len(), wx.len());
+    println!("| set | scope | F1 | LCS F1 | needs_render | mean confidence |\n|---|---|---|---|---|---|");
+    for (name, pages, scope) in [("WebMainBench", &wmb, Scope::Core), ("WCXB", &wx, Scope::Extended), ("WCXB", &wx, Scope::Core), ("WebMainBench", &wmb, Scope::Extended)] {
+        let res: Vec<(f64, f64, bool, f32)> = pages.par_iter().map(|p| {
+            let r = ex.extract(&p.html, &p.url, &Options { scope, threshold: None });
+            let s = metrics::score(p, &r.core, 0.0);
+            (s.f1, s.lcs_f1, r.needs_render, r.confidence)
+        }).collect();
+        let n = res.len() as f64;
+        println!("| {name} | {scope:?} | {:.3} | {:.3} | {:.1}% | {:.2} |", res.iter().map(|r| r.0).sum::<f64>() / n, res.iter().map(|r| r.1).sum::<f64>() / n, 100.0 * res.iter().filter(|r| r.2).count() as f64 / n, res.iter().map(|r| r.3 as f64).sum::<f64>() / n);
+    }
+    // single-thread latency of the whole call
+    let t = std::time::Instant::now();
+    let sample: Vec<_> = wx.iter().take(200).collect();
+    for p in &sample { let _ = ex.extract(&p.html, &p.url, &Options::default()); }
+    println!("\nextract() single thread: {:.1} ms/page over {} WCXB pages", t.elapsed().as_secs_f64() * 1000.0 / sample.len() as f64, sample.len());
+    Ok(())
+}
