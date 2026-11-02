@@ -5,7 +5,7 @@
 //! judges the title against the body: a title that matches the query but is not backed up by the
 //! page is penalised rather than rewarded.
 
-use crate::text::{content_tokens, coverage, token_set};
+use crate::text::{content_tokens, coverage, distinctness, token_set};
 use std::collections::{HashMap, HashSet};
 
 pub struct DocView<'a> {
@@ -154,10 +154,13 @@ impl Reranker for LexicalReranker {
                 };
                 let body_coverage = coverage(&q_set, &body_set);
 
+                // Saying the query over and over is not an answer to it.
+                let trust = distinctness(&lead);
                 let relevance =
                     (0.55 * bm25 + 0.30 * body_coverage + 0.15 * title_match * title_support
                         - 0.25 * title_match * (1.0 - title_support))
-                        .clamp(0.0, 1.0);
+                        .clamp(0.0, 1.0)
+                        * trust;
                 let chars = d.body.chars().count() as f64;
                 let body_quality =
                     (d.confidence as f64).clamp(0.0, 1.0) * f64::min(1.0, chars / 400.0);

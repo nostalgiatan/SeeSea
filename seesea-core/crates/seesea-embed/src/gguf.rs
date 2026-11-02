@@ -50,8 +50,29 @@ struct Layer {
     out_norm: LayerNorm,
 }
 
+/// The classification head of a cross-encoder (`cls.*` tensors): dense, tanh, then one output.
+struct Head {
+    /// `(out, in)` row-major.
+    dense: Vec<f32>,
+    bias: Vec<f32>,
+    out: Vec<f32>,
+    out_bias: f32,
+}
+
+impl Head {
+    fn score(&self, cls: &[f32]) -> f32 {
+        let n = cls.len();
+        let mut total = self.out_bias;
+        for (j, row) in self.dense.chunks_exact(n).enumerate() {
+            total += self.out[j] * (dot8(row, cls) + self.bias[j]).tanh();
+        }
+        total
+    }
+}
+
 pub struct GgufBert {
     layers: Vec<Layer>,
+    head: Option<Head>,
     #[cfg(feature = "gpu")]
     gpu: Option<crate::gpu::GpuLayers>,
     heads: usize,
@@ -389,6 +410,29 @@ impl GgufBert {
         let positions = r.dense("position_embd.weight")?;
         let type_embedding = r.dense("token_types.weight")?;
         let embed_norm = r.norm("token_embd_norm")?;
+        let head = if c.tensor_infos.contains_key("cls.weight") {
+            let flat = |t: Tensor| -> Result<Vec<f32>> { Ok(t.flatten_all()?.to_vec1()?) };
+            let dense = flat(r.dense("cls.weight")?)?;
+            let bias = flat(r.dense("cls.bias")?)?;
+            let out = flat(r.dense("cls.output.weight")?)?;
+            let out_bias = flat(r.dense("cls.output.bias")?)?
+                .first()
+                .copied()
+                .unwrap_or(0.0);
+            if bias.len() != hidden || out.len() != hidden || dense.len() != hidden * hidden {
+                return Err(bad(
+                    "the classification head does not match the hidden size",
+                ));
+            }
+            Some(Head {
+                dense,
+                bias,
+                out,
+                out_bias,
+            })
+        } else {
+            None
+        };
 
         let info = c
             .tensor_infos
@@ -410,6 +454,7 @@ impl GgufBert {
             .map_err(|_| EmbedError::Tokenizer("the tokenizer builder panicked".into()))??;
         let model = Self {
             layers,
+            head,
             #[cfg(feature = "gpu")]
             gpu,
             heads,
@@ -441,6 +486,22 @@ impl GgufBert {
 
     pub fn hidden(&self) -> usize {
         self.hidden
+    }
+
+    /// Whether the file carries a classification head (a reranker model).
+    pub fn has_head(&self) -> bool {
+        self.head.is_some()
+    }
+
+    /// One raw relevance logit per row of right-padded `ids`.
+    pub fn score(&self, ids: &[u32], mask: &[u32], batch: usize, seq: usize) -> Result<Vec<f32>> {
+        let head = self
+            .head
+            .as_ref()
+            .ok_or_else(|| bad("this model has no classification head"))?;
+        let hidden = self.forward(ids, mask, batch, seq)?;
+        let cls: Vec<Vec<f32>> = hidden.narrow(1, 0, 1)?.squeeze(1)?.to_vec2()?;
+        Ok(cls.iter().map(|row| head.score(row)).collect())
     }
 
     fn embed_tokens(&self, ids: &[u32]) -> Result<Tensor> {

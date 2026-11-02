@@ -50,6 +50,22 @@ pub fn coverage(query: &HashSet<String>, text: &HashSet<String>) -> f64 {
     query.iter().filter(|t| text.contains(*t)).count() as f64 / query.len() as f64
 }
 
+/// How little of a text is repeated filler, 0..1: 1 for ordinary prose, near 0 for keyword stuffing
+/// such as a phrase repeated over and over. Measured as the share of distinct word triples, with a
+/// margin so that lists and boilerplate are not punished. Texts with too few words to judge get 1.
+pub fn distinctness(text: &str) -> f64 {
+    let tokens = content_tokens(text);
+    if tokens.len() < 24 {
+        return 1.0;
+    }
+    let triples = tokens.len() - 2;
+    let distinct: HashSet<(&str, &str, &str)> = tokens
+        .windows(3)
+        .map(|w| (w[0].as_str(), w[1].as_str(), w[2].as_str()))
+        .collect();
+    ((distinct.len() as f64 / triples as f64 - 0.2) / 0.4).clamp(0.0, 1.0)
+}
+
 const CLICKBAIT: &[&str] = &[
     "you won't believe",
     "you wont believe",
@@ -94,6 +110,15 @@ pub fn clickbait_score(title: &str) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn stuffed_text_is_not_distinct_and_prose_is() {
+        let stuffed = "how to fix a car that will not start. ".repeat(12);
+        assert!(distinctness(&stuffed) < 0.1, "{}", distinctness(&stuffed));
+        let prose = "When an engine cranks slowly or only clicks, the battery is the most likely cause; check the terminals for corrosion and test the voltage, which should be about twelve volts at rest. If the engine spins but never fires, suspect the fuel pump, a clogged filter or a failed ignition coil.";
+        assert_eq!(distinctness(prose), 1.0);
+        assert_eq!(distinctness("fix car start"), 1.0, "too short to judge");
+    }
+
     use super::*;
 
     #[test]
