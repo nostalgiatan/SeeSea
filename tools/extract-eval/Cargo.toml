@@ -6,6 +6,7 @@ description = "Evaluation harness for HTML main-content extractors (WCXB format)
 publish = false
 
 [dependencies]
+seesea-extract = { path = "../../seesea-core/crates/seesea-extract" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 flate2 = "1"

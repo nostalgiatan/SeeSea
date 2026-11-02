@@ -2,15 +2,21 @@
 //!
 //! A *block* is the text under the nearest block-level ancestor (inline elements such as
 //! `a`, `span`, `strong` belong to the enclosing block). Features are cheap structural and
-//! textual signals; none of them reads the `cc-select` annotation attribute.
+//! textual signals; none of them reads the `cc-select` annotation attribute. That attribute
+//! (WebMainBench's human block marks) is only used to fill `pos_frac`, the training label.
+//!
+//! Each block also carries `md`, its content rendered as Markdown (headings, list items, quotes,
+//! code fences, bold/italic/code/link spans), so selected blocks can be emitted in document order.
 
-use crate::metrics::tokenize;
+use crate::text::tokenize;
 use ego_tree::{NodeId, NodeRef};
 use scraper::{Html, Node};
 use std::collections::HashMap;
 
 pub struct Block {
     pub text: String,
+    /// The block rendered as Markdown (with its heading/list/quote/code prefix).
+    pub md: String,
     pub tokens: Vec<String>,
     /// Fraction of this block's characters that are inside a `cc-select` region (training label).
     pub pos_frac: f32,
@@ -107,6 +113,7 @@ struct Sub { chars: usize, link: usize, blocks: usize }
 struct Raw {
     id: NodeId,
     text: String,
+    md: String,
     link_chars: usize,
     pos_chars: usize,
 }
@@ -124,8 +131,58 @@ fn has_datetime(lower: &str) -> bool {
         || (digits >= 4 && (lower.contains('/') || lower.contains('-')) && lower.chars().count() < 40)
 }
 
+/// Append one text node to a block's Markdown, wrapped by the inline elements between it and the block.
+fn push_md(md: &mut String, raw: &str, node: NodeRef<Node>) {
+    let in_pre = node.ancestors().any(|a| elem_name(a) == Some("pre"));
+    if in_pre {
+        md.push_str(raw);
+        return;
+    }
+    let core = raw.trim();
+    let mut piece = core.split_whitespace().collect::<Vec<_>>().join(" ");
+    for a in node.ancestors() {
+        let Some(name) = elem_name(a) else { continue };
+        if !is_inline(name) { break; }
+        match name {
+            "strong" | "b" => piece = format!("**{piece}**"),
+            "em" | "i" => piece = format!("*{piece}*"),
+            "code" | "kbd" | "samp" | "tt" => piece = format!("`{piece}`"),
+            "a" => {
+                if let Some(h) = a.value().as_element().and_then(|e| e.attr("href")) {
+                    if !h.starts_with('#') && !h.starts_with("javascript:") { piece = format!("[{piece}]({h})"); }
+                }
+            }
+            _ => {}
+        }
+    }
+    if raw.starts_with(char::is_whitespace) && !md.is_empty() && !md.ends_with(' ') { md.push(' '); }
+    md.push_str(&piece);
+    if raw.ends_with(char::is_whitespace) { md.push(' '); }
+}
+
+fn render_md(block: NodeRef<Node>, body: &str) -> String {
+    let in_anc = |name: &str| block.ancestors().any(|a| elem_name(a) == Some(name));
+    let tag = elem_name(block).unwrap_or("");
+    if tag == "pre" || in_anc("pre") {
+        return format!("```\n{}\n```", body.trim_matches('\n'));
+    }
+    let body = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut out = match tag {
+        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => format!("{} {body}", "#".repeat(tag[1..].parse::<usize>().unwrap_or(2))),
+        "li" => format!("- {body}"),
+        _ if in_anc("li") => format!("- {body}"),
+        _ => body,
+    };
+    if tag == "blockquote" || in_anc("blockquote") { out = format!("> {out}"); }
+    out
+}
+
 pub fn segment(html: &str) -> Vec<Block> {
-    let doc = Html::parse_document(html);
+    segment_doc(&Html::parse_document(html))
+}
+
+/// Same as `segment` for an already parsed document (parse once, reuse for metadata).
+pub fn segment_doc(doc: &Html) -> Vec<Block> {
     let root = doc.tree.root();
 
     // title tokens
@@ -144,16 +201,23 @@ pub fn segment(html: &str) -> Vec<Block> {
     for node in root.descendants() {
         let Node::Text(t) = node.value() else { continue };
         let txt = t.trim();
-        if txt.is_empty() { continue; }
         if node.ancestors().any(|a| elem_name(a).is_some_and(|n| SKIP.contains(&n))) { continue; }
+        if txt.is_empty() {
+            // whitespace between inline elements still separates words in the Markdown
+            if let Some(b) = node.ancestors().find(|a| elem_name(*a).is_some_and(|n| !is_inline(n))) {
+                if let Some(r) = raws.get_mut(&b.id()) { if !r.md.ends_with(' ') && !r.md.is_empty() { r.md.push(' '); } }
+            }
+            continue;
+        }
         let chars = txt.chars().count();
         let is_link = node.ancestors().any(|a| elem_name(a) == Some("a"));
         let pos = node.ancestors().any(|a| a.value().as_element().is_some_and(|e| e.attr("cc-select") == Some("true")));
         let block = node.ancestors().find(|a| elem_name(*a).is_some_and(|n| !is_inline(n))).map(|a| a.id()).unwrap_or(root.id());
         let r = raws.entry(block).or_insert_with(|| {
             order.push(block);
-            Raw { id: block, text: String::new(), link_chars: 0, pos_chars: 0 }
+            Raw { id: block, text: String::new(), md: String::new(), link_chars: 0, pos_chars: 0 }
         });
+        push_md(&mut r.md, t, node);
         if !r.text.is_empty() { r.text.push(' '); }
         r.text.push_str(txt);
         if is_link { r.link_chars += chars; }
@@ -289,7 +353,8 @@ pub fn segment(html: &str) -> Vec<Block> {
         }
         debug_assert_eq!(f.len(), names_len);
         before += chars;
-        blocks.push(Block { text, tokens, pos_frac: r.pos_chars as f32 / c, feats: f });
+        let md = render_md(node, &r.md);
+        blocks.push(Block { text, md, tokens, pos_frac: r.pos_chars as f32 / c, feats: f });
     }
     blocks
 }

@@ -22,6 +22,9 @@ const HTML_MARKS: &[&[&str]] = &[
     &["\"recipe\"", "\"event\"", "localbusiness", "\"organization\""],
 ];
 
+/// Width of `page_features`.
+pub const N_PAGE_FEATURES: usize = 18 + 7 + 6 + 3 + 6;
+
 pub fn page_features(url: &str, html: &str, blocks: &[Block]) -> Vec<f32> {
     let names = feature_names();
     let ix = |n: &str| names.iter().position(|x| x == n).unwrap();
