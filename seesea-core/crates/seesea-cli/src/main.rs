@@ -5,9 +5,9 @@ use seesea_cli::config::{Settings, build_pipeline};
 use seesea_cli::server::{self, AppState, parse_scope};
 use seesea_cli::sources::SourceSettings;
 use seesea_mcp::McpServer;
-use seesea_pipeline::eval;
 use seesea_pipeline::render::{extract_markdown, search_markdown};
 use seesea_pipeline::{Error, Mode, Pipeline, SearchRequest, SearchResponse, TimeRange};
+use seesea_pipeline::{eval, replay};
 use serde::Serialize;
 use std::io::Read;
 use std::path::PathBuf;
@@ -49,6 +49,9 @@ struct NetArgs {
     /// Where to keep the cache between runs.
     #[arg(long, env = "SEESEA_CACHE_DIR", global = true)]
     cache_dir: Option<PathBuf>,
+    /// Reuse cached results for queries with this much word overlap (0..1, e.g. 0.8). Off by default.
+    #[arg(long, env = "SEESEA_FUZZY_CACHE", global = true)]
+    fuzzy_cache: Option<f64>,
     #[arg(long, global = true)]
     no_cache: bool,
     /// Allow fetching loopback and private addresses.
@@ -114,6 +117,17 @@ enum Command {
         #[arg(short, long, default_value = "fast")]
         mode: String,
     },
+    /// Replay a search log (from `search --log`) against cache policies: hit ratio, and how much
+    /// the cached results differed from what the real search returned.
+    Replay {
+        log: PathBuf,
+        /// How long a cached entry lives, in seconds.
+        #[arg(long, default_value_t = 600)]
+        ttl: i64,
+        /// Fuzzy thresholds to try.
+        #[arg(long, value_delimiter = ',', default_values_t = [0.9, 0.8, 0.7])]
+        fuzzy: Vec<f64>,
+    },
     /// Run the HTTP server (JSON API and MCP on /mcp).
     Serve {
         #[arg(long, default_value = "127.0.0.1:8080")]
@@ -140,6 +154,7 @@ fn settings(net: &NetArgs, memory_cache: bool) -> Settings {
         no_cache: net.no_cache,
         memory_cache,
         allow_private: net.allow_private,
+        fuzzy_cache: net.fuzzy_cache,
     }
 }
 
@@ -271,6 +286,37 @@ async fn run(cli: Cli) -> Result<(), Error> {
                 false => Err(Error::AllSourcesFailed(
                     probes.into_iter().filter_map(|p| p.error).collect(),
                 )),
+            }
+        }
+        Command::Replay { log, ttl, fuzzy } => {
+            let text = std::fs::read_to_string(&log).map_err(|e| {
+                Error::InvalidRequest(format!("cannot read '{}': {e}", log.display()))
+            })?;
+            let mut entries = replay::parse_log(&text)?;
+            entries.sort_by_key(|e| e.ts);
+            let mut policies = vec![replay::Policy::Exact, replay::Policy::Normalized];
+            policies.extend(fuzzy.into_iter().map(replay::Policy::Fuzzy));
+            let reports: Vec<_> = policies
+                .into_iter()
+                .map(|p| replay::replay(&entries, p, ttl))
+                .collect();
+            if json {
+                print_json(&reports)
+            } else {
+                println!("{} searches, entries live {ttl} s", entries.len());
+                for r in &reports {
+                    println!(
+                        "{:<14} hit ratio {:>5.1}%  ({} hits)  overlap {}  poor hits {}",
+                        r.policy,
+                        r.hit_ratio * 100.0,
+                        r.hits,
+                        r.mean_overlap
+                            .map(|o| format!("{o:.2}"))
+                            .unwrap_or_else(|| "-".into()),
+                        r.poor_hits
+                    );
+                }
+                Ok(())
             }
         }
         Command::Eval { judgments, k, mode } => {

@@ -18,6 +18,8 @@ pub struct Settings {
     pub memory_cache: bool,
     /// Let `extract` and result fetching reach loopback and private addresses.
     pub allow_private: bool,
+    /// Reuse cached results for queries whose words overlap this much (0..1). Off when unset.
+    pub fuzzy_cache: Option<f64>,
 }
 
 /// `~/.cache/seesea` (or the platform equivalent).
@@ -82,7 +84,10 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
         ))
     };
     Ok(Pipeline::with_net_fetcher(sources, fetch)
-        .config(PipelineConfig::default())
+        .config(PipelineConfig {
+            fuzzy_cache_threshold: settings.fuzzy_cache,
+            ..Default::default()
+        })
         .cache(cache))
 }
 

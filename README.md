@@ -26,6 +26,8 @@ seesea extract https://example.com/post -q "thread pool" --max-chars 1500
 seesea extract page.html                             # 本地文件，或用 `-` 读标准输入
 seesea sources --check                               # 逐个来源探测
 seesea eval judgments.jsonl -k 10                    # nDCG / recall / MRR
+seesea search --log s.jsonl "query"                   # keep a search log
+seesea replay s.jsonl --ttl 600                      # cache policies on that log: hit ratio vs result drift
 seesea serve --addr 127.0.0.1:8080                   # 设置 SEESEA_API_KEY 开启 Bearer 鉴权
 seesea mcp                                           # stdio MCP
 ```
@@ -41,6 +43,7 @@ seesea mcp                                           # stdio MCP
 - 精排目前是词法的（BM25 + 标题支撑度），尚无交叉编码器或向量模型，`Reranker` trait 是接入点。
 - `deep` 模式读取更多页面，但尚未做查询改写。
 - SSRF 防护检查目标与重定向，未固定 DNS 解析结果。
+- 缓存：查询按有意义的词归一化（大小写、词序、停用词不影响命中）；页面缓存按每个 URL 的变化情况自适应延长或缩短有效期；`--fuzzy-cache 0.8`（默认关）让相近查询复用结果，先用 `seesea replay` 看代价；服务端 `GET /v1/stats` 给出命中率。
 - 存储只有内存/文件缓存，尚未采用 Turso。
 
 设计文档：[docs/search-pipeline-design.md](docs/search-pipeline-design.md)。许可证：AGPL-3.0-or-later。

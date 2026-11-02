@@ -12,6 +12,7 @@ pub mod model;
 pub mod pipeline;
 pub mod rank;
 pub mod render;
+pub mod replay;
 pub mod rerank;
 pub mod sections;
 pub mod source;

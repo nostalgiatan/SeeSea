@@ -92,21 +92,20 @@ fn chunk(sections: Vec<Section>, limit: usize) -> Vec<(usize, Section)> {
         let mut current = String::new();
         let mut body = String::new();
         let mut first = true;
-        let mut push =
-            |current: &mut String, body: &mut String, out: &mut Vec<(usize, Section)>| {
-                if !current.trim().is_empty() {
-                    out.push((
-                        i,
-                        Section {
-                            path: s.path.clone(),
-                            markdown: current.trim_end().to_string(),
-                            body: body.trim().to_string(),
-                        },
-                    ));
-                }
-                current.clear();
-                body.clear();
-            };
+        let push = |current: &mut String, body: &mut String, out: &mut Vec<(usize, Section)>| {
+            if !current.trim().is_empty() {
+                out.push((
+                    i,
+                    Section {
+                        path: s.path.clone(),
+                        markdown: current.trim_end().to_string(),
+                        body: body.trim().to_string(),
+                    },
+                ));
+            }
+            current.clear();
+            body.clear();
+        };
         for para in s.markdown.split("\n\n") {
             let is_heading = first && heading(para.trim()).is_some();
             first = false;

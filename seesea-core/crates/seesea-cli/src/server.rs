@@ -194,6 +194,22 @@ async fn sources(State(s): State<AppState>) -> Json<Value> {
     Json(json!({"sources": s.pipeline.source_names()}))
 }
 
+async fn stats(State(s): State<AppState>) -> Json<Value> {
+    let cache: serde_json::Map<String, Value> = s
+        .pipeline
+        .cache_stats()
+        .into_iter()
+        .map(|(k, c)| {
+            let ratio = c.hit_ratio();
+            (
+                k,
+                json!({"hits": c.hits, "misses": c.misses, "puts": c.puts, "hit_ratio": ratio}),
+            )
+        })
+        .collect();
+    Json(json!({"cache": cache}))
+}
+
 #[derive(Deserialize)]
 struct CheckParams {
     q: Option<String>,
@@ -236,6 +252,7 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
         .route("/v1/extract", post(extract_post))
         .route("/v1/sources", get(sources))
         .route("/v1/sources/check", get(sources_check))
+        .route("/v1/stats", get(stats))
         .route("/mcp", post(mcp))
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(1024 * 1024))

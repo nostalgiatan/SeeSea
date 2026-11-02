@@ -18,6 +18,26 @@ pub fn content_tokens(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// A key that is the same for queries that differ only in case, punctuation, word order, repeated
+/// words or stopwords. Falls back to the lowercased text when nothing meaningful is left.
+pub fn normalize_query(query: &str) -> String {
+    let mut tokens: Vec<String> = token_set(query).into_iter().collect();
+    if tokens.is_empty() {
+        return query.trim().to_lowercase();
+    }
+    tokens.sort_unstable();
+    tokens.join(" ")
+}
+
+/// Jaccard similarity of two token sets (0..1).
+pub fn jaccard(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
+    if a.is_empty() && b.is_empty() {
+        return 1.0;
+    }
+    let both = a.intersection(b).count();
+    both as f64 / (a.len() + b.len() - both) as f64
+}
+
 pub fn token_set(text: &str) -> HashSet<String> {
     content_tokens(text).into_iter().collect()
 }
@@ -86,6 +106,26 @@ mod tests {
             content_tokens("异步运行时的使用"),
             vec!["异", "步", "运", "行", "时", "使", "用"]
         );
+    }
+
+    #[test]
+    fn normalized_queries_ignore_case_order_and_stopwords() {
+        let a = normalize_query("How to use Rust async runtime?");
+        assert_eq!(a, normalize_query("async RUNTIME rust use"));
+        assert_ne!(a, normalize_query("rust async runtime benchmark"));
+        assert_eq!(
+            normalize_query("the of"),
+            "the of",
+            "nothing meaningful: keep the text"
+        );
+    }
+
+    #[test]
+    fn jaccard_measures_set_overlap() {
+        let a = token_set("rust async runtime");
+        assert_eq!(jaccard(&a, &a), 1.0);
+        assert!((jaccard(&a, &token_set("rust async")) - 2.0 / 3.0).abs() < 1e-9);
+        assert_eq!(jaccard(&a, &token_set("python gil")), 0.0);
     }
 
     #[test]

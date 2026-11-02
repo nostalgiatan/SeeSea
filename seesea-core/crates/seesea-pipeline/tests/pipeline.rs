@@ -369,6 +369,59 @@ async fn identical_searches_are_served_from_the_cache() {
 }
 
 #[tokio::test]
+async fn reworded_queries_share_a_cache_entry_and_similar_ones_only_when_asked() {
+    let fast = |q: &str| {
+        let mut r = SearchRequest::new(q);
+        r.mode = Mode::Fast;
+        r
+    };
+    let make = |threshold: Option<f64>| {
+        let a = FakeSource::ok("a", vec![hit("https://x.org/1", "One", "first")]);
+        let probe = a.clone();
+        let p = Pipeline::new(vec![a], FakePages::new(&[]))
+            .config(PipelineConfig {
+                fuzzy_cache_threshold: threshold,
+                ..Default::default()
+            })
+            .cache(Arc::new(MemoryCache::new(16)));
+        (p, probe)
+    };
+
+    let (p, probe) = make(None);
+    p.search(&fast("how to use rust async runtime"))
+        .await
+        .unwrap();
+    let again = p.search(&fast("Async runtime, rust use?")).await.unwrap();
+    assert!(again.cached, "same meaningful words in another order");
+    let near = p
+        .search(&fast("rust async runtime tutorial"))
+        .await
+        .unwrap();
+    assert!(!near.cached, "similar is not the same unless enabled");
+    assert_eq!(probe.calls.load(Ordering::SeqCst), 2);
+    let stats = p.cache_stats();
+    assert_eq!((stats["search"].hits, stats["search"].misses), (1, 2));
+    assert_eq!(stats["search"].puts, 2);
+
+    let (p, probe) = make(Some(0.6));
+    p.search(&fast("rust async runtime")).await.unwrap();
+    assert!(
+        p.search(&fast("rust async runtime tutorial"))
+            .await
+            .unwrap()
+            .cached
+    );
+    assert!(
+        !p.search(&fast("rust 1.70 async runtime"))
+            .await
+            .unwrap()
+            .cached,
+        "a number the cached query lacks"
+    );
+    assert_eq!(probe.calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
 async fn full_content_and_section_budget() {
     let url = "https://docs.example/tokio";
     let long: Vec<String> = (0..30).map(|i| format!("Paragraph {i} about unrelated gardening topics such as soil, compost and watering schedules for vegetables.")).collect();

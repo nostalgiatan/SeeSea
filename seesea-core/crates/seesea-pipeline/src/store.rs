@@ -5,8 +5,9 @@
 //! store later.
 
 use async_trait::async_trait;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -25,6 +26,72 @@ impl Cache for NoCache {
         None
     }
     async fn put(&self, _key: &str, _value: Vec<u8>, _ttl: Duration) {}
+}
+
+/// Hits, misses and writes for one kind of entry (the key prefix before the first `:`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct CacheCounts {
+    pub hits: u64,
+    pub misses: u64,
+    pub puts: u64,
+}
+
+impl CacheCounts {
+    pub fn hit_ratio(&self) -> f64 {
+        let total = self.hits + self.misses;
+        if total == 0 {
+            0.0
+        } else {
+            self.hits as f64 / total as f64
+        }
+    }
+}
+
+/// Wraps a cache and counts what happens to each kind of entry, so hit ratios can be read off a
+/// running server instead of guessed.
+pub struct Metered {
+    inner: Arc<dyn Cache>,
+    counts: Mutex<BTreeMap<String, CacheCounts>>,
+}
+
+impl Metered {
+    pub fn new(inner: Arc<dyn Cache>) -> Self {
+        Self {
+            inner,
+            counts: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    pub fn stats(&self) -> BTreeMap<String, CacheCounts> {
+        self.counts.lock().map(|c| c.clone()).unwrap_or_default()
+    }
+
+    fn bump(&self, key: &str, f: impl FnOnce(&mut CacheCounts)) {
+        let kind = key.split(':').next().unwrap_or("").to_string();
+        if let Ok(mut c) = self.counts.lock() {
+            f(c.entry(kind).or_default());
+        }
+    }
+}
+
+#[async_trait]
+impl Cache for Metered {
+    async fn get(&self, key: &str) -> Option<Vec<u8>> {
+        let found = self.inner.get(key).await;
+        self.bump(key, |c| {
+            if found.is_some() {
+                c.hits += 1
+            } else {
+                c.misses += 1
+            }
+        });
+        found
+    }
+
+    async fn put(&self, key: &str, value: Vec<u8>, ttl: Duration) {
+        self.bump(key, |c| c.puts += 1);
+        self.inner.put(key, value, ttl).await
+    }
 }
 
 pub struct MemoryCache {
@@ -201,6 +268,28 @@ mod tests {
             .put("k", b"v".to_vec(), Duration::from_secs(10))
             .await;
         assert_eq!(broken.get("k").await, None);
+    }
+
+    #[tokio::test]
+    async fn metered_counts_per_kind() {
+        let m = Metered::new(Arc::new(MemoryCache::new(10)));
+        assert_eq!(m.get("search:a").await, None);
+        m.put("search:a", b"1".to_vec(), Duration::from_secs(60))
+            .await;
+        assert!(m.get("search:a").await.is_some());
+        assert!(m.get("page:x").await.is_none());
+        let stats = m.stats();
+        assert_eq!(
+            stats["search"],
+            CacheCounts {
+                hits: 1,
+                misses: 1,
+                puts: 1
+            }
+        );
+        assert_eq!(stats["search"].hit_ratio(), 0.5);
+        assert_eq!(stats["page"].misses, 1);
+        assert_eq!(stats["page"].hit_ratio(), 0.0);
     }
 
     #[tokio::test]
