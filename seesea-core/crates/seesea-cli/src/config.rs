@@ -40,6 +40,8 @@ pub struct Settings {
     pub rerank_scale: Option<f32>,
     /// Choose page sections by shared words only, even when a model is loaded.
     pub lexical_sections: bool,
+    /// Do not send browser-like headers or retry refusals as another browser.
+    pub plain_headers: bool,
 }
 
 /// `~/.cache/seesea` (or the platform equivalent).
@@ -92,6 +94,7 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
     let sources = build_sources(&settings.sources, client);
     let fetch = seesea_fetch::FetchOptions {
         allow_private: settings.allow_private,
+        browser_headers: !settings.plain_headers,
         ..Default::default()
     };
     let cache: Arc<dyn Cache> = if settings.no_cache {
