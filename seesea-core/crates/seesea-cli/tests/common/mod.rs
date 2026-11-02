@@ -23,7 +23,9 @@ pub const SPAM_PARAS: [&str; 2] = [
 
 pub fn article(title: &str, paras: &[&str]) -> String {
     let body: String = paras.iter().map(|p| format!("<p>{p}</p>")).collect();
-    format!("<html><head><title>{title}</title></head><body><nav><a href=\"/\">Home</a> <a href=\"/menu\">Menu</a></nav><article><h1>{title}</h1>{body}</article><footer>Copyright notice</footer></body></html>")
+    format!(
+        "<html><head><title>{title}</title></head><body><nav><a href=\"/\">Home</a> <a href=\"/menu\">Menu</a></nav><article><h1>{title}</h1>{body}</article><footer>Copyright notice</footer></body></html>"
+    )
 }
 
 fn gzip(data: &[u8]) -> Vec<u8> {
@@ -53,13 +55,20 @@ async fn searx(State(base): State<String>, Query(q): Query<HashMap<String, Strin
 async fn tokio_page() -> Response {
     let html = article("Tokio overview", &TOKIO_PARAS);
     let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
     headers.insert(header::CONTENT_ENCODING, HeaderValue::from_static("gzip"));
     (headers, gzip(html.as_bytes())).into_response()
 }
 
 async fn spam_page() -> Response {
-    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], article("Rust async runtime", &SPAM_PARAS)).into_response()
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        article("Rust async runtime", &SPAM_PARAS),
+    )
+        .into_response()
 }
 
 /// Start the site on a free port and return its base URL (`http://127.0.0.1:PORT`).

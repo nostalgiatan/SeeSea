@@ -9,9 +9,19 @@ async fn main() {
         Ok(p) => p,
         Err(e) => return eprintln!("{e}"),
     };
-    println!("fetched {} ({} bytes, status {})", page.final_url, page.html.len(), page.status);
+    println!(
+        "fetched {} ({} bytes, status {})",
+        page.final_url,
+        page.html.len(),
+        page.status
+    );
     let out = Extractor::new().extract(&page.html, &page.final_url, &Options::default());
-    println!("confidence {:.2}, needs_render {}, {} sections", out.confidence, out.needs_render, out.sections.len());
+    println!(
+        "confidence {:.2}, needs_render {}, {} sections",
+        out.confidence,
+        out.needs_render,
+        out.sections.len()
+    );
     println!("title: {:?}", out.meta.title);
     println!("{}", out.core.chars().take(600).collect::<String>());
 }

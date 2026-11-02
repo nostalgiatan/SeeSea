@@ -31,7 +31,10 @@ pub fn parse_judgments(text: &str) -> Result<Vec<Judgment>> {
     text.lines()
         .enumerate()
         .filter(|(_, l)| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
-        .map(|(i, l)| serde_json::from_str(l).map_err(|e| Error::InvalidRequest(format!("judgments line {}: {e}", i + 1))))
+        .map(|(i, l)| {
+            serde_json::from_str(l)
+                .map_err(|e| Error::InvalidRequest(format!("judgments line {}: {e}", i + 1)))
+        })
         .collect()
 }
 
@@ -51,11 +54,18 @@ pub fn ndcg_at_k(ranked: &[String], grades: &HashMap<String, u8>, k: usize) -> f
         .iter()
         .take(k)
         .enumerate()
-        .map(|(i, u)| gain(grades.get(&canonical_url(u)).copied().unwrap_or(0)) / ((i + 2) as f64).log2())
+        .map(|(i, u)| {
+            gain(grades.get(&canonical_url(u)).copied().unwrap_or(0)) / ((i + 2) as f64).log2()
+        })
         .sum();
     let mut ideal: Vec<u8> = grades.values().copied().collect();
     ideal.sort_unstable_by(|a, b| b.cmp(a));
-    let idcg: f64 = ideal.iter().take(k).enumerate().map(|(i, g)| gain(*g) / ((i + 2) as f64).log2()).sum();
+    let idcg: f64 = ideal
+        .iter()
+        .take(k)
+        .enumerate()
+        .map(|(i, g)| gain(*g) / ((i + 2) as f64).log2())
+        .sum();
     if idcg == 0.0 { 0.0 } else { dcg / idcg }
 }
 
@@ -63,7 +73,8 @@ pub fn recall_at_k(ranked: &[String], grades: &HashMap<String, u8>, k: usize) ->
     if grades.is_empty() {
         return 0.0;
     }
-    let found: std::collections::HashSet<String> = ranked.iter().take(k).map(|u| canonical_url(u)).collect();
+    let found: std::collections::HashSet<String> =
+        ranked.iter().take(k).map(|u| canonical_url(u)).collect();
     grades.keys().filter(|u| found.contains(*u)).count() as f64 / grades.len() as f64
 }
 
@@ -104,10 +115,19 @@ fn mean(values: impl Iterator<Item = f64>) -> f64 {
 
 /// Run every judged query through the pipeline. A query that errors scores zero and is counted,
 /// so a flaky source shows up in the report instead of aborting the run.
-pub async fn run(pipeline: &Pipeline, judgments: &[Judgment], template: &SearchRequest, k: usize) -> EvalReport {
+pub async fn run(
+    pipeline: &Pipeline,
+    judgments: &[Judgment],
+    template: &SearchRequest,
+    k: usize,
+) -> EvalReport {
     let mut queries = Vec::with_capacity(judgments.len());
     for j in judgments {
-        let req = SearchRequest { query: j.query.clone(), limit: template.limit.max(k).min(50), ..template.clone() };
+        let req = SearchRequest {
+            query: j.query.clone(),
+            limit: template.limit.max(k).min(50),
+            ..template.clone()
+        };
         let g = grades(j);
         queries.push(match pipeline.search(&req).await {
             Ok(resp) => {
@@ -122,7 +142,15 @@ pub async fn run(pipeline: &Pipeline, judgments: &[Judgment], template: &SearchR
                     error: None,
                 }
             }
-            Err(e) => QueryReport { query: j.query.clone(), ndcg: 0.0, recall: 0.0, mrr: 0.0, hits: 0, took_ms: 0, error: Some(e.to_string()) },
+            Err(e) => QueryReport {
+                query: j.query.clone(),
+                ndcg: 0.0,
+                recall: 0.0,
+                mrr: 0.0,
+                hits: 0,
+                took_ms: 0,
+                error: Some(e.to_string()),
+            },
         });
     }
     EvalReport {
@@ -150,13 +178,20 @@ mod tests {
     #[test]
     fn ndcg_is_one_for_the_ideal_order_and_lower_otherwise() {
         let grades = g(&[("https://a.org/1", 3), ("https://a.org/2", 1)]);
-        let ideal = ndcg_at_k(&urls(&["https://a.org/1", "https://a.org/2", "https://x.org"]), &grades, 10);
+        let ideal = ndcg_at_k(
+            &urls(&["https://a.org/1", "https://a.org/2", "https://x.org"]),
+            &grades,
+            10,
+        );
         let swapped = ndcg_at_k(&urls(&["https://a.org/2", "https://a.org/1"]), &grades, 10);
         let missing = ndcg_at_k(&urls(&["https://x.org", "https://y.org"]), &grades, 10);
         assert!((ideal - 1.0).abs() < 1e-12);
         assert!(swapped < ideal && swapped > 0.0);
         assert_eq!(missing, 0.0);
-        assert_eq!(ndcg_at_k(&urls(&["https://a.org/1"]), &HashMap::new(), 10), 0.0);
+        assert_eq!(
+            ndcg_at_k(&urls(&["https://a.org/1"]), &HashMap::new(), 10),
+            0.0
+        );
     }
 
     #[test]

@@ -24,7 +24,9 @@ impl std::str::FromStr for Mode {
             "fast" => Ok(Mode::Fast),
             "standard" => Ok(Mode::Standard),
             "deep" => Ok(Mode::Deep),
-            other => Err(Error::InvalidRequest(format!("unknown mode '{other}', expected fast, standard or deep"))),
+            other => Err(Error::InvalidRequest(format!(
+                "unknown mode '{other}', expected fast, standard or deep"
+            ))),
         }
     }
 }
@@ -46,7 +48,9 @@ impl std::str::FromStr for TimeRange {
             "week" => Ok(Self::Week),
             "month" => Ok(Self::Month),
             "year" => Ok(Self::Year),
-            other => Err(Error::InvalidRequest(format!("unknown time range '{other}', expected day, week, month or year"))),
+            other => Err(Error::InvalidRequest(format!(
+                "unknown time range '{other}', expected day, week, month or year"
+            ))),
         }
     }
 }
@@ -101,13 +105,19 @@ impl SearchRequest {
             return Err(Error::InvalidRequest("query must not be empty".into()));
         }
         if self.query.chars().count() > 1000 {
-            return Err(Error::InvalidRequest("query is longer than 1000 characters".into()));
+            return Err(Error::InvalidRequest(
+                "query is longer than 1000 characters".into(),
+            ));
         }
         if !(1..=50).contains(&self.limit) {
-            return Err(Error::InvalidRequest("limit must be between 1 and 50".into()));
+            return Err(Error::InvalidRequest(
+                "limit must be between 1 and 50".into(),
+            ));
         }
         if self.max_chars_per_result == 0 {
-            return Err(Error::InvalidRequest("max_chars_per_result must be positive".into()));
+            return Err(Error::InvalidRequest(
+                "max_chars_per_result must be positive".into(),
+            ));
         }
         Ok(())
     }
@@ -209,11 +219,26 @@ mod tests {
         assert!(r.validate().is_ok());
 
         for bad in [
-            SearchRequest { query: "  ".into(), ..SearchRequest::new("x") },
-            SearchRequest { limit: 0, ..SearchRequest::new("x") },
-            SearchRequest { limit: 51, ..SearchRequest::new("x") },
-            SearchRequest { query: "a".repeat(1001), ..SearchRequest::new("x") },
-            SearchRequest { max_chars_per_result: 0, ..SearchRequest::new("x") },
+            SearchRequest {
+                query: "  ".into(),
+                ..SearchRequest::new("x")
+            },
+            SearchRequest {
+                limit: 0,
+                ..SearchRequest::new("x")
+            },
+            SearchRequest {
+                limit: 51,
+                ..SearchRequest::new("x")
+            },
+            SearchRequest {
+                query: "a".repeat(1001),
+                ..SearchRequest::new("x")
+            },
+            SearchRequest {
+                max_chars_per_result: 0,
+                ..SearchRequest::new("x")
+            },
         ] {
             assert_eq!(bad.validate().unwrap_err().code(), "invalid_request");
         }

@@ -4,7 +4,9 @@ use async_trait::async_trait;
 use seesea_derive::{SearchEngine, SearchQuery, TimeRange as EngineTimeRange};
 use seesea_pipeline::error::{FailureKind, SourceError};
 use seesea_pipeline::{Attribution, RawHit, Source, SourceQuery, TimeRange};
-use seesea_search::search::engines::{BaiduEngine, BingEngine, BraveEngine, SearxngEngine, SogouEngine};
+use seesea_search::search::engines::{
+    BaiduEngine, BingEngine, BraveEngine, SearxngEngine, SogouEngine,
+};
 use std::sync::Arc;
 
 pub struct EngineSource {
@@ -16,8 +18,18 @@ pub struct EngineSource {
 }
 
 impl EngineSource {
-    pub fn new(name: &str, weight: f64, engine: Arc<dyn SearchEngine + Send + Sync>, aggregator: bool) -> Self {
-        Self { name: name.to_string(), weight, engine, aggregator }
+    pub fn new(
+        name: &str,
+        weight: f64,
+        engine: Arc<dyn SearchEngine + Send + Sync>,
+        aggregator: bool,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            weight,
+            engine,
+            aggregator,
+        }
     }
 }
 
@@ -26,11 +38,41 @@ pub fn classify(message: &str) -> FailureKind {
     let m = message.to_lowercase();
     if m.contains("timed out") || m.contains("timeout") {
         FailureKind::Timeout
-    } else if ["403", "429", "captcha", "blocked", "forbidden", "too many requests"].iter().any(|k| m.contains(k)) {
+    } else if [
+        "403",
+        "429",
+        "captcha",
+        "blocked",
+        "forbidden",
+        "too many requests",
+    ]
+    .iter()
+    .any(|k| m.contains(k))
+    {
         FailureKind::Blocked
-    } else if ["parse", "json", "expected value", "invalid type", "missing field", "eof"].iter().any(|k| m.contains(k)) {
+    } else if [
+        "parse",
+        "json",
+        "expected value",
+        "invalid type",
+        "missing field",
+        "eof",
+    ]
+    .iter()
+    .any(|k| m.contains(k))
+    {
         FailureKind::Parse
-    } else if ["status", "http", "request failed", "connect", "dns", "refused"].iter().any(|k| m.contains(k)) {
+    } else if [
+        "status",
+        "http",
+        "request failed",
+        "connect",
+        "dns",
+        "refused",
+    ]
+    .iter()
+    .any(|k| m.contains(k))
+    {
         FailureKind::Http
     } else {
         FailureKind::Other
@@ -48,13 +90,19 @@ fn engine_time_range(t: TimeRange) -> EngineTimeRange {
 
 /// SearXNG lists the engines behind a result and their ranks in two parallel comma-separated fields.
 pub fn upstream_attributions(engines: &str, positions: &str) -> Vec<Attribution> {
-    let ranks: Vec<u32> = positions.split(',').filter_map(|p| p.trim().parse().ok()).collect();
+    let ranks: Vec<u32> = positions
+        .split(',')
+        .filter_map(|p| p.trim().parse().ok())
+        .collect();
     engines
         .split(',')
         .map(str::trim)
         .filter(|e| !e.is_empty())
         .enumerate()
-        .map(|(i, e)| Attribution { source: format!("searxng/{e}"), rank: ranks.get(i).copied().unwrap_or(10).max(1) })
+        .map(|(i, e)| Attribution {
+            source: format!("searxng/{e}"),
+            rank: ranks.get(i).copied().unwrap_or(10).max(1),
+        })
         .collect()
 }
 
@@ -87,11 +135,20 @@ impl Source for EngineSource {
             .filter(|i| !i.url.trim().is_empty())
             .map(|i| {
                 let upstream = if self.aggregator {
-                    upstream_attributions(i.metadata.get("engines").map_or("", String::as_str), i.metadata.get("positions").map_or("", String::as_str))
+                    upstream_attributions(
+                        i.metadata.get("engines").map_or("", String::as_str),
+                        i.metadata.get("positions").map_or("", String::as_str),
+                    )
                 } else {
                     Vec::new()
                 };
-                RawHit { url: i.url, title: i.title, snippet: i.content, published: i.published_date, upstream }
+                RawHit {
+                    url: i.url,
+                    title: i.title,
+                    snippet: i.content,
+                    published: i.published_date,
+                    upstream,
+                }
             })
             .collect())
     }
@@ -106,18 +163,46 @@ pub struct SourceSettings {
 }
 
 /// Build every source the settings allow. Order is stable so output is reproducible.
-pub fn build_sources(settings: &SourceSettings, client: Arc<seesea_net::client::HttpClient>) -> Vec<Arc<dyn Source>> {
+pub fn build_sources(
+    settings: &SourceSettings,
+    client: Arc<seesea_net::client::HttpClient>,
+) -> Vec<Arc<dyn Source>> {
     let mut out: Vec<Arc<dyn Source>> = Vec::new();
     if let Some(url) = settings.brave_key.as_deref().filter(|k| !k.is_empty()) {
-        out.push(Arc::new(EngineSource::new("brave", 1.2, Arc::new(BraveEngine::with_client(url, Arc::clone(&client))), false)));
+        out.push(Arc::new(EngineSource::new(
+            "brave",
+            1.2,
+            Arc::new(BraveEngine::with_client(url, Arc::clone(&client))),
+            false,
+        )));
     }
     if let Some(url) = settings.searxng_url.as_deref().filter(|u| !u.is_empty()) {
-        out.push(Arc::new(EngineSource::new("searxng", 1.0, Arc::new(SearxngEngine::with_client(url, Arc::clone(&client))), true)));
+        out.push(Arc::new(EngineSource::new(
+            "searxng",
+            1.0,
+            Arc::new(SearxngEngine::with_client(url, Arc::clone(&client))),
+            true,
+        )));
     }
     if settings.native_engines {
-        out.push(Arc::new(EngineSource::new("bing", 1.0, Arc::new(BingEngine::with_client(Arc::clone(&client))), false)));
-        out.push(Arc::new(EngineSource::new("baidu", 0.9, Arc::new(BaiduEngine::with_client(Arc::clone(&client))), false)));
-        out.push(Arc::new(EngineSource::new("sogou", 0.8, Arc::new(SogouEngine::with_client(client)), false)));
+        out.push(Arc::new(EngineSource::new(
+            "bing",
+            1.0,
+            Arc::new(BingEngine::with_client(Arc::clone(&client))),
+            false,
+        )));
+        out.push(Arc::new(EngineSource::new(
+            "baidu",
+            0.9,
+            Arc::new(BaiduEngine::with_client(Arc::clone(&client))),
+            false,
+        )));
+        out.push(Arc::new(EngineSource::new(
+            "sogou",
+            0.8,
+            Arc::new(SogouEngine::with_client(client)),
+            false,
+        )));
     }
     out
 }
@@ -129,9 +214,18 @@ mod tests {
     #[test]
     fn classify_recognises_common_failures() {
         assert_eq!(classify("operation timed out"), FailureKind::Timeout);
-        assert_eq!(classify("Brave API returned 429 Too Many Requests"), FailureKind::Blocked);
-        assert_eq!(classify("expected value at line 1 column 1"), FailureKind::Parse);
-        assert_eq!(classify("GET request failed: error sending request"), FailureKind::Http);
+        assert_eq!(
+            classify("Brave API returned 429 Too Many Requests"),
+            FailureKind::Blocked
+        );
+        assert_eq!(
+            classify("expected value at line 1 column 1"),
+            FailureKind::Parse
+        );
+        assert_eq!(
+            classify("GET request failed: error sending request"),
+            FailureKind::Http
+        );
         assert_eq!(classify("something odd"), FailureKind::Other);
     }
 

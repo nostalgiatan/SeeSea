@@ -58,7 +58,10 @@ pub fn strip_title_echo(body: &str, title: &str) -> String {
 }
 
 fn passages(body: &str) -> Vec<Vec<String>> {
-    body.split("\n\n").map(content_tokens).filter(|p| !p.is_empty()).collect()
+    body.split("\n\n")
+        .map(content_tokens)
+        .filter(|p| !p.is_empty())
+        .collect()
 }
 
 impl Reranker for LexicalReranker {
@@ -69,7 +72,10 @@ impl Reranker for LexicalReranker {
     fn rerank(&self, query: &str, docs: &[DocView<'_>]) -> Vec<RerankScore> {
         let q_tokens = content_tokens(query);
         let q_set: HashSet<String> = q_tokens.iter().cloned().collect();
-        let bodies: Vec<String> = docs.iter().map(|d| strip_title_echo(d.body, d.title)).collect();
+        let bodies: Vec<String> = docs
+            .iter()
+            .map(|d| strip_title_echo(d.body, d.title))
+            .collect();
         let per_doc: Vec<Vec<Vec<String>>> = bodies.iter().map(|b| passages(b)).collect();
 
         // Document frequency over every passage in the batch.
@@ -83,7 +89,11 @@ impl Reranker for LexicalReranker {
                 *df.entry(t.as_str()).or_default() += 1;
             }
         }
-        let avg_len = if n_passages == 0 { 1.0 } else { total_len as f64 / n_passages as f64 };
+        let avg_len = if n_passages == 0 {
+            1.0
+        } else {
+            total_len as f64 / n_passages as f64
+        };
         let idf = |t: &str| {
             let d = df.get(t).copied().unwrap_or(0) as f64;
             (1.0 + (n_passages as f64 - d + 0.5) / (d + 0.5)).ln()
@@ -102,7 +112,8 @@ impl Reranker for LexicalReranker {
                             .iter()
                             .map(|t| {
                                 let f = tf.get(t.as_str()).copied().unwrap_or(0.0);
-                                idf(t) * f * (K1 + 1.0) / (f + K1 * (1.0 - B + B * p.len() as f64 / avg_len))
+                                idf(t) * f * (K1 + 1.0)
+                                    / (f + K1 * (1.0 - B + B * p.len() as f64 / avg_len))
                             })
                             .sum::<f64>()
                     })
@@ -127,15 +138,25 @@ impl Reranker for LexicalReranker {
                     0.6 * coverage(&title_set, &body_set) + 0.4 * coverage(&title_set, &lead_set)
                 };
                 let title_match = coverage(&q_set, &title_set);
-                let bm25 = if max_bm25 > 0.0 { raw_bm25[i] / max_bm25 } else { 0.0 };
+                let bm25 = if max_bm25 > 0.0 {
+                    raw_bm25[i] / max_bm25
+                } else {
+                    0.0
+                };
                 let body_coverage = coverage(&q_set, &body_set);
 
-                let relevance = (0.55 * bm25 + 0.30 * body_coverage + 0.15 * title_match * title_support
-                    - 0.25 * title_match * (1.0 - title_support))
-                    .clamp(0.0, 1.0);
+                let relevance =
+                    (0.55 * bm25 + 0.30 * body_coverage + 0.15 * title_match * title_support
+                        - 0.25 * title_match * (1.0 - title_support))
+                        .clamp(0.0, 1.0);
                 let chars = d.body.chars().count() as f64;
-                let body_quality = (d.confidence as f64).clamp(0.0, 1.0) * f64::min(1.0, chars / 400.0);
-                RerankScore { relevance, title_support, body_quality }
+                let body_quality =
+                    (d.confidence as f64).clamp(0.0, 1.0) * f64::min(1.0, chars / 400.0);
+                RerankScore {
+                    relevance,
+                    title_support,
+                    body_quality,
+                }
             })
             .collect()
     }
@@ -146,7 +167,11 @@ mod tests {
     use super::*;
 
     fn doc<'a>(title: &'a str, body: &'a str) -> DocView<'a> {
-        DocView { title, body, confidence: 0.9 }
+        DocView {
+            title,
+            body,
+            confidence: 0.9,
+        }
     }
 
     const ON_TOPIC: &str = "Tokio is an asynchronous runtime for Rust. It schedules async tasks on a thread pool.\n\nThe runtime provides timers, sockets and a work-stealing scheduler for async Rust programs.";
@@ -154,10 +179,16 @@ mod tests {
 
     #[test]
     fn content_that_answers_the_query_outranks_a_matching_title_with_empty_content() {
-        let docs = [doc("Rust async runtime guide", OFF_TOPIC), doc("Notes", ON_TOPIC)];
+        let docs = [
+            doc("Rust async runtime guide", OFF_TOPIC),
+            doc("Notes", ON_TOPIC),
+        ];
         let s = LexicalReranker.rerank("rust async runtime", &docs);
         assert!(s[1].relevance > s[0].relevance + 0.3, "{s:?}");
-        assert!(s[0].title_support < 0.2, "the off-topic page does not back up its title: {s:?}");
+        assert!(
+            s[0].title_support < 0.2,
+            "the off-topic page does not back up its title: {s:?}"
+        );
     }
 
     #[test]
@@ -178,16 +209,30 @@ mod tests {
         let s = LexicalReranker.rerank("rust async runtime", &docs)[0];
         assert!(s.title_support < 0.1, "{s:?}");
         assert_eq!(s.relevance, 0.0, "{s:?}");
-        assert!(strip_title_echo(body, "Rust async runtime").starts_with("Cheap") || strip_title_echo(body, "Rust async runtime").trim_start().starts_with("Cheap"));
+        assert!(
+            strip_title_echo(body, "Rust async runtime").starts_with("Cheap")
+                || strip_title_echo(body, "Rust async runtime")
+                    .trim_start()
+                    .starts_with("Cheap")
+        );
         // Unrelated headings stay.
-        assert!(strip_title_echo("# Installation\n\ntext", "Rust async runtime").contains("Installation"));
+        assert!(
+            strip_title_echo("# Installation\n\ntext", "Rust async runtime")
+                .contains("Installation")
+        );
     }
 
     #[test]
     fn works_for_chinese_text() {
         let docs = [
-            doc("异步运行时", "异步运行时负责调度任务。它在线程池上运行异步任务。"),
-            doc("特价手表", "低价手表和手提包，全场包邮，欢迎订阅我们的邮件。"),
+            doc(
+                "异步运行时",
+                "异步运行时负责调度任务。它在线程池上运行异步任务。",
+            ),
+            doc(
+                "特价手表",
+                "低价手表和手提包，全场包邮，欢迎订阅我们的邮件。",
+            ),
         ];
         let s = LexicalReranker.rerank("异步运行时", &docs);
         assert!(s[0].relevance > s[1].relevance);
@@ -206,9 +251,21 @@ mod tests {
     fn body_quality_needs_both_confidence_and_length() {
         let long = "word ".repeat(200);
         let docs = [
-            DocView { title: "t", body: &long, confidence: 1.0 },
-            DocView { title: "t", body: &long, confidence: 0.1 },
-            DocView { title: "t", body: "short", confidence: 1.0 },
+            DocView {
+                title: "t",
+                body: &long,
+                confidence: 1.0,
+            },
+            DocView {
+                title: "t",
+                body: &long,
+                confidence: 0.1,
+            },
+            DocView {
+                title: "t",
+                body: "short",
+                confidence: 1.0,
+            },
         ];
         let s = LexicalReranker.rerank("word", &docs);
         assert!((s[0].body_quality - 1.0).abs() < 1e-9);

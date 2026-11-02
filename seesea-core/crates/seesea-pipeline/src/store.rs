@@ -34,7 +34,10 @@ pub struct MemoryCache {
 
 impl MemoryCache {
     pub fn new(max_entries: usize) -> Self {
-        Self { max_entries: max_entries.max(1), map: Mutex::new(HashMap::new()) }
+        Self {
+            max_entries: max_entries.max(1),
+            map: Mutex::new(HashMap::new()),
+        }
     }
 }
 
@@ -59,7 +62,11 @@ impl Cache for MemoryCache {
             map.retain(|_, (e, _)| *e > now);
             if map.len() >= self.max_entries {
                 // Still full: drop the entry that expires first.
-                if let Some(oldest) = map.iter().min_by_key(|(_, (e, _))| *e).map(|(k, _)| k.clone()) {
+                if let Some(oldest) = map
+                    .iter()
+                    .min_by_key(|(_, (e, _))| *e)
+                    .map(|(k, _)| k.clone())
+                {
                     map.remove(&oldest);
                 }
             }
@@ -91,7 +98,10 @@ impl FileCache {
     }
 
     fn now_secs() -> u64 {
-        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
     }
 }
 
@@ -114,7 +124,9 @@ impl Cache for FileCache {
         if tokio::fs::create_dir_all(&self.dir).await.is_err() {
             return;
         }
-        let mut data = (Self::now_secs() + ttl.as_secs().max(1)).to_le_bytes().to_vec();
+        let mut data = (Self::now_secs() + ttl.as_secs().max(1))
+            .to_le_bytes()
+            .to_vec();
         data.extend_from_slice(&value);
         let path = self.dir.join(Self::file_name(key));
         let tmp = path.with_extension("tmp");
@@ -140,8 +152,16 @@ mod tests {
 
         c.put("b", b"2".to_vec(), Duration::from_secs(60)).await;
         c.put("c", b"3".to_vec(), Duration::from_secs(60)).await;
-        let present = [c.get("a").await.is_some(), c.get("b").await.is_some(), c.get("c").await.is_some()];
-        assert_eq!(present.iter().filter(|p| **p).count(), 2, "capacity is respected: {present:?}");
+        let present = [
+            c.get("a").await.is_some(),
+            c.get("b").await.is_some(),
+            c.get("c").await.is_some(),
+        ];
+        assert_eq!(
+            present.iter().filter(|p| **p).count(),
+            2,
+            "capacity is respected: {present:?}"
+        );
         assert!(present[2], "the newest entry is kept");
     }
 
@@ -152,7 +172,11 @@ mod tests {
         assert_eq!(c.get("k").await, None);
         c.put("k", b"value".to_vec(), Duration::from_secs(60)).await;
         assert_eq!(c.get("k").await, Some(b"value".to_vec()));
-        assert_eq!(FileCache::new(dir.path().join("nested")).get("k").await, Some(b"value".to_vec()), "survives a new instance");
+        assert_eq!(
+            FileCache::new(dir.path().join("nested")).get("k").await,
+            Some(b"value".to_vec()),
+            "survives a new instance"
+        );
 
         // An expired entry is a miss and is removed.
         let path = dir.path().join("nested").join(FileCache::file_name("old"));
@@ -173,13 +197,17 @@ mod tests {
         let file = dir.path().join("a-file");
         std::fs::write(&file, b"x").unwrap();
         let broken = FileCache::new(file.join("sub"));
-        broken.put("k", b"v".to_vec(), Duration::from_secs(10)).await;
+        broken
+            .put("k", b"v".to_vec(), Duration::from_secs(10))
+            .await;
         assert_eq!(broken.get("k").await, None);
     }
 
     #[tokio::test]
     async fn no_cache_never_hits() {
-        NoCache.put("k", b"v".to_vec(), Duration::from_secs(10)).await;
+        NoCache
+            .put("k", b"v".to_vec(), Duration::from_secs(10))
+            .await;
         assert_eq!(NoCache.get("k").await, None);
     }
 }

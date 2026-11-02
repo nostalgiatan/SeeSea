@@ -15,7 +15,11 @@ use std::sync::Arc;
 use tokio::io::{AsyncWriteExt, BufReader};
 
 #[derive(Parser)]
-#[command(name = "seesea", version, about = "Search the web, read the results: one pipeline for the command line, an HTTP server and MCP")]
+#[command(
+    name = "seesea",
+    version,
+    about = "Search the web, read the results: one pipeline for the command line, an HTTP server and MCP"
+)]
 struct Cli {
     #[command(flatten)]
     net: NetArgs,
@@ -29,7 +33,12 @@ struct NetArgs {
     #[arg(long, env = "SEESEA_SEARXNG_URL", global = true)]
     searxng: Option<String>,
     /// Brave Search API key.
-    #[arg(long, env = "SEESEA_BRAVE_API_KEY", global = true, hide_env_values = true)]
+    #[arg(
+        long,
+        env = "SEESEA_BRAVE_API_KEY",
+        global = true,
+        hide_env_values = true
+    )]
     brave_key: Option<String>,
     /// Do not use the built-in scraping engines (Bing, Baidu, Sogou).
     #[arg(long, global = true)]
@@ -121,7 +130,11 @@ enum Command {
 
 fn settings(net: &NetArgs, memory_cache: bool) -> Settings {
     Settings {
-        sources: SourceSettings { searxng_url: net.searxng.clone(), brave_key: net.brave_key.clone(), native_engines: !net.no_native },
+        sources: SourceSettings {
+            searxng_url: net.searxng.clone(),
+            brave_key: net.brave_key.clone(),
+            native_engines: !net.no_native,
+        },
         proxy: net.proxy.clone(),
         cache_dir: net.cache_dir.clone(),
         no_cache: net.no_cache,
@@ -145,7 +158,11 @@ async fn append_log(path: &PathBuf, resp: &SearchResponse) -> Result<(), Error> 
         "hits": resp.hits.iter().map(|h| serde_json::json!({"url": h.url, "score": h.score, "found_by": h.found_by})).collect::<Vec<_>>(),
         "failures": resp.failures,
     });
-    let mut file = tokio::fs::OpenOptions::new().create(true).append(true).open(path).await?;
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .await?;
     file.write_all(format!("{line}\n").as_bytes()).await?;
     Ok(())
 }
@@ -156,7 +173,17 @@ async fn run(cli: Cli) -> Result<(), Error> {
     let pipeline = Arc::new(build_pipeline(&settings(&cli.net, long_lived))?);
 
     match cli.command {
-        Command::Search { query, mode, limit, time_range, lang, sources, max_chars, full, log } => {
+        Command::Search {
+            query,
+            mode,
+            limit,
+            time_range,
+            lang,
+            sources,
+            max_chars,
+            full,
+            log,
+        } => {
             let mut req = SearchRequest::new(query.join(" "));
             req.mode = mode.parse::<Mode>()?;
             req.limit = limit;
@@ -169,27 +196,57 @@ async fn run(cli: Cli) -> Result<(), Error> {
             if let Some(path) = &log {
                 append_log(path, &resp).await?;
             }
-            if json { print_json(&resp) } else { Ok(print!("{}", search_markdown(&resp))) }
+            if json {
+                print_json(&resp)
+            } else {
+                Ok(print!("{}", search_markdown(&resp)))
+            }
         }
-        Command::Extract { target, query, scope, max_chars } => {
+        Command::Extract {
+            target,
+            query,
+            scope,
+            max_chars,
+        } => {
             let scope = parse_scope(Some(&scope))?;
             let page = if target.starts_with("http://") || target.starts_with("https://") {
-                pipeline.extract(&target, scope, query.as_deref(), max_chars).await?
+                pipeline
+                    .extract(&target, scope, query.as_deref(), max_chars)
+                    .await?
             } else if target == "-" {
                 let mut html = String::new();
                 std::io::stdin().read_to_string(&mut html)?;
-                pipeline.extract_html(html, "stdin://", scope, query.as_deref(), max_chars).await?
+                pipeline
+                    .extract_html(html, "stdin://", scope, query.as_deref(), max_chars)
+                    .await?
             } else {
-                let html = std::fs::read(&target).map_err(|e| Error::InvalidRequest(format!("cannot read '{target}': {e}")))?;
+                let html = std::fs::read(&target)
+                    .map_err(|e| Error::InvalidRequest(format!("cannot read '{target}': {e}")))?;
                 let abs = std::fs::canonicalize(&target).unwrap_or_else(|_| PathBuf::from(&target));
-                pipeline.extract_html(String::from_utf8_lossy(&html).into_owned(), &format!("file://{}", abs.display()), scope, query.as_deref(), max_chars).await?
+                pipeline
+                    .extract_html(
+                        String::from_utf8_lossy(&html).into_owned(),
+                        &format!("file://{}", abs.display()),
+                        scope,
+                        query.as_deref(),
+                        max_chars,
+                    )
+                    .await?
             };
-            if json { print_json(&page) } else { Ok(print!("{}", extract_markdown(&page))) }
+            if json {
+                print_json(&page)
+            } else {
+                Ok(print!("{}", extract_markdown(&page)))
+            }
         }
         Command::Sources { check, query } => {
             if !check {
                 let names = pipeline.source_names();
-                return if json { print_json(&serde_json::json!({"sources": names})) } else { Ok(println!("{}", names.join("\n"))) };
+                return if json {
+                    print_json(&serde_json::json!({"sources": names}))
+                } else {
+                    Ok(println!("{}", names.join("\n")))
+                };
             }
             let probes = pipeline.probe(&query).await;
             if json {
@@ -197,19 +254,29 @@ async fn run(cli: Cli) -> Result<(), Error> {
             } else {
                 for p in &probes {
                     match &p.error {
-                        None => println!("ok    {:<10} {:>2} results  {:>5} ms", p.source, p.hits, p.ms),
-                        Some(e) => println!("FAIL  {:<10} {:>5} ms  {:?}: {}", p.source, p.ms, e.kind, e.message),
+                        None => println!(
+                            "ok    {:<10} {:>2} results  {:>5} ms",
+                            p.source, p.hits, p.ms
+                        ),
+                        Some(e) => println!(
+                            "FAIL  {:<10} {:>5} ms  {:?}: {}",
+                            p.source, p.ms, e.kind, e.message
+                        ),
                     }
                 }
             }
             match probes.iter().any(|p| p.ok) {
                 true => Ok(()),
                 false if probes.is_empty() => Err(Error::NoSources),
-                false => Err(Error::AllSourcesFailed(probes.into_iter().filter_map(|p| p.error).collect())),
+                false => Err(Error::AllSourcesFailed(
+                    probes.into_iter().filter_map(|p| p.error).collect(),
+                )),
             }
         }
         Command::Eval { judgments, k, mode } => {
-            let text = std::fs::read_to_string(&judgments).map_err(|e| Error::InvalidRequest(format!("cannot read '{}': {e}", judgments.display())))?;
+            let text = std::fs::read_to_string(&judgments).map_err(|e| {
+                Error::InvalidRequest(format!("cannot read '{}': {e}", judgments.display()))
+            })?;
             let list = eval::parse_judgments(&text)?;
             let mut template = SearchRequest::new("x");
             template.mode = mode.parse::<Mode>()?;
@@ -218,17 +285,41 @@ async fn run(cli: Cli) -> Result<(), Error> {
                 print_json(&report)
             } else {
                 for q in &report.queries {
-                    println!("ndcg@{k} {:.3}  recall {:.3}  mrr {:.3}  {:>5} ms  {}{}", q.ndcg, q.recall, q.mrr, q.took_ms, q.query, q.error.as_deref().map(|e| format!("  [{e}]")).unwrap_or_default());
+                    println!(
+                        "ndcg@{k} {:.3}  recall {:.3}  mrr {:.3}  {:>5} ms  {}{}",
+                        q.ndcg,
+                        q.recall,
+                        q.mrr,
+                        q.took_ms,
+                        q.query,
+                        q.error
+                            .as_deref()
+                            .map(|e| format!("  [{e}]"))
+                            .unwrap_or_default()
+                    );
                 }
-                println!("\nmean ndcg@{k} {:.3}  recall {:.3}  mrr {:.3}  ({} queries, {} failed)", report.mean_ndcg, report.mean_recall, report.mean_mrr, report.queries.len(), report.failed_queries);
+                println!(
+                    "\nmean ndcg@{k} {:.3}  recall {:.3}  mrr {:.3}  ({} queries, {} failed)",
+                    report.mean_ndcg,
+                    report.mean_recall,
+                    report.mean_mrr,
+                    report.queries.len(),
+                    report.failed_queries
+                );
                 Ok(())
             }
         }
-        Command::Serve { addr, api_key, max_concurrent } => server::serve(addr, AppState::new(pipeline, api_key), max_concurrent).await,
+        Command::Serve {
+            addr,
+            api_key,
+            max_concurrent,
+        } => server::serve(addr, AppState::new(pipeline, api_key), max_concurrent).await,
         Command::Mcp => {
             // Standard output belongs to the protocol; anything else goes to standard error.
             eprintln!("seesea MCP server ready on stdio");
-            Arc::new(McpServer::new(pipeline)).serve(BufReader::new(tokio::io::stdin()), tokio::io::stdout()).await?;
+            Arc::new(McpServer::new(pipeline))
+                .serve(BufReader::new(tokio::io::stdin()), tokio::io::stdout())
+                .await?;
             Ok(())
         }
     }
@@ -236,7 +327,10 @@ async fn run(cli: Cli) -> Result<(), Error> {
 
 fn report_error(e: &Error, json: bool) {
     if json {
-        eprintln!("{}", serde_json::to_string(&e.body()).unwrap_or_else(|_| e.to_string()));
+        eprintln!(
+            "{}",
+            serde_json::to_string(&e.body()).unwrap_or_else(|_| e.to_string())
+        );
     } else {
         eprintln!("error[{}]: {e}", e.code());
         if let Error::AllSourcesFailed(fs) = e {
