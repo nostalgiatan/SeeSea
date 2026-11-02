@@ -104,6 +104,15 @@ impl Extractor {
         Ok(Extractor { model })
     }
 
+    /// Extract many pages at once; pages are independent, so they are spread over the rayon pool
+    /// (one thread per page is the efficient grain: a single page takes ~7 ms and is not worth splitting).
+    /// Results are in input order.
+    #[cfg(feature = "parallel")]
+    pub fn extract_batch(&self, pages: &[(&str, &str)], opts: &Options) -> Vec<ExtractResult> {
+        use rayon::prelude::*;
+        pages.par_iter().map(|(html, url)| self.extract(html, url, opts)).collect()
+    }
+
     /// Decision threshold in effect for these options.
     pub fn threshold(&self, opts: &Options) -> f32 {
         opts.threshold.unwrap_or(if opts.scope == Scope::Extended { self.model.thr_extended } else { self.model.thr_core })
@@ -118,13 +127,8 @@ impl Extractor {
     fn probabilities(&self, blocks: &[Block], html: &str, url: &str, scope: Scope) -> Vec<f32> {
         let flag = if scope == Scope::Extended { 1.0f32 } else { 0.0 };
         let pf = pagefeat::page_features(url, html, blocks);
-        let rows: Vec<Vec<f32>> = blocks.iter().map(|b| {
-            let mut r = b.feats.clone();
-            r.extend_from_slice(&pf);
-            r.push(flag);
-            r
-        }).collect();
-        self.model.predict(&rows)
+        let feats: Vec<&[f32]> = blocks.iter().map(|b| b.feats.as_slice()).collect();
+        self.model.predict_blocks(&feats, &pf, flag)
     }
 
     pub fn extract(&self, html: &str, url: &str, opts: &Options) -> ExtractResult {

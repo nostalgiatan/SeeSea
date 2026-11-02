@@ -9,9 +9,29 @@
 //! code fences, bold/italic/code/link spans), so selected blocks can be emitted in document order.
 
 use crate::text::tokenize;
+use ego_tree::iter::Edge;
 use ego_tree::{NodeId, NodeRef};
 use scraper::{Html, Node};
-use std::collections::HashMap;
+use std::collections::HashMap as StdHashMap;
+use std::hash::{BuildHasherDefault, Hasher};
+
+/// Multiplicative hasher for small integer-like keys (node ids); SipHash showed up as the dominant
+/// cost of per-ancestor bookkeeping.
+#[derive(Default)]
+struct Fx(u64);
+
+impl Hasher for Fx {
+    fn finish(&self) -> u64 { self.0 }
+    fn write(&mut self, bytes: &[u8]) {
+        let mut chunks = bytes.chunks_exact(8);
+        for c in &mut chunks { self.write_u64(u64::from_le_bytes(c.try_into().unwrap())); }
+        for b in chunks.remainder() { self.write_u64(*b as u64); }
+    }
+    fn write_u64(&mut self, n: u64) { self.0 = (self.0.rotate_left(5) ^ n).wrapping_mul(0x517c_c1b7_2722_0a95); }
+    fn write_usize(&mut self, n: usize) { self.write_u64(n as u64); }
+}
+
+type HashMap<K, V> = StdHashMap<K, V, BuildHasherDefault<Fx>>;
 
 pub struct Block {
     pub text: String,
@@ -23,11 +43,6 @@ pub struct Block {
     pub feats: Vec<f32>,
 }
 
-const INLINE: &[&str] = &[
-    "a", "span", "strong", "b", "em", "i", "u", "small", "sup", "sub", "code", "kbd", "abbr", "time", "mark",
-    "label", "font", "cite", "q", "s", "del", "ins", "bdi", "bdo", "data", "dfn", "var", "samp", "big", "tt",
-    "strike", "nobr", "wbr", "marked", "img",
-];
 const SKIP: &[&str] = &["script", "style", "noscript", "head", "template", "svg", "iframe"];
 
 /// Keyword groups matched against class/id attribute text.
@@ -50,7 +65,17 @@ const KEYWORDS: &[(&str, &[&str])] = &[
 
 const BLOCK_TAGS: &[&str] = &["p", "li", "td", "th", "pre", "blockquote", "dd", "dt", "figcaption", "div"];
 
+/// Column names of `Block::feats`.
 pub fn feature_names() -> Vec<String> {
+    names_cached().to_vec()
+}
+
+pub(crate) fn names_cached() -> &'static [String] {
+    static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(build_names)
+}
+
+fn build_names() -> Vec<String> {
     let mut v: Vec<String> = [
         "log_chars", "log_tokens", "link_ratio", "punct_end", "punct_comma", "digit_ratio", "upper_ratio", "cjk_ratio",
         "space_ratio", "depth", "pos_idx", "pos_chars_before", "pos_chars_after", "n_blocks_log", "page_chars_log",
@@ -86,7 +111,10 @@ pub fn feature_names() -> Vec<String> {
 }
 
 fn is_inline(name: &str) -> bool {
-    INLINE.contains(&name)
+    matches!(name,
+        "a" | "span" | "strong" | "b" | "em" | "i" | "u" | "small" | "sup" | "sub" | "code" | "kbd" | "abbr" | "time" | "mark"
+        | "label" | "font" | "cite" | "q" | "s" | "del" | "ins" | "bdi" | "bdo" | "data" | "dfn" | "var" | "samp" | "big" | "tt"
+        | "strike" | "nobr" | "wbr" | "marked" | "img")
 }
 
 fn elem_name(n: NodeRef<Node>) -> Option<&str> {
@@ -99,12 +127,53 @@ fn kw_mask(n: NodeRef<Node>) -> u32 {
     if let Some(c) = e.attr("class") { s.push_str(c); s.push(' '); }
     if let Some(c) = e.attr("id") { s.push_str(c); }
     if s.is_empty() { return 0; }
-    let s = s.to_lowercase();
+    let s = s.to_ascii_lowercase();
     let mut m = 0u32;
     for (i, (_, kws)) in KEYWORDS.iter().enumerate() {
         if kws.iter().any(|k| s.contains(k)) { m |= 1 << i; }
     }
     m
+}
+
+/// Per-element signals the block features read from the element and its ancestors.
+#[derive(Clone, Copy)]
+struct Info {
+    /// Attribute signals that count on the block itself too: role x5, aria-hidden, display:none, itemprop=articleBody.
+    attr: u32,
+    /// Signals that count for ancestors only: hidden attribute, h1, then the 12 container tags of the `anc_*` features.
+    anc: u32,
+    /// Keyword-group mask of the class/id text.
+    kw: u32,
+}
+
+fn info_of(a: NodeRef<Node>) -> Info {
+    let Some(e) = a.value().as_element() else { return Info { attr: 0, anc: 0, kw: 0 } };
+    let mut attr = 0u32;
+    if let Some(v) = e.attr("role") {
+        for (i, w) in ["navigation", "banner", "contentinfo", "complementary", "main"].iter().enumerate() { if v.contains(w) { attr |= 1 << i; } }
+    }
+    if e.attr("aria-hidden").is_some_and(|v| v.contains("true")) { attr |= 1 << 5; }
+    if e.attr("style").is_some_and(|v| v.contains("display:none") || v.contains("display: none")) { attr |= 1 << 6; }
+    if e.attr("itemprop").is_some_and(|v| v.contains("articleBody")) { attr |= 1 << 7; }
+    let mut anc = 0u32;
+    if e.attr("hidden").is_some() { anc |= 1; }
+    match e.name() {
+        "h1" => anc |= 1 << 1,
+        "nav" => anc |= 1 << 2,
+        "header" => anc |= 1 << 3,
+        "footer" => anc |= 1 << 4,
+        "aside" => anc |= 1 << 5,
+        "article" => anc |= 1 << 6,
+        "main" => anc |= 1 << 7,
+        "form" => anc |= 1 << 8,
+        "ul" | "ol" => anc |= 1 << 9,
+        "table" => anc |= 1 << 10,
+        "section" => anc |= 1 << 11,
+        "figure" => anc |= 1 << 12,
+        "button" | "select" => anc |= 1 << 13,
+        _ => {}
+    }
+    Info { attr, anc, kw: kw_mask(a) }
 }
 
 #[derive(Default, Clone, Copy)]
@@ -196,36 +265,68 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
     let title_set: std::collections::HashSet<String> = tokenize(&title).into_iter().collect();
 
     let mut order: Vec<NodeId> = Vec::new();
-    let mut raws: HashMap<NodeId, Raw> = HashMap::new();
-    let mut sub: HashMap<NodeId, Sub> = HashMap::new();
-    for node in root.descendants() {
-        let Node::Text(t) = node.value() else { continue };
-        let txt = t.trim();
-        if node.ancestors().any(|a| elem_name(a).is_some_and(|n| SKIP.contains(&n))) { continue; }
-        if txt.is_empty() {
-            // whitespace between inline elements still separates words in the Markdown
-            if let Some(b) = node.ancestors().find(|a| elem_name(*a).is_some_and(|n| !is_inline(n))) {
-                if let Some(r) = raws.get_mut(&b.id()) { if !r.md.ends_with(' ') && !r.md.is_empty() { r.md.push(' '); } }
+    let mut raws: HashMap<NodeId, Raw> = HashMap::default();
+    let mut sub: HashMap<NodeId, Sub> = HashMap::default();
+    // One traversal carries link / marked-region / nearest-block state down and subtree text totals up,
+    // instead of walking the ancestor chain for every text node.
+    struct Frame { id: NodeId, chars: usize, link: usize, is_link: bool, pos: bool, block: Option<NodeId> }
+    let mut stack: Vec<Frame> = Vec::new();
+    let mut skip = 0usize;
+    for edge in root.traverse() {
+        match edge {
+            Edge::Open(node) => match node.value() {
+                Node::Element(e) => {
+                    if skip > 0 || SKIP.contains(&e.name()) { skip += 1; continue; }
+                    let name = e.name();
+                    let (pl, pp, pb) = stack.last().map_or((false, false, None), |f| (f.is_link, f.pos, f.block));
+                    stack.push(Frame {
+                        id: node.id(), chars: 0, link: 0,
+                        is_link: pl || name == "a",
+                        pos: pp || e.attr("cc-select") == Some("true"),
+                        block: if is_inline(name) { pb } else { Some(node.id()) },
+                    });
+                }
+                Node::Text(t) => {
+                    if skip > 0 { continue; }
+                    let (is_link, pos, block) = stack.last().map_or((false, false, None), |f| (f.is_link, f.pos, f.block));
+                    let txt = t.trim();
+                    if txt.is_empty() {
+                        // whitespace between inline elements still separates words in the Markdown
+                        if let Some(b) = block {
+                            if let Some(r) = raws.get_mut(&b) { if !r.md.ends_with(' ') && !r.md.is_empty() { r.md.push(' '); } }
+                        }
+                        continue;
+                    }
+                    let chars = txt.chars().count();
+                    let block = block.unwrap_or(root.id());
+                    let r = raws.entry(block).or_insert_with(|| {
+                        order.push(block);
+                        Raw { id: block, text: String::new(), md: String::new(), link_chars: 0, pos_chars: 0 }
+                    });
+                    push_md(&mut r.md, t, node);
+                    if !r.text.is_empty() { r.text.push(' '); }
+                    r.text.push_str(txt);
+                    if is_link { r.link_chars += chars; }
+                    if pos { r.pos_chars += chars; }
+                    if let Some(f) = stack.last_mut() {
+                        f.chars += chars;
+                        if is_link { f.link += chars; }
+                    }
+                }
+                _ => {}
+            },
+            Edge::Close(node) => {
+                if !node.value().is_element() { continue; }
+                if skip > 0 { skip -= 1; continue; }
+                let f = stack.pop().expect("balanced traversal");
+                let s = sub.entry(f.id).or_default();
+                s.chars = f.chars;
+                s.link = f.link;
+                if let Some(p) = stack.last_mut() {
+                    p.chars += f.chars;
+                    p.link += f.link;
+                }
             }
-            continue;
-        }
-        let chars = txt.chars().count();
-        let is_link = node.ancestors().any(|a| elem_name(a) == Some("a"));
-        let pos = node.ancestors().any(|a| a.value().as_element().is_some_and(|e| e.attr("cc-select") == Some("true")));
-        let block = node.ancestors().find(|a| elem_name(*a).is_some_and(|n| !is_inline(n))).map(|a| a.id()).unwrap_or(root.id());
-        let r = raws.entry(block).or_insert_with(|| {
-            order.push(block);
-            Raw { id: block, text: String::new(), md: String::new(), link_chars: 0, pos_chars: 0 }
-        });
-        push_md(&mut r.md, t, node);
-        if !r.text.is_empty() { r.text.push(' '); }
-        r.text.push_str(txt);
-        if is_link { r.link_chars += chars; }
-        if pos { r.pos_chars += chars; }
-        for a in node.ancestors() {
-            let s = sub.entry(a.id()).or_default();
-            s.chars += chars;
-            if is_link { s.link += chars; }
         }
     }
     for id in &order {
@@ -235,16 +336,18 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
     }
     let page_chars: usize = raws.values().map(|r| r.text.chars().count()).sum::<usize>().max(1);
     let n_blocks = order.len();
-    let mut kw_cache: HashMap<NodeId, u32> = HashMap::new();
+    let mut info_cache: HashMap<NodeId, Info> = HashMap::default();
     let mut seen_h1 = false;
+    let mut ancestors: Vec<NodeRef<Node>> = Vec::new();
 
     // sibling repeat key counts: (parent id, tag, class)
-    let mut repeat: HashMap<(Option<NodeId>, String), usize> = HashMap::new();
+    let mut repeat: HashMap<(Option<NodeId>, String), usize> = HashMap::default();
     let key_of = |n: NodeRef<Node>| -> (Option<NodeId>, String) {
         let e = n.value().as_element();
         (n.parent().map(|p| p.id()), format!("{}|{}", e.map(|e| e.name()).unwrap_or(""), e.and_then(|e| e.attr("class")).unwrap_or("")))
     };
-    for id in &order { *repeat.entry(key_of(doc.tree.get(*id).unwrap())).or_default() += 1; }
+    let repeat_keys: Vec<(Option<NodeId>, String)> = order.iter().map(|id| key_of(doc.tree.get(*id).unwrap())).collect();
+    for k in &repeat_keys { *repeat.entry(k.clone()).or_default() += 1; }
 
     let chars_list: Vec<usize> = order.iter().map(|id| raws[id].text.chars().count()).collect();
     let max_chars = *chars_list.iter().max().unwrap_or(&1) as f32;
@@ -253,7 +356,9 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
     let total: usize = chars_list.iter().sum::<usize>().max(1);
     let mut before = 0usize;
     let mut blocks: Vec<Block> = Vec::with_capacity(n_blocks);
-    let names_len = feature_names().len();
+    let names_len = names_cached().len();
+    let lowers: Vec<String> = order.iter().map(|id| raws[id].text.to_lowercase()).collect();
+    let datetimes: Vec<bool> = lowers.iter().map(|l| has_datetime(l)).collect();
 
     for (idx, id) in order.iter().enumerate() {
         let r = &raws[id];
@@ -263,27 +368,50 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
         let tokens = tokenize(&text);
         let mut f: Vec<f32> = Vec::with_capacity(names_len);
         let c = chars.max(1) as f32;
-        let count = |pred: &dyn Fn(char) -> bool| text.chars().filter(|ch| pred(*ch)).count() as f32;
+        let (mut n_end, mut n_comma, mut n_digit, mut n_upper, mut n_cjk, mut n_space) = (0f32, 0f32, 0f32, 0f32, 0f32, 0f32);
+        for ch in text.chars() {
+            if matches!(ch, '.' | '!' | '?' | '。' | '！' | '？' | '；' | ';') { n_end += 1.0; }
+            if matches!(ch, ',' | '，' | '、') { n_comma += 1.0; }
+            if ch.is_ascii_digit() { n_digit += 1.0; }
+            if ch.is_uppercase() { n_upper += 1.0; }
+            if matches!(ch as u32, 0x3040..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xAC00..=0xD7AF) { n_cjk += 1.0; }
+            if ch.is_whitespace() { n_space += 1.0; }
+        }
         let tag = elem_name(node).unwrap_or("");
-        let in_h1 = tag == "h1" || node.ancestors().any(|a| elem_name(a) == Some("h1"));
+        // one walk over the block and its ancestors ORs together per-element signals (computed once per element)
+        let (mut attr_bits, mut anc_bits) = (0u32, 0u32);
+        let (mut self_mask, mut anc_mask, mut depth) = (0u32, 0u32, 0usize);
+        ancestors.clear();
+        for (k, a) in std::iter::once(node).chain(node.ancestors()).enumerate() {
+            if k > 0 { depth += 1; }
+            if !a.value().is_element() { continue; }
+            ancestors.push(a);
+            let i = *info_cache.entry(a.id()).or_insert_with(|| info_of(a));
+            attr_bits |= i.attr;
+            if k == 0 { self_mask = i.kw; } else { anc_bits |= i.anc; anc_mask |= i.kw; }
+        }
+        let bit = |bits: u32, n: u32| (bits >> n) & 1 == 1;
+        let role = [bit(attr_bits, 0), bit(attr_bits, 1), bit(attr_bits, 2), bit(attr_bits, 3), bit(attr_bits, 4)];
+        let (aria_hidden, display_none, itemprop_body) = (bit(attr_bits, 5), bit(attr_bits, 6), bit(attr_bits, 7));
+        let (hidden_attr, h1_anc) = (bit(anc_bits, 0), bit(anc_bits, 1));
+        let anc_tags: [bool; 12] = std::array::from_fn(|t| bit(anc_bits, 2 + t as u32));
+        let in_h1 = tag == "h1" || h1_anc;
         let first_h1 = in_h1 && !seen_h1;
         if in_h1 { seen_h1 = true; }
         let overlap = if title_set.is_empty() || tokens.is_empty() { 0.0 } else {
             tokens.iter().filter(|t| title_set.contains(*t)).count() as f32 / tokens.len().max(1) as f32
         };
-        let attr = |a: &str| node.value().as_element().and_then(|e| e.attr(a)).unwrap_or("");
-        let anc_attr = |name: &str, val: &str| node.ancestors().chain(std::iter::once(node)).any(|a| a.value().as_element().is_some_and(|e| e.attr(name).is_some_and(|v| v.contains(val))));
-        let depth = node.ancestors().count() as f32;
+        let depth = depth as f32;
 
         f.push(c.ln_1p());
         f.push((tokens.len() as f32).ln_1p());
         f.push(r.link_chars as f32 / c);
-        f.push(count(&|ch| matches!(ch, '.' | '!' | '?' | '。' | '！' | '？' | '；' | ';')) / c);
-        f.push(count(&|ch| matches!(ch, ',' | '，' | '、')) / c);
-        f.push(count(&|ch| ch.is_ascii_digit()) / c);
-        f.push(count(&|ch| ch.is_uppercase()) / c);
-        f.push(count(&|ch| matches!(ch as u32, 0x3040..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xAC00..=0xD7AF)) / c);
-        f.push(count(&|ch| ch.is_whitespace()) / c);
+        f.push(n_end / c);
+        f.push(n_comma / c);
+        f.push(n_digit / c);
+        f.push(n_upper / c);
+        f.push(n_cjk / c);
+        f.push(n_space / c);
         f.push(depth);
         f.push(idx as f32 / n_blocks.max(1) as f32);
         f.push(before as f32 / total as f32);
@@ -295,32 +423,22 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
         f.push(overlap);
         f.push(in_h1 as u8 as f32);
         f.push(first_h1 as u8 as f32);
-        f.push(anc_attr("role", "navigation") as u8 as f32 + anc_attr("role", "banner") as u8 as f32 + anc_attr("role", "contentinfo") as u8 as f32 + anc_attr("role", "complementary") as u8 as f32);
-        f.push(anc_attr("role", "main") as u8 as f32);
-        f.push(anc_attr("aria-hidden", "true") as u8 as f32);
-        f.push((anc_attr("style", "display:none") || anc_attr("style", "display: none") || node.ancestors().any(|a| a.value().as_element().is_some_and(|e| e.attr("hidden").is_some()))) as u8 as f32);
-        f.push(anc_attr("itemprop", "articleBody") as u8 as f32);
-        f.push((*repeat.get(&key_of(node)).unwrap_or(&1) as f32).ln_1p());
-        let _ = attr("class");
+        f.push(role[0] as u8 as f32 + role[1] as u8 as f32 + role[2] as u8 as f32 + role[3] as u8 as f32);
+        f.push(role[4] as u8 as f32);
+        f.push(aria_hidden as u8 as f32);
+        f.push((display_none || hidden_attr) as u8 as f32);
+        f.push(itemprop_body as u8 as f32);
+        f.push((*repeat.get(&repeat_keys[idx]).unwrap_or(&1) as f32).ln_1p());
         for t in ["p", "div", "li", "td", "h1", "h2", "h3"] { f.push((tag == t) as u8 as f32); }
         f.push(matches!(tag, "h4" | "h5" | "h6") as u8 as f32);
         f.push((tag == "pre") as u8 as f32);
         f.push((tag == "blockquote") as u8 as f32);
         f.push(!matches!(tag, "p" | "div" | "li" | "td" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "pre" | "blockquote") as u8 as f32);
-        let anc = |names: &[&str]| node.ancestors().any(|a| elem_name(a).is_some_and(|n| names.contains(&n))) as u8 as f32;
-        for names in [&["nav"][..], &["header"], &["footer"], &["aside"], &["article"], &["main"], &["form"], &["ul", "ol"], &["table"], &["section"], &["figure"], &["button", "select"]] {
-            f.push(anc(names));
-        }
-        let self_mask = *kw_cache.entry(node.id()).or_insert_with(|| kw_mask(node));
-        let mut anc_mask = 0u32;
-        for a in node.ancestors() {
-            anc_mask |= *kw_cache.entry(a.id()).or_insert_with(|| kw_mask(a));
-        }
+        for flag in anc_tags { f.push(flag as u8 as f32); }
         for i in 0..KEYWORDS.len() {
             f.push(((self_mask >> i) & 1) as f32);
             f.push(((anc_mask >> i) & 1) as f32);
         }
-        let ancestors: Vec<NodeRef<Node>> = std::iter::once(node).chain(node.ancestors()).filter(|a| a.value().is_element()).collect();
         for lvl in [1usize, 2, 3, 5] {
             let a = ancestors.get(lvl).or(ancestors.last());
             let s = a.and_then(|a| sub.get(&a.id())).copied().unwrap_or_default();
@@ -341,14 +459,14 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
                 f.push(0.0);
             }
         }
-        let lower = text.to_lowercase();
+        let lower = &lowers[idx];
         f.push(has_price(&text) as u8 as f32);
-        f.push(has_datetime(&lower) as u8 as f32);
+        f.push(datetimes[idx] as u8 as f32);
         f.push(CTA.iter().any(|w| lower.contains(w)) as u8 as f32);
         f.push(FORUM_WORDS.iter().any(|w| lower.contains(w)) as u8 as f32);
         for off in [-1i64, 1] {
             let j = idx as i64 + off;
-            let hit = j >= 0 && (j as usize) < n_blocks && has_datetime(&raws[&order[j as usize]].text.to_lowercase());
+            let hit = j >= 0 && (j as usize) < n_blocks && datetimes[j as usize];
             f.push(hit as u8 as f32);
         }
         debug_assert_eq!(f.len(), names_len);
