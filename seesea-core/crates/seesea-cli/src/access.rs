@@ -1,0 +1,296 @@
+//! Who may call the HTTP server and how much: API keys, plans, rate limits.
+//!
+//! Three situations:
+//! * no key configured and no user created: the server is open (fine on loopback; `serve` refuses to
+//!   listen elsewhere that way unless told to);
+//! * a root key (`--api-key`): one shared secret, no limits, for a single operator;
+//! * users with keys from `seesea users` / `seesea keys`: each has a plan (rate, daily credits,
+//!   concurrency, `deep` or not).
+
+use seesea_auth::{AuthError, Denied, Limiter, Plan, Principal, Reason, Store, day_number};
+use std::collections::HashMap;
+use std::net::IpAddr;
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+
+/// Failed key attempts one address may make per minute before it is turned away for a while.
+const FAILURES_PER_MINUTE: u32 = 20;
+
+/// Credits a request costs. A fast search is 1, a standard one 2, a deep one 5.
+pub fn base_cost(path: &str) -> u32 {
+    match path {
+        "/v1/search" | "/v1/extract" | "/mcp" => 1,
+        "/v1/sources/check" => 5,
+        _ => 1,
+    }
+}
+
+pub fn mode_extra(mode: seesea_pipeline::Mode) -> u32 {
+    match mode {
+        seesea_pipeline::Mode::Fast => 0,
+        seesea_pipeline::Mode::Standard => 1,
+        seesea_pipeline::Mode::Deep => 4,
+    }
+}
+
+/// What a request was granted; handed to the handlers.
+#[derive(Clone)]
+pub struct Grant {
+    pub user_id: Option<i64>,
+    pub plan: Plan,
+    pub name: String,
+}
+
+pub struct Allowed {
+    pub grant: Grant,
+    pub headers: Vec<(&'static str, String)>,
+    pub permit: Option<OwnedSemaphorePermit>,
+}
+
+#[derive(Debug)]
+pub enum Refusal {
+    Unauthorized(String),
+    Limited { denied: Option<Denied>, code: &'static str, message: String, retry_after: u64 },
+}
+
+pub struct Access {
+    store: Option<Store>,
+    plans: HashMap<String, Plan>,
+    limiter: Limiter,
+    root_key: Option<Arc<str>>,
+    permits: Mutex<HashMap<i64, (u32, Arc<Semaphore>)>>,
+    failures: Mutex<HashMap<IpAddr, (f64, u32)>>,
+}
+
+fn now() -> f64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
+}
+
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+impl Access {
+    /// Keys and users from `store`, plans by name (falling back to `default`).
+    pub fn new(store: Option<Store>, plans: HashMap<String, Plan>, root_key: Option<String>) -> Self {
+        let mut all = seesea_auth::default_plans();
+        all.extend(plans);
+        Access {
+            store,
+            plans: all,
+            limiter: Limiter::new(),
+            root_key: root_key.filter(|k| !k.is_empty()).map(Into::into),
+            permits: Mutex::default(),
+            failures: Mutex::default(),
+        }
+    }
+
+    pub fn open() -> Self {
+        Self::new(None, HashMap::new(), None)
+    }
+
+    pub fn with_root_key(key: Option<String>) -> Self {
+        Self::new(None, HashMap::new(), key)
+    }
+
+    /// Whether a key is needed at all.
+    pub fn required(&self) -> bool {
+        self.root_key.is_some() || self.store.as_ref().is_some_and(|s| s.users().is_ok_and(|u| !u.is_empty()))
+    }
+
+    fn plan_for(&self, name: &str) -> Plan {
+        self.plans.get(name).or_else(|| self.plans.get("default")).cloned().unwrap_or_default()
+    }
+
+    fn turned_away(&self, ip: Option<IpAddr>, now: f64) -> bool {
+        let Some(ip) = ip else { return false };
+        let mut f = self.failures.lock().unwrap();
+        f.retain(|_, (since, _)| now - *since < 60.0);
+        f.get(&ip).is_some_and(|(_, n)| *n >= FAILURES_PER_MINUTE)
+    }
+
+    fn note_failure(&self, ip: Option<IpAddr>, now: f64) {
+        if let Some(ip) = ip {
+            let mut f = self.failures.lock().unwrap();
+            let e = f.entry(ip).or_insert((now, 0));
+            e.1 += 1;
+        }
+    }
+
+    /// Decide about one request. `cost` is the base cost; handlers add to it later.
+    pub fn admit(&self, presented: Option<&str>, ip: Option<IpAddr>, cost: u32) -> Result<Allowed, Refusal> {
+        let t = now();
+        if self.turned_away(ip, t) {
+            return Err(Refusal::Limited {
+                denied: None,
+                code: "too_many_failures",
+                message: "too many failed attempts to authenticate; wait a minute".into(),
+                retry_after: 60,
+            });
+        }
+        let Some(key) = presented else {
+            self.note_failure(ip, t);
+            return Err(Refusal::Unauthorized("missing API key (Authorization: Bearer <key>)".into()));
+        };
+        if let Some(root) = &self.root_key
+            && constant_time_eq(key.as_bytes(), root.as_bytes())
+        {
+            let plan = self.plan_for("unlimited");
+            return Ok(Allowed { grant: Grant { user_id: None, plan, name: "root".into() }, headers: Vec::new(), permit: None });
+        }
+        let Some(store) = &self.store else {
+            self.note_failure(ip, t);
+            return Err(Refusal::Unauthorized("wrong API key".into()));
+        };
+        let Principal { user, .. } = match store.authenticate(key) {
+            Ok(p) => p,
+            Err(AuthError::Db(e)) => {
+                return Err(Refusal::Limited { denied: None, code: "internal_error", message: format!("auth database: {e}"), retry_after: 5 });
+            }
+            Err(e) => {
+                self.note_failure(ip, t);
+                return Err(Refusal::Unauthorized(e.to_string()));
+            }
+        };
+        let plan = self.plan_for(&user.plan);
+        let decision = self
+            .limiter
+            .check(user.id, &plan, cost, t, || store.usage_today(user.id, day_number(t as i64)))
+            .map_err(|d| {
+                let (code, message) = match d.reason {
+                    Reason::Rate => ("rate_limited", format!("more than {} credits per minute; retry in {} s", d.limit_per_minute, d.retry_after_secs)),
+                    Reason::Daily => ("quota_exceeded", "the daily credit budget of this plan is spent".to_string()),
+                };
+                Refusal::Limited { retry_after: d.retry_after_secs, denied: Some(d), code, message }
+            })?;
+        let permit = self.permit(user.id, plan.max_concurrent).ok_or_else(|| {
+            // Nothing ran, so the credits go back.
+            self.limiter.refund(user.id, cost, plan.burst);
+            Refusal::Limited {
+                denied: None,
+                code: "too_many_concurrent",
+                message: format!("{} requests are already running for this account", plan.max_concurrent),
+                retry_after: 1,
+            }
+        })?;
+        let mut headers = vec![
+            ("x-ratelimit-limit", decision.limit_per_minute.to_string()),
+            ("x-ratelimit-remaining", decision.remaining.to_string()),
+            ("x-ratelimit-reset", decision.reset_secs.to_string()),
+        ];
+        if let Some(d) = decision.daily_remaining {
+            headers.push(("x-quota-remaining", d.to_string()));
+        }
+        Ok(Allowed { grant: Grant { user_id: Some(user.id), plan, name: user.name }, headers, permit: Some(permit) })
+    }
+
+    fn permit(&self, user: i64, max: u32) -> Option<OwnedSemaphorePermit> {
+        let sem = {
+            let mut p = self.permits.lock().unwrap();
+            let e = p.entry(user).or_insert_with(|| (max, Arc::new(Semaphore::new(max as usize))));
+            if e.0 != max {
+                *e = (max, Arc::new(Semaphore::new(max as usize)));
+            }
+            Arc::clone(&e.1)
+        };
+        sem.try_acquire_owned().ok()
+    }
+
+    /// A search turned out dearer than its base cost (standard, deep).
+    pub fn charge(&self, grant: &Grant, extra: u32) {
+        if let Some(id) = grant.user_id
+            && extra > 0
+        {
+            self.limiter.charge(id, extra);
+        }
+    }
+
+    /// Write the day's totals back so they survive a restart.
+    pub fn flush(&self) {
+        let Some(store) = &self.store else { return };
+        let day = day_number(now() as i64);
+        for (user, used) in self.limiter.used_today(day) {
+            let _ = store.set_usage(user, day, used);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ip(n: u8) -> Option<IpAddr> {
+        Some(IpAddr::from([10, 0, 0, n]))
+    }
+
+    fn with_user(plan: Plan) -> (Access, String) {
+        let store = Store::in_memory().unwrap();
+        store.create_user("ann", "p").unwrap();
+        let (_, key) = store.create_key("ann", "k", None).unwrap();
+        let access = Access::new(Some(store), HashMap::from([("p".to_string(), plan)]), None);
+        (access, key)
+    }
+
+    #[test]
+    fn open_until_a_key_or_user_exists() {
+        assert!(!Access::open().required());
+        assert!(Access::with_root_key(Some("s3cret".into())).required());
+        assert!(!Access::with_root_key(Some(String::new())).required());
+        let (a, _) = with_user(Plan::default());
+        assert!(a.required());
+    }
+
+    #[test]
+    fn the_root_key_passes_unlimited_and_others_are_refused() {
+        let a = Access::with_root_key(Some("s3cret".into()));
+        assert!(a.admit(Some("s3cret"), ip(1), 1).is_ok());
+        assert!(matches!(a.admit(Some("nope"), ip(1), 1), Err(Refusal::Unauthorized(_))));
+        assert!(matches!(a.admit(None, ip(1), 1), Err(Refusal::Unauthorized(_))));
+    }
+
+    #[test]
+    fn a_user_is_rate_limited_by_their_plan_and_told_how_long_to_wait() {
+        let (a, key) = with_user(Plan { per_minute: 60, burst: 3, per_day: 0, max_concurrent: 10, deep: true });
+        for _ in 0..3 {
+            a.admit(Some(&key), ip(2), 1).unwrap();
+        }
+        match a.admit(Some(&key), ip(2), 1) {
+            Err(Refusal::Limited { code: "rate_limited", retry_after, .. }) => assert!(retry_after >= 1),
+            Err(_) => panic!("wrong refusal"),
+            Ok(_) => panic!("should have been limited"),
+        }
+    }
+
+    #[test]
+    fn concurrency_is_capped_and_freed_when_a_request_ends() {
+        let (a, key) = with_user(Plan { per_minute: 6000, burst: 1000, per_day: 0, max_concurrent: 1, deep: true });
+        let first = a.admit(Some(&key), ip(3), 1).unwrap();
+        assert!(matches!(a.admit(Some(&key), ip(3), 1), Err(Refusal::Limited { code: "too_many_concurrent", .. })));
+        drop(first);
+        assert!(a.admit(Some(&key), ip(3), 1).is_ok());
+    }
+
+    #[test]
+    fn many_wrong_keys_from_one_address_lock_it_out_but_not_others() {
+        let (a, key) = with_user(Plan::default());
+        for _ in 0..FAILURES_PER_MINUTE {
+            let _ = a.admit(Some("ss_00000000_0000000000000000000000000000000000000000"), ip(9), 1);
+        }
+        assert!(matches!(a.admit(Some(&key), ip(9), 1), Err(Refusal::Limited { code: "too_many_failures", .. })));
+        assert!(a.admit(Some(&key), ip(10), 1).is_ok(), "another address is unaffected");
+    }
+
+    #[test]
+    fn costs_and_totals_are_written_back() {
+        let (a, key) = with_user(Plan { per_minute: 6000, burst: 1000, per_day: 100, max_concurrent: 10, deep: false });
+        let ok = a.admit(Some(&key), ip(4), 1).unwrap();
+        a.charge(&ok.grant, mode_extra(seesea_pipeline::Mode::Deep));
+        assert!(!ok.grant.plan.deep);
+        a.flush();
+        let store = a.store.as_ref().unwrap();
+        let uid = store.user("ann").unwrap().id;
+        assert_eq!(store.usage_today(uid, day_number(now() as i64)), 5);
+        assert_eq!(base_cost("/v1/search") + mode_extra(seesea_pipeline::Mode::Standard), 2);
+    }
+}

@@ -348,3 +348,102 @@ async fn deep_mode_notes_that_rewriting_is_unavailable() {
         resp.degraded
     );
 }
+
+async fn spawn_with_access(base: &str, access: seesea_cli::access::Access) -> String {
+    let pipeline = Arc::new(build_pipeline(&settings(base)).unwrap());
+    let app = router(AppState::with_access(pipeline, access), 8);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap()
+    });
+    url
+}
+
+#[tokio::test]
+async fn users_keys_plans_and_limits_over_http() {
+    use seesea_auth::{Plan, Store};
+    let base = spawn_site().await;
+    let store = Store::in_memory().unwrap();
+    store.create_user("ann", "small").unwrap();
+    let (info, key) = store.create_key("ann", "laptop", None).unwrap();
+    let plans = std::collections::HashMap::from([(
+        "small".to_string(),
+        Plan { per_minute: 60, burst: 4, per_day: 0, max_concurrent: 4, deep: false },
+    )]);
+    let api = spawn_with_access(&base, seesea_cli::access::Access::new(Some(store), plans, None)).await;
+    let http = reqwest::Client::new();
+    let search = |mode: &'static str, bearer: Option<String>| {
+        let mut r = http.get(format!("{api}/v1/search")).query(&[("q", "rust async runtime"), ("mode", mode)]);
+        if let Some(k) = bearer {
+            r = r.header("authorization", format!("Bearer {k}"));
+        }
+        r.send()
+    };
+
+    // /health is open; everything else needs a key.
+    assert_eq!(http.get(format!("{api}/health")).send().await.unwrap().status(), 200);
+    assert_eq!(search("fast", None).await.unwrap().status(), 401);
+    assert_eq!(search("fast", Some("ss_00000000_0000000000000000000000000000000000000000".into())).await.unwrap().status(), 401);
+
+    // A valid key works and says what is left; either header is accepted.
+    let ok = search("fast", Some(key.clone())).await.unwrap();
+    assert_eq!(ok.status(), 200);
+    assert_eq!(ok.headers()["x-ratelimit-limit"], "60");
+    assert_eq!(ok.headers()["x-ratelimit-remaining"], "3");
+    let via_x = http
+        .get(format!("{api}/v1/search"))
+        .query(&[("q", "rust"), ("mode", "fast")])
+        .header("x-api-key", &key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(via_x.status(), 200);
+
+    // This plan has no deep searches.
+    let deep = search("deep", Some(key.clone())).await.unwrap();
+    assert_eq!(deep.status(), 400);
+    assert!(deep.json::<Value>().await.unwrap()["message"].as_str().unwrap().contains("deep"));
+
+    // The bucket (burst 4) runs dry and the refusal says when to come back.
+    let mut limited = None;
+    for _ in 0..6 {
+        let r = search("fast", Some(key.clone())).await.unwrap();
+        if r.status() == 429 {
+            limited = Some(r);
+            break;
+        }
+    }
+    let r = limited.expect("a 429 within six requests");
+    assert!(r.headers().contains_key("retry-after"));
+    assert_eq!(r.json::<Value>().await.unwrap()["code"], "rate_limited");
+    let _ = info;
+}
+
+#[tokio::test]
+async fn a_revoked_key_stops_working_and_an_open_server_needs_nothing() {
+    use seesea_auth::Store;
+    let base = spawn_site().await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.db");
+    // The server holds one handle; `seesea keys revoke` is another process with its own.
+    let server_side = Store::open(&path).unwrap();
+    server_side.create_user("ann", "default").unwrap();
+    let (info, key) = server_side.create_key("ann", "k", None).unwrap();
+    let api = spawn_with_access(&base, seesea_cli::access::Access::new(Some(server_side), Default::default(), None)).await;
+    let http = reqwest::Client::new();
+    let get = || http.get(format!("{api}/v1/sources")).header("authorization", format!("Bearer {key}")).send();
+    assert_eq!(get().await.unwrap().status(), 200);
+    Store::open(&path).unwrap().revoke_key(&info.public_id).unwrap();
+    let r = get().await.unwrap();
+    assert_eq!(r.status(), 401);
+    assert!(r.json::<Value>().await.unwrap()["message"].as_str().unwrap().contains("revoked"));
+
+    let open = spawn_with_access(&base, seesea_cli::access::Access::open()).await;
+    assert_eq!(http.get(format!("{open}/v1/sources")).send().await.unwrap().status(), 200);
+}

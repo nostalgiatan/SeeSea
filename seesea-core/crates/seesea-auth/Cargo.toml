@@ -1,0 +1,15 @@
+[package]
+name = "seesea-auth"
+version = "0.1.0"
+edition = "2024"
+description = "Users, API keys, plans and rate limits for the seesea HTTP server"
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+rand = "0.9"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
