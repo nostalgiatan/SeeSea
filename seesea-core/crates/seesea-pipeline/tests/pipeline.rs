@@ -547,3 +547,51 @@ async fn probe_reports_each_source_and_treats_silence_as_a_problem() {
         FailureKind::Timeout
     );
 }
+
+struct BrokenEmbedder;
+
+impl seesea_pipeline::semantic::TextEmbedder for BrokenEmbedder {
+    fn name(&self) -> &str {
+        "broken"
+    }
+    fn embed_query(&self, _: &str) -> Result<Vec<f32>, String> {
+        Err("weights are corrupt".into())
+    }
+    fn embed_passages(&self, _: &[&str]) -> Result<Vec<Vec<f32>>, String> {
+        Err("weights are corrupt".into())
+    }
+}
+
+#[tokio::test]
+async fn a_failing_semantic_reranker_degrades_to_lexical_and_says_so() {
+    let url = "https://docs.example/tokio";
+    let pages = FakePages::new(&[(url, page("Tokio", &RUNTIME))]);
+    let source = FakeSource::ok("a", vec![hit(url, "Tokio", "runtime")]);
+    let semantic = Arc::new(seesea_pipeline::semantic::SemanticReranker::new(
+        Arc::new(BrokenEmbedder),
+        Default::default(),
+    ));
+    let p = standard_pipeline(vec![source.clone()], pages.clone()).reranker(semantic);
+    let resp = p
+        .search(&SearchRequest::new("tokio async runtime"))
+        .await
+        .unwrap();
+    assert_eq!(resp.hits.len(), 1);
+    assert!(resp.hits[0].content.is_some(), "content still returned");
+    assert!(
+        resp.degraded
+            .iter()
+            .any(|d| d.contains("weights are corrupt")),
+        "{:?}",
+        resp.degraded
+    );
+
+    let plain = standard_pipeline(vec![source], pages)
+        .search(&SearchRequest::new("tokio async runtime"))
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.hits[0].score, plain.hits[0].score,
+        "same scores as lexical"
+    );
+}

@@ -448,21 +448,45 @@ impl Pipeline {
         let rerank_scores = if ok_idx.is_empty() {
             Vec::new()
         } else {
-            let docs: Vec<DocView<'_>> = ok_idx
+            // Owned copies, so the work can move to a blocking thread: an encoder is CPU-bound.
+            let owned: Vec<(String, String, f32)> = ok_idx
                 .iter()
                 .map(|&i| {
                     let l = loaded[i]
                         .as_ref()
                         .and_then(|l| l.as_ref().ok())
                         .expect("index came from the ok list");
-                    DocView {
-                        title: &scored[i].0.title,
-                        body: &l.result.core,
-                        confidence: l.result.confidence,
-                    }
+                    (
+                        scored[i].0.title.clone(),
+                        l.result.core.clone(),
+                        l.result.confidence,
+                    )
                 })
                 .collect();
-            self.reranker.rerank(&req.query, &docs)
+            let reranker = Arc::clone(&self.reranker);
+            let query = req.query.clone();
+            let job = tokio::task::spawn_blocking(move || {
+                let docs: Vec<DocView<'_>> = owned
+                    .iter()
+                    .map(|(title, body, confidence)| DocView {
+                        title,
+                        body,
+                        confidence: *confidence,
+                    })
+                    .collect();
+                reranker.rerank_noted(&query, &docs)
+            })
+            .await;
+            match job {
+                Ok((scores, note)) => {
+                    degraded.extend(note);
+                    scores
+                }
+                Err(e) => {
+                    degraded.push(format!("rerank failed ({e}); content scores skipped"));
+                    Vec::new()
+                }
+            }
         };
         stages.push(StageTiming {
             stage: "rerank".into(),
@@ -477,7 +501,7 @@ impl Pipeline {
             let mut content = None;
             let final_score = match ok_idx.iter().position(|&j| j == i) {
                 Some(pos) => {
-                    let rs = rerank_scores[pos];
+                    let rs = rerank_scores.get(pos).copied().unwrap_or_default();
                     parts.relevance = rs.relevance;
                     parts.title_support = rs.title_support;
                     parts.body_quality = rs.body_quality;

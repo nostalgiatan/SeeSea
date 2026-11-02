@@ -29,6 +29,8 @@ seesea eval judgments.jsonl -k 10                    # nDCG / recall / MRR
 seesea search --log s.jsonl "query"                   # keep a search log
 seesea replay s.jsonl --ttl 600                      # cache policies on that log: hit ratio vs result drift
 seesea serve --addr 127.0.0.1:8080                   # 设置 SEESEA_API_KEY 开启 Bearer 鉴权
+seesea model ./bge-small-en-v1.5                     # 检查嵌入模型能否加载、能否区分相关/无关
+seesea --model-dir ./bge-small-en-v1.5 search "query"  # 语义精排（纯 Rust 推理，模型需自行下载）
 seesea mcp                                           # stdio MCP
 ```
 
@@ -40,7 +42,7 @@ seesea mcp                                           # stdio MCP
 
 - SearXNG 与 Brave 的解析只用手写样本测试过，未对真实服务验证；请用 `seesea sources --check` 检查你的实例。
 - 抓取型引擎（Bing、百度、搜狗）未在沙箱外验证，本质上也较脆弱。
-- 精排目前是词法的（BM25 + 标题支撑度），尚无交叉编码器或向量模型，`Reranker` trait 是接入点。
+- 语义精排需要 `--model-dir` 指向 BERT 类嵌入模型（config.json、tokenizer.json、model.safetensors，如 BAAI/bge-small-en-v1.5；可用 `seesea-embed.json` 设置 pooling 和前缀），基于 candle 在 CPU 上推理，无 C/C++ 运行时。不提供模型时退回词法精排（BM25 + 标题支撑度）。余弦到分数的映射（`cos_floor`/`cos_ceil`）按 BGE 类模型设定，尚未在标注集上验证。
 - `deep` 模式读取更多页面，但尚未做查询改写。
 - SSRF 防护检查目标与重定向，未固定 DNS 解析结果。
 - 缓存：查询按有意义的词归一化（大小写、词序、停用词不影响命中）；页面缓存按每个 URL 的变化情况自适应延长或缩短有效期；`--fuzzy-cache 0.8`（默认关）让相近查询复用结果，先用 `seesea replay` 看代价；服务端 `GET /v1/stats` 给出命中率。

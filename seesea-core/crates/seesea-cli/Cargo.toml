@@ -18,6 +18,7 @@ seesea-pipeline = { path = "../seesea-pipeline" }
 seesea-mcp = { path = "../seesea-mcp" }
 seesea-extract = { path = "../seesea-extract", default-features = false }
 seesea-fetch = { path = "../seesea-fetch" }
+seesea-embed = { path = "../seesea-embed" }
 seesea-search = { path = "../seesea-search" }
 seesea-derive = { path = "../seesea-derive" }
 seesea-net = { path = "../seesea-net" }

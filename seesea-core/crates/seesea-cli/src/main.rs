@@ -52,6 +52,12 @@ struct NetArgs {
     /// Reuse cached results for queries with this much word overlap (0..1, e.g. 0.8). Off by default.
     #[arg(long, env = "SEESEA_FUZZY_CACHE", global = true)]
     fuzzy_cache: Option<f64>,
+    /// Directory of an embedding model (config.json, tokenizer.json, model.safetensors) for semantic reranking.
+    #[arg(long, env = "SEESEA_MODEL_DIR", global = true)]
+    model_dir: Option<PathBuf>,
+    /// Share of content relevance taken from the embedding score, 0..1 (default 0.6).
+    #[arg(long, env = "SEESEA_SEMANTIC_WEIGHT", global = true)]
+    semantic_weight: Option<f64>,
     #[arg(long, global = true)]
     no_cache: bool,
     /// Allow fetching loopback and private addresses.
@@ -128,6 +134,11 @@ enum Command {
         #[arg(long, value_delimiter = ',', default_values_t = [0.9, 0.8, 0.7])]
         fuzzy: Vec<f64>,
     },
+    /// Check an embedding model: load it, embed a few sentences, report width, speed and similarities.
+    Model {
+        /// The model directory (defaults to --model-dir / SEESEA_MODEL_DIR).
+        dir: Option<PathBuf>,
+    },
     /// Run the HTTP server (JSON API and MCP on /mcp).
     Serve {
         #[arg(long, default_value = "127.0.0.1:8080")]
@@ -155,6 +166,8 @@ fn settings(net: &NetArgs, memory_cache: bool) -> Settings {
         memory_cache,
         allow_private: net.allow_private,
         fuzzy_cache: net.fuzzy_cache,
+        model_dir: net.model_dir.clone(),
+        semantic_weight: net.semantic_weight,
     }
 }
 
@@ -286,6 +299,53 @@ async fn run(cli: Cli) -> Result<(), Error> {
                 false => Err(Error::AllSourcesFailed(
                     probes.into_iter().filter_map(|p| p.error).collect(),
                 )),
+            }
+        }
+        Command::Model { dir } => {
+            let dir = dir
+                .or_else(|| cli.net.model_dir.clone())
+                .ok_or_else(|| Error::InvalidRequest("give a model directory".into()))?;
+            let started = std::time::Instant::now();
+            let embedder = seesea_embed::Embedder::load(&dir).map_err(|e| {
+                Error::Config(format!("cannot load the model in '{}': {e}", dir.display()))
+            })?;
+            let load_ms = started.elapsed().as_millis();
+            let query = "how does the tokio scheduler work";
+            let passages = [
+                "Tokio schedules async tasks on a work-stealing thread pool, moving tasks between worker threads.",
+                "Cheap watches and handbags at discount prices with free shipping on every order.",
+            ];
+            let t = std::time::Instant::now();
+            let q = embedder
+                .embed(&[query], seesea_embed::Kind::Query)
+                .map_err(|e| Error::Config(e.to_string()))?;
+            let p = embedder
+                .embed(&passages, seesea_embed::Kind::Passage)
+                .map_err(|e| Error::Config(e.to_string()))?;
+            let embed_ms = t.elapsed().as_millis();
+            let sims: Vec<f32> = p.iter().map(|v| seesea_embed::dot(&q[0], v)).collect();
+            let report = serde_json::json!({
+                "model": embedder.name(), "dim": embedder.dim(), "load_ms": load_ms,
+                "embed_ms_for_3_texts": embed_ms,
+                "related_similarity": sims[0], "unrelated_similarity": sims[1],
+                "separates": sims[0] > sims[1] + 0.05,
+            });
+            if json {
+                print_json(&report)
+            } else {
+                println!(
+                    "{}: {} dimensions, loaded in {load_ms} ms, 3 texts in {embed_ms} ms\nrelated {:.3}, unrelated {:.3} -> {}",
+                    embedder.name(),
+                    embedder.dim(),
+                    sims[0],
+                    sims[1],
+                    if sims[0] > sims[1] + 0.05 {
+                        "ok"
+                    } else {
+                        "the model does not separate them: wrong pooling or prefixes?"
+                    }
+                );
+                Ok(())
             }
         }
         Command::Replay { log, ttl, fuzzy } => {
