@@ -43,6 +43,23 @@ impl PageFetcher for NetFetcher {
     }
 }
 
+/// Pages rendered by a headless browser (Lightpanda); see [`seesea_fetch::render`].
+pub struct RenderFetcher {
+    pub renderer: seesea_fetch::render::Renderer,
+    pub options: FetchOptions,
+}
+
+#[async_trait]
+impl PageFetcher for RenderFetcher {
+    async fn fetch(&self, url: &str) -> std::result::Result<FetchedPage, FetchError> {
+        let page = self.renderer.render(url, &self.options).await?;
+        Ok(FetchedPage {
+            final_url: page.final_url,
+            html: page.html,
+        })
+    }
+}
+
 /// What is remembered about a URL between fetches, to tune how long its page is kept.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PageHistory {
@@ -73,6 +90,8 @@ pub struct CachedFetcher {
     min_ttl: Duration,
     max_ttl: Duration,
     max_cached_bytes: usize,
+    /// Namespaces the keys, so a second fetcher (the renderer) does not share entries with the first.
+    prefix: &'static str,
 }
 
 /// How long the per-URL history outlives the page itself.
@@ -97,11 +116,18 @@ impl CachedFetcher {
             min_ttl,
             max_ttl,
             max_cached_bytes: 2 * 1024 * 1024,
+            prefix: "",
         }
     }
 
+    /// Keep this fetcher's entries apart from another's (`page:` becomes `<prefix>page:`).
+    pub fn with_prefix(mut self, prefix: &'static str) -> Self {
+        self.prefix = prefix;
+        self
+    }
+
     async fn next_ttl(&self, url: &str, hash: u64) -> Duration {
-        let key = format!("pagehist:{url}");
+        let key = format!("{}pagehist:{url}", self.prefix);
         let previous = self
             .cache
             .get(&key)
@@ -126,7 +152,7 @@ impl CachedFetcher {
 #[async_trait]
 impl PageFetcher for CachedFetcher {
     async fn fetch(&self, url: &str) -> std::result::Result<FetchedPage, FetchError> {
-        let key = format!("page:{url}");
+        let key = format!("{}page:{url}", self.prefix);
         if let Some(bytes) = self.cache.get(&key).await
             && let Ok(text) = String::from_utf8(bytes)
             && let Some((final_url, html)) = text.split_once('\n')
@@ -155,11 +181,38 @@ impl PageFetcher for CachedFetcher {
 pub struct Loaded {
     pub final_url: String,
     pub result: ExtractResult,
+    /// The content comes from a headless browser, because the static HTML held none.
+    pub rendered: bool,
+}
+
+async fn extract_blocking(
+    extractor: &Arc<Extractor>,
+    html: String,
+    url: String,
+    scope: Scope,
+) -> Result<ExtractResult> {
+    let extractor = Arc::clone(extractor);
+    tokio::task::spawn_blocking(move || {
+        extractor.extract(
+            &html,
+            &url,
+            &Options {
+                scope,
+                ..Options::default()
+            },
+        )
+    })
+    .await
+    .map_err(|e| Error::Extract(e.to_string()))
 }
 
 /// Fetch and extract one page. Parsing and scoring are CPU work, so they run on the blocking pool.
+///
+/// When the static HTML holds no content (`needs_render`) and a `renderer` is given, the page is
+/// fetched again through it and the result with more extracted text wins.
 pub async fn load_page(
     fetcher: &dyn PageFetcher,
+    renderer: Option<&dyn PageFetcher>,
     extractor: &Arc<Extractor>,
     url: &str,
     scope: Scope,
@@ -171,31 +224,40 @@ pub async fn load_page(
             stage: "fetch",
             ms: timeout.as_millis() as u64,
         })??;
-    let extractor = Arc::clone(extractor);
-    let final_url = page.final_url.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        extractor.extract(
-            &page.html,
-            &page.final_url,
-            &Options {
-                scope,
-                ..Options::default()
-            },
-        )
-    })
-    .await
-    .map_err(|e| Error::Extract(e.to_string()))?;
+    let result = extract_blocking(extractor, page.html, page.final_url.clone(), scope).await?;
     if result.diagnostics.not_text {
         return Err(Error::Extract(
             "the response is not text (compressed or binary data)".into(),
         ));
     }
-    Ok(Loaded { final_url, result })
+    let mut loaded = Loaded {
+        final_url: page.final_url,
+        result,
+        rendered: false,
+    };
+    if loaded.result.needs_render
+        && let Some(renderer) = renderer
+    {
+        // A failed render leaves the static result in place: it is still what the server sent.
+        if let Ok(Ok(page)) = tokio::time::timeout(timeout, renderer.fetch(url)).await
+            && let Ok(result) =
+                extract_blocking(extractor, page.html, page.final_url.clone(), scope).await
+            && result.diagnostics.selected_chars > loaded.result.diagnostics.selected_chars
+        {
+            loaded = Loaded {
+                final_url: page.final_url,
+                result,
+                rendered: true,
+            };
+        }
+    }
+    Ok(loaded)
 }
 
 /// Load many pages with bounded concurrency. Results come back in the order of `urls`.
 pub async fn load_pages(
     fetcher: &Arc<dyn PageFetcher>,
+    renderer: Option<&Arc<dyn PageFetcher>>,
     extractor: &Arc<Extractor>,
     urls: &[String],
     scope: Scope,
@@ -205,8 +267,11 @@ pub async fn load_pages(
     futures::stream::iter(urls.iter().cloned())
         .map(|url| {
             let fetcher = Arc::clone(fetcher);
+            let renderer = renderer.cloned();
             let extractor = Arc::clone(extractor);
-            async move { load_page(fetcher.as_ref(), &extractor, &url, scope, timeout).await }
+            async move {
+                load_page(fetcher.as_ref(), renderer.as_deref(), &extractor, &url, scope, timeout).await
+            }
         })
         .buffered(concurrency.max(1))
         .collect()
@@ -287,6 +352,7 @@ mod tests {
         ];
         let out = load_pages(
             &fetcher,
+            None,
             &extractor,
             &urls,
             Scope::Core,
@@ -313,6 +379,7 @@ mod tests {
         mock.delay = Some(Duration::from_millis(200));
         let err = load_page(
             &mock,
+            None,
             &Arc::new(Extractor::new()),
             "https://a.org/1",
             Scope::Core,
@@ -331,6 +398,7 @@ mod tests {
         let mock = MockFetcher::new(&[("https://a.org/bin", &garbage)]);
         let err = load_page(
             &mock,
+            None,
             &Arc::new(Extractor::new()),
             "https://a.org/bin",
             Scope::Core,
@@ -339,6 +407,49 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(err.code(), "extract_failed");
+    }
+
+    const SHELL: &str = r#"<html><head><title>App</title></head><body><div id="root"></div><script src="/app.js"></script></body></html>"#;
+
+    #[tokio::test]
+    async fn an_empty_app_shell_is_fetched_again_through_the_renderer() {
+        let url = "https://a.org/app";
+        let plain = MockFetcher::new(&[(url, SHELL)]);
+        let browser = MockFetcher::new(&[(url, &article("One", &[P1, P2]))]);
+        let extractor = Arc::new(Extractor::new());
+        let loaded = load_page(&plain, Some(&browser), &extractor, url, Scope::Core, Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert!(loaded.rendered);
+        assert!(loaded.result.core.contains("asynchronous runtime"), "{}", loaded.result.core);
+        assert!(!loaded.result.needs_render);
+    }
+
+    #[tokio::test]
+    async fn pages_with_content_never_reach_the_renderer() {
+        let url = "https://a.org/1";
+        let plain = MockFetcher::new(&[(url, &article("One", &[P1, P2]))]);
+        let browser = MockFetcher::new(&[]);
+        let extractor = Arc::new(Extractor::new());
+        let loaded = load_page(&plain, Some(&browser), &extractor, url, Scope::Core, Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert!(!loaded.rendered);
+        assert!(browser.calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failing_renderer_leaves_the_static_result() {
+        let url = "https://a.org/app";
+        let plain = MockFetcher::new(&[(url, SHELL)]);
+        let browser = MockFetcher::new(&[]); // fails: unknown URL
+        let extractor = Arc::new(Extractor::new());
+        let loaded = load_page(&plain, Some(&browser), &extractor, url, Scope::Core, Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert!(!loaded.rendered);
+        assert!(loaded.result.needs_render);
+        assert_eq!(browser.calls.lock().unwrap().len(), 1);
     }
 
     /// Serves whatever is in `body` right now.
