@@ -313,15 +313,8 @@ impl HttpClient {
     /// 返回全局 HttpClient 实例
     pub async fn instance() -> Result<Arc<Self>> {
         // 尝试从全局配置创建客户端
-        if let Some(project_config) = seesea_config::get_config().await {
-            let client = Self::from_network_config(project_config.network)?;
-            Ok(GLOBAL_HTTP_CLIENT.get_or_init(|| Arc::new(client)).clone())
-        } else {
-            // 如果全局配置未初始化，使用默认配置
-            let config = NetworkConfig::default();
-            let client = Self::new(config)?;
-            Ok(GLOBAL_HTTP_CLIENT.get_or_init(|| Arc::new(client)).clone())
-        }
+        let client = Self::new(NetworkConfig::default())?;
+        Ok(GLOBAL_HTTP_CLIENT.get_or_init(|| Arc::new(client)).clone())
     }
 
     /// 使用指定配置获取或创建全局 HttpClient 单例

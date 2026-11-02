@@ -16,7 +16,6 @@
 //! 网络配置主类型
 
 use crate::network::{DnsConfig, PoolConfig, ProxyConfig, TlsConfig};
-use crate::privacy::PrivacyConfig;
 use serde::{Deserialize, Serialize};
 
 /// 网络配置主结构
@@ -30,8 +29,6 @@ pub struct NetworkConfig {
     pub dns: DnsConfig,
     /// 连接池配置
     pub pool: PoolConfig,
-    /// 隐私配置
-    pub privacy: PrivacyConfig,
 }
 
 impl NetworkConfig {
