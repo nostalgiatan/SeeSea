@@ -333,7 +333,7 @@ async fn run(cli: Cli) -> Result<(), Error> {
             let embed_ms = t.elapsed().as_millis();
             let sims: Vec<f32> = p.iter().map(|v| seesea_embed::dot(&q[0], v)).collect();
             let report = serde_json::json!({
-                "model": embedder.name(), "dim": embedder.dim(), "load_ms": load_ms,
+                "model": embedder.name(), "dim": embedder.dim(), "device": embedder.device_name(), "load_ms": load_ms,
                 "embed_ms_for_3_texts": embed_ms,
                 "related_similarity": sims[0], "unrelated_similarity": sims[1],
                 "separates": sims[0] > sims[1] + 0.05,
@@ -342,9 +342,10 @@ async fn run(cli: Cli) -> Result<(), Error> {
                 print_json(&report)
             } else {
                 println!(
-                    "{}: {} dimensions, loaded in {load_ms} ms, 3 texts in {embed_ms} ms\nrelated {:.3}, unrelated {:.3} -> {}",
+                    "{}: {} dimensions on the {}, loaded in {load_ms} ms, 3 texts in {embed_ms} ms\nrelated {:.3}, unrelated {:.3} -> {}",
                     embedder.name(),
                     embedder.dim(),
+                    embedder.device_name(),
                     sims[0],
                     sims[1],
                     if sims[0] > sims[1] + 0.05 {
