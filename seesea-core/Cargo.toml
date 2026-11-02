@@ -145,6 +145,7 @@ members = [
     "crates/seesea-extract",
     "crates/seesea-fetch",
     "crates/seesea-pipeline",
+    "crates/seesea-mcp",
     "crates/seesea-event",
     "crates/seesea-raming",
     "crates/error",
