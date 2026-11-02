@@ -270,6 +270,115 @@ impl Embedder {
     }
 }
 
+/// A cross-encoder reranker (for example bge-reranker-v2-m3 as a `.gguf`): reads a query and a
+/// passage together and returns one relevance logit, far more precise than comparing embeddings.
+pub struct CrossEncoder {
+    model: Box<gguf::GgufBert>,
+    tokenizer: Tokenizer,
+    pad: u32,
+    max_tokens: usize,
+    name: String,
+}
+
+const CROSS_TOKENS: usize = 512;
+/// A long query would leave no room for the passage.
+const CROSS_QUERY_TOKENS: usize = 64;
+const CROSS_BATCH: usize = 8;
+
+impl CrossEncoder {
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        if !gguf::is_gguf(path) {
+            return Err(invalid(
+                "reranker model",
+                format!("'{}' is not a .gguf file", path.display()),
+            ));
+        }
+        let (model, tokenizer) = gguf::GgufBert::load(path, CROSS_TOKENS)?;
+        if !model.has_head() {
+            return Err(invalid(
+                "reranker model",
+                "the file has no classification head (is it an embedding model?)",
+            ));
+        }
+        let pad = tokenizer.get_padding().map_or(1, |p| p.pad_id);
+        Ok(Self {
+            model: Box::new(model),
+            tokenizer,
+            pad,
+            max_tokens: CROSS_TOKENS,
+            name: path
+                .file_stem()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "reranker".into()),
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// `"gpu"` when the layers run on a GPU, `"cpu"` otherwise.
+    pub fn device_name(&self) -> &'static str {
+        if self.model.on_gpu() { "gpu" } else { "cpu" }
+    }
+
+    fn ids(&self, text: &str) -> Result<Vec<u32>> {
+        let e = self
+            .tokenizer
+            .encode(text, true)
+            .map_err(|e| EmbedError::Tokenizer(e.to_string()))?;
+        Ok(e.get_ids().to_vec())
+    }
+
+    /// Raw logits, one per passage, in order (higher is more relevant; roughly -10 to +10).
+    /// Each pair is `<s> query </s></s> passage </s>` and the passage is cut to fit the token limit.
+    pub fn score(&self, query: &str, passages: &[&str]) -> Result<Vec<f32>> {
+        if passages.is_empty() {
+            return Ok(Vec::new());
+        }
+        let q = self.ids(query)?;
+        let (bos, eos) = (q[0], *q.last().unwrap_or(&q[0]));
+        let inner = q.get(1..q.len().saturating_sub(1)).unwrap_or(&[]);
+        let q_content = &inner[..inner.len().min(CROSS_QUERY_TOKENS)];
+        let room = self.max_tokens.saturating_sub(q_content.len() + 4).max(1);
+
+        let mut pairs: Vec<Vec<u32>> = Vec::with_capacity(passages.len());
+        for p in passages {
+            let d = self.ids(p)?;
+            let body = d.get(1..d.len().saturating_sub(1)).unwrap_or(&[]);
+            let body = &body[..body.len().min(room)];
+            let mut ids = Vec::with_capacity(q_content.len() + body.len() + 4);
+            ids.push(bos);
+            ids.extend_from_slice(q_content);
+            ids.extend_from_slice(&[eos, eos]);
+            ids.extend_from_slice(body);
+            ids.push(eos);
+            pairs.push(ids);
+        }
+        // Similar lengths together keep the padding small.
+        let mut order: Vec<usize> = (0..pairs.len()).collect();
+        order.sort_by_key(|&i| pairs[i].len());
+        let mut out = vec![0f32; pairs.len()];
+        for chunk in order.chunks(CROSS_BATCH) {
+            let width = chunk.iter().map(|&i| pairs[i].len()).max().unwrap_or(0);
+            let (mut ids, mut mask) = (Vec::new(), Vec::new());
+            for &i in chunk {
+                let n = pairs[i].len();
+                ids.extend_from_slice(&pairs[i]);
+                ids.extend(std::iter::repeat_n(self.pad, width - n));
+                mask.extend(std::iter::repeat_n(1u32, n));
+                mask.extend(std::iter::repeat_n(0u32, width - n));
+            }
+            let logits = self.model.score(&ids, &mask, chunk.len(), width)?;
+            for (&i, l) in chunk.iter().zip(logits) {
+                out[i] = l;
+            }
+        }
+        Ok(out)
+    }
+}
+
 /// Cosine similarity of two unit vectors.
 pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()

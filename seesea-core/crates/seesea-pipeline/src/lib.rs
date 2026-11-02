@@ -5,6 +5,7 @@
 //! can be skipped or can fail without failing the search; the response says what was degraded.
 
 pub mod content;
+pub mod cross;
 pub mod error;
 pub mod eval;
 pub mod fusion;

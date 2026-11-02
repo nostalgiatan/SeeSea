@@ -64,6 +64,26 @@ struct NetArgs {
     /// FLOOR,CEIL: cosine similarities mapped to relevance 0 and 1 (default 0.3,0.75 suits bge-m3; BGE-small English ~0.45,0.85).
     #[arg(long, env = "SEESEA_SEMANTIC_RANGE", global = true)]
     semantic_range: Option<String>,
+    /// A cross-encoder reranker (.gguf, e.g. bge-reranker-v2-m3): reads query and passage together. Slower, more precise.
+    #[arg(long, env = "SEESEA_RERANK_MODEL", global = true)]
+    rerank_model: Option<PathBuf>,
+    /// Share of content relevance taken from the cross-encoder, 0..1 (default 0.5).
+    #[arg(long, env = "SEESEA_RERANK_WEIGHT", global = true)]
+    rerank_weight: Option<f64>,
+    /// Passages the cross-encoder scores per page (default 3). Lower is faster.
+    #[arg(long, env = "SEESEA_RERANK_PASSAGES", global = true)]
+    rerank_passages: Option<usize>,
+    /// Cross-encoder logit that maps to relevance 0.5 (default -4; the model is strict).
+    #[arg(
+        long,
+        env = "SEESEA_RERANK_CENTER",
+        global = true,
+        allow_negative_numbers = true
+    )]
+    rerank_center: Option<f32>,
+    /// Logit distance of one sigmoid step (default 3). Larger spreads scores out, smaller sharpens them.
+    #[arg(long, env = "SEESEA_RERANK_SCALE", global = true)]
+    rerank_scale: Option<f32>,
     #[arg(long, global = true)]
     no_cache: bool,
     /// Allow fetching loopback and private addresses.
@@ -176,6 +196,11 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         semantic_weight: net.semantic_weight,
         semantic_passages: net.semantic_passages,
         semantic_range: net.semantic_range.clone(),
+        rerank_model: net.rerank_model.clone().filter(|_| use_model),
+        rerank_weight: net.rerank_weight,
+        rerank_passages: net.rerank_passages,
+        rerank_center: net.rerank_center,
+        rerank_scale: net.rerank_scale,
     }
 }
 

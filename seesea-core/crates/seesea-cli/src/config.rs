@@ -28,6 +28,15 @@ pub struct Settings {
     pub semantic_passages: Option<usize>,
     /// `FLOOR,CEIL` cosine similarities that map to relevance 0 and 1 (model specific).
     pub semantic_range: Option<String>,
+    /// A cross-encoder `.gguf` (bge-reranker-v2-m3); reads query and passage together.
+    pub rerank_model: Option<PathBuf>,
+    /// Share of content relevance taken from the cross-encoder (default 0.5).
+    pub rerank_weight: Option<f64>,
+    /// Passages scored by the cross-encoder per page (default 3).
+    pub rerank_passages: Option<usize>,
+    /// Logit mapped to relevance 0.5, and the logit distance of one sigmoid step.
+    pub rerank_center: Option<f32>,
+    pub rerank_scale: Option<f32>,
 }
 
 /// `~/.cache/seesea` (or the platform equivalent).
@@ -108,6 +117,17 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
             )
         })
         .transpose()?;
+    let reranker: Option<Arc<dyn seesea_pipeline::rerank::Reranker>> = match &settings.rerank_model
+    {
+        Some(path) => Some(crate::embedding::cross_reranker(
+            path,
+            reranker.map(|r| r as Arc<dyn seesea_pipeline::rerank::Reranker>),
+            settings.rerank_weight,
+            settings.rerank_passages,
+            (settings.rerank_center, settings.rerank_scale),
+        )?),
+        None => reranker.map(|r| r as Arc<dyn seesea_pipeline::rerank::Reranker>),
+    };
     let mut pipeline = Pipeline::with_net_fetcher(sources, fetch)
         .config(PipelineConfig {
             fuzzy_cache_threshold: settings.fuzzy_cache,

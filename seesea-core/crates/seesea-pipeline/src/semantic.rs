@@ -6,7 +6,7 @@
 //! embedded, so a title that promises more than the page delivers cannot lift a page here either.
 
 use crate::rerank::{DocView, LexicalReranker, RerankScore, Reranker, strip_title_echo};
-use crate::text::{coverage, token_set};
+use crate::text::{coverage, distinctness, token_set};
 use std::sync::Arc;
 
 /// Turns text into unit-length vectors. Implementations may be slow (they run on a blocking thread).
@@ -136,10 +136,13 @@ impl SemanticReranker {
 
     fn semantic_scores(&self, query: &str, docs: &[DocView<'_>]) -> Result<Vec<f64>, String> {
         let q = self.embedder.embed_query(query)?;
+        let mut trust = Vec::with_capacity(docs.len());
         let per_doc: Vec<Vec<String>> = docs
             .iter()
             .map(|d| {
                 let body = strip_title_echo(d.body, d.title);
+                // An embedding places a page that repeats the query next to it: discount repetition.
+                trust.push(distinctness(&body.chars().take(4000).collect::<String>()));
                 let p = passages(&body, self.cfg.min_chars, self.cfg.max_chars);
                 preselect(p, query, self.cfg.max_passages)
             })
@@ -156,7 +159,8 @@ impl SemanticReranker {
         let mut at = 0;
         Ok(per_doc
             .iter()
-            .map(|ps| {
+            .zip(trust)
+            .map(|(ps, page_trust)| {
                 let mut sims: Vec<f32> = vectors[at..at + ps.len()]
                     .iter()
                     .map(|v| v.iter().zip(&q).map(|(a, b)| a * b).sum())
@@ -167,7 +171,7 @@ impl SemanticReranker {
                 let best = sims.first().copied().unwrap_or(0.0);
                 let second = sims.get(1).copied().unwrap_or(best);
                 let cos = 0.8 * best + 0.2 * second;
-                ((cos - self.cfg.cos_floor) / span).clamp(0.0, 1.0) as f64
+                ((cos - self.cfg.cos_floor) / span).clamp(0.0, 1.0) as f64 * page_trust
             })
             .collect())
     }

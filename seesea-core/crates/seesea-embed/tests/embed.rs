@@ -117,3 +117,16 @@ fn a_real_model_prefers_the_passage_that_answers() {
         .unwrap();
     assert!(dot(&q[0], &p[0]) > dot(&q[0], &p[1]) + 0.1);
 }
+
+/// `SEESEA_RERANKER=/path/bge-reranker-v2-m3-q4_k_m.gguf cargo test -p seesea-embed -- --ignored`
+#[test]
+#[ignore = "needs a real reranker model"]
+fn a_real_cross_encoder_matches_the_published_panda_scores() {
+    let path = std::env::var("SEESEA_RERANKER").expect("set SEESEA_RERANKER");
+    let r = seesea_embed::CrossEncoder::load(path).unwrap();
+    let panda = "The giant panda (Ailuropoda melanoleuca), sometimes called a panda bear or simply panda, is a bear species endemic to China.";
+    let s = r.score("what is panda?", &["hi", panda]).unwrap();
+    // The model card lists -8.19 and 5.26 for the full-precision weights; 4-bit weights drift a little.
+    assert!((-9.5..-6.0).contains(&s[0]), "{s:?}");
+    assert!((4.0..6.5).contains(&s[1]), "{s:?}");
+}

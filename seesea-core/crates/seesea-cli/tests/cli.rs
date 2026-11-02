@@ -304,3 +304,60 @@ async fn model_check_and_semantic_search_run_with_a_local_model() {
         stderr(&bad)
     );
 }
+
+#[tokio::test]
+async fn a_missing_or_wrong_reranker_model_is_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let not_gguf = dir.path().join("reranker.bin");
+    std::fs::write(&not_gguf, b"not a model").unwrap();
+    let base = spawn_site().await;
+    let common = [
+        "--searxng",
+        base.as_str(),
+        "--no-native",
+        "--no-cache",
+        "--allow-private",
+    ];
+
+    // A path that does not exist fails at startup.
+    let missing = run(seesea(
+        &[
+            &common[..],
+            &["--rerank-model", "/no/such/reranker.gguf", "search", "x"],
+        ]
+        .concat(),
+    ))
+    .await;
+    assert_eq!(missing.status.code(), Some(3), "{}", stderr(&missing));
+    assert!(
+        stderr(&missing).contains("error[config_error]"),
+        "{}",
+        stderr(&missing)
+    );
+
+    // The model loads in the background, so a file that is not a reranker shows up as a degraded
+    // note on a search that still completes.
+    let wrong = run(seesea(
+        &[
+            &common[..],
+            &[
+                "--json",
+                "--rerank-model",
+                not_gguf.to_str().unwrap(),
+                "search",
+                "rust async runtime",
+            ],
+        ]
+        .concat(),
+    ))
+    .await;
+    assert!(wrong.status.success(), "{}", stderr(&wrong));
+    let v: Value = serde_json::from_slice(&wrong.stdout).unwrap();
+    assert!(
+        v["degraded"]
+            .to_string()
+            .contains("cross-encoder rerank failed"),
+        "{v}"
+    );
+    assert_eq!(v["hits"][0]["url"], format!("{base}/a/tokio"), "{v}");
+}
