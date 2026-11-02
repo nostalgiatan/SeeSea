@@ -381,7 +381,6 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                     println!("{}: already at {}", spec.key, state.path.as_deref().map(|p| p.display().to_string()).unwrap_or_default());
                     continue;
                 }
-                eprintln!("downloading {} from {}", spec.key, spec.url(&file));
                 let path = models::download(spec, &file, cli.net.proxy.as_deref()).await?;
                 println!("{}: saved {}", spec.key, path.display());
             }
