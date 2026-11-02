@@ -286,6 +286,10 @@ impl EngineManager {
         if let Some(engine) = SearxngEngine::from_env(Arc::clone(&client)) {
             self.register_engine("searxng", Box::new(engine));
         }
+        // 官方 API：设置了密钥才注册
+        if let Some(engine) = BraveEngine::from_env(Arc::clone(&client)) {
+            self.register_engine("brave", Box::new(engine));
+        }
     }
 
     /// 获取所有可用的引擎（包括Python引擎）

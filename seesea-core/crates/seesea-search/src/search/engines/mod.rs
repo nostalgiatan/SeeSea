@@ -199,6 +199,9 @@ pub mod sogou;
 /// SearXNG 上游来源
 pub mod searxng;
 
+/// Brave Search 官方 API 来源
+pub mod brave;
+
 // 统一导出引擎类型，方便外部使用
 
 /// Bing 搜索引擎
@@ -212,4 +215,7 @@ pub use sogou::SogouEngine;
 
 /// SearXNG 上游来源
 pub use searxng::SearxngEngine;
+
+/// Brave Search 官方 API 来源
+pub use brave::BraveEngine;
 
