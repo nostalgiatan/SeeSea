@@ -63,6 +63,8 @@ pub struct Pipeline {
     fetcher: Arc<dyn PageFetcher>,
     /// Fetches pages through a headless browser; used when the static HTML holds no content.
     renderer: Option<Arc<dyn PageFetcher>>,
+    /// Nudges stage-1 scores by what hosts and sources delivered in earlier searches.
+    learner: Option<Arc<crate::learn::Learner>>,
     extractor: OnceLock<Arc<Extractor>>,
     reranker: Arc<dyn Reranker>,
     section_scorer: Option<Arc<dyn SectionScorer>>,
@@ -112,6 +114,14 @@ pub struct SourceProbe {
     pub error: Option<SourceFailure>,
 }
 
+/// Host of a result URL, without a leading `www.`; empty when it does not parse.
+pub fn host_of(url: &str) -> String {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_lowercase()))
+        .unwrap_or_default()
+}
+
 fn ms(since: Instant) -> u64 {
     since.elapsed().as_millis() as u64
 }
@@ -122,6 +132,7 @@ impl Pipeline {
             sources,
             fetcher,
             renderer: None,
+            learner: None,
             extractor: OnceLock::new(),
             reranker: Arc::new(LexicalReranker),
             section_scorer: None,
@@ -145,6 +156,16 @@ impl Pipeline {
     pub fn renderer(mut self, renderer: Arc<dyn PageFetcher>) -> Self {
         self.renderer = Some(self.cached_renderer(renderer));
         self
+    }
+
+    /// Learn stage-1 weights per host and source from what the later stages find.
+    pub fn learner(mut self, learner: Arc<crate::learn::Learner>) -> Self {
+        self.learner = Some(learner);
+        self
+    }
+
+    pub fn learner_handle(&self) -> Option<&Arc<crate::learn::Learner>> {
+        self.learner.as_ref()
     }
 
     fn cached_renderer(&self, renderer: Arc<dyn PageFetcher>) -> Arc<dyn PageFetcher> {
@@ -432,7 +453,12 @@ impl Pipeline {
         let mut scored: Vec<(fusion::Candidate, ScoreParts)> = candidates
             .into_iter()
             .map(|c| {
-                let parts = rank::score(&c, &q, &self.cfg.rank, now);
+                let mut parts = rank::score(&c, &q, &self.cfg.rank, now);
+                if let Some(l) = &self.learner {
+                    let sources: Vec<&str> = c.found_by.iter().map(|a| a.source.as_str()).collect();
+                    parts.learned = l.adjustment(&host_of(&c.url), &sources);
+                    parts.stage1 += parts.learned;
+                }
                 (c, parts)
             })
             .collect();
@@ -447,6 +473,16 @@ impl Pipeline {
             ms: ms(t),
         });
 
+        if let Some(l) = &self.learner {
+            let fetch_k = match req.mode {
+                Mode::Fast => 0,
+                Mode::Standard => self.cfg.fetch_standard.max(req.limit),
+                Mode::Deep => self.cfg.fetch_deep.max(req.limit),
+            };
+            if let Some(j) = l.explore_index(fetch_k, scored.len()) {
+                scored.swap(fetch_k - 1, j);
+            }
+        }
         let mut hits: Vec<Hit> = Vec::new();
         let max_stage1 = scored
             .first()
@@ -606,6 +642,15 @@ impl Pipeline {
                     0.4 * s1n + 0.5 * f64::min(0.6, 0.6 * s1n)
                 }
             };
+            if let Some(l) = &self.learner {
+                let host = host_of(&cand.url);
+                let sources: Vec<&str> = cand.found_by.iter().map(|a| a.source.as_str()).collect();
+                match (&content, loaded[i].is_some()) {
+                    (Some(_), _) => l.observe(&host, &sources, 0.7 * parts.relevance + 0.3 * parts.body_quality, 1.0),
+                    (None, true) => l.failed(&host, &sources),
+                    (None, false) => {}
+                }
+            }
             parts.stage1 = s1n;
             hits.push(Hit {
                 url: cand.url,

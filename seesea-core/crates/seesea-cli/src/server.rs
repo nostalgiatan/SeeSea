@@ -245,6 +245,29 @@ async fn sources(State(s): State<AppState>) -> Json<Value> {
     Json(json!({"sources": s.pipeline.source_names()}))
 }
 
+#[derive(Deserialize)]
+struct FeedbackBody {
+    url: String,
+    /// `good` or `bad`.
+    verdict: String,
+}
+
+/// Tell stage 1 whether a result was worth reading; it shifts how that host ranks later.
+async fn feedback(State(s): State<AppState>, body: Bytes) -> ApiResult<Value> {
+    let b: FeedbackBody = parse_body(&body)?;
+    let good = match b.verdict.as_str() {
+        "good" => true,
+        "bad" => false,
+        _ => return Err(Error::InvalidRequest("verdict must be \"good\" or \"bad\"".into()).into()),
+    };
+    let host = seesea_pipeline::host_of(&b.url);
+    let Some(learner) = s.pipeline.learner_handle().filter(|_| !host.is_empty()) else {
+        return Err(Error::InvalidRequest("learning is off, or the url has no host".into()).into());
+    };
+    learner.feedback(&host, good);
+    Ok(Json(json!({"host": host, "verdict": b.verdict})))
+}
+
 async fn stats(State(s): State<AppState>) -> Json<Value> {
     let cache: serde_json::Map<String, Value> = s
         .pipeline
@@ -304,6 +327,7 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
         .route("/v1/sources", get(sources))
         .route("/v1/sources/check", get(sources_check))
         .route("/v1/stats", get(stats))
+        .route("/v1/feedback", post(feedback))
         .route("/mcp", post(mcp))
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(1024 * 1024))

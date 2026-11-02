@@ -47,6 +47,9 @@ pub struct Settings {
     pub lightpanda: Option<PathBuf>,
     /// Never render, even when Lightpanda is installed.
     pub no_render: bool,
+    /// Where stage 1 keeps what it learned; none means it does not learn.
+    pub learn_file: Option<PathBuf>,
+    pub explore: f64,
 }
 
 /// `~/.cache/seesea` (or the platform equivalent).
@@ -151,6 +154,10 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
             ..Default::default()
         })
         .cache(cache);
+    if let Some(path) = &settings.learn_file {
+        let cfg = seesea_pipeline::LearnConfig { explore: settings.explore.clamp(0.0, 1.0), ..Default::default() };
+        pipeline = pipeline.learner(Arc::new(seesea_pipeline::Learner::open(cfg, path.clone())));
+    }
     if let Some(renderer) = renderer {
         pipeline = pipeline.renderer(Arc::new(seesea_pipeline::content::RenderFetcher {
             renderer,

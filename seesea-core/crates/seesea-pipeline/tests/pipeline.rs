@@ -630,3 +630,38 @@ async fn a_failing_semantic_reranker_degrades_to_lexical_and_says_so() {
         "same scores as lexical"
     );
 }
+
+#[tokio::test]
+async fn stage_one_learns_which_hosts_deliver() {
+    use seesea_pipeline::{LearnConfig, Learner};
+    let bait = "https://bait.example/rust-async-runtime";
+    let real = "https://docs.example/tokio";
+    let mk = || {
+        let a = FakeSource::ok(
+            "a",
+            vec![
+                hit(bait, "Rust async runtime", "Click here"),
+                hit(real, "Tokio overview", "Tokio is an asynchronous runtime for Rust"),
+            ],
+        );
+        let pages = FakePages::new(&[
+            (bait, page("Rust async runtime", &SPAM)),
+            (real, page("Tokio overview", &RUNTIME)),
+        ]);
+        (a, pages)
+    };
+    let learner = Arc::new(Learner::new(LearnConfig::default()));
+    let (a, pages) = mk();
+    let p = standard_pipeline(vec![a], pages).learner(Arc::clone(&learner));
+    // Different wordings so the response cache does not answer.
+    let first = p.search(&SearchRequest::new("rust async runtime")).await.unwrap();
+    assert!(first.hits.iter().all(|h| h.score_parts.learned == 0.0), "nothing known yet");
+    for q in ["async runtime rust", "tokio rust runtime", "rust runtime for async code"] {
+        p.search(&SearchRequest::new(q)).await.unwrap();
+    }
+    let later = p.search(&SearchRequest::new("what is the rust async runtime")).await.unwrap();
+    let learned = |url: &str| later.hits.iter().find(|h| h.url == url).unwrap().score_parts.learned;
+    assert!(learned(real) > learned(bait), "real {} bait {}", learned(real), learned(bait));
+    assert!(learned(bait) < 0.0);
+    assert_eq!(learner.report(5).hosts, 2);
+}

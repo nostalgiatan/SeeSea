@@ -143,6 +143,9 @@ pub struct ScoreParts {
     /// Stage 2: how well the page backs up its title (0..1).
     pub title_support: f64,
     pub body_quality: f64,
+    /// Stage-1 points added because of how this host and its sources delivered before.
+    #[serde(default)]
+    pub learned: f64,
     pub stage1: f64,
 }
 
