@@ -71,6 +71,52 @@ pub fn split(markdown: &str) -> Vec<Section> {
     out
 }
 
+/// Longest piece scored on its own. Sections beyond this are cut at paragraph boundaries, so a
+/// page with a single heading and a long body can still yield just the paragraphs that matter.
+const CHUNK_CHARS: usize = 600;
+
+/// Break oversized sections into chunks that keep the section's heading path. Returns each chunk
+/// with the index of the section it came from.
+fn chunk(sections: Vec<Section>, limit: usize) -> Vec<(usize, Section)> {
+    let limit = limit.clamp(120, CHUNK_CHARS);
+    let mut out = Vec::new();
+    for (i, s) in sections.into_iter().enumerate() {
+        if s.markdown.chars().count() <= limit {
+            out.push((i, s));
+            continue;
+        }
+        let mut current = String::new();
+        let mut body = String::new();
+        let mut first = true;
+        let mut push = |current: &mut String, body: &mut String, out: &mut Vec<(usize, Section)>| {
+            if !current.trim().is_empty() {
+                out.push((i, Section { path: s.path.clone(), markdown: current.trim_end().to_string(), body: body.trim().to_string() }));
+            }
+            current.clear();
+            body.clear();
+        };
+        for para in s.markdown.split("\n\n") {
+            let is_heading = first && heading(para.trim()).is_some();
+            first = false;
+            if !current.is_empty() && current.chars().count() + para.chars().count() + 2 > limit {
+                push(&mut current, &mut body, &mut out);
+            }
+            if !current.is_empty() {
+                current.push_str("\n\n");
+            }
+            current.push_str(para);
+            if !is_heading {
+                if !body.is_empty() {
+                    body.push_str("\n\n");
+                }
+                body.push_str(para);
+            }
+        }
+        push(&mut current, &mut body, &mut out);
+    }
+    out
+}
+
 fn score_sections(sections: &[Section], query: &str) -> Vec<f64> {
     let q_set = token_set(query);
     let bodies: Vec<Vec<String>> = sections.iter().map(|s| content_tokens(&s.body)).collect();
@@ -137,49 +183,58 @@ fn cut_at_paragraph(text: &str, budget: usize) -> String {
 /// Choose sections for `query` within `budget` characters, returned in document order.
 /// The flag says whether anything was left out or cut.
 pub fn select(markdown: &str, query: &str, budget: usize) -> (Vec<SelectedSection>, bool) {
-    let sections = split(markdown);
-    if sections.is_empty() {
+    let chunks = chunk(split(markdown), budget);
+    if chunks.is_empty() {
         return (Vec::new(), false);
     }
+    let origins: Vec<usize> = chunks.iter().map(|(o, _)| *o).collect();
+    let sections: Vec<Section> = chunks.into_iter().map(|(_, s)| s).collect();
     let scores = score_sections(&sections, query);
     let total: usize = sections.iter().map(|s| s.markdown.chars().count()).sum();
-    if total <= budget {
-        let all = sections.into_iter().zip(scores).map(|(s, score)| SelectedSection { path: s.path, markdown: s.markdown, score }).collect();
-        return (all, false);
-    }
 
-    let mut order: Vec<usize> = (0..sections.len()).collect();
-    let any_match = scores.iter().any(|s| *s > 0.0);
-    if any_match {
-        order.sort_by(|a, b| scores[*b].partial_cmp(&scores[*a]).unwrap_or(std::cmp::Ordering::Equal).then(a.cmp(b)));
-        order.retain(|i| scores[*i] > 0.0);
-    }
-
-    let mut chosen: Vec<(usize, String)> = Vec::new();
-    let mut used = 0usize;
-    let mut truncated = false;
-    for i in order {
-        let len = sections[i].markdown.chars().count();
-        let left = budget.saturating_sub(used);
-        if len <= left {
-            used += len + 2;
-            chosen.push((i, sections[i].markdown.clone()));
-        } else if chosen.is_empty() {
-            chosen.push((i, cut_at_paragraph(&sections[i].markdown, budget)));
-            used = budget;
-            truncated = true;
-        } else {
-            truncated = true;
+    let (chosen, truncated): (Vec<(usize, String)>, bool) = if total <= budget {
+        (sections.iter().enumerate().map(|(i, s)| (i, s.markdown.clone())).collect(), false)
+    } else {
+        let mut order: Vec<usize> = (0..sections.len()).collect();
+        if scores.iter().any(|s| *s > 0.0) {
+            order.sort_by(|a, b| scores[*b].partial_cmp(&scores[*a]).unwrap_or(std::cmp::Ordering::Equal).then(a.cmp(b)));
+            order.retain(|i| scores[*i] > 0.0);
         }
+        let mut chosen: Vec<(usize, String)> = Vec::new();
+        let mut used = 0usize;
+        let mut truncated = false;
+        for i in order {
+            let len = sections[i].markdown.chars().count();
+            if len <= budget.saturating_sub(used) {
+                used += len + 2;
+                chosen.push((i, sections[i].markdown.clone()));
+            } else if chosen.is_empty() {
+                chosen.push((i, cut_at_paragraph(&sections[i].markdown, budget)));
+                used = budget;
+                truncated = true;
+            } else {
+                truncated = true;
+            }
+        }
+        chosen.sort_by_key(|(i, _)| *i);
+        (chosen, truncated || false)
+    };
+    let truncated = truncated || chosen.len() < sections.len();
+
+    // Neighbouring chunks of one section read better as one piece.
+    let mut out: Vec<SelectedSection> = Vec::new();
+    let mut last: Option<usize> = None;
+    for (i, markdown) in chosen {
+        match (out.last_mut(), last) {
+            (Some(prev), Some(l)) if l + 1 == i && origins[l] == origins[i] => {
+                prev.markdown.push_str("\n\n");
+                prev.markdown.push_str(&markdown);
+                prev.score = prev.score.max(scores[i]);
+            }
+            _ => out.push(SelectedSection { path: sections[i].path.clone(), markdown, score: scores[i] }),
+        }
+        last = Some(i);
     }
-    chosen.sort_by_key(|(i, _)| *i);
-    if chosen.len() < sections.len() {
-        truncated = true;
-    }
-    let out = chosen
-        .into_iter()
-        .map(|(i, markdown)| SelectedSection { path: sections[i].path.clone(), markdown, score: scores[i] })
-        .collect();
     (out, truncated)
 }
 
@@ -235,6 +290,29 @@ mod tests {
         assert!(!sel.is_empty());
         assert!(sel[0].markdown.chars().count() <= 60);
         assert!(sel[0].markdown.starts_with("Intro"));
+    }
+
+    #[test]
+    fn a_long_section_yields_only_the_paragraphs_that_match() {
+        let filler = |n: usize| format!("Gardening note {n}: soil, compost and watering schedules for vegetables grown in raised beds through the whole season.");
+        let mut paras: Vec<String> = (0..8).map(filler).collect();
+        paras.insert(5, "The scheduler is a work-stealing thread pool that drives timers and sockets for async tasks.".to_string());
+        let doc = format!("# Notes\n\n{}", paras.join("\n\n"));
+        let (sel, truncated) = select(&doc, "work-stealing thread pool scheduler", 300);
+        assert!(truncated);
+        let text: String = sel.iter().map(|s| s.markdown.as_str()).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("work-stealing"), "{text}");
+        assert!(text.chars().count() <= 320, "{}", text.chars().count());
+        assert!(sel.iter().all(|s| s.path == vec!["Notes"]));
+    }
+
+    #[test]
+    fn neighbouring_chunks_of_one_section_are_merged() {
+        let para = |w: &str| format!("{w} ").repeat(60);
+        let doc = format!("# Doc\n\n{}\n\n{}\n\n{}", para("alpha"), para("alpha beta"), para("gamma"));
+        let (sel, _) = select(&doc, "alpha beta", 100_000);
+        assert_eq!(sel.len(), 1, "everything fits, so one merged piece per section");
+        assert!(sel[0].markdown.contains("gamma") && sel[0].markdown.starts_with("# Doc"));
     }
 
     #[test]

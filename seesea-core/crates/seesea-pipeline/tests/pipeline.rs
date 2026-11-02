@@ -269,3 +269,23 @@ async fn upstream_agreement_is_visible_in_found_by() {
     let names: Vec<&str> = resp.hits[0].found_by.iter().map(|a| a.source.as_str()).collect();
     assert_eq!(names, vec!["searxng", "searxng/google", "searxng/brave"]);
 }
+
+#[tokio::test]
+async fn probe_reports_each_source_and_treats_silence_as_a_problem() {
+    let p = standard_pipeline(
+        vec![
+            FakeSource::ok("good", vec![hit("https://x.org/1", "One", "first")]),
+            FakeSource::ok("empty", vec![]),
+            FakeSource::failing("broken", FailureKind::Http),
+            FakeSource::slow("slow", Duration::from_secs(5)),
+        ],
+        FakePages::new(&[]),
+    );
+    let probes = p.probe("anything").await;
+    let by = |n: &str| probes.iter().find(|x| x.source == n).unwrap();
+    assert!(by("good").ok && by("good").hits == 1 && by("good").error.is_none());
+    assert!(!by("empty").ok);
+    assert_eq!(by("empty").error.as_ref().unwrap().kind, FailureKind::Parse);
+    assert_eq!(by("broken").error.as_ref().unwrap().kind, FailureKind::Http);
+    assert_eq!(by("slow").error.as_ref().unwrap().kind, FailureKind::Timeout);
+}

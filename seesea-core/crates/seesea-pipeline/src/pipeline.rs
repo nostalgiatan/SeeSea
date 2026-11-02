@@ -71,6 +71,17 @@ pub struct ExtractedPage {
     pub truncated: bool,
 }
 
+/// What one source did when asked for a test query.
+#[derive(Debug, Clone, Serialize)]
+pub struct SourceProbe {
+    pub source: String,
+    pub ok: bool,
+    pub hits: usize,
+    pub ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<SourceFailure>,
+}
+
 fn ms(since: Instant) -> u64 {
     since.elapsed().as_millis() as u64
 }
@@ -116,6 +127,35 @@ impl Pipeline {
 
     pub fn source_names(&self) -> Vec<String> {
         self.sources.iter().map(|s| s.name().to_string()).collect()
+    }
+
+    /// Ask every source the same question and report, per source, whether it answered, with how many
+    /// results and how fast. A source returning zero results counts as not ok: it usually means a
+    /// blocked request or a page layout the parser no longer understands.
+    pub async fn probe(&self, query: &str) -> Vec<SourceProbe> {
+        let sq = SourceQuery { query: query.to_string(), limit: 10, page: 1, time_range: None, language: None };
+        futures::future::join_all(self.sources.iter().map(|s| {
+            let (sq, s, timeout) = (sq.clone(), Arc::clone(s), self.cfg.source_timeout);
+            async move {
+                let t = Instant::now();
+                let r = tokio::time::timeout(timeout, s.search(&sq))
+                    .await
+                    .unwrap_or_else(|_| Err(SourceError::new(FailureKind::Timeout, format!("no answer within {} ms", timeout.as_millis()))));
+                let name = s.name().to_string();
+                match r {
+                    Ok(hits) if !hits.is_empty() => SourceProbe { source: name, ok: true, hits: hits.len(), ms: ms(t), error: None },
+                    Ok(_) => SourceProbe {
+                        source: name.clone(),
+                        ok: false,
+                        hits: 0,
+                        ms: ms(t),
+                        error: Some(SourceFailure { source: name, kind: FailureKind::Parse, message: "answered but returned no results (blocked, or the page layout changed)".into() }),
+                    },
+                    Err(e) => SourceProbe { source: name.clone(), ok: false, hits: 0, ms: ms(t), error: Some(SourceFailure { source: name, kind: e.kind, message: e.message }) },
+                }
+            }
+        }))
+        .await
     }
 
     /// The model is large to load, so it is built on first use: fast searches never pay for it.

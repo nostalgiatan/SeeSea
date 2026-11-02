@@ -21,4 +21,4 @@ pub mod text;
 pub use error::{Error, ErrorBody, FailureKind, Result, SourceError, SourceFailure};
 pub use model::{Attribution, Content, Hit, Mode, ScoreParts, SearchRequest, SearchResponse, SelectedSection, StageTiming, TimeRange};
 pub use source::{RawHit, Source, SourceQuery};
-pub use pipeline::{ExtractedPage, Pipeline, PipelineConfig};
+pub use pipeline::{ExtractedPage, Pipeline, PipelineConfig, SourceProbe};
