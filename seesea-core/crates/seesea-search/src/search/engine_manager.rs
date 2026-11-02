@@ -281,6 +281,11 @@ impl EngineManager {
             "sogou",
             Box::new(SogouEngine::with_client(Arc::clone(&client))),
         );
+
+        // SearXNG 上游：设置了 SEESEA_SEARXNG_URL 才注册
+        if let Some(engine) = SearxngEngine::from_env(Arc::clone(&client)) {
+            self.register_engine("searxng", Box::new(engine));
+        }
     }
 
     /// 获取所有可用的引擎（包括Python引擎）
