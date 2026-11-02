@@ -1,0 +1,18 @@
+[package]
+name = "seesea-mcp"
+version = "0.1.0"
+edition = "2024"
+description = "Model Context Protocol server (JSON-RPC 2.0) exposing the SeeSea search pipeline as tools"
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+seesea-pipeline = { path = "../seesea-pipeline" }
+seesea-extract = { path = "../seesea-extract", default-features = false }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+tokio = { version = "1.48.0", features = ["io-util", "io-std", "sync", "rt", "macros"] }
+
+[dev-dependencies]
+seesea-fetch = { path = "../seesea-fetch" }
+async-trait = "0.1.89"
+tokio = { version = "1.48.0", features = ["full"] }
