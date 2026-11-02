@@ -279,8 +279,8 @@ mod tests {
 
     #[test]
     fn test_engine_authority() {
-        assert_eq!(VectorScorer::get_engine_authority("google"), 1.0);
-        assert_eq!(VectorScorer::get_engine_authority("baidu"), 0.95);
-        assert!(VectorScorer::get_engine_authority("unknown") < 1.0);
+        assert_eq!(super::super::scoring::get_engine_authority("google"), 1.0);
+        assert_eq!(super::super::scoring::get_engine_authority("baidu"), 0.95);
+        assert!(super::super::scoring::get_engine_authority("unknown") < 1.0);
     }
 }

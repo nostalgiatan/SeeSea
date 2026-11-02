@@ -268,7 +268,7 @@ impl EngineManager {
                 .expect("Shared client must be initialized"),
         );
 
-        // 基础搜索引擎 (保留 Yandex, Bing, Baidu, 360 Search)
+        // 抓取型引擎只保留 Bing、百度、搜狗；其余来源走官方 API 和 SearXNG
         self.register_engine(
             "bing",
             Box::new(BingEngine::with_client(Arc::clone(&client))),
@@ -278,37 +278,8 @@ impl EngineManager {
             Box::new(BaiduEngine::with_client(Arc::clone(&client))),
         );
         self.register_engine(
-            "yandex",
-            Box::new(YandexEngine::with_client(Arc::clone(&client))),
-        );
-        self.register_engine("so", Box::new(SoEngine::with_client(Arc::clone(&client))));
-
-        // Bing变体
-        self.register_engine(
-            "bing images",
-            Box::new(BingImagesEngine::with_client(Arc::clone(&client))),
-        );
-
-        // 搜狗变体
-        self.register_engine(
             "sogou",
             Box::new(SogouEngine::with_client(Arc::clone(&client))),
-        );
-        self.register_engine(
-            "sogou videos",
-            Box::new(SogouVideosEngine::with_client(Arc::clone(&client))),
-        );
-
-        // Bilibili 引擎
-        self.register_engine(
-            "bilibili",
-            Box::new(BilibiliEngine::with_client(Arc::clone(&client))),
-        );
-
-        // 图片引擎 (Unsplash)
-        self.register_engine(
-            "unsplash",
-            Box::new(UnsplashEngine::with_client(Arc::clone(&client))),
         );
     }
 
@@ -631,17 +602,17 @@ mod tests {
         let manager = EngineManager::new(EngineMode::Global, vec![]);
 
         assert_eq!(manager.get_mode(), EngineMode::Global);
-        assert_eq!(manager.engines.len(), 9); // 所有9个引擎都应该注册 (Yandex, Bing*2, Baidu, Sogou*2, Bilibili, Unsplash, 360 Search)
+        assert_eq!(manager.engines.len(), 3); // Bing, Baidu, Sogou
     }
 
     #[tokio::test]
     async fn test_engine_manager_configured_mode() {
-        let configured = vec!["yandex".to_string(), "bing".to_string()];
+        let configured = vec!["baidu".to_string(), "bing".to_string()];
         let manager = EngineManager::new(EngineMode::Configured, configured.clone());
 
         let active = manager.get_active_engines().await;
         assert_eq!(active.len(), 2);
-        assert!(active.contains(&"yandex".to_string()));
+        assert!(active.contains(&"baidu".to_string()));
         assert!(active.contains(&"bing".to_string()));
     }
 
@@ -650,6 +621,6 @@ mod tests {
         let manager = EngineManager::new(EngineMode::Global, vec![]);
 
         let active = manager.get_active_engines().await;
-        assert_eq!(active.len(), 9); // 所有9个引擎都应该可用
+        assert_eq!(active.len(), 3); // 三个引擎都应该可用
     }
 }
