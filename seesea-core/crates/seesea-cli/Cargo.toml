@@ -13,6 +13,11 @@ path = "src/lib.rs"
 name = "seesea"
 path = "src/main.rs"
 
+[features]
+default = ["gpu"]
+# Run the embedding model on the GPU (Vulkan) when one is available; falls back to the CPU.
+gpu = ["seesea-embed/gpu"]
+
 [dependencies]
 seesea-pipeline = { path = "../seesea-pipeline" }
 seesea-mcp = { path = "../seesea-mcp" }

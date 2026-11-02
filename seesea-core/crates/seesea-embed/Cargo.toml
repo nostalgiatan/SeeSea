@@ -5,7 +5,13 @@ edition = "2024"
 description = "Pure-Rust text embeddings: BERT-style sentence encoders on candle"
 license = "AGPL-3.0-or-later"
 
+[features]
+default = []
+# Run the encoder on a GPU through Vulkan (pure Rust, via burn + wgpu).
+gpu = ["dep:burn"]
+
 [dependencies]
+burn = { version = "0.22.1", default-features = false, features = ["wgpu", "std"], optional = true }
 candle-core = "0.11.1"
 candle-nn = "0.11.1"
 candle-transformers = "0.11.1"

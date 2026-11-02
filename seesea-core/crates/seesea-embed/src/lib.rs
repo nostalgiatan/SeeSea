@@ -15,6 +15,8 @@
 //! present and is mean pooling otherwise.
 
 mod gguf;
+#[cfg(feature = "gpu")]
+mod gpu;
 
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -178,6 +180,14 @@ impl Embedder {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "embedder".into()),
         })
+    }
+
+    /// `"gpu"` when the layers run on a GPU, `"cpu"` otherwise.
+    pub fn device_name(&self) -> &'static str {
+        match &self.model {
+            Backend::Gguf(m) if m.on_gpu() => "gpu",
+            _ => "cpu",
+        }
     }
 
     pub fn dim(&self) -> usize {

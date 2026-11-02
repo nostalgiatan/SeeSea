@@ -6,7 +6,13 @@ fn main() {
     let path = std::env::args().nth(1).expect("model path");
     let t = Instant::now();
     let e = Embedder::load(&path).unwrap();
-    println!("loaded {} (dim {}) in {:?}", e.name(), e.dim(), t.elapsed());
+    println!(
+        "loaded {} (dim {}, {}) in {:?}",
+        e.name(),
+        e.dim(),
+        e.device_name(),
+        t.elapsed()
+    );
     let queries = [
         "how does the tokio scheduler work",
         "tokio 调度器是怎么工作的",

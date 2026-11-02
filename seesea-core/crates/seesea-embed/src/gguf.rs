@@ -49,8 +49,53 @@ struct Layer {
     out_norm: LayerNorm,
 }
 
+#[cfg(feature = "gpu")]
+impl Linear {
+    fn to_data(&self) -> Result<crate::gpu::LinearData> {
+        let Weight::Dense(w) = &self.weight else {
+            return Err(bad("GPU execution needs dense weights"));
+        };
+        let (inputs, outputs) = w.dims2()?;
+        Ok(crate::gpu::LinearData {
+            weight: w.flatten_all()?.to_vec1()?,
+            bias: self.bias.to_vec1()?,
+            inputs,
+            outputs,
+        })
+    }
+}
+
+#[cfg(feature = "gpu")]
+fn norm_data(n: &LayerNorm) -> Result<crate::gpu::NormData> {
+    Ok(crate::gpu::NormData {
+        weight: n.weight().to_vec1()?,
+        bias: n
+            .bias()
+            .ok_or_else(|| bad("layer norm without bias"))?
+            .to_vec1()?,
+    })
+}
+
+#[cfg(feature = "gpu")]
+impl Layer {
+    fn to_data(&self) -> Result<crate::gpu::LayerData> {
+        Ok(crate::gpu::LayerData {
+            q: self.q.to_data()?,
+            k: self.k.to_data()?,
+            v: self.v.to_data()?,
+            out: self.out.to_data()?,
+            attn_norm: norm_data(&self.attn_norm)?,
+            up: self.up.to_data()?,
+            down: self.down.to_data()?,
+            out_norm: norm_data(&self.out_norm)?,
+        })
+    }
+}
+
 pub struct GgufBert {
     layers: Vec<Layer>,
+    #[cfg(feature = "gpu")]
+    gpu: Option<crate::gpu::GpuLayers>,
     heads: usize,
     hidden: usize,
     /// Raw quantized rows of the token embedding table, `row_bytes` per token.
@@ -261,10 +306,20 @@ impl GgufBert {
             eps,
             dequantize: std::env::var_os("SEESEA_EMBED_QUANTIZED").is_none(),
         };
+        #[cfg(feature = "gpu")]
+        let mut gpu = if std::env::var("SEESEA_EMBED_DEVICE").is_ok_and(|v| v == "cpu") {
+            None
+        } else {
+            crate::gpu::GpuLayers::open(heads, hidden)
+        };
+        #[cfg(feature = "gpu")]
+        if gpu.is_some() {
+            r.dequantize = true;
+        }
         let mut layers = Vec::with_capacity(n_layers);
         for i in 0..n_layers {
             let p = format!("blk.{i}");
-            layers.push(Layer {
+            let layer = Layer {
                 q: r.linear(&format!("{p}.attn_q"))?,
                 k: r.linear(&format!("{p}.attn_k"))?,
                 v: r.linear(&format!("{p}.attn_v"))?,
@@ -273,7 +328,13 @@ impl GgufBert {
                 up: r.linear(&format!("{p}.ffn_up"))?,
                 down: r.linear(&format!("{p}.ffn_down"))?,
                 out_norm: r.norm(&format!("{p}.layer_output_norm"))?,
-            });
+            };
+            #[cfg(feature = "gpu")]
+            if let Some(g) = gpu.as_mut() {
+                g.push(eps, layer.to_data()?);
+                continue;
+            }
+            layers.push(layer);
         }
         let positions = r.dense("position_embd.weight")?;
         let type_embedding = r.dense("token_types.weight")?;
@@ -297,6 +358,8 @@ impl GgufBert {
         let max_tokens = max_tokens.clamp(8, positions.dims2()?.0.min(context));
         Ok(Self {
             layers,
+            #[cfg(feature = "gpu")]
+            gpu,
             heads,
             hidden,
             tok_raw,
@@ -310,6 +373,18 @@ impl GgufBert {
             pooling,
             tokenizer: build_tokenizer(&c, max_tokens)?,
         })
+    }
+
+    /// Whether the layers run on a GPU.
+    pub fn on_gpu(&self) -> bool {
+        #[cfg(feature = "gpu")]
+        {
+            self.gpu.is_some()
+        }
+        #[cfg(not(feature = "gpu"))]
+        {
+            false
+        }
     }
 
     pub fn hidden(&self) -> usize {
@@ -340,6 +415,12 @@ impl GgufBert {
             .broadcast_add(&pos)?
             .broadcast_add(&self.type_embedding)?;
         x = self.embed_norm.forward(&x)?;
+
+        #[cfg(feature = "gpu")]
+        if let Some(g) = &self.gpu {
+            let out = g.forward(x.flatten_all()?.to_vec1()?, mask, batch, seq);
+            return Ok(Tensor::from_vec(out, (batch, seq, self.hidden), dev)?);
+        }
 
         let head_dim = self.hidden / self.heads;
         // Valid (non-padding) length of each row; padding is on the right.
