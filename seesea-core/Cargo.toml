@@ -147,6 +147,8 @@ members = [
     "crates/seesea-hot",
     "crates/seesea-vector-store",
     "crates/seesea-cleaner",
+    "crates/seesea-extract",
+    "crates/seesea-fetch",
     "crates/seesea-python-bindings",
     "crates/seesea-event",
     "crates/seesea-raming",

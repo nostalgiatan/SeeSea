@@ -19,6 +19,7 @@
 
 pub mod cache;
 pub mod config;
+pub mod extract;
 pub mod health;
 pub mod hot;
 pub mod internal;
@@ -32,6 +33,7 @@ pub mod stock;
 
 // Re-export handlers for convenient use
 pub use config::handle_magic_link_generate;
+pub use extract::handle_extract;
 pub use health::handle_health;
 pub use hot::{
     handle_hot_all, handle_hot_multiple, handle_hot_platform, handle_hot_platforms_list,

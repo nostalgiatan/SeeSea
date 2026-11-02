@@ -8,7 +8,7 @@ license = "AGPL-3.0"
 
 [dependencies]
 # HTTP客户端 - 实际在client/http.rs中使用
-reqwest = { version = "0.12.9", features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12.9", features = ["json", "rustls-tls", "stream", "gzip", "deflate", "brotli"] }
 
 # 异步运行时 - 实际在多处使用
 tokio = { version = "1.48.0", features = ["sync", "net", "time", "io-util"] }

@@ -62,6 +62,8 @@ pub struct Diagnostics {
     pub threshold: f32,
     /// No block reached the threshold, so the single most probable block was returned.
     pub fallback: bool,
+    /// The input looks like binary or undecoded data (compressed body, wrong charset), not HTML.
+    pub not_text: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -132,6 +134,17 @@ impl Extractor {
     }
 
     pub fn extract(&self, html: &str, url: &str, opts: &Options) -> ExtractResult {
+        if looks_binary(html) {
+            return ExtractResult {
+                core: String::new(),
+                sections: Vec::new(),
+                meta: meta::extract(&Html::parse_document("")),
+                page_type: None,
+                confidence: 0.0,
+                needs_render: false,
+                diagnostics: Diagnostics { blocks: 0, selected_blocks: 0, selected_chars: 0, visible_chars: 0, threshold: self.threshold(opts), fallback: false, not_text: true },
+            };
+        }
         let doc = Html::parse_document(html);
         let meta = meta::extract(&doc);
         let blocks = blocks::segment_doc(&doc);
@@ -164,7 +177,7 @@ impl Extractor {
             page_type: None,
             confidence,
             needs_render,
-            diagnostics: Diagnostics { blocks: blocks.len(), selected_blocks: selected.len(), selected_chars, visible_chars, threshold: thr, fallback },
+            diagnostics: Diagnostics { blocks: blocks.len(), selected_blocks: selected.len(), selected_chars, visible_chars, threshold: thr, fallback, not_text: false },
         }
     }
 }
@@ -185,6 +198,18 @@ fn sections(blocks: &[Block], keep: &[bool]) -> Vec<Section> {
         }
     }
     out
+}
+
+/// A compressed or mis-decoded body shows up as replacement and control characters.
+fn looks_binary(html: &str) -> bool {
+    let (mut bad, mut total) = (0usize, 0usize);
+    for c in html.chars().take(4096) {
+        total += 1;
+        if c == '\u{FFFD}' || (c.is_control() && !matches!(c, '\t' | '\n' | '\r')) {
+            bad += 1;
+        }
+    }
+    total > 0 && bad * 20 > total
 }
 
 fn js_app_marker(html: &str) -> bool {
