@@ -218,7 +218,7 @@ pub fn export(wmb_path: &Path, wcxb_root: &Path, out: &Path) -> Result<(), Strin
 
 /// Evaluate the shipped extraction path (`seesea_extract::Extractor`, Markdown output) on the
 /// held-out domains of both datasets, so the number is for what a caller actually gets.
-pub fn crate_eval(wmb_path: &Path, wcxb_root: &Path, model: Option<&Path>) -> Result<(), String> {
+pub fn crate_eval(wmb_path: &Path, wcxb_root: &Path, model: Option<&Path>, own: Option<&Path>) -> Result<(), String> {
     use seesea_extract::{Extractor, Options, Scope};
     let ex = match model {
         Some(p) => Extractor::with_model(&std::fs::read_to_string(p).map_err(|e| e.to_string())?)?,
@@ -239,6 +239,20 @@ pub fn crate_eval(wmb_path: &Path, wcxb_root: &Path, model: Option<&Path>) -> Re
         }).collect();
         let n = res.len() as f64;
         println!("| {name} | {scope:?} | {:.3} | {:.3} | {:.1}% | {:.2} |", res.iter().map(|r| r.0).sum::<f64>() / n, res.iter().map(|r| r.1).sum::<f64>() / n, 100.0 * res.iter().filter(|r| r.2).count() as f64 / n, res.iter().map(|r| r.3 as f64).sum::<f64>() / n);
+    }
+    if let Some(dir) = own {
+        let pages = crate::evalset::load(dir)?;
+        if pages.is_empty() {
+            println!("\nown set: no reviewed pages in {}", dir.display());
+        } else {
+            let res: Vec<(f64, f64)> = pages.par_iter().map(|p| {
+                let r = ex.extract(&p.html, &p.url, &Options::default());
+                let s = metrics::score(p, &r.core, 0.0);
+                (s.f1, metrics::score(p, &metrics::strip_markdown(&p.html), 0.0).f1)
+            }).collect();
+            let n = res.len() as f64;
+            println!("\nown set ({} reviewed pages, Core): F1 {:.3} (whole-page text {:.3})", pages.len(), res.iter().map(|r| r.0).sum::<f64>() / n, res.iter().map(|r| r.1).sum::<f64>() / n);
+        }
     }
     // single-thread latency of the whole call
     let t = std::time::Instant::now();
