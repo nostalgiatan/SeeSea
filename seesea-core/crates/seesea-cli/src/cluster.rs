@@ -2,34 +2,41 @@
 //!
 //! * `single` (the default): one process does everything; nothing here is used.
 //! * `gateway`: the only node users talk to. It checks API keys, applies plans and limits, keeps the user
-//!   database, and forwards searches to the search nodes (skipping any that fail their health check).
+//!   database, and forwards searches to the search nodes (skipping any that fail their health check or say
+//!   they are full).
 //! * `search`: runs the pipeline and the models. It keeps no state worth keeping: what it reads, learns and
-//!   records is sent to the flywheel node, and its fresh-news lookups go there too. It only answers requests
-//!   that carry the cluster key.
+//!   records is sent to the flywheel node (queued on disk while that node is away), and its fresh-news
+//!   lookups go there too. It answers only its gateways.
 //! * `flywheel`: keeps what accumulates: the index (feeds, pages written back, vectors), the merged picture
 //!   of which hosts and sources deliver, and the journal of every search from every node.
 //!
-//! Nodes trust each other through one shared `cluster_key`. They talk plain HTTP, so put TLS in front of
-//! them (or keep them on a private network) the way you would for any internal service.
+//! Nodes talk to each other in [`crate::wire`] (`seesea-wire/1`, on QUIC), never in HTTP and never in clear
+//! text. Each node has its own key pair; a peers file lists the fingerprints that may connect and the role of
+//! each. Users still speak HTTP, to the gateway only.
 
+use crate::access::Grant;
+use crate::server::AppState;
+use crate::wire::{self, CallError, Mesh, Op, PeerInfo, PeerRole, Reply, Request, Status};
 use axum::body::Bytes;
-use axum::extract::{Extension, Query, State};
+use axum::extract::{Extension, State};
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
 use axum::{Json, Router};
 use seesea_pipeline::{Learner, Mode, Observation};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
+use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tower::ServiceExt;
 
-use crate::access::Grant;
-use crate::server::AppState;
-
-pub const KEY_HEADER: &str = "x-seesea-cluster";
+/// Marks a request that arrived over the wire from a gateway (which has already checked the user). Only the
+/// wire handler can put it on a request; nothing a client sends over HTTP can.
+#[derive(Debug, Clone, Copy)]
+pub struct Trusted;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Role {
@@ -57,17 +64,20 @@ impl std::str::FromStr for Role {
 #[derive(Clone)]
 pub struct Cluster {
     pub role: Role,
-    pub key: String,
-    /// Gateway: where the search nodes are (`http://host:port`).
+    /// Gateway: where the search nodes are (`quic://host:port`).
     pub search_nodes: Vec<String>,
     /// Gateway and search nodes: where the flywheel node is.
     pub flywheel: Option<String>,
+    /// Search and flywheel nodes: the UDP address to listen on for the other nodes.
+    pub listen: Option<SocketAddr>,
+    /// This node's key pair and the peers it trusts.
+    pub mesh: Option<Mesh>,
 }
 
 impl std::fmt::Debug for Cluster {
-    // The key is a secret: never printed.
+    // Key material is never printed.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Cluster").field("role", &self.role).field("search_nodes", &self.search_nodes).field("flywheel", &self.flywheel).finish_non_exhaustive()
+        f.debug_struct("Cluster").field("role", &self.role).field("search_nodes", &self.search_nodes).field("flywheel", &self.flywheel).field("listen", &self.listen).finish_non_exhaustive()
     }
 }
 
@@ -77,35 +87,34 @@ impl Cluster {
         if self.role == Role::Single {
             return Ok(());
         }
-        if self.key.len() < 16 {
-            return Err("cluster_key must be set to a secret of at least 16 characters when role is not single".into());
+        if self.mesh.is_none() {
+            return Err("a clustered node needs node_cert, node_key and cluster_peers (see `seesea cluster keygen`)".into());
         }
         for url in self.search_nodes.iter().chain(self.flywheel.iter()) {
-            crate::tls::secure_url(url)?;
+            wire::parse_url(url)?;
         }
         match self.role {
-            Role::Gateway if self.search_nodes.is_empty() => Err("a gateway needs search_nodes = [\"http://...\"]".into()),
-            Role::Gateway | Role::Search if self.flywheel.is_none() => Err("this role needs flywheel = \"http://...\"".into()),
-            _ => Ok(()),
+            Role::Gateway if self.search_nodes.is_empty() => return Err("a gateway needs search_nodes = [\"quic://host:port\"]".into()),
+            Role::Gateway | Role::Search if self.flywheel.is_none() => return Err("this role needs flywheel = \"quic://host:port\"".into()),
+            _ => {}
         }
+        if matches!(self.role, Role::Search | Role::Flywheel) && self.listen.is_none() {
+            return Err("this role needs cluster_listen = \"0.0.0.0:7443\" (the UDP address the other nodes connect to)".into());
+        }
+        Ok(())
     }
 
-    pub fn trusts(&self, headers: &HeaderMap) -> bool {
-        self.role != Role::Single
-            && headers.get(KEY_HEADER).and_then(|v| v.to_str().ok()).is_some_and(|k| same(k.as_bytes(), self.key.as_bytes()))
+    fn mesh(&self) -> Result<&Mesh, String> {
+        self.mesh.as_ref().ok_or_else(|| "no node identity".to_string())
     }
 }
 
-fn same(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
-fn client(timeout: Duration) -> reqwest::Client {
-    crate::tls::http_client(timeout).unwrap_or_else(|e| {
-        // A broken certificate setting must not silently fall back to a client that trusts less or presents nothing.
-        eprintln!("seesea: cannot build the cluster HTTP client: {e}");
-        std::process::exit(2)
-    })
+fn reply_ok(r: Result<Reply, CallError>) -> Result<Reply, String> {
+    let r = r.map_err(|e| e.to_string())?;
+    match r.status {
+        Status::Ok => Ok(r),
+        _ => Err(r.head["message"].as_str().unwrap_or("the node refused").to_string()),
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -118,42 +127,163 @@ fn event_kind(e: &Value) -> &str {
 }
 
 const QUEUE_LIMIT: usize = 20_000;
-/// And no more than this many bytes of them: journal lines carry result lists and can be large.
+/// And no more than this many bytes of them in memory: journal lines carry result lists and can be large.
 const QUEUE_BYTES: usize = 64 * 1024 * 1024;
 const BATCH: usize = 100;
+/// What goes to disk once memory is full (and stays there until the flywheel node takes it).
+const SPOOL_SEGMENT: u64 = 8 * 1024 * 1024;
+const SPOOL_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
 
-struct Queue {
-    events: VecDeque<(Value, usize)>,
-    bytes: usize,
+/// An event with the number it was given: `(epoch, seq)`, where the epoch is random per process and the
+/// sequence counts up. The flywheel node skips what it has already applied, so a batch that was applied but
+/// whose answer was lost can be sent again.
+struct Queued {
+    id: (u64, u64),
+    event: Value,
+    size: usize,
 }
 
-/// Events waiting to go to the flywheel node. Bounded in count and size: when the flywheel node is away for
-/// long, the oldest are dropped (and counted).
+/// Events that did not fit in memory, in files of about 8 MB, oldest first.
+struct Spool {
+    dir: PathBuf,
+    head: u64,
+    tail: u64,
+    tail_bytes: u64,
+    events: usize,
+    bytes: u64,
+}
+
+impl Spool {
+    fn open(dir: PathBuf) -> Self {
+        let _ = std::fs::create_dir_all(&dir);
+        let mut found: Vec<u64> = std::fs::read_dir(&dir)
+            .map(|rd| rd.flatten().filter_map(|e| e.file_name().to_str()?.strip_prefix("spool-")?.strip_suffix(".jsonl")?.parse().ok()).collect())
+            .unwrap_or_default();
+        found.sort();
+        let mut s = Self { dir, head: found.first().copied().unwrap_or(0), tail: found.last().map_or(0, |n| n + 1), tail_bytes: 0, events: 0, bytes: 0 };
+        for n in found {
+            if let Ok(text) = std::fs::read_to_string(s.path(n)) {
+                s.events += text.lines().count();
+                s.bytes += text.len() as u64;
+            }
+        }
+        s
+    }
+
+    fn path(&self, n: u64) -> PathBuf {
+        self.dir.join(format!("spool-{n:010}.jsonl"))
+    }
+
+    /// Returns how many events were dropped to stay within the size limit.
+    fn append(&mut self, q: &Queued) -> u64 {
+        use std::io::Write;
+        let line = format!("{}\n", json!({"id": [q.id.0, q.id.1], "e": q.event}));
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(self.path(self.tail))
+            && f.write_all(line.as_bytes()).is_ok()
+        {
+            self.tail_bytes += line.len() as u64;
+            self.bytes += line.len() as u64;
+            self.events += 1;
+            if self.tail_bytes >= SPOOL_SEGMENT {
+                self.tail += 1;
+                self.tail_bytes = 0;
+            }
+        }
+        let mut dropped = 0;
+        while self.bytes > SPOOL_LIMIT && self.head < self.tail {
+            dropped += self.take_head().0.len() as u64;
+        }
+        dropped
+    }
+
+    /// The oldest file, removed from disk.
+    fn take_head(&mut self) -> (Vec<Queued>, u64) {
+        if self.head == self.tail {
+            if self.tail_bytes == 0 {
+                return (Vec::new(), 0);
+            }
+            self.tail += 1;
+            self.tail_bytes = 0;
+        }
+        let path = self.path(self.head);
+        self.head += 1;
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let _ = std::fs::remove_file(&path);
+        self.bytes = self.bytes.saturating_sub(text.len() as u64);
+        self.events = self.events.saturating_sub(text.lines().count());
+        let events = text
+            .lines()
+            .filter_map(|l| {
+                let v: Value = serde_json::from_str(l).ok()?;
+                let id = (v["id"][0].as_u64()?, v["id"][1].as_u64()?);
+                Some(Queued { id, size: l.len(), event: v["e"].clone() })
+            })
+            .collect();
+        (events, text.len() as u64)
+    }
+}
+
+struct Queue {
+    events: VecDeque<Queued>,
+    bytes: usize,
+    seq: u64,
+    spool: Option<Spool>,
+}
+
+/// Events waiting to go to the flywheel node. Memory first; when it is full (or older events are already on
+/// disk, to keep the order) they go to a spool folder, so a long absence of the flywheel node loses nothing
+/// until the spool itself is full; then the oldest are dropped (and counted).
 pub struct Outbox {
     queue: Mutex<Queue>,
+    epoch: u64,
     dropped: std::sync::atomic::AtomicU64,
 }
 
 impl Outbox {
+    fn make(spool: Option<Spool>) -> Arc<Self> {
+        use std::hash::{BuildHasher, Hasher};
+        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+        h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+        Arc::new(Self { queue: Mutex::new(Queue { events: VecDeque::new(), bytes: 0, seq: 0, spool }), epoch: h.finish(), dropped: 0.into() })
+    }
+
+    /// In memory only.
     pub fn new() -> Arc<Self> {
-        Arc::new(Self { queue: Mutex::new(Queue { events: VecDeque::new(), bytes: 0 }), dropped: 0.into() })
+        Self::make(None)
+    }
+
+    /// With a spool folder; what a previous run left there is sent first.
+    pub fn with_spool(dir: impl Into<PathBuf>) -> Arc<Self> {
+        Self::make(Some(Spool::open(dir.into())))
     }
 
     pub fn push(&self, e: Value) {
         let size = e.to_string().len();
         let mut q = self.queue.lock().unwrap();
-        while q.events.len() >= QUEUE_LIMIT || (q.bytes + size > QUEUE_BYTES && !q.events.is_empty()) {
-            if let Some((_, n)) = q.events.pop_front() {
-                q.bytes -= n;
-                self.dropped.fetch_add(1, Ordering::Relaxed);
+        q.seq += 1;
+        let item = Queued { id: (self.epoch, q.seq), event: e, size };
+        let spooling = q.spool.as_ref().is_some_and(|s| s.events > 0);
+        let full = q.events.len() >= QUEUE_LIMIT || (q.bytes + size > QUEUE_BYTES && !q.events.is_empty());
+        if spooling || full {
+            if let Some(spool) = q.spool.as_mut() {
+                let lost = spool.append(&item);
+                self.dropped.fetch_add(lost, Ordering::Relaxed);
+                return;
+            }
+            while q.events.len() >= QUEUE_LIMIT || (q.bytes + size > QUEUE_BYTES && !q.events.is_empty()) {
+                if let Some(old) = q.events.pop_front() {
+                    q.bytes -= old.size;
+                    self.dropped.fetch_add(1, Ordering::Relaxed);
+                }
             }
         }
         q.bytes += size;
-        q.events.push_back((e, size));
+        q.events.push_back(item);
     }
 
     pub fn len(&self) -> usize {
-        self.queue.lock().unwrap().events.len()
+        let q = self.queue.lock().unwrap();
+        q.events.len() + q.spool.as_ref().map_or(0, |s| s.events)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -164,21 +294,27 @@ impl Outbox {
         self.dropped.load(Ordering::Relaxed)
     }
 
-    fn take(&self) -> Vec<(Value, usize)> {
+    fn take(&self) -> Vec<Queued> {
         let mut q = self.queue.lock().unwrap();
+        if q.events.is_empty() && q.spool.as_ref().is_some_and(|s| s.events > 0) {
+            let (loaded, _) = q.spool.as_mut().map(|s| s.take_head()).unwrap_or_default();
+            for item in loaded {
+                q.bytes += item.size;
+                q.events.push_back(item);
+            }
+        }
         let n = q.events.len().min(BATCH);
-        let batch: Vec<(Value, usize)> = q.events.drain(..n).collect();
-        q.bytes -= batch.iter().map(|(_, n)| n).sum::<usize>();
+        let batch: Vec<Queued> = q.events.drain(..n).collect();
+        q.bytes -= batch.iter().map(|i| i.size).sum::<usize>();
         batch
     }
 
-    fn put_back(&self, events: Vec<(Value, usize)>) {
+    /// A batch that was not delivered goes back to the front (it was in memory a moment ago).
+    fn put_back(&self, batch: Vec<Queued>) {
         let mut q = self.queue.lock().unwrap();
-        for (e, n) in events.into_iter().rev() {
-            if q.events.len() < QUEUE_LIMIT && q.bytes + n <= QUEUE_BYTES {
-                q.bytes += n;
-                q.events.push_front((e, n));
-            }
+        for item in batch.into_iter().rev() {
+            q.bytes += item.size;
+            q.events.push_front(item);
         }
     }
 
@@ -188,8 +324,15 @@ impl Outbox {
         if batch.is_empty() {
             return false;
         }
-        let events: Vec<&Value> = batch.iter().map(|(e, _)| e).collect();
-        if link.post("/v1/cluster/events", &json!({"events": events})).await.is_ok() {
+        let events: Vec<Value> = batch
+            .iter()
+            .map(|i| {
+                let mut e = i.event.clone();
+                e["id"] = json!([i.id.0, i.id.1]);
+                e
+            })
+            .collect();
+        if link.events(&events).await.is_ok() {
             true
         } else {
             self.put_back(batch);
@@ -201,30 +344,38 @@ impl Outbox {
 /// How a node reaches the flywheel node.
 #[derive(Clone)]
 pub struct Link {
-    http: reqwest::Client,
-    base: String,
-    key: String,
+    client: Arc<wire::Client>,
 }
 
+const SHORT: Duration = Duration::from_secs(20);
+
 impl Link {
-    pub fn new(base: &str, key: &str) -> Self {
-        Self { http: client(Duration::from_secs(20)), base: base.trim_end_matches('/').into(), key: key.into() }
+    pub fn new(mesh: &Mesh, url: &str) -> Result<Self, String> {
+        Ok(Self { client: wire::Client::new(mesh, url, PeerRole::Flywheel)? })
     }
 
-    pub async fn post(&self, path: &str, body: &Value) -> Result<Bytes, String> {
-        let r = self.http.post(format!("{}{path}", self.base)).header(KEY_HEADER, &self.key).json(body).send().await.map_err(|e| e.to_string())?;
-        if !r.status().is_success() {
-            return Err(format!("{path}: {}", r.status()));
-        }
-        r.bytes().await.map_err(|e| e.to_string())
+    /// The flywheel node of a cluster configuration.
+    pub fn of(c: &Cluster) -> Result<Self, String> {
+        Self::new(c.mesh()?, c.flywheel.as_deref().ok_or("no flywheel node is configured")?)
     }
 
-    pub async fn get(&self, path: &str, query: &[(&str, String)]) -> Result<Bytes, String> {
-        let r = self.http.get(format!("{}{path}", self.base)).header(KEY_HEADER, &self.key).query(query).send().await.map_err(|e| e.to_string())?;
-        if !r.status().is_success() {
-            return Err(format!("{path}: {}", r.status()));
-        }
-        r.bytes().await.map_err(|e| e.to_string())
+    pub async fn events(&self, events: &[Value]) -> Result<usize, String> {
+        let body = serde_json::to_vec(&json!({"events": events})).map_err(|e| e.to_string())?;
+        let r = reply_ok(self.client.call(Op::Events, &Value::Null, &body, SHORT).await)?;
+        Ok(r.head["applied"].as_u64().unwrap_or(0) as usize)
+    }
+
+    pub async fn learn_get(&self) -> Result<Bytes, String> {
+        Ok(reply_ok(self.client.call(Op::LearnGet, &Value::Null, &[], SHORT).await)?.body)
+    }
+
+    pub async fn learn_merge(&self, snapshot: &[u8]) -> Result<(), String> {
+        reply_ok(self.client.call(Op::LearnMerge, &Value::Null, snapshot, SHORT).await).map(|_| ())
+    }
+
+    async fn index_search(&self, q: &str, limit: usize, range: Option<String>) -> Result<Vec<RemoteHit>, String> {
+        let r = reply_ok(self.client.call(Op::IndexSearch, &json!({"q": q, "limit": limit, "range": range}), &[], SHORT).await)?;
+        serde_json::from_slice(&r.body).map_err(|e| e.to_string())
     }
 }
 
@@ -248,7 +399,7 @@ pub fn run_search_node(outbox: Arc<Outbox>, link: Link, learner: Option<Arc<Lear
     if let Some(learner) = learner {
         rt.spawn(async move {
             loop {
-                if let Ok(bytes) = link.get("/v1/cluster/learn", &[]).await {
+                if let Ok(bytes) = link.learn_get().await {
                     learner.import(&bytes);
                 }
                 tokio::time::sleep(Duration::from_secs(60)).await;
@@ -287,12 +438,8 @@ impl seesea_pipeline::Source for RemoteIndex {
 
     async fn search(&self, q: &seesea_pipeline::SourceQuery) -> Result<Vec<seesea_pipeline::RawHit>, seesea_pipeline::SourceError> {
         use seesea_pipeline::{FailureKind, SourceError};
-        let mut query = vec![("q", q.query.clone()), ("limit", q.limit.to_string())];
-        if let Some(r) = q.time_range {
-            query.push(("range", format!("{r:?}").to_ascii_lowercase()));
-        }
-        let bytes = self.0.get("/v1/cluster/index/search", &query).await.map_err(|e| SourceError::new(FailureKind::Other, e))?;
-        let rows: Vec<RemoteHit> = serde_json::from_slice(&bytes).map_err(|e| SourceError::new(FailureKind::Other, e.to_string()))?;
+        let range = q.time_range.map(|r| format!("{r:?}").to_ascii_lowercase());
+        let rows = self.0.index_search(&q.query, q.limit, range).await.map_err(|e| SourceError::new(FailureKind::Other, e))?;
         Ok(rows
             .into_iter()
             .map(|h| seesea_pipeline::RawHit {
@@ -315,35 +462,140 @@ struct RemoteHit {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Flywheel node: what comes in.
+// What a node answers on the wire (search and flywheel nodes).
 // ---------------------------------------------------------------------------------------------
 
-pub fn flywheel_routes() -> Router<AppState> {
-    Router::new()
-        .route("/v1/cluster/events", post(events).layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024)))
-        .route("/v1/cluster/learn", get(learn_snapshot).post(learn_merge).layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024)))
-        .route("/v1/cluster/index/search", get(index_search))
+/// Answers the wire for a search or flywheel node. Which operations make sense depends on the node's job;
+/// who may ask what is already decided by the peer's role.
+pub struct NodeHandler {
+    flywheel: bool,
+    state: AppState,
+    app: Router,
+    /// Requests in flight; beyond this the node says "busy" instead of queueing, and the gateway tries another.
+    permits: tokio::sync::Semaphore,
+    /// The highest sequence applied per (sender, epoch), for skipping what arrives twice.
+    seen: Mutex<HashMap<(String, u64), u64>>,
 }
 
-fn refuse(state: &AppState, headers: &HeaderMap) -> Option<Response> {
-    let ok = state.cluster.as_ref().is_some_and(|c| c.trusts(headers));
-    (!ok).then(|| (StatusCode::FORBIDDEN, Json(json!({"code": "cluster_only", "message": "needs the cluster key"}))).into_response())
+/// Start listening for the other nodes.
+pub fn start_wire(state: AppState, max_concurrent: usize, c: &Cluster) -> Result<wire::Server, String> {
+    let listen = c.listen.ok_or("no cluster_listen address")?;
+    let app = crate::server::router(state.clone(), max_concurrent);
+    let handler = Arc::new(NodeHandler {
+        flywheel: c.role == Role::Flywheel,
+        state,
+        app,
+        permits: tokio::sync::Semaphore::new(max_concurrent.max(1)),
+        seen: Mutex::new(HashMap::new()),
+    });
+    wire::serve(c.mesh()?, listen, handler)
+}
+
+#[async_trait::async_trait]
+impl wire::Handler for NodeHandler {
+    async fn handle(&self, peer: &PeerInfo, req: Request) -> Reply {
+        match req.op {
+            Op::Ping => Reply::ok(Value::Null, Bytes::new()),
+            Op::Http => self.http(req).await,
+            _ if !self.flywheel => Reply::error("this node is not the flywheel node"),
+            Op::Events => self.events(peer, &req.body).await,
+            Op::LearnGet => match self.state.pipeline.learner_handle() {
+                Some(l) => Reply::ok(Value::Null, Bytes::from(l.export())),
+                None => Reply::error("no learner on this node"),
+            },
+            Op::LearnMerge => match self.state.pipeline.learner_handle() {
+                Some(l) if l.merge(&req.body) => Reply::ok(Value::Null, Bytes::new()),
+                Some(_) => Reply::error("not an exported picture"),
+                None => Reply::error("no learner on this node"),
+            },
+            Op::IndexSearch => self.index_search(&req.head).await,
+        }
+    }
+}
+
+impl NodeHandler {
+    /// A user's request, already checked and metered by the gateway: run it through this node's own routes.
+    async fn http(&self, req: Request) -> Reply {
+        let Ok(_permit) = self.permits.try_acquire() else { return Reply::busy() };
+        let head = &req.head;
+        let build = || -> Result<axum::http::Request<axum::body::Body>, String> {
+            let mut b = axum::http::Request::builder().method(head["method"].as_str().unwrap_or("GET")).uri(head["uri"].as_str().ok_or("no uri")?);
+            if let Some(ct) = head["content_type"].as_str() {
+                b = b.header(header::CONTENT_TYPE, ct);
+            }
+            let mut r = b.body(axum::body::Body::from(req.body.clone())).map_err(|e| e.to_string())?;
+            r.extensions_mut().insert(Trusted);
+            Ok(r)
+        };
+        let request = match build() {
+            Ok(r) => r,
+            Err(e) => return Reply::error(e),
+        };
+        let Ok(resp) = self.app.clone().oneshot(request).await;
+        let (parts, body) = resp.into_parts();
+        let Ok(bytes) = axum::body::to_bytes(body, 64 * 1024 * 1024).await else { return Reply::error("the answer was too large") };
+        let h = |n: header::HeaderName| parts.headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
+        Reply::ok(json!({"status": parts.status.as_u16(), "content_type": h(header::CONTENT_TYPE), "retry_after": h(header::RETRY_AFTER)}), bytes)
+    }
+
+    async fn events(&self, peer: &PeerInfo, body: &[u8]) -> Reply {
+        let Ok(Events { events }) = serde_json::from_slice(body) else { return Reply::error("body must be {\"events\": [...]}") };
+        let mut fresh = Vec::with_capacity(events.len());
+        let mut marks: HashMap<u64, u64> = HashMap::new();
+        {
+            let seen = self.seen.lock().unwrap();
+            for e in events {
+                if let (Some(epoch), Some(seq)) = (e["id"][0].as_u64(), e["id"][1].as_u64()) {
+                    if seq <= seen.get(&(peer.fingerprint.clone(), epoch)).copied().unwrap_or(0) {
+                        continue;
+                    }
+                    let m = marks.entry(epoch).or_insert(0);
+                    *m = (*m).max(seq);
+                }
+                fresh.push(e);
+            }
+        }
+        let applied = apply_events(&self.state, fresh).await;
+        let mut seen = self.seen.lock().unwrap();
+        if seen.len() > 4096 {
+            seen.clear();
+        }
+        for (epoch, seq) in marks {
+            let m = seen.entry((peer.fingerprint.clone(), epoch)).or_insert(0);
+            *m = (*m).max(seq);
+        }
+        Reply::ok(json!({"applied": applied}), Bytes::new())
+    }
+
+    async fn index_search(&self, head: &Value) -> Reply {
+        use seesea_pipeline::{Source, SourceQuery, TimeRange};
+        let Some(index) = self.state.index.clone() else { return Reply::ok(Value::Null, Bytes::from_static(b"[]")) };
+        let time_range = head["range"].as_str().and_then(|r| r.parse::<TimeRange>().ok());
+        let mut source = seesea_index::IndexSource::new(index);
+        if let Some(e) = &self.state.embedder {
+            source = source.embedder(e.clone());
+        }
+        let query = SourceQuery {
+            query: head["q"].as_str().unwrap_or("").to_string(),
+            limit: head["limit"].as_u64().unwrap_or(10).clamp(1, 100) as usize,
+            page: 1,
+            time_range,
+            language: None,
+        };
+        match source.search(&query).await {
+            Ok(hits) => {
+                let rows: Vec<RemoteHit> =
+                    hits.into_iter().map(|h| RemoteHit { url: h.url, title: h.title, snippet: h.snippet, published: h.published.map(|p| p.timestamp()) }).collect();
+                Reply::ok(Value::Null, serde_json::to_vec(&rows).unwrap_or_default())
+            }
+            Err(e) => Reply::error(e),
+        }
+    }
 }
 
 #[derive(Deserialize)]
 struct Events {
     events: Vec<Value>,
-}
-
-async fn events(State(s): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
-    if let Some(r) = refuse(&s, &headers) {
-        return r;
-    }
-    let Ok(Events { events }) = serde_json::from_slice(&body) else {
-        return (StatusCode::BAD_REQUEST, Json(json!({"code": "invalid_request", "message": "body must be {\"events\": [...]}"}))).into_response();
-    };
-    let applied = apply_events(&s, events).await;
-    Json(json!({"applied": applied})).into_response()
 }
 
 /// Apply events from other nodes: lines go to the journal, observations to the learner, pages and items to the index.
@@ -384,91 +636,35 @@ pub async fn apply_events(s: &AppState, events: Vec<Value>) -> usize {
     n
 }
 
-async fn learn_snapshot(State(s): State<AppState>, headers: HeaderMap) -> Response {
-    if let Some(r) = refuse(&s, &headers) {
-        return r;
-    }
-    match s.pipeline.learner_handle() {
-        Some(l) => ([(header::CONTENT_TYPE, "application/json")], l.export()).into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
-/// Add a node's history to the merged picture (moving a node into the cluster).
-async fn learn_merge(State(s): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
-    if let Some(r) = refuse(&s, &headers) {
-        return r;
-    }
-    match s.pipeline.learner_handle() {
-        Some(l) if l.merge(&body) => Json(json!({"merged": true})).into_response(),
-        Some(_) => (StatusCode::BAD_REQUEST, Json(json!({"code": "invalid_request", "message": "not an exported picture"}))).into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
-#[derive(Deserialize)]
-struct IndexQuery {
-    q: String,
-    limit: Option<usize>,
-    range: Option<String>,
-}
-
-async fn index_search(State(s): State<AppState>, headers: HeaderMap, Query(q): Query<IndexQuery>) -> Response {
-    use seesea_pipeline::{Source, SourceQuery, TimeRange};
-    if let Some(r) = refuse(&s, &headers) {
-        return r;
-    }
-    let Some(index) = s.index.clone() else { return Json(json!([])).into_response() };
-    let time_range = q.range.as_deref().and_then(|r| r.parse::<TimeRange>().ok());
-    let mut source = seesea_index::IndexSource::new(index);
-    if let Some(e) = &s.embedder {
-        source = source.embedder(e.clone());
-    }
-    let query = SourceQuery { query: q.q, limit: q.limit.unwrap_or(10).clamp(1, 100), page: 1, time_range, language: None };
-    match source.search(&query).await {
-        Ok(hits) => Json(
-            hits.into_iter()
-                .map(|h| RemoteHit { url: h.url, title: h.title, snippet: h.snippet, published: h.published.map(|p| p.timestamp()) })
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
-        Err(e) => (StatusCode::BAD_GATEWAY, Json(json!({"code": "index_error", "message": e.to_string()}))).into_response(),
-    }
-}
-
 // ---------------------------------------------------------------------------------------------
 // Gateway: forward to healthy nodes.
 // ---------------------------------------------------------------------------------------------
 
 struct Node {
-    base: String,
+    url: String,
+    client: Arc<wire::Client>,
     up: AtomicBool,
 }
 
-/// Search nodes behind a gateway: round robin over those that answered their last health check.
+/// Nodes of one role behind a gateway: round robin over those that answered their last health check.
 pub struct Pool {
     nodes: Vec<Node>,
     next: AtomicUsize,
-    http: reqwest::Client,
-    key: String,
 }
 
 impl Pool {
-    pub fn new(bases: &[String], key: &str) -> Arc<Self> {
-        Arc::new(Self {
-            nodes: bases.iter().map(|b| Node { base: b.trim_end_matches('/').into(), up: AtomicBool::new(true) }).collect(),
-            next: AtomicUsize::new(0),
-            http: client(Duration::from_secs(110)),
-            key: key.into(),
-        })
+    pub fn new(mesh: &Mesh, urls: &[String], role: PeerRole) -> Result<Arc<Self>, String> {
+        let nodes = urls
+            .iter()
+            .map(|u| Ok(Node { url: u.clone(), client: wire::Client::new(mesh, u, role)?, up: AtomicBool::new(true) }))
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(Arc::new(Self { nodes, next: AtomicUsize::new(0) }))
     }
 
     /// Check every node now.
     pub async fn check(&self) {
-        let probe = client(Duration::from_secs(3));
         for n in &self.nodes {
-            let ok = probe.get(format!("{}/health", n.base)).send().await.is_ok_and(|r| r.status().is_success());
-            n.up.store(ok, Ordering::Relaxed);
+            n.up.store(n.client.ping().await, Ordering::Relaxed);
         }
     }
 
@@ -498,41 +694,46 @@ impl Pool {
     }
 
     /// Send a request to the first node that takes it. A node that cannot be reached is marked down and the
-    /// next one is tried; any answer from a node, even an error, is the answer.
+    /// next one is tried; a node that is full is skipped; any other answer, even an error, is the answer.
     pub async fn forward(&self, method: Method, path_and_query: &str, content_type: Option<&str>, body: Bytes) -> Response {
         let mut last = String::from("no search node is configured");
+        let mut busy = false;
+        let head = json!({"method": method.as_str(), "uri": path_and_query, "content_type": content_type});
         for i in self.order().into_iter().take(3) {
             let node = &self.nodes[i];
-            let mut req = self.http.request(method.clone(), format!("{}{path_and_query}", node.base)).header(KEY_HEADER, &self.key).body(body.clone());
-            if let Some(ct) = content_type {
-                req = req.header(header::CONTENT_TYPE, ct);
-            }
-            match req.send().await {
-                Ok(resp) => {
+            match node.client.call(Op::Http, &head, &body, Duration::from_secs(115)).await {
+                Ok(reply) => {
                     node.up.store(true, Ordering::Relaxed);
-                    let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-                    let ct = resp.headers().get(header::CONTENT_TYPE).cloned();
-                    let retry = resp.headers().get(header::RETRY_AFTER).cloned();
-                    let bytes = resp.bytes().await.unwrap_or_default();
-                    let mut out = (status, bytes).into_response();
-                    if let Some(ct) = ct {
-                        out.headers_mut().insert(header::CONTENT_TYPE, ct);
+                    if reply.status != Status::Ok {
+                        let m = reply.head["message"].as_str().unwrap_or("the node failed");
+                        return (StatusCode::BAD_GATEWAY, Json(json!({"code": "upstream_failed", "message": format!("{}: {m}", node.url)}))).into_response();
                     }
-                    if let Some(r) = retry {
-                        out.headers_mut().insert(header::RETRY_AFTER, r);
+                    let status = reply.head["status"].as_u64().and_then(|s| StatusCode::from_u16(s as u16).ok()).unwrap_or(StatusCode::BAD_GATEWAY);
+                    let mut out = (status, reply.body).into_response();
+                    for (name, key) in [(header::CONTENT_TYPE, "content_type"), (header::RETRY_AFTER, "retry_after")] {
+                        if let Some(v) = reply.head[key].as_str().and_then(|v| header::HeaderValue::from_str(v).ok()) {
+                            out.headers_mut().insert(name, v);
+                        }
                     }
                     return out;
                 }
-                // Could not even connect: the node never saw the request, so the next one may have it.
-                Err(e) if e.is_connect() => {
+                // Nothing was sent, or the node declined before starting: the next one may take it.
+                Err(CallError::Unreachable(m)) => {
                     node.up.store(false, Ordering::Relaxed);
-                    last = format!("{}: {e}", node.base);
+                    last = m;
                 }
-                // Anything later (a timeout, a broken connection) may have run the request already; do not run it twice.
-                Err(e) => {
-                    return (StatusCode::GATEWAY_TIMEOUT, Json(json!({"code": "upstream_failed", "message": format!("{}: {e}", node.base)}))).into_response();
+                Err(CallError::Busy) => busy = true,
+                // The node may have run it already; do not run it twice.
+                Err(CallError::Failed(m)) => {
+                    return (StatusCode::GATEWAY_TIMEOUT, Json(json!({"code": "upstream_failed", "message": m}))).into_response();
                 }
+                Err(CallError::Refused(m)) => last = m,
             }
+        }
+        if busy {
+            let mut r = (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"code": "busy", "message": "every search node is at its limit; try again shortly", "retry_after": 1}))).into_response();
+            r.headers_mut().insert(header::RETRY_AFTER, header::HeaderValue::from_static("1"));
+            return r;
         }
         (StatusCode::BAD_GATEWAY, Json(json!({"code": "no_upstream", "message": format!("no node answered ({last})")}))).into_response()
     }
@@ -545,12 +746,13 @@ pub struct Gateway {
 }
 
 impl Gateway {
-    pub fn new(c: &Cluster) -> Arc<Self> {
+    pub fn new(c: &Cluster) -> Result<Arc<Self>, String> {
+        let mesh = c.mesh()?;
         let flywheel: Vec<String> = c.flywheel.iter().cloned().collect();
-        let g = Arc::new(Self { search: Pool::new(&c.search_nodes, &c.key), flywheel: Pool::new(&flywheel, &c.key) });
+        let g = Arc::new(Self { search: Pool::new(mesh, &c.search_nodes, PeerRole::Search)?, flywheel: Pool::new(mesh, &flywheel, PeerRole::Flywheel)? });
         g.search.watch();
         g.flywheel.watch();
-        g
+        Ok(g)
     }
 }
 
@@ -797,20 +999,20 @@ pub async fn import_remote(from: &std::path::Path, link: &Link) -> Result<Counts
     let items = bundle_items(from);
     for chunk in items.chunks(200) {
         let events: Vec<Value> = chunk.iter().map(|i| json!({"k": "item", "item": i})).collect();
-        link.post("/v1/cluster/events", &json!({"events": events})).await?;
+        link.events(&events).await?;
         c.items += chunk.len();
     }
     for (_, text) in bundle_journal(from) {
         let lines: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
         for chunk in lines.chunks(100) {
             let events: Vec<Value> = chunk.iter().map(|l| json!({"k": "journal", "line": l})).collect();
-            link.post("/v1/cluster/events", &json!({"events": events})).await?;
+            link.events(&events).await?;
             c.journal_lines += chunk.len();
         }
     }
     if let Ok(bytes) = std::fs::read(from.join("learn.json")) {
         let v: Value = serde_json::from_slice(&bytes).map_err(io("learn.json"))?;
-        link.post("/v1/cluster/learn", &v).await?;
+        link.learn_merge(&serde_json::to_vec(&v).map_err(io("learn.json"))?).await?;
         c.learner = true;
     }
     Ok(c)
@@ -829,14 +1031,67 @@ mod tests {
         assert_eq!("".parse::<Role>().unwrap(), Role::Single);
         assert_eq!("Gateway".parse::<Role>().unwrap(), Role::Gateway);
         assert!("boss".parse::<Role>().is_err());
-        let base = Cluster { role: Role::Gateway, key: "k".repeat(16), search_nodes: vec![], flywheel: None };
+        let (cert, key) = wire::Identity::generate("n").unwrap();
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("c"), cert).unwrap();
+        std::fs::write(d.path().join("k"), key).unwrap();
+        let mesh = Mesh { identity: wire::Identity::load(&d.path().join("c"), &d.path().join("k")).unwrap(), peers: wire::Peers::fixed(vec![]) };
+        let base = Cluster { role: Role::Gateway, search_nodes: vec![], flywheel: None, listen: None, mesh: Some(mesh) };
         assert!(base.check().unwrap_err().contains("search_nodes"));
-        let ok = Cluster { search_nodes: vec!["https://a".into()], flywheel: Some("https://f".into()), ..base.clone() };
+        let ok = Cluster { search_nodes: vec!["quic://10.0.0.1:7443".into()], flywheel: Some("quic://10.0.0.2:7443".into()), ..base.clone() };
         assert!(ok.check().is_ok());
-        assert!(Cluster { key: "short".into(), ..ok.clone() }.check().unwrap_err().contains("cluster_key"));
-        assert!(Cluster { role: Role::Search, flywheel: None, ..ok.clone() }.check().unwrap_err().contains("flywheel"));
-        assert!(Cluster { role: Role::Single, key: String::new(), search_nodes: vec![], flywheel: None }.check().is_ok());
-        assert!(!format!("{ok:?}").contains("kkkk"), "the key must never be printed");
+        assert!(Cluster { search_nodes: vec!["https://10.0.0.1".into()], ..ok.clone() }.check().is_err(), "nodes are not addressed over HTTP");
+        assert!(Cluster { mesh: None, ..ok.clone() }.check().unwrap_err().contains("node_cert"));
+        assert!(Cluster { role: Role::Search, ..ok.clone() }.check().unwrap_err().contains("cluster_listen"));
+        assert!(Cluster { role: Role::Search, flywheel: None, listen: Some("0.0.0.0:7443".parse().unwrap()), ..ok.clone() }.check().unwrap_err().contains("flywheel"));
+        assert!(Cluster { role: Role::Single, mesh: None, search_nodes: vec![], flywheel: None, listen: None }.check().is_ok());
+    }
+
+    #[test]
+    fn events_keep_their_order_through_the_spool_and_survive_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = Outbox::with_spool(dir.path());
+        // Fill memory the cheap way: pretend it is full by pushing straight to the spool after a limit.
+        {
+            let mut q = out.queue.lock().unwrap();
+            for i in 0..QUEUE_LIMIT {
+                q.seq += 1;
+                let id = (out.epoch, q.seq);
+                q.events.push_back(Queued { id, event: json!({"k": "x", "n": i}), size: 10 });
+                q.bytes += 10;
+            }
+        }
+        for i in 0..250 {
+            out.push(json!({"k": "x", "n": QUEUE_LIMIT + i}));
+        }
+        assert_eq!(out.len(), QUEUE_LIMIT + 250);
+        assert!(std::fs::read_dir(dir.path()).unwrap().count() > 0, "the overflow is on disk");
+        // A new run finds the spooled part; the memory part died with the old process.
+        drop(out);
+        let again = Outbox::with_spool(dir.path());
+        assert_eq!(again.len(), 250);
+        let mut got = Vec::new();
+        loop {
+            let b = again.take();
+            if b.is_empty() {
+                break;
+            }
+            got.extend(b);
+        }
+        let ns: Vec<u64> = got.iter().map(|q| q.event["n"].as_u64().unwrap()).collect();
+        assert_eq!(ns, (QUEUE_LIMIT as u64..QUEUE_LIMIT as u64 + 250).collect::<Vec<_>>(), "oldest first, nothing lost");
+        assert!(got.windows(2).all(|w| w[0].id.1 < w[1].id.1));
+        assert!(again.is_empty());
+    }
+
+    #[test]
+    fn without_a_spool_the_oldest_are_dropped_and_counted() {
+        let out = Outbox::new();
+        for i in 0..QUEUE_LIMIT + 5 {
+            out.push(json!({"k": "x", "n": i}));
+        }
+        assert_eq!((out.len(), out.dropped()), (QUEUE_LIMIT, 5));
+        assert_eq!(out.take()[0].event["n"], 5);
     }
 
     #[test]

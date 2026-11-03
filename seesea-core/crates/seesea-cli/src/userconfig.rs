@@ -59,19 +59,20 @@ pub struct FileConfig {
     pub tls_client_ca: Option<PathBuf>,
     /// A TLS-terminating proxy sits in front of this server and talks to it over a private link.
     pub behind_tls_proxy: Option<bool>,
-    /// For connections to other nodes: extra CA certificates to trust, and this node's own certificate and key.
-    pub cluster_ca: Option<PathBuf>,
-    pub cluster_client_cert: Option<PathBuf>,
-    pub cluster_client_key: Option<PathBuf>,
     /// What this node does in a cluster: `single` (default, everything in one process), `gateway`,
     /// `search` or `flywheel`. Overridden by `SEESEA_ROLE`.
     pub role: Option<String>,
-    /// The secret the nodes of a cluster share. Overridden by `SEESEA_CLUSTER_KEY`.
-    pub cluster_key: Option<String>,
-    /// Gateway: the search nodes, as `["http://10.0.0.2:8080", ...]`.
+    /// This node's certificate and private key (PEM) for talking to other nodes; `seesea cluster keygen` makes them.
+    pub node_cert: Option<PathBuf>,
+    pub node_key: Option<PathBuf>,
+    /// The nodes this one trusts: a file of `<sha256 fingerprint> <role> <name>` lines. Re-read when it changes.
+    pub cluster_peers: Option<PathBuf>,
+    /// Search and flywheel nodes: the UDP address the other nodes connect to.
+    pub cluster_listen: Option<String>,
+    /// Gateway: the search nodes, as `["quic://10.0.0.2:7443", ...]`.
     #[serde(default)]
     pub search_nodes: Vec<String>,
-    /// Gateway and search nodes: the flywheel node, `"http://10.0.0.3:8080"`.
+    /// Gateway and search nodes: the flywheel node, `"quic://10.0.0.3:7443"`.
     pub flywheel: Option<String>,
     /// Plans for API users, by name: `[plans.free] per_minute = 20`. `default` and `unlimited`
     /// exist unless redefined.
@@ -224,6 +225,11 @@ pub fn default_index_dir() -> PathBuf {
     data_dir().join("index")
 }
 
+/// Events a search node could not hand to the flywheel node yet.
+pub fn default_spool_dir() -> PathBuf {
+    data_dir().join("spool")
+}
+
 pub fn default_auth_db() -> PathBuf {
     data_dir().join("auth.db")
 }
@@ -319,18 +325,19 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # tls_cert = "/etc/seesea/server.pem"
 # tls_key = "/etc/seesea/server.key"
 # behind_tls_proxy = false
-# tls_client_ca = "/etc/seesea/cluster-ca.pem"      # nodes: also require a client certificate from this CA
-# cluster_ca = "/etc/seesea/cluster-ca.pem"         # nodes: trust this CA when calling other nodes
-# cluster_client_cert = "/etc/seesea/node.pem"
-# cluster_client_key = "/etc/seesea/node.key"
+# tls_client_ca = "/etc/seesea/client-ca.pem"       # also require a client certificate from this CA
 # trust_forwarded_for = false                       # behind a proxy that sets X-Forwarded-For
 
 # Several machines: give each node one job (see `seesea cluster --help` and the README). The default is
-# `single`, one process doing everything. All nodes of a cluster share one secret.
+# `single`, one process doing everything. Nodes talk to each other in seesea-wire over QUIC (UDP), each with
+# its own key pair (`seesea cluster keygen`), and trust only the fingerprints listed in cluster_peers.
 # role = "single"            # single | gateway | search | flywheel
-# cluster_key = "a long shared secret"
-# search_nodes = ["http://10.0.0.2:8080", "http://10.0.0.4:8080"]   # gateway
-# flywheel = "http://10.0.0.3:8080"                                  # gateway and search nodes
+# node_cert = "/etc/seesea/node.pem"
+# node_key = "/etc/seesea/node.key"
+# cluster_peers = "/etc/seesea/peers"                # lines: <sha256 fingerprint> <gateway|search|flywheel|operator> <name>
+# cluster_listen = "0.0.0.0:7443"                    # search and flywheel nodes (UDP)
+# search_nodes = ["quic://10.0.0.2:7443", "quic://10.0.0.4:7443"]   # gateway
+# flywheel = "quic://10.0.0.3:7443"                                  # gateway and search nodes
 
 # Plans for API users. `default` (60 credits/min, burst 30, 5000/day, 4 at once) and `unlimited`
 # exist already; a fast search costs 1 credit, a standard one 2, a deep one 5.

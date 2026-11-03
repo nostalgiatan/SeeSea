@@ -4,7 +4,7 @@ use rcgen::{BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, 
 use seesea_cli::config::{Settings, build_pipeline};
 use seesea_cli::server::{AppState, router};
 use seesea_cli::sources::SourceSettings;
-use seesea_cli::tls::{PeerAddr, ServerTls, TlsListener, secure_url, server_config};
+use seesea_cli::tls::{PeerAddr, ServerTls, TlsListener, server_config};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -95,24 +95,6 @@ async fn with_a_client_ca_only_nodes_holding_a_certificate_from_it_get_in() {
     let other = tempfile::tempdir().unwrap();
     let q = pki(other.path());
     assert!(client(Some(&p.ca), Some((&q.client_cert, &q.client_key))).get(format!("https://{addr}/health")).send().await.is_err());
-}
-
-#[test]
-fn addresses_of_other_nodes_must_be_https_unless_they_are_this_machine() {
-    for ok in ["https://10.0.0.2:8443", "https://search.internal", "http://127.0.0.1:8080", "http://localhost:8080", "http://[::1]:8080"] {
-        assert!(secure_url(ok).is_ok(), "{ok}");
-    }
-    for bad in ["http://10.0.0.2:8080", "http://search.internal", "ftp://x", "not a url"] {
-        assert!(secure_url(bad).is_err(), "{bad}");
-    }
-    // The cluster settings check applies the same rule.
-    let c = seesea_cli::cluster::Cluster {
-        role: seesea_cli::cluster::Role::Search,
-        key: "k".repeat(16),
-        search_nodes: vec![],
-        flywheel: Some("http://10.0.0.3:8080".into()),
-    };
-    assert!(c.check().unwrap_err().contains("TLS"));
 }
 
 #[tokio::test]

@@ -660,7 +660,7 @@ async fn batch_runs_each_query_and_one_bad_query_does_not_sink_the_rest() {
     assert_eq!(r.status(), 400);
 }
 
-/// A node on its own port; the handle lets a test take it away.
+/// A node on its own HTTP port; the handle lets a test take it away.
 async fn spawn_node(state: AppState) -> (String, tokio::task::JoinHandle<()>) {
     let app = router(state, 8);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -671,21 +671,35 @@ async fn spawn_node(state: AppState) -> (String, tokio::task::JoinHandle<()>) {
     (url, h)
 }
 
+/// A key pair for a node, and the line that lists it.
+fn identity(dir: &std::path::Path, name: &str) -> seesea_cli::wire::Identity {
+    let (cert, key) = seesea_cli::wire::Identity::generate(name).unwrap();
+    std::fs::write(dir.join(format!("{name}.pem")), cert).unwrap();
+    std::fs::write(dir.join(format!("{name}.key")), key).unwrap();
+    seesea_cli::wire::Identity::load(&dir.join(format!("{name}.pem")), &dir.join(format!("{name}.key"))).unwrap()
+}
+
 #[tokio::test]
 async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     use seesea_auth::{Plan, Store};
-    use seesea_cli::cluster::{Cluster, Gateway, Role};
+    use seesea_cli::cluster::{Cluster, Gateway, Link, Role, start_wire};
+    use seesea_cli::wire::{Mesh, PeerInfo, PeerRole, Peers};
     let base = spawn_site().await;
-    let key = "cluster-secret-0123456789".to_string();
     let dir = tempfile::tempdir().unwrap();
-    let cluster = |role, search: &[String], fly: Option<&str>| Cluster {
+
+    // Every node has its own key pair; each trusts the fingerprints of the nodes it deals with.
+    let ids: std::collections::HashMap<&str, _> = ["fly", "s0", "s1", "gw", "op", "intruder"].into_iter().map(|n| (n, identity(dir.path(), n))).collect();
+    let listed = |name: &str, role| PeerInfo { name: name.into(), role, fingerprint: ids[name].fingerprint.clone() };
+    let mesh = |me: &str, peers: Vec<PeerInfo>| Mesh { identity: ids[me].clone(), peers: Peers::fixed(peers) };
+    let cluster = |role, me: &str, peers: Vec<PeerInfo>, search: &[String], fly: Option<&str>| Cluster {
         role,
-        key: key.clone(),
         search_nodes: search.to_vec(),
         flywheel: fly.map(String::from),
+        listen: Some("127.0.0.1:0".parse().unwrap()),
+        mesh: Some(mesh(me, peers)),
     };
 
-    // The flywheel node: index, learner, journal.
+    // The flywheel node: index, learner, journal. It lets search nodes, the gateway and an operator in.
     let index = seesea_index::Index::open(dir.path().join("index"));
     let fly_settings = Settings {
         journal_dir: Some(dir.path().join("fly-journal")),
@@ -694,25 +708,36 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     };
     let mut fly = AppState::new(Arc::new(build_pipeline(&fly_settings).unwrap()), None);
     fly.index = Some(index.clone());
-    fly.cluster = Some(cluster(Role::Flywheel, &[], None));
-    let (fly_url, _fly) = spawn_node(fly).await;
+    let fly_cluster = cluster(
+        Role::Flywheel,
+        "fly",
+        vec![listed("s0", PeerRole::Search), listed("s1", PeerRole::Search), listed("gw", PeerRole::Gateway), listed("op", PeerRole::Operator)],
+        &[],
+        None,
+    );
+    fly.cluster = Some(fly_cluster.clone());
+    let fly_wire = start_wire(fly, 8, &fly_cluster).unwrap();
+    let fly_url = format!("quic://{}", fly_wire.addr);
 
-    // Two search nodes that keep nothing of their own.
+    // Two search nodes that keep nothing of their own; they answer only the gateway.
     let mut search_urls = Vec::new();
-    let mut handles = Vec::new();
-    for n in 0..2 {
-        let c = cluster(Role::Search, &[], Some(&fly_url));
+    let mut http_urls = Vec::new();
+    let mut wires = Vec::new();
+    for (n, name) in ["s0", "s1"].into_iter().enumerate() {
+        let c = cluster(Role::Search, name, vec![listed("fly", PeerRole::Flywheel), listed("gw", PeerRole::Gateway)], &[], Some(&fly_url));
         let s = Settings {
             cluster_search: Some(c.clone()),
+            spool_dir: Some(dir.path().join(format!("{name}-spool"))),
             journal_dir: Some(dir.path().join(format!("node{n}-journal"))),
             learn_file: Some(dir.path().join(format!("node{n}-learn.json"))),
             ..settings(&base)
         };
         let mut st = AppState::new(Arc::new(build_pipeline(&s).unwrap()), None);
-        st.cluster = Some(c);
-        let (url, h) = spawn_node(st).await;
-        search_urls.push(url);
-        handles.push(h);
+        st.cluster = Some(c.clone());
+        let w = start_wire(st.clone(), 8, &c).unwrap();
+        search_urls.push(format!("quic://{}", w.addr));
+        wires.push(w);
+        http_urls.push(spawn_node(st).await.0);
     }
 
     // The gateway: users and limits.
@@ -720,12 +745,13 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     store.create_user("ann", "small").unwrap();
     let (_, ann) = store.create_key("ann", "k", None).unwrap();
     let plans = std::collections::HashMap::from([("small".to_string(), Plan { per_minute: 600, burst: 100, per_day: 0, max_concurrent: 4, deep: false })]);
-    let gw_cluster = cluster(Role::Gateway, &search_urls, Some(&fly_url));
+    let gw_peers = vec![listed("s0", PeerRole::Search), listed("s1", PeerRole::Search), listed("fly", PeerRole::Flywheel)];
+    let gw_cluster = cluster(Role::Gateway, "gw", gw_peers.clone(), &search_urls, Some(&fly_url));
     let mut gw = AppState::with_access(
         Arc::new(build_pipeline(&Settings { no_render: true, ..settings(&base) }).unwrap()),
         seesea_cli::access::Access::new(Some(store), plans, None),
     );
-    gw.gateway = Some(Gateway::new(&gw_cluster));
+    gw.gateway = Some(Gateway::new(&gw_cluster).unwrap());
     gw.cluster = Some(gw_cluster);
     let (gw_url, _gw) = spawn_node(gw).await;
     let http = reqwest::Client::new();
@@ -737,9 +763,10 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
         r.send()
     };
 
-    // A search node answers only its gateway; users only get in through the gateway, with a key and a plan.
-    assert_eq!(http.get(format!("{}/v1/search?q=rust", search_urls[0])).send().await.unwrap().status(), 401);
-    assert_eq!(http.get(format!("{}/v1/search?q=rust&mode=fast", search_urls[0])).header("x-seesea-cluster", &key).send().await.unwrap().status(), 200);
+    // A search node's HTTP port answers nobody: the old shared-secret header opens nothing.
+    assert_eq!(http.get(format!("{}/v1/search?q=rust", http_urls[0])).send().await.unwrap().status(), 401);
+    assert_eq!(http.get(format!("{}/v1/search?q=rust&mode=fast", http_urls[0])).header("x-seesea-cluster", "anything-at-all-0123456789").send().await.unwrap().status(), 401);
+    // Users get in through the gateway, with a key and a plan.
     assert_eq!(search(None, "standard").await.unwrap().status(), 401);
     assert_eq!(search(Some(&ann), "deep").await.unwrap().status(), 400, "the plan has no deep searches");
     let ok = search(Some(&ann), "standard").await.unwrap();
@@ -777,10 +804,11 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     assert_eq!(ingest.status(), 403);
 
     // What the search node did reaches the flywheel node: the journal, the learner, the index.
+    let operator = Link::new(&mesh("op", vec![listed("fly", PeerRole::Flywheel)]), &fly_url).unwrap();
     let mut seen = (0, 0.0, 0);
     for _ in 0..40 {
         let lines = seesea_pipeline::Journal::read(&dir.path().join("fly-journal"), 0);
-        let learned = http.get(format!("{fly_url}/v1/cluster/learn")).header("x-seesea-cluster", &key).send().await.unwrap().bytes().await.unwrap();
+        let learned = operator.learn_get().await.unwrap();
         let st: Value = serde_json::from_slice(&learned).unwrap();
         let obs = st["global"]["n"].as_f64().unwrap_or(0.0);
         let items = index.store.search("rust async runtime", None, 5).unwrap().len();
@@ -791,30 +819,38 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
     assert!(seen.0 >= 1 && seen.1 > 0.0 && seen.2 >= 1, "journal lines, observations, indexed pages: {seen:?}");
-    // The flywheel's data is not open to anyone without the cluster key.
-    assert_eq!(http.get(format!("{fly_url}/v1/cluster/learn")).send().await.unwrap().status(), 403);
+
+    // The flywheel's data is open only to nodes in its list, and only for what their role allows.
+    let intruder = Link::new(&mesh("intruder", vec![listed("fly", PeerRole::Flywheel)]), &fly_url).unwrap();
+    assert!(intruder.learn_get().await.is_err(), "a key pair nobody listed gets nothing");
+    let as_gateway = Link::new(&mesh("gw", vec![listed("fly", PeerRole::Flywheel)]), &fly_url).unwrap();
+    assert!(as_gateway.learn_get().await.is_err(), "a gateway may forward users, not read the learner");
+    assert!(as_gateway.events(&[json!({"k": "item", "item": {"url": "https://evil.example/x", "title": "poison", "lead": "", "source": "feed"}})]).await.is_err());
+    assert!(index.store.search("poison", None, 5).unwrap().is_empty());
 
     // The search nodes see the flywheel node's index as the `local` source.
-    let via_node = http
-        .get(format!("{}/v1/search?q=rust+async+runtime&mode=fast&sources=local", search_urls[0]))
-        .header("x-seesea-cluster", &key)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(via_node.status(), 200);
-    assert!(!via_node.json::<Value>().await.unwrap()["hits"].as_array().unwrap().is_empty());
+    let via_index = http.get(format!("{gw_url}/v1/search?q=rust+async+runtime&mode=fast&sources=local")).bearer_auth(&ann).send().await.unwrap();
+    assert_eq!(via_index.status(), 200);
+    assert!(!via_index.json::<Value>().await.unwrap()["hits"].as_array().unwrap().is_empty());
 
     // A single node's history is pushed into the running flywheel node.
     let bundle = dir.path().join("bundle");
     std::fs::create_dir_all(bundle.join("journal")).unwrap();
     std::fs::write(bundle.join("manifest.json"), "{}").unwrap();
     std::fs::write(bundle.join("items.jsonl"), "{\"url\":\"https://old.example/zebra\",\"title\":\"Zebra migration\",\"lead\":\"herds of zebra\",\"source\":\"feed\"}\n").unwrap();
-    let pushed = seesea_cli::cluster::import_remote(&bundle, &seesea_cli::cluster::Link::new(&fly_url, &key)).await.unwrap();
+    let pushed = seesea_cli::cluster::import_remote(&bundle, &operator).await.unwrap();
     assert_eq!(pushed.items, 1);
     assert_eq!(index.store.search("zebra", None, 5).unwrap().len(), 1);
 
+    // Events that arrive twice (a lost answer, then a resend) count once.
+    let ev = json!({"k": "item", "id": [7, 1], "item": {"url": "https://dup.example/a", "title": "Dup", "lead": "dup", "source": "feed"}});
+    assert_eq!(operator.events(&[ev.clone()]).await.unwrap(), 1);
+    assert_eq!(operator.events(&[ev]).await.unwrap(), 0, "the second copy is skipped");
+
     // One search node goes away: the gateway notices and the other one answers.
-    handles[0].abort();
+    wires[0].close();
+    // (A request in flight at that moment would get a 504: it may have run. Once the close is known, the node is skipped.)
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     for _ in 0..6 {
         assert_eq!(search(Some(&ann), "fast").await.unwrap().status(), 200);
     }

@@ -57,6 +57,8 @@ pub struct Settings {
     pub no_writeback: bool,
     /// On a search node: the flywheel node that receives what it reads and learns and holds the index.
     pub cluster_search: Option<crate::cluster::Cluster>,
+    /// A search node queues events for the flywheel node here when memory is full.
+    pub spool_dir: Option<PathBuf>,
     pub explore: f64,
     /// Folder of the local fresh-news index; none means no `local` source.
     pub index_dir: Option<PathBuf>,
@@ -182,11 +184,11 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
     let mut sink = None;
     // A search node keeps no index of its own: it sends what it reads to the flywheel node and asks it for
     // fresh-news results.
-    let outbox = settings.cluster_search.as_ref().map(|_| crate::cluster::Outbox::new());
-    let link = settings
-        .cluster_search
-        .as_ref()
-        .and_then(|c| c.flywheel.as_deref().map(|f| crate::cluster::Link::new(f, &c.key)));
+    let outbox = settings.cluster_search.as_ref().map(|_| match &settings.spool_dir {
+        Some(dir) => crate::cluster::Outbox::with_spool(dir),
+        None => crate::cluster::Outbox::new(),
+    });
+    let link = settings.cluster_search.as_ref().map(crate::cluster::Link::of).transpose().map_err(Error::Config)?;
     if let (Some(link), Some(outbox)) = (&link, &outbox) {
         sink = Some(Arc::new(crate::cluster::ClusterSink(outbox.clone())) as Arc<dyn seesea_pipeline::Sink>);
         sources.push(Arc::new(crate::cluster::RemoteIndex(link.clone())));
