@@ -135,6 +135,7 @@ fn same(a: &str, b: &str) -> bool {
 
 const SCHEMA: &str = "
 PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, plan TEXT NOT NULL,
@@ -199,6 +200,12 @@ impl Store {
             .query_row("SELECT id, name, plan, disabled, created FROM users WHERE name = ?1", [name], user_from)
             .optional()?
             .ok_or_else(|| AuthError::NotFound(format!("user '{name}'")))
+    }
+
+    /// Whether any user exists (cheap: the server asks on every request).
+    pub fn has_users(&self) -> bool {
+        let db = self.db.lock().unwrap();
+        db.query_row("SELECT EXISTS(SELECT 1 FROM users)", [], |r| r.get::<_, i64>(0)).map_or(false, |n| n != 0)
     }
 
     pub fn users(&self) -> Result<Vec<User>, AuthError> {

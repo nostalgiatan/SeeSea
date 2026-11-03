@@ -164,7 +164,15 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Reques
     }
     // A gateway hands the account endpoints to the node that holds the accounts, which checks the key itself.
     if state.gateway.is_some() && crate::cluster::is_accounts_path(req.uri().path()) {
-        return next.run(req).await;
+        // Wrong keys are counted here, per client address, since the node behind does not see the address.
+        if state.access.blocked(ip) {
+            return refusal_response(Refusal::Limited { denied: None, code: "too_many_failures", message: "too many failed attempts to authenticate; wait a minute".into(), retry_after: 60 });
+        }
+        let response = next.run(req).await;
+        if response.status() == StatusCode::UNAUTHORIZED {
+            state.access.failed(ip);
+        }
+        return response;
     }
     let cost = base_cost(req.uri().path());
     let admitted = if state.access.is_remote() {
