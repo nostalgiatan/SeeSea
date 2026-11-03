@@ -345,7 +345,7 @@ impl GgufBert {
         let device = Device::Cpu;
         // Opening the adapter takes about half a second; do it while the file's metadata is parsed.
         #[cfg(feature = "gpu")]
-        let gpu_opening = (!std::env::var("SEESEA_EMBED_DEVICE").is_ok_and(|v| v == "cpu"))
+        let gpu_opening = crate::gpu_wanted()
             .then(|| std::thread::spawn(crate::gpu::GpuLayers::open));
         let io = |source| EmbedError::Io {
             path: path.display().to_string(),

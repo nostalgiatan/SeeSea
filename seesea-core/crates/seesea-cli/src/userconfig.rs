@@ -28,6 +28,10 @@ pub struct FileConfig {
     pub no_learn: Option<bool>,
     /// Do not keep a record of searches (see `seesea report`).
     pub no_journal: Option<bool>,
+    /// Where the models run: `cpu` (default) or `gpu`.
+    pub device: Option<String>,
+    /// Minutes without a search before the models are unloaded to free memory (default 10, 0 never).
+    pub model_idle_minutes: Option<u64>,
     /// Do not add pages that were read and answered a search to the local index.
     pub no_writeback: Option<bool>,
     /// Chance per search (0..1) of reading one lower-ranked result to keep the learning unbiased.
@@ -254,6 +258,10 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # no_learn = false
 # Every search is recorded under the data folder (journal/) for `seesea report`; turn that off here.
 # no_journal = false
+# The models run on the CPU unless you say gpu; a shared laptop GPU is often short of memory.
+# device = "cpu"
+# The models are unloaded after this many idle minutes and loaded again by the next search (0 = keep them).
+# model_idle_minutes = 10
 # Pages that were read and answered a search are kept in the local index, so the next search can find them
 # even when the web is slow or down. Turn that off here.
 # no_writeback = false
