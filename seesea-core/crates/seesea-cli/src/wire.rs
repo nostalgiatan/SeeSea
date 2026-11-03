@@ -416,8 +416,9 @@ impl ClientCertVerifier for Pin {
 
 fn transport() -> Arc<quinn::TransportConfig> {
     let mut t = quinn::TransportConfig::default();
-    t.max_idle_timeout(Some(Duration::from_secs(30).try_into().unwrap()));
-    t.keep_alive_interval(Some(Duration::from_secs(8)));
+    // A peer that vanished without closing (power, kill -9, a cut cable) is noticed within this time.
+    t.max_idle_timeout(Some(Duration::from_secs(10).try_into().unwrap()));
+    t.keep_alive_interval(Some(Duration::from_secs(3)));
     t.max_concurrent_bidi_streams(256u32.into());
     t.max_concurrent_uni_streams(0u32.into());
     Arc::new(t)
