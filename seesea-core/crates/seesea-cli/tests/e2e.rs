@@ -688,17 +688,37 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     let dir = tempfile::tempdir().unwrap();
 
     // Every node has its own key pair; each trusts the fingerprints of the nodes it deals with.
-    let ids: std::collections::HashMap<&str, _> = ["fly", "s0", "s1", "gw", "op", "intruder"].into_iter().map(|n| (n, identity(dir.path(), n))).collect();
+    let ids: std::collections::HashMap<&str, _> = ["fly", "fly2", "s0", "s1", "gw", "op", "intruder"].into_iter().map(|n| (n, identity(dir.path(), n))).collect();
     let listed = |name: &str, role| PeerInfo { name: name.into(), role, fingerprint: ids[name].fingerprint.clone() };
     let mesh = |me: &str, peers: Vec<PeerInfo>| Mesh { identity: ids[me].clone(), peers: Peers::fixed(peers) };
     let cluster = |role, me: &str, peers: Vec<PeerInfo>, search: &[String], fly: Option<&str>| Cluster {
         role,
         search_nodes: search.to_vec(),
         flywheel: fly.map(String::from),
+        flywheel_standby: None,
+        standby_of: None,
         listen: Some("127.0.0.1:0".parse().unwrap()),
         state_dir: Some(std::env::temp_dir().join(format!("seesea-e2e-{}-{me}", std::process::id()))),
         mesh: Some(mesh(me, peers)),
     };
+
+    // The standby flywheel node: its own index, learner and (empty) accounts, which it fills by following the primary.
+    let index2 = seesea_index::Index::open(dir.path().join("index2"));
+    let standby_settings = Settings { journal_dir: Some(dir.path().join("fly2-journal")), learn_file: Some(dir.path().join("fly2-learn.json")), ..settings(&base) };
+    let store2 = seesea_auth::Store::in_memory().unwrap();
+    let plans2 = std::collections::HashMap::from([("small".to_string(), Plan { per_minute: 600, burst: 100, per_day: 0, max_concurrent: 4, deep: false })]);
+    let mut fly2 = AppState::with_access(Arc::new(build_pipeline(&standby_settings).unwrap()), seesea_cli::access::Access::new(Some(store2), plans2, None));
+    fly2.index = Some(index2.clone());
+    let fly2_cluster = cluster(
+        Role::Flywheel,
+        "fly2",
+        vec![listed("fly", PeerRole::Flywheel), listed("s0", PeerRole::Search), listed("s1", PeerRole::Search), listed("gw", PeerRole::Gateway), listed("op", PeerRole::Operator)],
+        &[],
+        None,
+    );
+    fly2.cluster = Some(fly2_cluster.clone());
+    let fly2_wire = start_wire(fly2.clone(), 8, &fly2_cluster).unwrap();
+    let fly2_url = format!("quic://{}", fly2_wire.addr);
 
     // The flywheel node: index, learner, journal. It lets search nodes, the gateway and an operator in.
     let index = seesea_index::Index::open(dir.path().join("index"));
@@ -717,7 +737,7 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     let fly_cluster = cluster(
         Role::Flywheel,
         "fly",
-        vec![listed("s0", PeerRole::Search), listed("s1", PeerRole::Search), listed("gw", PeerRole::Gateway), listed("op", PeerRole::Operator)],
+        vec![listed("fly2", PeerRole::Flywheel), listed("s0", PeerRole::Search), listed("s1", PeerRole::Search), listed("gw", PeerRole::Gateway), listed("op", PeerRole::Operator)],
         &[],
         None,
     );
@@ -730,7 +750,7 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     let mut http_urls = Vec::new();
     let mut wires = Vec::new();
     for (n, name) in ["s0", "s1"].into_iter().enumerate() {
-        let c = cluster(Role::Search, name, vec![listed("fly", PeerRole::Flywheel), listed("gw", PeerRole::Gateway)], &[], Some(&fly_url));
+        let c = Cluster { flywheel_standby: Some(fly2_url.clone()), ..cluster(Role::Search, name, vec![listed("fly", PeerRole::Flywheel), listed("fly2", PeerRole::Flywheel), listed("gw", PeerRole::Gateway)], &[], Some(&fly_url)) };
         let s = Settings {
             cluster_search: Some(c.clone()),
             spool_dir: Some(dir.path().join(format!("{name}-spool"))),
@@ -747,8 +767,8 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     }
 
     // The gateway: checks keys against the flywheel node's accounts. A second one shares them.
-    let gw_peers = vec![listed("s0", PeerRole::Search), listed("s1", PeerRole::Search), listed("fly", PeerRole::Flywheel)];
-    let gw_cluster = cluster(Role::Gateway, "gw", gw_peers.clone(), &search_urls, Some(&fly_url));
+    let gw_peers = vec![listed("s0", PeerRole::Search), listed("s1", PeerRole::Search), listed("fly", PeerRole::Flywheel), listed("fly2", PeerRole::Flywheel)];
+    let gw_cluster = Cluster { flywheel_standby: Some(fly2_url.clone()), ..cluster(Role::Gateway, "gw", gw_peers.clone(), &search_urls, Some(&fly_url)) };
     let make_gateway = |c: &Cluster| {
         let g = Gateway::new(c).unwrap();
         let mut st = AppState::with_access(
@@ -870,6 +890,17 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     for _ in 0..6 {
         assert_eq!(search(Some(&ann), "fast").await.unwrap().status(), 200);
     }
+    // The standby follows the primary; when the primary is gone, users and searches carry on through the standby.
+    let primary_link = Link::new(&mesh("fly2", vec![listed("fly", PeerRole::Flywheel)]), &fly_url).unwrap();
+    let copied = seesea_cli::cluster::replicate_once(&fly2, &primary_link, true).await.unwrap();
+    assert!(copied.0 && copied.1 && copied.2 >= 1, "accounts, learner, index items: {copied:?}");
+    assert!(index2.store.search("zebra", None, 5).unwrap().len() == 1, "the pushed items are on the standby");
+    fly_wire.close();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    for _ in 0..3 {
+        assert_eq!(search(Some(&ann), "fast").await.unwrap().status(), 200, "keys still work: the standby has the accounts");
+    }
+    assert_eq!(http.get(format!("{gw2_url}/v1/account")).bearer_auth(&ann).send().await.unwrap().status(), 200);
     let status: Value = http.get(format!("{gw_url}/v1/cluster/status")).bearer_auth(&ann).send().await.unwrap().json().await.unwrap();
     assert_eq!(status["role"], "gateway");
 }

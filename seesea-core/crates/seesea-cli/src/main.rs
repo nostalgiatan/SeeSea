@@ -1010,6 +1010,8 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             role: role.parse().map_err(Error::Config)?,
             search_nodes: file.search_nodes.clone(),
             flywheel: file.flywheel.clone(),
+            flywheel_standby: file.flywheel_standby.clone(),
+            standby_of: file.standby_of.clone(),
             listen: file.cluster_listen.as_deref().map(|l| l.parse().map_err(|e| Error::Config(format!("cluster_listen '{l}': {e}")))).transpose()?,
             state_dir: Some(userconfig::data_dir()),
             mesh: load_mesh(&file).map_err(Error::Config)?,
@@ -1324,6 +1326,10 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             if let Some(c) = cluster.as_ref().filter(|c| matches!(c.role, seesea_cli::cluster::Role::Search | seesea_cli::cluster::Role::Flywheel)) {
                 let wire = seesea_cli::cluster::start_wire(state.clone(), max_concurrent, c).map_err(Error::Config)?;
                 eprintln!("seesea-wire listening on quic udp {}", wire.addr);
+                if let Some(primary) = &c.standby_of {
+                    let link = seesea_cli::cluster::Link::new(c.mesh.as_ref().expect("checked"), primary).map_err(Error::Config)?;
+                    seesea_cli::cluster::run_standby(state.clone(), link);
+                }
             }
             server::serve(addr, state, max_concurrent, allow_open, tls, file.behind_tls_proxy == Some(true)).await
         }

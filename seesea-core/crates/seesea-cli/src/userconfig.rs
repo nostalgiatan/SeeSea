@@ -74,6 +74,10 @@ pub struct FileConfig {
     pub search_nodes: Vec<String>,
     /// Gateway and search nodes: the flywheel node, `"quic://10.0.0.3:7443"`.
     pub flywheel: Option<String>,
+    /// Gateway and search nodes: a second flywheel node that follows the first and takes over when it is away.
+    pub flywheel_standby: Option<String>,
+    /// On a flywheel node: follow this primary (accounts, learner picture, index) and be its standby.
+    pub standby_of: Option<String>,
     /// Plans for API users, by name: `[plans.free] per_minute = 20`. `default` and `unlimited`
     /// exist unless redefined.
     #[serde(default)]
@@ -337,6 +341,8 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # cluster_peers = "/etc/seesea/peers"                # lines: <sha256 fingerprint> <gateway|search|flywheel|operator> <name>
 # cluster_listen = "0.0.0.0:7443"                    # search and flywheel nodes (UDP)
 # search_nodes = ["quic://10.0.0.2:7443", "quic://10.0.0.4:7443"]   # gateway
+# flywheel_standby = "quic://10.0.0.5:7443"                           # gateway and search nodes: takes over when the flywheel is away
+# standby_of = "quic://10.0.0.3:7443"                                # on the standby flywheel itself
 # flywheel = "quic://10.0.0.3:7443"                                  # gateway and search nodes
 
 # Plans for API users. `default` (60 credits/min, burst 30, 5000/day, 4 at once) and `unlimited`
