@@ -30,6 +30,10 @@ pub trait Reranker: Send + Sync {
     /// One score per document, in the same order. Scores are comparable within one call.
     fn rerank(&self, query: &str, docs: &[DocView<'_>]) -> Vec<RerankScore>;
 
+    /// A search has started: models that were unloaded when idle may begin loading now, in the
+    /// background, so that the load overlaps the fetching. Never blocks.
+    fn wake(&self) {}
+
     /// Like `rerank`, plus a note when the reranker had to fall back to something weaker.
     fn rerank_noted(
         &self,

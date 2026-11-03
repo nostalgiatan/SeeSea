@@ -104,6 +104,25 @@ fn refusal_response(r: Refusal) -> Response {
     }
 }
 
+/// No request may hold a connection, a concurrency slot and a user's permit longer than this, whatever the
+/// stages inside did; the stages have their own, shorter timeouts.
+const REQUEST_LIMIT: std::time::Duration = std::time::Duration::from_secs(120);
+
+async fn deadline(req: Request, next: Next) -> Response {
+    match tokio::time::timeout(REQUEST_LIMIT, next.run(req)).await {
+        Ok(r) => r,
+        Err(_) => reply_timeout(),
+    }
+}
+
+fn reply_timeout() -> Response {
+    (
+        StatusCode::GATEWAY_TIMEOUT,
+        Json(json!({"code": "timeout", "message": format!("the request took longer than {} s", REQUEST_LIMIT.as_secs())})),
+    )
+        .into_response()
+}
+
 async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Request, next: Next) -> Response {
     // WebSub hubs cannot send API keys: those requests are checked by challenge and signature instead.
     if req.uri().path() == "/health" || req.uri().path().starts_with("/v1/websub/") || !state.access.required() {
@@ -557,6 +576,7 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
         .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(ConcurrencyLimitLayer::new(max_concurrent.max(1)))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn(deadline))
         .with_state(state)
 }
 

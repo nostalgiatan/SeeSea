@@ -442,6 +442,9 @@ impl Pipeline {
 
         let mut stages = Vec::new();
         let mut degraded = Vec::new();
+        if req.mode != Mode::Fast {
+            self.reranker.wake();
+        }
 
         // Stage 1: fan out.
         let t = Instant::now();

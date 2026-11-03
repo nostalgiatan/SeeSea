@@ -17,6 +17,8 @@ pub trait PairScorer: Send + Sync {
     /// One raw relevance logit per passage: about +3 or more for an answer, about -8 or less for
     /// text that has nothing to do with the query.
     fn score(&self, query: &str, passages: &[&str]) -> Result<Vec<f32>, String>;
+    /// Start loading the model if it was unloaded. Never blocks.
+    fn wake(&self) {}
 }
 
 #[derive(Debug, Clone)]
@@ -115,6 +117,11 @@ impl CrossReranker {
 impl Reranker for CrossReranker {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn wake(&self) {
+        self.scorer.wake();
+        self.inner.wake();
     }
 
     fn rerank(&self, query: &str, docs: &[DocView<'_>]) -> Vec<RerankScore> {
