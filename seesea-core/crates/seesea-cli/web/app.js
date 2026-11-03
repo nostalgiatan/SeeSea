@@ -20,7 +20,7 @@ function h(tag, attrs, ...kids) {
 /* ---------- strings ---------- */
 const D = {
   zh: {
-    'nav.search': '搜索', 'nav.read': '阅读', 'nav.status': '状态', 'nav.services': '服务', 'nav.accounts': '账号',
+    'nav.search': '搜索', 'nav.read': '阅读', 'nav.review': '复盘', 'nav.status': '状态', 'nav.services': '服务', 'nav.accounts': '账号',
     'search.ph': '搜点什么  ( / )', 'search.go': '出海',
     'mode.fast': '快', 'mode.standard': '标准', 'mode.deep': '深',
     'opt.time': '时间', 'opt.any': '不限', 'opt.day': '一天', 'opt.week': '一周', 'opt.month': '一月', 'opt.year': '一年',
@@ -53,9 +53,13 @@ const D = {
     'acc.used': '最近使用', 'acc.expires': '到期', 'acc.never': '从未',
     'p.go': '前往', 'p.theme': '切换明暗', 'p.lang': '切换语言', 'p.key': '设置 API 密钥', 'p.focus': '聚焦搜索框', 'p.ph': '输入命令或页面名…',
     'where.desk': '工作台 · 本机', 'where.down': '连不上服务',
+    'rv.title': '复盘', 'rv.sub': '看最近的搜索哪里不对，给结果打分，攒成评估用的标注。', 'rv.since': '范围', 'rv.24h': '最近 24 小时', 'rv.7d': '最近 7 天', 'rv.30d': '最近 30 天', 'rv.reload': '刷新',
+    'rv.searches': '搜索', 'rv.cached': '命中缓存', 'rv.errors': '出错', 'rv.fb': '好 / 差', 'rv.src': '来源', 'rv.answered': '答了', 'rv.failed': '失败', 'rv.unread': '读不到的主机', 'rv.learn': '学到的主机评分',
+    'rv.best': '最好', 'rv.worst': '最差', 'rv.sus': '值得看的搜索', 'rv.again': '再搜一次', 'rv.none': '这段时间没有记录', 'rv.nosus': '没有可疑的搜索', 'rv.grade': '给结果打分',
+    'rv.scale': '3 正是想要的 · 2 回答了问题 · 1 相关 · 0 无关。点已选的分数可以取消。', 'rv.progress': '已标 {n} 条，其中 {q} 个查询可用于评估', 'rv.file': '标注文件', 'rv.run': '评估命令', 'rv.nocand': '没有可标的结果',
   },
   en: {
-    'nav.search': 'Search', 'nav.read': 'Read', 'nav.status': 'Status', 'nav.services': 'Services', 'nav.accounts': 'Accounts',
+    'nav.search': 'Search', 'nav.read': 'Read', 'nav.review': 'Review', 'nav.status': 'Status', 'nav.services': 'Services', 'nav.accounts': 'Accounts',
     'search.ph': 'Search for something  ( / )', 'search.go': 'Set sail',
     'mode.fast': 'Fast', 'mode.standard': 'Standard', 'mode.deep': 'Deep',
     'opt.time': 'Time', 'opt.any': 'Any', 'opt.day': 'Day', 'opt.week': 'Week', 'opt.month': 'Month', 'opt.year': 'Year',
@@ -88,6 +92,10 @@ const D = {
     'acc.used': 'last used', 'acc.expires': 'expires', 'acc.never': 'never',
     'p.go': 'Go to', 'p.theme': 'Toggle light / dark', 'p.lang': 'Switch language', 'p.key': 'Set API key', 'p.focus': 'Focus the search box', 'p.ph': 'Type a command or page…',
     'where.desk': 'Workbench · this machine', 'where.down': 'Cannot reach the server',
+    'rv.title': 'Review', 'rv.sub': 'See where recent searches went wrong, grade results, and build judgments for evaluation.', 'rv.since': 'Range', 'rv.24h': 'Last 24 hours', 'rv.7d': 'Last 7 days', 'rv.30d': 'Last 30 days', 'rv.reload': 'Refresh',
+    'rv.searches': 'Searches', 'rv.cached': 'Cached', 'rv.errors': 'Errors', 'rv.fb': 'Good / bad', 'rv.src': 'Sources', 'rv.answered': 'answered', 'rv.failed': 'failed', 'rv.unread': 'Hosts that could not be read', 'rv.learn': 'Learned host standings',
+    'rv.best': 'Best', 'rv.worst': 'Worst', 'rv.sus': 'Searches worth a look', 'rv.again': 'Search again', 'rv.none': 'Nothing recorded in this range', 'rv.nosus': 'No suspicious searches', 'rv.grade': 'Grade results',
+    'rv.scale': '3 exactly what was wanted · 2 answers it · 1 related · 0 not relevant. Click the chosen grade to take it back.', 'rv.progress': '{n} graded, {q} queries usable for evaluation', 'rv.file': 'Judgments file', 'rv.run': 'Evaluate with', 'rv.nocand': 'No results to grade',
   },
 };
 
@@ -272,7 +280,8 @@ function renderSearch(r, wall) {
   const stages = (r.stages || []).filter((s) => STAGE_COLOR[s.stage]);
   if (stages.length) {
     kids.push(h('div', { class: 'voyage', title: (r.stages || []).map((s) => `${s.stage} ${s.ms} ms`).join('\n') },
-      stages.map((s) => h('div', { style: `flex-grow:${Math.max(s.ms, 1)};--c:${STAGE_COLOR[s.stage]}`, text: `${s.stage} ${s.ms}` }))));
+      stages.map((s) => h('div', { style: `flex-grow:${Math.max(s.ms, 1)};--c:${STAGE_COLOR[s.stage]}` }))));
+    kids.push(h('div', { class: 'legend' }, stages.map((s) => h('span', { style: `--c:${STAGE_COLOR[s.stage]}`, text: `${s.stage} ${s.ms} ms` }))));
   }
   const notes = h('div', { class: 'notes' });
   for (const d of r.degraded || []) notes.append(h('div', { class: 'note', text: d }));
@@ -293,7 +302,7 @@ function hitCard(x, i, max) {
   const href = safeHref(x.url);
   const card = h('article', { class: 'hit', style: `animation-delay:${Math.min(i, 12) * 28}ms`, 'data-n': i });
   card.append(
-    h('div', { class: 'gauge' }, h('span', { class: 'n', text: String(i + 1).padStart(2, '0') }), h('div', { class: 'col', title: String(x.score) }, h('i', { style: `height:${Math.max(6, ((x.score || 0) / max) * 100)}%` }))),
+    h('div', { class: 'gauge' }, h('span', { class: 'n', text: String(i + 1).padStart(2, '0') }), h('div', { class: 'col', title: String(x.score) }, h('i', { style: `top:${100 - Math.max(6, ((x.score || 0) / max) * 100)}%` }))),
     h('div', { class: 'body' },
       h('h3', {}, h('span', { class: 'mono', style: `background:${hueOf(host)}`, text: (host[0] || '·') }), href ? h('a', { href, target: '_blank', rel: 'noopener noreferrer', text: x.title || x.url }) : (x.title || x.url)),
       h('div', { class: 'where' }, host, h('em', { text: (() => { try { const u = new URL(x.url); return (u.pathname + u.search).slice(0, 70); } catch { return ''; } })() }), x.published ? h('em', { text: '  ·  ' + ago(x.published) }) : null),
@@ -502,11 +511,61 @@ async function loadAccounts() {
   } catch (e) { out.replaceChildren(h('div', { class: 'note err', text: e.message })); }
 }
 
+/* ---------- review (workbench only) ---------- */
+function renderReview(r) {
+  const out = $('#rv-out'), rep = r.report;
+  if (!rep.searches && !(rep.candidates || []).length) { out.replaceChildren(h('div', { class: 'empty' }, h('div', { text: t('rv.none') }))); return; }
+  const tile = (n, label) => h('div', { class: 'tile' }, h('b', { text: n }), h('span', { text: label }));
+  const errs = Object.values(rep.errors || {}).reduce((a, b) => a + b, 0);
+  const kids = [h('div', { class: 'tiles' },
+    tile(rep.searches, t('rv.searches')), tile(rep.cached, t('rv.cached')), tile(`${rep.took_ms_p50} / ${rep.took_ms_p95}`, 'ms p50 / p95'), tile(errs, t('rv.errors')), tile(`${rep.feedback_good} / ${rep.feedback_bad}`, t('rv.fb')))];
+
+  const srcRows = Object.entries(rep.sources || {});
+  const unread = rep.unreadable_hosts || [];
+  const stand = (x, bad) => h('div', { class: 'stand' + (bad ? ' bad' : ''), title: `${x.observations.toFixed(1)} obs` }, h('span', { text: x.name, style: 'overflow:hidden;text-overflow:ellipsis' }), h('div', { class: 't' }, h('i', { style: `width:${Math.max(0, Math.min(1, x.value)) * 100}%` })), h('span', { class: 'mut', text: x.value.toFixed(2) }));
+  const L = r.learn || {};
+  kids.push(h('div', { class: 'grid2' },
+    h('div', { class: 'panel' }, h('div', { class: 'ph' }, h('h2', { text: t('rv.src') })), srcRows.length ? h('table', {}, srcRows.map(([n, v]) => h('tr', {}, h('td', { text: n }), h('td', { class: 'r', text: `${v.answered} ${t('rv.answered')}` }), h('td', { class: 'r' }, v.failed ? h('span', { class: 'chip2', text: `${v.failed} ${t('rv.failed')}: ` + Object.entries(v.by_kind || {}).map(([k, c]) => `${k} ${c}`).join(', ') }) : null)))) : h('div', { class: 'mut', text: t('st.none') })),
+    h('div', { class: 'panel' }, h('div', { class: 'ph' }, h('h2', { text: t('rv.unread') })), unread.length ? h('table', {}, unread.slice(0, 12).map(([host, n, why]) => h('tr', {}, h('td', { text: host }), h('td', { class: 'r', text: n }), h('td', { class: 'mut', style: 'text-align:left', text: why })))) : h('div', { class: 'mut', text: t('st.none') })),
+    h('div', { class: 'panel' }, h('div', { class: 'ph' }, h('h2', { text: t('rv.learn') }), h('span', { class: 'mut', text: `${(L.observations || 0).toFixed(0)} obs · ${L.hosts || 0}` })),
+      (L.best_hosts || []).length ? [h('div', { class: 'sub', text: t('rv.best') }), L.best_hosts.map((x) => stand(x, false)), h('div', { class: 'sub', text: t('rv.worst') }), L.worst_hosts.map((x) => stand(x, true))] : h('div', { class: 'mut', text: t('st.none') }))));
+
+  const sus = rep.suspects || [];
+  kids.push(h('div', { class: 'panel', style: 'margin:14px 0' }, h('div', { class: 'ph' }, h('h2', { text: t('rv.sus') }), h('span', { class: 'mut', text: sus.length })),
+    sus.length ? sus.slice(-30).reverse().map((x) => h('div', { class: 'sus' }, h('q', { text: x.query }), h('button', { class: 'act', type: 'button', text: t('rv.again'), onclick: () => { S.mode = x.mode || 'standard'; $$('#mode button').forEach((b) => b.classList.toggle('on', b.dataset.v === S.mode)); $('#q').value = x.query; location.hash = '#/search'; $('#search-form').requestSubmit(); } }),
+      h('div', { class: 'chips' }, (x.why || []).map((w) => h('span', { class: 'chip2', text: w })), h('span', { class: 'mut', text: ago(x.ts) })))) : h('div', { class: 'mut', text: t('rv.nosus') })));
+
+  const prog = h('span', { class: 'mut' });
+  const setProg = (j) => { prog.textContent = t('rv.progress', { n: j.graded ?? j.judgments.graded, q: j.queries ?? j.judgments.queries }); };
+  setProg(r);
+  const file = r.judgments.file;
+  kids.push(h('div', { class: 'ph' }, h('h2', { text: t('rv.grade') }), prog));
+  kids.push(h('p', { class: 'mut', style: 'text-align:left;margin:0 0 10px', text: t('rv.scale') }));
+  const groups = rep.candidates || [];
+  if (!groups.length) kids.push(h('div', { class: 'mut', text: t('rv.nocand') }));
+  for (const g of groups) {
+    kids.push(h('div', { class: 'group' }, h('h3', {}, h('span', { text: g.query }), h('small', { text: `${g.candidates.length}` })), g.candidates.map((c) => {
+      const btns = [0, 1, 2, 3].map((n) => h('button', { type: 'button', 'data-g': n, class: c.grade === n ? 'on' : '', text: n, onclick: async () => {
+        const next = c.grade === n ? null : n;
+        try { setProg(await api('/desk/api/grade', { method: 'POST', body: { query: g.query, url: c.url, grade: next } })); c.grade = next; btns.forEach((b, i) => b.classList.toggle('on', c.grade === i)); } catch (e) { fail(e); }
+      } }));
+      const href = safeHref(c.url), host = hostOf(c.url);
+      return h('div', { class: 'gr' }, h('span', { class: 'n', text: c.rank }), h('div', { class: 'ti' }, href ? h('a', { href, target: '_blank', rel: 'noopener noreferrer', text: c.title || c.url }) : (c.title || c.url), h('small', { text: host })), h('div', { class: 'grades' }, btns));
+    })));
+  }
+  kids.push(h('div', { class: 'snips', style: 'border:1px solid var(--line);border-radius:10px;margin-top:6px' }, h('h4', { text: t('rv.file') }), snippet('', file), h('h4', { text: t('rv.run') }), snippet('', `seesea eval ${file}`)));
+  out.replaceChildren(...kids);
+}
+async function loadReview() {
+  const out = $('#rv-out');
+  try { renderReview(await api('/desk/api/review?since=' + $('#rv-since').value)); } catch (e) { out.replaceChildren(h('div', { class: 'note err', text: e.message })); }
+}
+
 /* ---------- shell ---------- */
-const VIEWS = { search: () => $('#q').focus(), read: () => $('#r-url').focus(), status: loadStatus, services: loadServices, accounts: loadAccounts };
+const VIEWS = { search: () => $('#q').focus(), read: () => $('#r-url').focus(), review: loadReview, status: loadStatus, services: loadServices, accounts: loadAccounts };
 function route() {
   let v = (location.hash.match(/^#\/(\w+)/) || [])[1] || 'search';
-  if (!VIEWS[v] || ((v === 'services' || v === 'accounts') && !S.desk)) v = 'search';
+  if (!VIEWS[v] || ((v === 'services' || v === 'accounts' || v === 'review') && !S.desk)) v = 'search';
   for (const el of $$('.view')) el.hidden = el.id !== 'v-' + v;
   for (const a of $$('#nav a')) a.classList.toggle('on', a.dataset.view === v);
   S.view = v;
@@ -523,7 +582,7 @@ function updateChip() {
 function commands() {
   const go = (v) => () => { location.hash = '#/' + v; };
   const list = [['search', 'nav.search'], ['read', 'nav.read'], ['status', 'nav.status']];
-  if (S.desk) list.push(['services', 'nav.services'], ['accounts', 'nav.accounts']);
+  if (S.desk) list.push(['review', 'nav.review'], ['services', 'nav.services'], ['accounts', 'nav.accounts']);
   return [
     ...list.map(([v, k]) => ({ label: `${t('p.go')} · ${t(k)}`, hint: '#/' + v, run: go(v) })),
     { label: t('p.focus'), hint: '/', run: () => { location.hash = '#/search'; $('#q').focus(); } },
@@ -583,6 +642,8 @@ $('#mode').addEventListener('click', (e) => {
   $$('#mode button').forEach((x) => x.classList.toggle('on', x === b));
 });
 $('#btn-check').addEventListener('click', probe);
+$('#rv-reload').addEventListener('click', loadReview);
+$('#rv-since').addEventListener('change', loadReview);
 $('#btn-theme').addEventListener('click', toggleTheme);
 $('#btn-lang').addEventListener('click', toggleLang);
 $('#btn-palette').addEventListener('click', openPalette);

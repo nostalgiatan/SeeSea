@@ -1146,5 +1146,25 @@ async fn the_workbench_starts_stops_and_secures_its_services() {
     let r = http.post(format!("{wb}/desk/api/keys/{}/revoke", k["id"].as_str().unwrap())).json(&json!({})).send().await.unwrap();
     assert_eq!(r.status(), 204);
     assert_eq!(http.get(format!("{api}/v1/sources")).bearer_auth(&user_key).send().await.unwrap().status(), 401);
+
+    // Grades: kept per query and URL, and written in the form `seesea eval` reads (zero grades stay out of it).
+    let grade = |q: &str, u: &str, g: Value| {
+        let req = http.post(format!("{wb}/desk/api/grade")).json(&json!({"query": q, "url": u, "grade": g}));
+        async move { req.send().await.unwrap() }
+    };
+    assert_eq!(grade("q", "https://a.example/x", json!(4)).await.status(), 400);
+    assert_eq!(grade("", "https://a.example/x", json!(1)).await.status(), 400);
+    assert_eq!(grade("q", "https://a.example/x", json!(3)).await.status(), 200);
+    let r: Value = grade("q", "https://a.example/y", json!(0)).await.json().await.unwrap();
+    assert_eq!((r["graded"].as_u64(), r["queries"].as_u64()), (Some(2), Some(1)));
+    let eval_file = std::fs::read_to_string(dir.path().join("judgments.jsonl")).unwrap();
+    let line: Value = serde_json::from_str(eval_file.trim()).unwrap();
+    assert_eq!(line, json!({"query": "q", "relevant": [{"url": "https://a.example/x", "grade": 3}]}));
+    assert_eq!(grade("q", "https://a.example/x", Value::Null).await.status(), 200);
+    assert_eq!(std::fs::read_to_string(dir.path().join("judgments.jsonl")).unwrap(), "");
+    assert_eq!(http.get(format!("{wb}/desk/api/review?since=soon")).send().await.unwrap().status(), 400);
+    let rv: Value = http.get(format!("{wb}/desk/api/review?since=7d")).send().await.unwrap().json().await.unwrap();
+    assert!(rv["report"]["searches"].is_u64() && rv["report"]["candidates"].is_array() && rv["learn"]["hosts"].is_u64());
+    assert_eq!(rv["judgments"]["graded"], 1);
     desk.stop_all().await;
 }

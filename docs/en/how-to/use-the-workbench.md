@@ -21,6 +21,18 @@ The command opens a browser at `http://127.0.0.1:7878/`. Add `--no-open` to skip
 
 Keys: `/` focuses the search box, `j` and `k` select a result, `d` expands it, `g` and `b` judge it, `o` opens the link, `Ctrl K` opens the command palette.
 
+## Review and grade
+
+The Review page sums up the recent search journal: which sources failed, which hosts could not be read, which searches deserve another look (Search again returns to the search page with the query), and the host standings the first ranking layer has learned.
+
+Below that, each query is listed with its top ten results. Click 0 to 3 on each one: 3 is exactly what was wanted, 2 answers it, 1 is related, 0 is not relevant. Click the chosen grade to take it back. Every click is written to the judgments file; the bottom of the page shows its path and the command to evaluate with:
+
+```bash
+seesea eval <judgments file>
+```
+
+After changing a ranking setting, evaluate with the same file again to compare the scores.
+
 ## Start the HTTP API
 
 1. Open Services and pick an address and an authentication mode on the HTTP API card.

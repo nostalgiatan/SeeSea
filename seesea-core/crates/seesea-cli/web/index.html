@@ -15,9 +15,10 @@
     <div class="ticks" id="nav">
       <a href="#/search" data-view="search"><i>01</i><span data-i="nav.search">搜索</span></a>
       <a href="#/read" data-view="read"><i>02</i><span data-i="nav.read">阅读</span></a>
-      <a href="#/status" data-view="status"><i>03</i><span data-i="nav.status">状态</span></a>
-      <a href="#/services" data-view="services" class="desk-only"><i>04</i><span data-i="nav.services">服务</span></a>
-      <a href="#/accounts" data-view="accounts" class="desk-only"><i>05</i><span data-i="nav.accounts">账号</span></a>
+      <a href="#/review" data-view="review" class="desk-only"><i>03</i><span data-i="nav.review">复盘</span></a>
+      <a href="#/status" data-view="status"><i>04</i><span data-i="nav.status">状态</span></a>
+      <a href="#/services" data-view="services" class="desk-only"><i>05</i><span data-i="nav.services">服务</span></a>
+      <a href="#/accounts" data-view="accounts" class="desk-only"><i>06</i><span data-i="nav.accounts">账号</span></a>
     </div>
     <div class="rail-foot">
       <div class="chip" id="where"><b></b><span>…</span></div>
@@ -66,6 +67,14 @@
         </div>
       </form>
       <div id="read-out"></div>
+    </section>
+
+    <section id="v-review" class="view" hidden>
+      <header class="head"><h1 data-i="rv.title">复盘</h1><p data-i="rv.sub">看最近的搜索哪里不对，给结果打分，攒成评估用的标注。</p></header>
+      <div class="row" style="margin-bottom:14px"><label class="inline"><span data-i="rv.since">范围</span>
+        <select id="rv-since"><option value="24h" data-i="rv.24h">最近 24 小时</option><option value="7d" selected data-i="rv.7d">最近 7 天</option><option value="30d" data-i="rv.30d">最近 30 天</option></select></label>
+        <button id="rv-reload" class="quiet" data-i="rv.reload">刷新</button></div>
+      <div id="rv-out"></div>
     </section>
 
     <section id="v-status" class="view" hidden>
