@@ -293,10 +293,9 @@ pub fn semantic_reranker(
         cfg.cos_floor = floor;
         cfg.cos_ceil = ceil;
     }
-    Ok(Arc::new(SemanticReranker::new(
-        shared_embedder(dir),
-        cfg,
-    )))
+    // Remember up to 8192 vectors (32 MB): pages that come up again are not encoded again.
+    let embedder: Arc<dyn TextEmbedder> = Arc::new(seesea_pipeline::semantic::CachedEmbedder::new(shared_embedder(dir), 8192));
+    Ok(Arc::new(SemanticReranker::new(embedder, cfg)))
 }
 
 /// Put a cross-encoder reranker (a `.gguf` such as bge-reranker-v2-m3) on top of `inner`, or of

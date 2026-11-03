@@ -49,6 +49,121 @@ impl Default for SemanticConfig {
     }
 }
 
+/// Remembers the vectors of texts it has already embedded, so a page that comes up again (documentation,
+/// an encyclopedia entry) or a query that is repeated costs nothing the second time. Bounded: the oldest
+/// entries go first. Queries and passages are kept apart, since a model embeds them differently.
+pub struct CachedEmbedder {
+    inner: Arc<dyn TextEmbedder>,
+    cache: std::sync::Mutex<VectorCache>,
+}
+
+struct VectorCache {
+    map: std::collections::HashMap<(u64, u64), Arc<Vec<f32>>>,
+    order: std::collections::VecDeque<(u64, u64)>,
+    capacity: usize,
+    hits: u64,
+    misses: u64,
+}
+
+fn text_key(kind: u8, text: &str) -> (u64, u64) {
+    use std::hash::{Hash, Hasher};
+    let mut a = std::collections::hash_map::DefaultHasher::new();
+    let mut b = std::collections::hash_map::DefaultHasher::new();
+    (kind, 0x9e37_79b9u32).hash(&mut b);
+    (kind, text.len()).hash(&mut a);
+    text.hash(&mut a);
+    text.hash(&mut b);
+    (a.finish(), b.finish())
+}
+
+impl VectorCache {
+    fn get(&mut self, k: &(u64, u64)) -> Option<Arc<Vec<f32>>> {
+        let v = self.map.get(k).cloned();
+        if v.is_some() {
+            self.hits += 1;
+        } else {
+            self.misses += 1;
+        }
+        v
+    }
+
+    fn put(&mut self, k: (u64, u64), v: Arc<Vec<f32>>) {
+        if self.map.insert(k, v).is_none() {
+            self.order.push_back(k);
+            while self.map.len() > self.capacity {
+                if let Some(old) = self.order.pop_front() {
+                    self.map.remove(&old);
+                }
+            }
+        }
+    }
+}
+
+impl CachedEmbedder {
+    /// `capacity` vectors are kept (a 1024-wide vector is 4 KB).
+    pub fn new(inner: Arc<dyn TextEmbedder>, capacity: usize) -> Self {
+        Self {
+            inner,
+            cache: std::sync::Mutex::new(VectorCache {
+                map: Default::default(),
+                order: Default::default(),
+                capacity: capacity.max(1),
+                hits: 0,
+                misses: 0,
+            }),
+        }
+    }
+
+    /// `(hits, misses)` so far.
+    pub fn stats(&self) -> (u64, u64) {
+        let c = self.cache.lock().unwrap();
+        (c.hits, c.misses)
+    }
+}
+
+impl TextEmbedder for CachedEmbedder {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn embed_query(&self, text: &str) -> Result<Vec<f32>, String> {
+        let k = text_key(0, text);
+        if let Some(v) = self.cache.lock().unwrap().get(&k) {
+            return Ok(v.as_ref().clone());
+        }
+        let v = self.inner.embed_query(text)?;
+        self.cache.lock().unwrap().put(k, Arc::new(v.clone()));
+        Ok(v)
+    }
+
+    fn embed_passages(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
+        let keys: Vec<(u64, u64)> = texts.iter().map(|t| text_key(1, t)).collect();
+        let mut out: Vec<Option<Arc<Vec<f32>>>> = {
+            let mut c = self.cache.lock().unwrap();
+            keys.iter().map(|k| c.get(k)).collect()
+        };
+        let missing: Vec<usize> = (0..texts.len()).filter(|&i| out[i].is_none()).collect();
+        if !missing.is_empty() {
+            let batch: Vec<&str> = missing.iter().map(|&i| texts[i]).collect();
+            let vectors = self.inner.embed_passages(&batch)?;
+            if vectors.len() != batch.len() {
+                return Err("the embedder returned the wrong number of vectors".into());
+            }
+            let mut c = self.cache.lock().unwrap();
+            for (&i, v) in missing.iter().zip(vectors) {
+                let v = Arc::new(v);
+                c.put(keys[i], v.clone());
+                out[i] = Some(v);
+            }
+        }
+        Ok(out.into_iter().map(|v| v.expect("filled above").as_ref().clone()).collect())
+    }
+
+    fn wake(&self) {
+        self.inner.wake();
+    }
+}
+
 pub struct SemanticReranker {
     embedder: Arc<dyn TextEmbedder>,
     lexical: LexicalReranker,
@@ -138,17 +253,24 @@ impl SemanticReranker {
         }
     }
 
+    /// The passages of a page that will be embedded for `query`, and how much to trust the page.
+    fn page_passages(&self, query: &str, d: &DocView<'_>) -> (Vec<String>, f64) {
+        let body = strip_title_echo(d.body, d.title);
+        // An embedding places a page that repeats the query next to it: discount repetition.
+        let trust = distinctness(&body.chars().take(4000).collect::<String>());
+        let p = passages(&body, self.cfg.min_chars, self.cfg.max_chars);
+        (preselect(p, query, self.cfg.max_passages), trust)
+    }
+
     fn semantic_scores(&self, query: &str, docs: &[DocView<'_>]) -> Result<Vec<f64>, String> {
         let q = self.embedder.embed_query(query)?;
         let mut trust = Vec::with_capacity(docs.len());
         let per_doc: Vec<Vec<String>> = docs
             .iter()
             .map(|d| {
-                let body = strip_title_echo(d.body, d.title);
-                // An embedding places a page that repeats the query next to it: discount repetition.
-                trust.push(distinctness(&body.chars().take(4000).collect::<String>()));
-                let p = passages(&body, self.cfg.min_chars, self.cfg.max_chars);
-                preselect(p, query, self.cfg.max_passages)
+                let (p, t) = self.page_passages(query, d);
+                trust.push(t);
+                p
             })
             .collect();
         let flat: Vec<&str> = per_doc.iter().flatten().map(String::as_str).collect();
@@ -188,6 +310,17 @@ impl Reranker for SemanticReranker {
 
     fn wake(&self) {
         self.embedder.wake();
+    }
+
+    fn prepare(&self, query: &str, doc: &DocView<'_>) {
+        // Embed what rerank will want, while other pages are still downloading; a cache in front of the
+        // embedder keeps the vectors until then. Failures are not reported here: rerank will meet them again.
+        let (ps, _) = self.page_passages(query, doc);
+        let flat: Vec<&str> = ps.iter().map(String::as_str).collect();
+        if !flat.is_empty() {
+            let _ = self.embedder.embed_passages(&flat);
+        }
+        let _ = self.embedder.embed_query(query);
     }
 
     fn rerank(&self, query: &str, docs: &[DocView<'_>]) -> Vec<RerankScore> {
@@ -316,6 +449,66 @@ mod tests {
         let lex = LexicalReranker.rerank("scheduler", &docs)[0].relevance;
         let sem = semantic(false).rerank("scheduler", &docs)[0].relevance;
         assert!(sem > lex, "lexical {lex}, semantic {sem}");
+    }
+
+    /// Counts the texts that actually reach the model.
+    struct Counting(std::sync::atomic::AtomicUsize);
+
+    impl TextEmbedder for Counting {
+        fn name(&self) -> &str {
+            "counting"
+        }
+        fn embed_query(&self, text: &str) -> Result<Vec<f32>, String> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(topic(text))
+        }
+        fn embed_passages(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
+            self.0.fetch_add(texts.len(), std::sync::atomic::Ordering::SeqCst);
+            Ok(texts.iter().map(|t| topic(t)).collect())
+        }
+    }
+
+    #[test]
+    fn repeated_texts_are_not_embedded_again_and_preparing_a_page_gives_a_head_start_without_changing_scores() {
+        let inner = Arc::new(Counting(0.into()));
+        let cached = Arc::new(CachedEmbedder::new(inner.clone(), 100));
+        let r = SemanticReranker::new(cached.clone(), SemanticConfig::default());
+        let query = "tokio scheduler thread pool";
+        let page = "Tokio schedules async tasks on a work-stealing thread pool.\n\nThe runtime drives timers and sockets.";
+        let docs = [doc("Tokio", page), doc("Cheap watches", "Discount watches and handbags with free shipping.")];
+        let cold = r.rerank(query, &docs);
+        let after_cold = inner.0.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(after_cold >= 3, "query and passages reached the model: {after_cold}");
+        // The same pages again: nothing reaches the model, and the scores are the same.
+        let warm = r.rerank(query, &docs);
+        assert_eq!(inner.0.load(std::sync::atomic::Ordering::SeqCst), after_cold);
+        assert_eq!(cold, warm);
+        let (hits, _) = cached.stats();
+        assert!(hits >= 3);
+
+        // `prepare` does the embedding ahead of time; the later rerank finds everything cached.
+        let fresh = Arc::new(Counting(0.into()));
+        let r2 = SemanticReranker::new(Arc::new(CachedEmbedder::new(fresh.clone(), 100)), SemanticConfig::default());
+        for d in &docs {
+            r2.prepare(query, d);
+        }
+        let prepared = fresh.0.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(r2.rerank(query, &docs), cold);
+        assert_eq!(fresh.0.load(std::sync::atomic::Ordering::SeqCst), prepared, "rerank needed nothing more");
+    }
+
+    #[test]
+    fn the_vector_cache_is_bounded_and_keeps_queries_and_passages_apart() {
+        let inner = Arc::new(Counting(0.into()));
+        let cached = CachedEmbedder::new(inner.clone(), 2);
+        for t in ["a", "b", "c", "d"] {
+            cached.embed_passages(&[t]).unwrap();
+        }
+        let n = inner.0.load(std::sync::atomic::Ordering::SeqCst);
+        cached.embed_passages(&["a"]).unwrap(); // evicted: embedded again
+        assert_eq!(inner.0.load(std::sync::atomic::Ordering::SeqCst), n + 1);
+        cached.embed_query("d").unwrap(); // same text as a cached passage, but a query
+        assert_eq!(inner.0.load(std::sync::atomic::Ordering::SeqCst), n + 2);
     }
 
     #[test]

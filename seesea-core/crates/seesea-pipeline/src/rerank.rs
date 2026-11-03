@@ -34,6 +34,11 @@ pub trait Reranker: Send + Sync {
     /// background, so that the load overlaps the fetching. Never blocks.
     fn wake(&self) {}
 
+    /// A page has been fetched and read; work that does not depend on the other pages can start now,
+    /// overlapping the downloads still going. Runs on a blocking thread. Its results are only ever a head
+    /// start: `rerank` must give the same answer without it.
+    fn prepare(&self, _query: &str, _doc: &DocView<'_>) {}
+
     /// Like `rerank`, plus a note when the reranker had to fall back to something weaker.
     fn rerank_noted(
         &self,

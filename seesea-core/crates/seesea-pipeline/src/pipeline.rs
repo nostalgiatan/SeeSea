@@ -591,7 +591,24 @@ impl Pipeline {
                 .take(fetch_k)
                 .map(|(c, _)| c.url.clone())
                 .collect();
-            let outs = content::load_pages(
+            // Pages are handed to the reranker's `prepare` as they arrive, so the encoder works while
+            // the slower downloads are still going; it never waits for that work.
+            let on_loaded: Option<content::OnLoaded> = tokio::runtime::Handle::try_current().ok().map(|rt| {
+                let reranker = Arc::clone(&self.reranker);
+                let query = req.query.clone();
+                let titles: Arc<Vec<String>> = Arc::new(scored.iter().take(fetch_k).map(|(c, _)| c.title.clone()).collect());
+                Arc::new(move |i: usize, l: &content::Loaded| {
+                    if l.result.core.trim().is_empty() {
+                        return;
+                    }
+                    let (reranker, query, titles) = (Arc::clone(&reranker), query.clone(), Arc::clone(&titles));
+                    let (body, confidence) = (l.result.core.clone(), l.result.confidence);
+                    rt.spawn_blocking(move || {
+                        reranker.prepare(&query, &DocView { title: &titles[i], body: &body, confidence });
+                    });
+                }) as content::OnLoaded
+            });
+            let outs = content::load_pages_then(
                 &self.fetcher,
                 self.renderer.as_ref(),
                 self.extractor_handle(),
@@ -599,6 +616,7 @@ impl Pipeline {
                 Scope::Core,
                 self.cfg.concurrency,
                 self.cfg.page_timeout,
+                on_loaded,
             )
             .await;
             let failed = outs.iter().filter(|o| o.is_err()).count();
