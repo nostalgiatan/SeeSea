@@ -235,6 +235,11 @@ enum Command {
         #[command(subcommand)]
         action: KeysAction,
     },
+    /// Move data between nodes: from a single node into a cluster, or from one node to another.
+    Cluster {
+        #[command(subcommand)]
+        action: ClusterAction,
+    },
     /// Credits a user spent per day.
     Usage {
         user: String,
@@ -360,6 +365,26 @@ enum UsersAction {
 }
 
 #[derive(Subcommand)]
+enum ClusterAction {
+    /// Write this node's accounts (key hashes), learned host standings, index items and journal to a folder.
+    Export { out: PathBuf },
+    /// Merge such a folder into this node's data (accounts, learned standings, index, journal). Repeating it adds
+    /// nothing twice, except the learned standings, whose counts add up each time.
+    Import { from: PathBuf },
+    /// Send such a folder to a running flywheel node (items, journal, learned standings). Accounts belong to the
+    /// gateway: run `import` there.
+    Push {
+        from: PathBuf,
+        /// The flywheel node, `http://host:port`.
+        #[arg(long)]
+        to: String,
+        /// The cluster key (or SEESEA_CLUSTER_KEY).
+        #[arg(long, env = "SEESEA_CLUSTER_KEY", hide_env_values = true)]
+        key: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum KeysAction {
     /// Create a key; it is printed once and cannot be shown again.
     Create {
@@ -453,6 +478,7 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         watch_renderer: memory_cache,
         learn_file: (!net.no_learn).then(userconfig::default_learn_file),
         no_writeback: net.no_writeback,
+        cluster_search: None,
         journal_dir: (!net.no_journal).then(userconfig::default_journal_dir),
         explore: net.explore.unwrap_or(0.0),
         index_dir: (!net.no_index).then(|| net.index_dir.clone().unwrap_or_else(userconfig::default_index_dir)),
@@ -893,6 +919,28 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
     if let Command::Feeds { .. } | Command::Poll { .. } | Command::Index { .. } = &cli.command {
         return run_index_command(&cli, long_lived, use_model).await;
     }
+    if let Command::Cluster { action } = &cli.command {
+        let dirs = seesea_cli::cluster::Dirs {
+            auth_db: cli.net.auth_db.clone().unwrap_or_else(userconfig::default_auth_db),
+            learn_file: userconfig::default_learn_file(),
+            journal_dir: userconfig::default_journal_dir(),
+            index_dir: cli.net.index_dir.clone().unwrap_or_else(userconfig::default_index_dir),
+        };
+        let counts = match action {
+            ClusterAction::Export { out } => seesea_cli::cluster::export(&dirs, out),
+            ClusterAction::Import { from } => seesea_cli::cluster::import_local(&dirs, from),
+            ClusterAction::Push { from, to, key } => seesea_cli::cluster::import_remote(from, &seesea_cli::cluster::Link::new(to, key)).await,
+        }
+        .map_err(Error::Config)?;
+        if json {
+            return print_json(&counts);
+        }
+        println!(
+            "accounts: {} users, {} keys; index items: {}; journal lines: {} ({} files already there); learned standings: {}",
+            counts.users, counts.keys, counts.items, counts.journal_lines, counts.journal_files_skipped, if counts.learner { "yes" } else { "none" }
+        );
+        return Ok(());
+    }
     match &cli.command {
         Command::Users { .. } | Command::Keys { .. } | Command::Usage { .. } => {
             let store = open_auth(&cli.net)?;
@@ -901,6 +949,36 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         _ => {}
     }
     let mut pipeline_settings = settings(&cli.net, long_lived, use_model);
+    // The node's job in a cluster; only `serve` takes one, every other command works on its own data.
+    let cluster = if matches!(cli.command, Command::Serve { .. }) {
+        let role = std::env::var("SEESEA_ROLE").ok().or_else(|| file.role.clone()).unwrap_or_default();
+        let c = seesea_cli::cluster::Cluster {
+            role: role.parse().map_err(Error::Config)?,
+            key: std::env::var("SEESEA_CLUSTER_KEY").ok().or_else(|| file.cluster_key.clone()).unwrap_or_default(),
+            search_nodes: file.search_nodes.clone(),
+            flywheel: file.flywheel.clone(),
+        };
+        c.check().map_err(Error::Config)?;
+        Some(c).filter(|c| c.role != seesea_cli::cluster::Role::Single)
+    } else {
+        None
+    };
+    match cluster.as_ref().map(|c| c.role) {
+        Some(seesea_cli::cluster::Role::Search) => {
+            pipeline_settings.cluster_search = cluster.clone();
+            pipeline_settings.index_dir = None;
+        }
+        Some(seesea_cli::cluster::Role::Gateway) => {
+            // The gateway only forwards: no models, no index, nothing learned here.
+            pipeline_settings.model_dir = None;
+            pipeline_settings.rerank_model = None;
+            pipeline_settings.index_dir = None;
+            pipeline_settings.learn_file = None;
+            pipeline_settings.journal_dir = None;
+            pipeline_settings.no_render = true;
+        }
+        _ => {}
+    }
     // An evaluation must not change the ranking it is measuring.
     if matches!(cli.command, Command::Eval { .. }) {
         pipeline_settings.learn_file = None;
@@ -1164,6 +1242,13 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                 access = access.local_limits();
             }
             let mut state = AppState::with_access(pipeline, access);
+            if let Some(c) = &cluster {
+                eprintln!("seesea node: role {:?}", c.role);
+                if c.role == seesea_cli::cluster::Role::Gateway {
+                    state.gateway = Some(seesea_cli::cluster::Gateway::new(c));
+                }
+            }
+            state.cluster = cluster.clone();
             state.index = state_index;
             state.embedder = pipeline_settings.model_dir.as_ref().map(|m| seesea_cli::embedding::shared_embedder(m) as Arc<dyn seesea_pipeline::semantic::TextEmbedder>);
             server::serve(addr, state, max_concurrent, allow_open).await
@@ -1173,6 +1258,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         | Command::Users { .. }
         | Command::Keys { .. }
         | Command::Usage { .. }
+        | Command::Cluster { .. }
         | Command::Feedback { .. }
         | Command::Report { .. }
         | Command::Learn { .. }

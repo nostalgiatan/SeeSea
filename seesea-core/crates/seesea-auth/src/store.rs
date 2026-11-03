@@ -73,6 +73,41 @@ pub struct Principal {
     pub key_id: i64,
 }
 
+/// Everything a user database holds, as plain records (moving accounts to another node). Keys carry
+/// the hash of their secret, never the secret, so a dump can be read but not used to sign in.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct Dump {
+    pub users: Vec<UserRecord>,
+    pub keys: Vec<KeyRecord>,
+    pub usage: Vec<UsageRecord>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UserRecord {
+    pub name: String,
+    pub plan: String,
+    pub disabled: bool,
+    pub created: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KeyRecord {
+    pub user: String,
+    pub name: String,
+    pub public_id: String,
+    pub secret_hash: String,
+    pub created: i64,
+    pub expires: Option<i64>,
+    pub revoked: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UsageRecord {
+    pub user: String,
+    pub day: i64,
+    pub credits: i64,
+}
+
 pub struct Store {
     db: Mutex<Connection>,
 }
@@ -272,6 +307,62 @@ impl Store {
         Ok(())
     }
 
+    pub fn dump(&self) -> Result<Dump, AuthError> {
+        let db = self.db.lock().unwrap();
+        let all = |sql: &str, f: &mut dyn FnMut(&rusqlite::Row) -> rusqlite::Result<()>| -> Result<(), AuthError> {
+            let mut st = db.prepare(sql)?;
+            let mut rows = st.query([])?;
+            while let Some(r) = rows.next()? {
+                f(r)?;
+            }
+            Ok(())
+        };
+        let mut d = Dump::default();
+        all("SELECT name, plan, disabled, created FROM users ORDER BY id", &mut |r| {
+            d.users.push(UserRecord { name: r.get(0)?, plan: r.get(1)?, disabled: r.get::<_, i64>(2)? != 0, created: r.get(3)? });
+            Ok(())
+        })?;
+        all("SELECT u.name, k.name, k.public_id, k.secret_hash, k.created, k.expires, k.revoked FROM keys k JOIN users u ON u.id = k.user_id ORDER BY k.id", &mut |r| {
+            d.keys.push(KeyRecord { user: r.get(0)?, name: r.get(1)?, public_id: r.get(2)?, secret_hash: r.get(3)?, created: r.get(4)?, expires: r.get(5)?, revoked: r.get::<_, i64>(6)? != 0 });
+            Ok(())
+        })?;
+        all("SELECT u.name, g.day, g.credits FROM usage g JOIN users u ON u.id = g.user_id ORDER BY g.user_id, g.day", &mut |r| {
+            d.usage.push(UsageRecord { user: r.get(0)?, day: r.get(1)?, credits: r.get(2)? });
+            Ok(())
+        })?;
+        Ok(d)
+    }
+
+    /// Add what a dump holds. Users and keys that already exist (by name, by public id) are left as they are;
+    /// usage only ever goes up. Returns `(users added, keys added)`.
+    pub fn load(&self, d: &Dump) -> Result<(usize, usize), AuthError> {
+        let db = self.db.lock().unwrap();
+        let tx = rusqlite::Transaction::new_unchecked(&db, rusqlite::TransactionBehavior::Immediate)?;
+        let (mut users, mut keys) = (0, 0);
+        for u in &d.users {
+            users += tx.execute(
+                "INSERT OR IGNORE INTO users (name, plan, disabled, created) VALUES (?1, ?2, ?3, ?4)",
+                params![u.name, u.plan, u.disabled as i64, u.created],
+            )?;
+        }
+        for k in &d.keys {
+            keys += tx.execute(
+                "INSERT OR IGNORE INTO keys (user_id, name, public_id, secret_hash, created, expires, revoked)
+                 SELECT id, ?2, ?3, ?4, ?5, ?6, ?7 FROM users WHERE name = ?1",
+                params![k.user, k.name, k.public_id, k.secret_hash, k.created, k.expires, k.revoked as i64],
+            )?;
+        }
+        for g in &d.usage {
+            tx.execute(
+                "INSERT INTO usage (user_id, day, credits) SELECT id, ?2, ?3 FROM users WHERE name = ?1
+                 ON CONFLICT (user_id, day) DO UPDATE SET credits = MAX(credits, excluded.credits)",
+                params![g.user, g.day, g.credits],
+            )?;
+        }
+        tx.commit()?;
+        Ok((users, keys))
+    }
+
     /// Run `f` on the user's bucket inside one write transaction, so that several server processes
     /// sharing this file see each other's spending. The result of `f` decides what is saved.
     fn with_bucket<T>(
@@ -388,6 +479,23 @@ mod tests {
         assert!(matches!(s.create_key("bob", "k", None), Err(AuthError::NotFound(_))));
         assert!(matches!(s.revoke_key("ss_nope"), Err(AuthError::NotFound(_))));
         assert_eq!(s.users().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn accounts_move_between_databases_and_keys_keep_working() {
+        let (a, b) = (Store::in_memory().unwrap(), Store::in_memory().unwrap());
+        let u = a.create_user("ann", "pro").unwrap();
+        let (_, key) = a.create_key("ann", "laptop", None).unwrap();
+        a.set_usage(u.id, 9, 12).unwrap();
+        let dump = a.dump().unwrap();
+        assert!(!serde_json::to_string(&dump).unwrap().contains(&key[13..]), "a dump holds no secret");
+        assert_eq!(b.load(&dump).unwrap(), (1, 1));
+        assert_eq!(b.authenticate(&key).unwrap().user.plan, "pro");
+        assert_eq!(b.usage_history("ann", 5).unwrap(), vec![(9, 12)]);
+        // Loading again changes nothing; a user that exists keeps the plan it has.
+        b.set_plan("ann", "free").unwrap();
+        assert_eq!(b.load(&dump).unwrap(), (0, 0));
+        assert_eq!(b.user("ann").unwrap().plan, "free");
     }
 
     #[test]

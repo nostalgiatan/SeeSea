@@ -8,5 +8,6 @@ pub mod models;
 pub mod userconfig;
 pub mod keyless;
 pub mod access;
+pub mod cluster;
 pub mod account;
 pub mod seeds;

@@ -27,6 +27,10 @@ pub struct AppState {
     pub index: Option<Arc<seesea_index::Index>>,
     /// Embeds text for `/v1/similar`; none without a model.
     pub embedder: Option<Arc<dyn seesea_pipeline::semantic::TextEmbedder>>,
+    /// Which job this node has in a cluster; none for a single node.
+    pub cluster: Option<crate::cluster::Cluster>,
+    /// On a gateway: the nodes requests are forwarded to.
+    pub gateway: Option<Arc<crate::cluster::Gateway>>,
 }
 
 impl AppState {
@@ -42,6 +46,8 @@ impl AppState {
             access: Arc::new(access),
             index: None,
             embedder: None,
+            cluster: None,
+            gateway: None,
         }
     }
 }
@@ -125,6 +131,15 @@ fn reply_timeout() -> Response {
 
 async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Request, next: Next) -> Response {
     // WebSub hubs cannot send API keys: those requests are checked by challenge and signature instead.
+    if let Some(c) = &state.cluster {
+        if c.trusts(&headers) {
+            return next.run(req).await;
+        }
+        // A search node answers its gateway and nobody else.
+        if c.role == crate::cluster::Role::Search && req.uri().path() != "/health" {
+            return refusal_response(Refusal::Unauthorized("this node only answers the cluster's gateway".into()));
+        }
+    }
     if req.uri().path() == "/health" || req.uri().path().starts_with("/v1/websub/") || !state.access.required() {
         return next.run(req).await;
     }
@@ -548,31 +563,31 @@ async fn mcp(State(s): State<AppState>, body: Bytes) -> Response {
     }
 }
 
-async fn not_found() -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        Json(json!({"code": "not_found", "message": "no such endpoint"})),
-    )
-        .into_response()
-}
-
 pub fn router(state: AppState, max_concurrent: usize) -> Router {
-    Router::new()
-        .route("/health", get(health))
-        .route("/v1/search", get(search_get).post(search_post))
-        .route("/v1/search/batch", post(search_batch))
-        .route("/v1/similar", post(similar))
-        .route("/v1/extract", post(extract_post))
-        .route("/v1/sources", get(sources))
-        .route("/v1/sources/check", get(sources_check))
-        .route("/v1/stats", get(stats))
-        .route("/v1/feedback", post(feedback))
-        .route("/v1/ingest", post(ingest))
-        .route("/v1/websub/{id}", get(websub_verify).post(websub_deliver))
-        .route("/v1/index", get(index_info))
-        .route("/mcp", post(mcp))
+    // A gateway answers only for itself (health, accounts, status); the rest is forwarded to the nodes.
+    let routes: Router<AppState> = if state.gateway.is_some() {
+        Router::new().route("/health", get(health))
+    } else {
+        Router::new()
+            .route("/health", get(health))
+            .route("/v1/search", get(search_get).post(search_post))
+            .route("/v1/search/batch", post(search_batch))
+            .route("/v1/similar", post(similar))
+            .route("/v1/extract", post(extract_post))
+            .route("/v1/sources", get(sources))
+            .route("/v1/sources/check", get(sources_check))
+            .route("/v1/stats", get(stats))
+            .route("/v1/feedback", post(feedback))
+            .route("/v1/ingest", post(ingest))
+            .route("/v1/websub/{id}", get(websub_verify).post(websub_deliver))
+            .route("/v1/index", get(index_info))
+            .route("/mcp", post(mcp))
+    };
+    routes
         .merge(crate::account::routes())
-        .fallback(not_found)
+        .merge(crate::cluster::flywheel_routes())
+        .route("/v1/cluster/status", get(crate::cluster::status))
+        .fallback(crate::cluster::forward)
         .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(ConcurrencyLimitLayer::new(max_concurrent.max(1)))
         .layer(middleware::from_fn_with_state(state.clone(), auth))

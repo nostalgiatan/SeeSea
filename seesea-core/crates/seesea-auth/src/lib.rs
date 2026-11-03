@@ -14,4 +14,4 @@ mod store;
 
 pub use limiter::{Decision, Denied, Limiter, Reason};
 pub use plan::{Plan, default_plans};
-pub use store::{AuthError, KeyInfo, Principal, Store, User, day_number, now_secs};
+pub use store::{AuthError, Dump, KeyRecord, UsageRecord, UserRecord, KeyInfo, Principal, Store, User, day_number, now_secs};
