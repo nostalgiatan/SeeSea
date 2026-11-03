@@ -363,6 +363,31 @@ impl Store {
         Ok((users, keys))
     }
 
+    /// Make this store agree with a dump taken from another one (a standby following its primary): plans,
+    /// disabled flags and key revocations are brought up to date, missing users and keys are added, usage only
+    /// goes up. Buckets (the short-term rate state) are left alone.
+    pub fn sync(&self, d: &Dump) -> Result<(), AuthError> {
+        {
+            let db = self.db.lock().unwrap();
+            let tx = rusqlite::Transaction::new_unchecked(&db, rusqlite::TransactionBehavior::Immediate)?;
+            for u in &d.users {
+                tx.execute(
+                    "INSERT INTO users (name, plan, disabled, created) VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT (name) DO UPDATE SET plan = excluded.plan, disabled = excluded.disabled",
+                    params![u.name, u.plan, u.disabled as i64, u.created],
+                )?;
+            }
+            for k in &d.keys {
+                tx.execute(
+                    "UPDATE keys SET name = ?2, expires = ?3, revoked = ?4 WHERE public_id = ?1",
+                    params![k.public_id, k.name, k.expires, k.revoked as i64],
+                )?;
+            }
+            tx.commit()?;
+        }
+        self.load(d).map(|_| ())
+    }
+
     /// Run `f` on the user's bucket inside one write transaction, so that several server processes
     /// sharing this file see each other's spending. The result of `f` decides what is saved.
     fn with_bucket<T>(

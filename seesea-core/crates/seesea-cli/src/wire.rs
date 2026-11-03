@@ -67,6 +67,8 @@ pub enum Op {
     Charge = 7,
     /// Give credits back for a request that did not run. Flywheel only.
     Refund = 8,
+    /// A standby flywheel node pulls what the primary holds: head `{what: "accounts"|"learner"|"index", offset?}`.
+    Replicate = 9,
 }
 
 impl Op {
@@ -81,6 +83,7 @@ impl Op {
             6 => Op::Admit,
             7 => Op::Charge,
             8 => Op::Refund,
+            9 => Op::Replicate,
             _ => return None,
         })
     }
@@ -192,6 +195,7 @@ impl PeerRole {
             (_, Op::Ping) => true,
             (Self::Gateway, Op::Http | Op::Admit | Op::Charge | Op::Refund) => true,
             (Self::Search, Op::Events | Op::LearnGet | Op::IndexSearch) => true,
+            (Self::Flywheel, Op::Replicate) => true,
             (Self::Operator, Op::Events | Op::LearnGet | Op::LearnMerge) => true,
             _ => false,
         }
@@ -638,6 +642,46 @@ impl Client {
     }
 }
 
+/// Several nodes that can stand in for each other (a primary and its standby), tried in order. A node that
+/// failed is skipped for a few seconds, so a dead primary does not cost a connect timeout on every call.
+pub struct Failover {
+    clients: Vec<Arc<Client>>,
+    down: Mutex<Vec<Option<Instant>>>,
+}
+
+impl Failover {
+    pub fn new(mesh: &Mesh, urls: &[String], expect: PeerRole) -> Result<Arc<Self>, String> {
+        let clients = urls.iter().map(|u| Client::new(mesh, u, expect)).collect::<Result<Vec<_>, _>>()?;
+        if clients.is_empty() {
+            return Err("no node to talk to".into());
+        }
+        Ok(Arc::new(Self { down: Mutex::new(vec![None; clients.len()]), clients }))
+    }
+
+    pub async fn call(&self, op: Op, head: &Value, body: &[u8], limit: Duration) -> Result<Reply, CallError> {
+        let n = self.clients.len();
+        let mut last = None;
+        for i in 0..n {
+            let skip = i + 1 < n && self.down.lock().unwrap()[i].is_some_and(|t| t.elapsed() < Duration::from_secs(10));
+            if skip {
+                continue;
+            }
+            match self.clients[i].call(op, head, body, limit).await {
+                Ok(r) => {
+                    self.down.lock().unwrap()[i] = None;
+                    return Ok(r);
+                }
+                Err(e @ CallError::Refused(_)) => return Err(e),
+                Err(e) => {
+                    self.down.lock().unwrap()[i] = Some(Instant::now());
+                    last = Some(e);
+                }
+            }
+        }
+        Err(last.unwrap_or_else(|| CallError::Unreachable("every node is marked down".into())))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -691,7 +735,7 @@ mod tests {
         assert!(PeerRole::Gateway.may(Op::Http) && !PeerRole::Gateway.may(Op::Events));
         assert!(PeerRole::Search.may(Op::Events) && !PeerRole::Search.may(Op::Http) && !PeerRole::Search.may(Op::LearnMerge));
         assert!(PeerRole::Operator.may(Op::LearnMerge) && !PeerRole::Operator.may(Op::Http));
-        assert!(!PeerRole::Flywheel.may(Op::Events));
+        assert!(!PeerRole::Flywheel.may(Op::Events) && PeerRole::Flywheel.may(Op::Replicate) && !PeerRole::Search.may(Op::Replicate));
         assert!(PeerRole::Flywheel.may(Op::Ping));
     }
 

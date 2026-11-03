@@ -68,6 +68,10 @@ pub struct Cluster {
     pub search_nodes: Vec<String>,
     /// Gateway and search nodes: where the flywheel node is.
     pub flywheel: Option<String>,
+    /// Gateway and search nodes: a second flywheel node that follows the first and takes over when it is away.
+    pub flywheel_standby: Option<String>,
+    /// A flywheel node that follows another one (and so is the standby of it): the primary's address.
+    pub standby_of: Option<String>,
     /// Search and flywheel nodes: the UDP address to listen on for the other nodes.
     pub listen: Option<SocketAddr>,
     /// Where a flywheel node remembers which events it has applied (so a restart does not apply a resent batch twice).
@@ -92,7 +96,10 @@ impl Cluster {
         if self.mesh.is_none() {
             return Err("a clustered node needs node_cert, node_key and cluster_peers (see `seesea cluster keygen`)".into());
         }
-        for url in self.search_nodes.iter().chain(self.flywheel.iter()) {
+        if self.standby_of.is_some() && self.role != Role::Flywheel {
+            return Err("standby_of belongs on a flywheel node".into());
+        }
+        for url in self.search_nodes.iter().chain(self.flywheel.iter()).chain(self.flywheel_standby.iter()).chain(self.standby_of.iter()) {
             wire::parse_url(url)?;
         }
         match self.role {
@@ -104,6 +111,11 @@ impl Cluster {
             return Err("this role needs cluster_listen = \"0.0.0.0:7443\" (the UDP address the other nodes connect to)".into());
         }
         Ok(())
+    }
+
+    /// The flywheel node and its standby, in the order to try them.
+    fn flywheels(&self) -> Vec<String> {
+        self.flywheel.iter().chain(self.flywheel_standby.iter()).cloned().collect()
     }
 
     fn mesh(&self) -> Result<&Mesh, String> {
@@ -371,19 +383,22 @@ impl Outbox {
 /// How a node reaches the flywheel node.
 #[derive(Clone)]
 pub struct Link {
-    client: Arc<wire::Client>,
+    client: Arc<wire::Failover>,
 }
 
 const SHORT: Duration = Duration::from_secs(20);
 
 impl Link {
     pub fn new(mesh: &Mesh, url: &str) -> Result<Self, String> {
-        Ok(Self { client: wire::Client::new(mesh, url, PeerRole::Flywheel)? })
+        Ok(Self { client: wire::Failover::new(mesh, &[url.to_string()], PeerRole::Flywheel)? })
     }
 
-    /// The flywheel node of a cluster configuration.
+    /// The flywheel node of a cluster configuration (and its standby, when there is one).
     pub fn of(c: &Cluster) -> Result<Self, String> {
-        Self::new(c.mesh()?, c.flywheel.as_deref().ok_or("no flywheel node is configured")?)
+        if c.flywheel.is_none() {
+            return Err("no flywheel node is configured".into());
+        }
+        Ok(Self { client: wire::Failover::new(c.mesh()?, &c.flywheels(), PeerRole::Flywheel)? })
     }
 
     pub async fn events(&self, events: &[Value]) -> Result<usize, String> {
@@ -545,6 +560,7 @@ impl wire::Handler for NodeHandler {
                 None => Reply::error("no learner on this node"),
             },
             Op::IndexSearch => self.index_search(&req.head).await,
+            Op::Replicate => self.replicate(&req.head).await,
             Op::Admit => self.admit(&req.head),
             Op::Charge | Op::Refund => self.adjust(req.op, &req.head),
         }
@@ -583,6 +599,40 @@ impl NodeHandler {
         Reply::ok(json!({"status": parts.status.as_u16(), "content_type": h(header::CONTENT_TYPE), "retry_after": h(header::RETRY_AFTER)}), bytes)
     }
 
+    /// What a standby pulls: the accounts, the merged learner picture, or a page of index items.
+    async fn replicate(&self, head: &Value) -> Reply {
+        match head["what"].as_str() {
+            Some("accounts") => match self.state.access.store().map(|s| s.dump()) {
+                Some(Ok(d)) => Reply::ok(Value::Null, serde_json::to_vec(&d).unwrap_or_default()),
+                _ => Reply::error("no accounts here"),
+            },
+            Some("learner") => match self.state.pipeline.learner_handle() {
+                Some(l) => Reply::ok(Value::Null, Bytes::from(l.export())),
+                None => Reply::error("no learner here"),
+            },
+            Some("index") => {
+                let Some(index) = self.state.index.clone() else { return Reply::ok(json!({"next": 0, "done": true}), Bytes::new()) };
+                let offset = head["offset"].as_u64().unwrap_or(0) as usize;
+                let page = tokio::task::spawn_blocking(move || {
+                    let (mut seen, mut items) = (0usize, Vec::new());
+                    let _ = index.store.export(|item| {
+                        if seen >= offset && items.len() < 5000 {
+                            items.push(item);
+                        }
+                        seen += 1;
+                    });
+                    (seen, items)
+                })
+                .await
+                .unwrap_or_default();
+                let (total, items) = page;
+                let next = offset + items.len();
+                Reply::ok(json!({"next": next, "done": next >= total}), serde_json::to_vec(&items).unwrap_or_default())
+            }
+            _ => Reply::error("unknown replication target"),
+        }
+    }
+
     /// A gateway asks whether a key may spend `cost` now (the accounts and buckets are here).
     fn admit(&self, head: &Value) -> Reply {
         use crate::access::Refusal;
@@ -605,9 +655,11 @@ impl NodeHandler {
     }
 
     fn adjust(&self, op: Op, head: &Value) -> Reply {
-        let (Some(user), Ok(plan), Some(store)) = (head["user"].as_i64(), serde_json::from_value::<seesea_auth::Plan>(head["plan"].clone()), self.state.access.store()) else {
+        let (Some(name), Ok(plan), Some(store)) = (head["user"].as_str(), serde_json::from_value::<seesea_auth::Plan>(head["plan"].clone()), self.state.access.store()) else {
             return Reply::error("bad request");
         };
+        // Ids differ between a primary and its standby; names do not.
+        let Ok(user) = store.user(name).map(|u| u.id) else { return Reply::error("no such user") };
         let now = seesea_auth::now_secs() as f64;
         let done = match op {
             Op::Charge => store.spend_more(user, &plan, head["extra"].as_u64().unwrap_or(0).min(100) as u32, now),
@@ -728,6 +780,57 @@ pub async fn apply_events(s: &AppState, events: Vec<Value>) -> usize {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Standby flywheel: follow the primary.
+// ---------------------------------------------------------------------------------------------
+
+/// Pull the primary's accounts and learner picture, and (with `index`) its index items. Idempotent: run it as
+/// often as you like. Returns what was copied: (accounts, learner, index items).
+pub async fn replicate_once(state: &AppState, primary: &Link, index: bool) -> Result<(bool, bool, usize), String> {
+    let pull = |what: &str, offset: usize| {
+        let head = json!({"what": what, "offset": offset});
+        let client = primary.client.clone();
+        async move { reply_ok(client.call(Op::Replicate, &head, &[], Duration::from_secs(60)).await) }
+    };
+    let mut done = (false, false, 0);
+    if let Some(store) = state.access.store() {
+        let dump: seesea_auth::Dump = serde_json::from_slice(&pull("accounts", 0).await?.body).map_err(|e| e.to_string())?;
+        store.sync(&dump).map_err(|e| e.to_string())?;
+        done.0 = true;
+    }
+    if let Some(l) = state.pipeline.learner_handle() {
+        done.1 = l.import(&pull("learner", 0).await?.body);
+    }
+    if let (true, Some(idx)) = (index, state.index.clone()) {
+        let mut offset = 0;
+        loop {
+            let r = pull("index", offset).await?;
+            let items: Vec<seesea_index::Item> = serde_json::from_slice(&r.body).map_err(|e| e.to_string())?;
+            done.2 += items.len();
+            let idx = idx.clone();
+            let _ = tokio::task::spawn_blocking(move || idx.store.ingest(&items)).await;
+            offset = r.head["next"].as_u64().unwrap_or(0) as usize;
+            if r.head["done"].as_bool().unwrap_or(true) {
+                break;
+            }
+        }
+    }
+    Ok(done)
+}
+
+/// Keep following: accounts and learner every 30 seconds, the index every 10 minutes.
+pub fn run_standby(state: AppState, primary: Link) {
+    let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
+    rt.spawn(async move {
+        let mut tick = 0u32;
+        loop {
+            let _ = replicate_once(&state, &primary, tick % 20 == 0).await;
+            tick = tick.wrapping_add(1);
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------------------------
 // Gateway: forward to healthy nodes.
 // ---------------------------------------------------------------------------------------------
 
@@ -741,6 +844,8 @@ struct Node {
 pub struct Pool {
     nodes: Vec<Node>,
     next: AtomicUsize,
+    /// Always the first healthy node in configuration order (a primary and its standby), never round robin.
+    ordered: bool,
 }
 
 impl Pool {
@@ -749,7 +854,14 @@ impl Pool {
             .iter()
             .map(|u| Ok(Node { url: u.clone(), client: wire::Client::new(mesh, u, role)?, up: AtomicBool::new(true) }))
             .collect::<Result<Vec<_>, String>>()?;
-        Ok(Arc::new(Self { nodes, next: AtomicUsize::new(0) }))
+        Ok(Arc::new(Self { nodes, next: AtomicUsize::new(0), ordered: false }))
+    }
+
+    /// Nodes that are not interchangeable: a primary and its standby.
+    pub fn ordered(mesh: &Mesh, urls: &[String], role: PeerRole) -> Result<Arc<Self>, String> {
+        let mut p = Arc::try_unwrap(Self::new(mesh, urls, role)?).ok().expect("just made");
+        p.ordered = true;
+        Ok(Arc::new(p))
     }
 
     /// Check every node now.
@@ -778,7 +890,7 @@ impl Pool {
     /// cluster whose health checks have not run yet (or all failed) is still tried.
     fn order(&self) -> Vec<usize> {
         let n = self.nodes.len();
-        let start = self.next.fetch_add(1, Ordering::Relaxed) % n.max(1);
+        let start = if self.ordered { 0 } else { self.next.fetch_add(1, Ordering::Relaxed) % n.max(1) };
         let all: Vec<usize> = (0..n).map(|i| (start + i) % n).collect();
         let (up, down): (Vec<usize>, Vec<usize>) = all.into_iter().partition(|&i| self.nodes[i].up.load(Ordering::Relaxed));
         up.into_iter().chain(down).collect()
@@ -835,18 +947,20 @@ pub struct Gateway {
     pub search: Arc<Pool>,
     pub flywheel: Arc<Pool>,
     /// The connection the accounts are asked over.
-    pub accounts: Arc<wire::Client>,
+    pub accounts: Arc<wire::Failover>,
 }
 
 impl Gateway {
     pub fn new(c: &Cluster) -> Result<Arc<Self>, String> {
         let mesh = c.mesh()?;
-        let flywheel: Vec<String> = c.flywheel.iter().cloned().collect();
-        let url = c.flywheel.as_deref().ok_or("no flywheel node is configured")?;
+        let flywheel = c.flywheels();
+        if flywheel.is_empty() {
+            return Err("no flywheel node is configured".into());
+        }
         let g = Arc::new(Self {
             search: Pool::new(mesh, &c.search_nodes, PeerRole::Search)?,
-            flywheel: Pool::new(mesh, &flywheel, PeerRole::Flywheel)?,
-            accounts: wire::Client::new(mesh, url, PeerRole::Flywheel)?,
+            flywheel: Pool::ordered(mesh, &flywheel, PeerRole::Flywheel)?,
+            accounts: wire::Failover::new(mesh, &flywheel, PeerRole::Flywheel)?,
         });
         g.search.watch();
         g.flywheel.watch();
@@ -1163,7 +1277,7 @@ mod tests {
         std::fs::write(d.path().join("c"), cert).unwrap();
         std::fs::write(d.path().join("k"), key).unwrap();
         let mesh = Mesh { identity: wire::Identity::load(&d.path().join("c"), &d.path().join("k")).unwrap(), peers: wire::Peers::fixed(vec![]) };
-        let base = Cluster { role: Role::Gateway, search_nodes: vec![], flywheel: None, listen: None, state_dir: None, mesh: Some(mesh) };
+        let base = Cluster { role: Role::Gateway, search_nodes: vec![], flywheel: None, flywheel_standby: None, standby_of: None, listen: None, state_dir: None, mesh: Some(mesh) };
         assert!(base.check().unwrap_err().contains("search_nodes"));
         let ok = Cluster { search_nodes: vec!["quic://10.0.0.1:7443".into()], flywheel: Some("quic://10.0.0.2:7443".into()), ..base.clone() };
         assert!(ok.check().is_ok());
@@ -1171,7 +1285,7 @@ mod tests {
         assert!(Cluster { mesh: None, ..ok.clone() }.check().unwrap_err().contains("node_cert"));
         assert!(Cluster { role: Role::Search, ..ok.clone() }.check().unwrap_err().contains("cluster_listen"));
         assert!(Cluster { role: Role::Search, flywheel: None, listen: Some("0.0.0.0:7443".parse().unwrap()), ..ok.clone() }.check().unwrap_err().contains("flywheel"));
-        assert!(Cluster { role: Role::Single, mesh: None, search_nodes: vec![], flywheel: None, listen: None, state_dir: None }.check().is_ok());
+        assert!(Cluster { role: Role::Single, mesh: None, search_nodes: vec![], flywheel: None, flywheel_standby: None, standby_of: None, listen: None, state_dir: None }.check().is_ok());
     }
 
     #[test]

@@ -85,7 +85,7 @@ pub struct Access {
     shared: bool,
     root_key: Option<Arc<str>>,
     /// On a gateway: the flywheel node that holds the accounts and the shared buckets.
-    remote: Option<Arc<crate::wire::Client>>,
+    remote: Option<Arc<crate::wire::Failover>>,
     permits: Mutex<HashMap<i64, (u32, Arc<Semaphore>)>>,
     failures: Mutex<HashMap<IpAddr, (f64, u32)>>,
 }
@@ -122,7 +122,7 @@ impl Access {
     }
 
     /// Keep no accounts here: ask the node that has them (a gateway, so that any number of them can run).
-    pub fn with_remote(mut self, accounts: Arc<crate::wire::Client>) -> Self {
+    pub fn with_remote(mut self, accounts: Arc<crate::wire::Failover>) -> Self {
         self.remote = Some(accounts);
         self
     }
@@ -323,7 +323,7 @@ impl Access {
         let plan: Plan = serde_json::from_value(h["plan"].clone()).map_err(|e| unavailable(e.to_string()))?;
         let user_id = h["user_id"].as_i64().ok_or_else(|| unavailable("no user".into()))?;
         let Some(permit) = self.permit(user_id, plan.max_concurrent) else {
-            let _ = client.call(Op::Refund, &serde_json::json!({"user": user_id, "plan": plan, "cost": cost}), &[], std::time::Duration::from_secs(5)).await;
+            let _ = client.call(Op::Refund, &serde_json::json!({"user": h["name"], "plan": plan, "cost": cost}), &[], std::time::Duration::from_secs(5)).await;
             return Err(Refusal::Limited {
                 denied: None,
                 code: "too_many_concurrent",
@@ -360,7 +360,7 @@ impl Access {
             && extra > 0
         {
             if let Some(client) = self.remote.clone() {
-                let head = serde_json::json!({"user": id, "plan": grant.plan, "extra": extra});
+                let head = serde_json::json!({"user": grant.name, "plan": grant.plan, "extra": extra});
                 if let Ok(rt) = tokio::runtime::Handle::try_current() {
                     rt.spawn(async move {
                         let _ = client.call(crate::wire::Op::Charge, &head, &[], std::time::Duration::from_secs(5)).await;
