@@ -14,6 +14,7 @@ pub mod store;
 pub mod websub;
 pub mod vectors;
 
+pub use source::READ;
 pub use poller::{PollConfig, PollReport, Poller};
 pub use registry::{Feed, Registry, Status, Sub};
 pub use source::{IndexSink, IndexSource};

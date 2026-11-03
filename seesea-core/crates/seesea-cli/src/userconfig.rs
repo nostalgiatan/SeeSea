@@ -49,6 +49,16 @@ pub struct FileConfig {
     /// Keep each user's rate and daily budget in the auth database (true, the default), so several
     /// `serve` processes on the same file share them; false keeps them in memory (one process).
     pub shared_limits: Option<bool>,
+    /// What this node does in a cluster: `single` (default, everything in one process), `gateway`,
+    /// `search` or `flywheel`. Overridden by `SEESEA_ROLE`.
+    pub role: Option<String>,
+    /// The secret the nodes of a cluster share. Overridden by `SEESEA_CLUSTER_KEY`.
+    pub cluster_key: Option<String>,
+    /// Gateway: the search nodes, as `["http://10.0.0.2:8080", ...]`.
+    #[serde(default)]
+    pub search_nodes: Vec<String>,
+    /// Gateway and search nodes: the flywheel node, `"http://10.0.0.3:8080"`.
+    pub flywheel: Option<String>,
     /// Plans for API users, by name: `[plans.free] per_minute = 20`. `default` and `unlimited`
     /// exist unless redefined.
     #[serde(default)]
@@ -290,6 +300,13 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # Several `serve` processes may use one auth_db: users, keys, rates and daily budgets are shared through it.
 # (Concurrent-request caps and the failed-key counter stay per process.) false = keep limits in memory.
 # shared_limits = true
+
+# Several machines: give each node one job (see `seesea cluster --help` and the README). The default is
+# `single`, one process doing everything. All nodes of a cluster share one secret.
+# role = "single"            # single | gateway | search | flywheel
+# cluster_key = "a long shared secret"
+# search_nodes = ["http://10.0.0.2:8080", "http://10.0.0.4:8080"]   # gateway
+# flywheel = "http://10.0.0.3:8080"                                  # gateway and search nodes
 
 # Plans for API users. `default` (60 credits/min, burst 30, 5000/day, 4 at once) and `unlimited`
 # exist already; a fast search costs 1 credit, a standard one 2, a deep one 5.

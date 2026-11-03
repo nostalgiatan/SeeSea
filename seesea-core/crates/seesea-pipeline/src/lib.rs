@@ -32,6 +32,6 @@ pub use model::{Related,
 };
 pub use rank::Recency;
 pub use journal::Journal;
-pub use learn::{LearnConfig, Learner};
+pub use learn::{LearnConfig, Learner, Observation};
 pub use pipeline::{host_of, ExtractedPage, Pipeline, PipelineConfig, SourceProbe};
 pub use source::{RawHit, Remembered, Sink, Source, SourceQuery};

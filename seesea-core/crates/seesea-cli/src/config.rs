@@ -55,6 +55,8 @@ pub struct Settings {
     pub journal_dir: Option<PathBuf>,
     /// Do not keep pages that were read and answered a search in the local index.
     pub no_writeback: bool,
+    /// On a search node: the flywheel node that receives what it reads and learns and holds the index.
+    pub cluster_search: Option<crate::cluster::Cluster>,
     pub explore: f64,
     /// Folder of the local fresh-news index; none means no `local` source.
     pub index_dir: Option<PathBuf>,
@@ -178,7 +180,17 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
         .then(|| seesea_fetch::render::Renderer::discover_with(settings.lightpanda.as_deref(), Some(&crate::userconfig::managed_renderer())))
         .flatten();
     let mut sink = None;
-    if let Some(dir) = &settings.index_dir {
+    // A search node keeps no index of its own: it sends what it reads to the flywheel node and asks it for
+    // fresh-news results.
+    let outbox = settings.cluster_search.as_ref().map(|_| crate::cluster::Outbox::new());
+    let link = settings
+        .cluster_search
+        .as_ref()
+        .and_then(|c| c.flywheel.as_deref().map(|f| crate::cluster::Link::new(f, &c.key)));
+    if let (Some(link), Some(outbox)) = (&link, &outbox) {
+        sink = Some(Arc::new(crate::cluster::ClusterSink(outbox.clone())) as Arc<dyn seesea_pipeline::Sink>);
+        sources.push(Arc::new(crate::cluster::RemoteIndex(link.clone())));
+    } else if let Some(dir) = &settings.index_dir {
         let index = seesea_index::Index::open(dir);
         sink = Some(Arc::new(seesea_index::IndexSink(index.clone())) as Arc<dyn seesea_pipeline::Sink>);
         let mut local = seesea_index::IndexSource::new(index);
@@ -201,12 +213,32 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
     if let Some(sink) = sink.filter(|_| !settings.no_writeback) {
         pipeline = pipeline.sink(sink);
     }
+    let mut learner = None;
     if let Some(dir) = &settings.journal_dir {
-        pipeline = pipeline.journal(Arc::new(seesea_pipeline::Journal::new(dir.clone())));
+        let journal = Arc::new(seesea_pipeline::Journal::new(dir.clone()));
+        if let Some(outbox) = &outbox {
+            let o = outbox.clone();
+            journal.tap(move |line| o.push(serde_json::json!({"k": "journal", "line": line})));
+        }
+        pipeline = pipeline.journal(journal);
     }
     if let Some(path) = &settings.learn_file {
         let cfg = seesea_pipeline::LearnConfig { explore: settings.explore.clamp(0.0, 1.0), ..Default::default() };
-        pipeline = pipeline.learner(Arc::new(seesea_pipeline::Learner::open(cfg, path.clone())));
+        let l = Arc::new(seesea_pipeline::Learner::open(cfg, path.clone()));
+        if let Some(outbox) = &outbox {
+            let o = outbox.clone();
+            l.tap(move |ob| {
+                if let Ok(mut v) = serde_json::to_value(&ob) {
+                    v["k"] = "observe".into();
+                    o.push(v);
+                }
+            });
+        }
+        pipeline = pipeline.learner(l.clone());
+        learner = Some(l);
+    }
+    if let (Some(link), Some(outbox)) = (link, outbox) {
+        crate::cluster::run_search_node(outbox, link, learner);
     }
     if let Some(renderer) = renderer {
         pipeline = pipeline.renderer(Arc::new(seesea_pipeline::content::RenderFetcher {

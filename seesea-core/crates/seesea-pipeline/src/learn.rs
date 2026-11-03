@@ -87,7 +87,19 @@ struct State {
     global: Stat,
 }
 
+/// One judged page, as it is shipped from a search node to the node that keeps the merged picture.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Observation {
+    pub host: String,
+    pub sources: Vec<String>,
+    pub value: f64,
+    pub weight: f64,
+}
+
+type Tap = Box<dyn Fn(Observation) + Send + Sync>;
+
 pub struct Learner {
+    tap: Mutex<Option<Tap>>,
     cfg: LearnConfig,
     path: Option<PathBuf>,
     state: Mutex<State>,
@@ -135,7 +147,7 @@ impl Learner {
 
     fn build(cfg: LearnConfig, path: Option<PathBuf>, state: State) -> Self {
         let seed = SystemTime::now().duration_since(UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64) | 1;
-        Self { cfg, path, state: Mutex::new(state), last_flush: Mutex::new(now_secs()), rng: AtomicU64::new(seed), dirty: false.into() }
+        Self { tap: Mutex::new(None), cfg, path, state: Mutex::new(state), last_flush: Mutex::new(now_secs()), rng: AtomicU64::new(seed), dirty: false.into() }
     }
 
     pub fn config(&self) -> &LearnConfig {
@@ -182,6 +194,9 @@ impl Learner {
         if host.is_empty() {
             return;
         }
+        if let Some(tap) = self.tap.lock().unwrap().as_ref() {
+            tap(Observation { host: host.into(), sources: sources.iter().map(|s| s.to_string()).collect(), value, weight });
+        }
         self.dirty.store(true, Ordering::Relaxed);
         let (now, hl) = (now_secs(), self.cfg.half_life_days);
         let value = value.clamp(0.0, 1.0);
@@ -202,6 +217,55 @@ impl Learner {
             }
         }
         self.flush_if_due(now);
+    }
+
+    /// Hand every observation to `f` as well (a search node ships them to the flywheel node).
+    pub fn tap(&self, f: impl Fn(Observation) + Send + Sync + 'static) {
+        *self.tap.lock().unwrap() = Some(Box::new(f));
+    }
+
+    /// Apply an observation that was made elsewhere; it is not passed on to the tap again.
+    pub fn apply(&self, o: &Observation) {
+        let tap = self.tap.lock().unwrap().take();
+        let sources: Vec<&str> = o.sources.iter().map(String::as_str).collect();
+        self.observe(&o.host, &sources, o.value, o.weight);
+        *self.tap.lock().unwrap() = tap;
+    }
+
+    /// The whole picture as bytes, for another node to take over with [`import`](Self::import).
+    pub fn export(&self) -> Vec<u8> {
+        serde_json::to_vec(&*self.state.lock().unwrap()).unwrap_or_default()
+    }
+
+    /// Replace what is known with an exported picture. Unreadable bytes change nothing.
+    pub fn import(&self, bytes: &[u8]) -> bool {
+        let Ok(st) = serde_json::from_slice::<State>(bytes) else { return false };
+        *self.state.lock().unwrap() = st;
+        self.dirty.store(true, Ordering::Relaxed);
+        true
+    }
+
+    /// Add the counts of an exported picture to this one (moving a node's history into the merged
+    /// picture). Both sides are aged to now first, so old counts weigh what they would anyway.
+    pub fn merge(&self, bytes: &[u8]) -> bool {
+        let Ok(other) = serde_json::from_slice::<State>(bytes) else { return false };
+        let (now, hl) = (now_secs(), self.cfg.half_life_days);
+        let add = |into: &mut Stat, mut from: Stat| {
+            into.decay(now, hl);
+            from.decay(now, hl);
+            into.n += from.n;
+            into.sum += from.sum;
+        };
+        let mut st = self.state.lock().unwrap();
+        for (k, v) in other.hosts {
+            add(st.hosts.entry(k).or_default(), v);
+        }
+        for (k, v) in other.sources {
+            add(st.sources.entry(k).or_default(), v);
+        }
+        add(&mut st.global, other.global);
+        self.dirty.store(true, Ordering::Relaxed);
+        true
     }
 
     pub fn failed(&self, host: &str, sources: &[&str]) {
@@ -301,6 +365,34 @@ mod tests {
 
     fn learner() -> Learner {
         Learner::new(LearnConfig::default())
+    }
+
+    #[test]
+    fn observations_from_another_node_and_merged_histories_add_up() {
+        let (a, b) = (Learner::new(LearnConfig::default()), Learner::new(LearnConfig::default()));
+        let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        a.tap(move |o| sink.lock().unwrap().push(o));
+        a.observe("good.org", &["bing"], 1.0, 1.0);
+        let shipped = seen.lock().unwrap().clone();
+        assert_eq!(shipped.len(), 1);
+        for o in &shipped {
+            b.apply(o);
+        }
+        assert_eq!(b.report(5).observations, 1.0);
+        // Applying does not echo to the tap of the receiving node.
+        let echoed = std::sync::Arc::new(Mutex::new(0));
+        let e = echoed.clone();
+        b.tap(move |_| *e.lock().unwrap() += 1);
+        b.apply(&shipped[0]);
+        assert_eq!(*echoed.lock().unwrap(), 0);
+        // History moves by merge; a snapshot replaces.
+        let c = Learner::new(LearnConfig::default());
+        assert!(c.merge(&b.export()) && c.merge(&a.export()));
+        assert!((c.report(5).observations - 3.0).abs() < 0.01, "{}", c.report(5).observations);
+        let d = Learner::new(LearnConfig::default());
+        assert!(d.import(&c.export()) && !d.import(b"nonsense"));
+        assert!((d.report(5).observations - 3.0).abs() < 0.01);
     }
 
     #[test]

@@ -15,16 +15,19 @@ const KEEP_DAYS: i64 = 60;
 /// The folder may not grow past this; the oldest days go first.
 const KEEP_BYTES: u64 = 200 * 1024 * 1024;
 
+type Tap = Box<dyn Fn(&Value) + Send + Sync>;
+
 pub struct Journal {
     dir: PathBuf,
     write: Mutex<()>,
+    tap: Mutex<Option<Tap>>,
 }
 
 impl Journal {
     pub fn new(dir: impl Into<PathBuf>) -> Self {
         let dir = dir.into();
         let _ = std::fs::create_dir_all(&dir);
-        let j = Self { dir, write: Mutex::new(()) };
+        let j = Self { dir, write: Mutex::new(()), tap: Mutex::new(None) };
         j.expire();
         j
     }
@@ -64,7 +67,24 @@ impl Journal {
         }
     }
 
+    /// Also hand every line to `f` (a search node ships them to the flywheel node).
+    pub fn tap(&self, f: impl Fn(&Value) + Send + Sync + 'static) {
+        *self.tap.lock().unwrap() = Some(Box::new(f));
+    }
+
+    /// Write a line that was recorded on another node; it is not passed on to the tap.
+    pub fn record(&self, line: &Value) {
+        self.write_line(line);
+    }
+
     fn append(&self, line: &Value) {
+        if let Some(tap) = self.tap.lock().unwrap().as_ref() {
+            tap(line);
+        }
+        self.write_line(line);
+    }
+
+    fn write_line(&self, line: &Value) {
         use std::io::Write;
         let _g = self.write.lock().unwrap_or_else(|e| e.into_inner());
         let file = self

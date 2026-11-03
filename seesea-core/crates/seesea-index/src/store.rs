@@ -225,6 +225,27 @@ impl Store {
         f(&guard).map(Some)
     }
 
+    /// Every item in every day's file, oldest day first (moving the index to another node).
+    pub fn export(&self, mut f: impl FnMut(Item)) -> Result<usize> {
+        let mut days = self.days();
+        days.sort();
+        let mut n = 0;
+        for day in days {
+            self.with_shard(day, false, |c| {
+                let mut st = c.prepare("SELECT url, title, lead, published, source FROM items ORDER BY id")?;
+                let rows = st.query_map([], |r| {
+                    Ok(Item { url: r.get(0)?, title: r.get(1)?, lead: r.get(2)?, published: r.get(3)?, source: r.get(4)? })
+                })?;
+                for row in rows {
+                    f(row?);
+                    n += 1;
+                }
+                Ok(())
+            })?;
+        }
+        Ok(n)
+    }
+
     /// Add items. Duplicates (same normalised URL, or same title on the same site) are skipped.
     pub fn ingest(&self, items: &[Item]) -> Result<IngestReport> {
         let now = crate::now();
