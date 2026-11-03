@@ -541,6 +541,8 @@ pub struct NodeHandler {
     permits: tokio::sync::Semaphore,
     /// The highest sequence applied per (sender, epoch), for skipping what arrives twice.
     seen: Mutex<HashMap<(String, u64), u64>>,
+    /// The other flywheel node, when there is one.
+    partner: Option<Link>,
     seen_file: Option<PathBuf>,
 }
 
@@ -555,7 +557,12 @@ pub fn start_wire(state: AppState, max_concurrent: usize, c: &Cluster, lease: Op
         .and_then(|b| serde_json::from_slice::<HashMap<String, u64>>(&b).ok())
         .map(|m| m.into_iter().filter_map(|(k, v)| { let (fp, ep) = k.split_once(':')?; Some(((fp.to_string(), ep.parse().ok()?), v)) }).collect())
         .unwrap_or_default();
+    let partner = match (c.role == Role::Flywheel).then(|| c.partner.as_ref().or(c.standby_of.as_ref())).flatten() {
+        Some(url) => Some(Link::new(c.mesh()?, url)?),
+        None => None,
+    };
     let handler = Arc::new(NodeHandler {
+        partner,
         flywheel: c.role == Role::Flywheel,
         witness: c.role == Role::Witness,
         lease,
@@ -580,17 +587,31 @@ impl wire::Handler for NodeHandler {
             Op::Ping => return Reply::ok(Value::Null, Bytes::new()),
             Op::Lease => {
                 let Some(l) = &self.lease else { return Reply::error("no vote here") };
+                if req.head["release"] == true {
+                    l.withdraw(&peer.fingerprint);
+                    return Reply::ok(json!({"granted": false}), Bytes::new());
+                }
                 return Reply::ok(json!({"granted": l.grant(&peer.fingerprint)}), Bytes::new());
             }
             _ if self.witness => return Reply::error("a witness only votes"),
             _ => {}
+        }
+        if req.op == Op::Nudge {
+            // The writer changed accounts: copy them now instead of at the next round.
+            return match (&self.partner, self.flywheel) {
+                (Some(p), true) => match replicate_once(&self.state, p, true, false, false, false).await {
+                    Ok(_) => Reply::ok(Value::Null, Bytes::new()),
+                    Err(e) => Reply::error(e),
+                },
+                _ => Reply::error("nothing to follow"),
+            };
         }
         // Writes and reads of what the flywheel holds go to the holder of the lease only.
         if self.flywheel && !matches!(req.op, Op::Replicate) && self.lease.as_ref().is_some_and(|l| !l.held()) {
             return Reply { status: Status::NotLeader, head: Value::Null, body: Bytes::new() };
         }
         match req.op {
-            Op::Ping | Op::Lease => unreachable!("answered above"),
+            Op::Ping | Op::Lease | Op::Nudge => unreachable!("answered above"),
             Op::Http => self.http(req).await,
             _ if !self.flywheel => Reply::error("this node is not the flywheel node"),
             Op::Events => self.events(peer, &req.body).await,
@@ -652,7 +673,13 @@ impl NodeHandler {
             Ok(r) => r,
             Err(e) => return Reply::error(e),
         };
+        let changes_accounts = self.flywheel && head["method"] != "GET" && head["uri"].as_str().is_some_and(|u| is_accounts_path(u.split('?').next().unwrap_or(u)));
         let Ok(resp) = self.app.clone().oneshot(request).await;
+        // A change to accounts is not answered until the partner has them, so that a failover right after it
+        // loses nothing. If the partner is away the change stands anyway (it catches up later).
+        if changes_accounts && resp.status().is_success() && let Some(p) = &self.partner {
+            let _ = p.client.call(Op::Nudge, &Value::Null, &[], Duration::from_secs(3)).await;
+        }
         let (parts, body) = resp.into_parts();
         let Ok(bytes) = axum::body::to_bytes(body, 64 * 1024 * 1024).await else { return Reply::error("the answer was too large") };
         let h = |n: header::HeaderName| parts.headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
@@ -859,11 +886,11 @@ pub async fn apply_events(s: &AppState, events: Vec<Value>) -> usize {
 // ---------------------------------------------------------------------------------------------
 
 /// How long a voter keeps a promise not to vote for anyone else.
-const LEASE_PROMISE: Duration = Duration::from_secs(6);
+const LEASE_PROMISE: Duration = Duration::from_secs(4);
 /// How long the holder believes it holds the lease after asking. Shorter than the promise, so that the holder
 /// has stopped writing before any voter could have voted for someone else (this needs the clocks to tick at
 /// the same rate, not to agree).
-const LEASE_HOLD: Duration = Duration::from_secs(4);
+const LEASE_HOLD: Duration = Duration::from_millis(2500);
 
 struct Vote {
     to: String,
@@ -908,6 +935,29 @@ impl Lease {
         }
     }
 
+    /// Give the lease up now (a clean shutdown), so that the other node does not have to wait for the promise to
+    /// run out.
+    pub async fn release(&self) {
+        *self.held_until.lock().unwrap() = None;
+        {
+            let mut v = self.vote.lock().unwrap();
+            if v.as_ref().is_some_and(|x| x.to == self.me) {
+                *v = None;
+            }
+        }
+        for v in &self.voters {
+            let _ = tokio::time::timeout(Duration::from_secs(1), v.call(Op::Lease, &json!({"release": true}), &[], Duration::from_secs(1))).await;
+        }
+    }
+
+    /// A voter's promise to `node` ends (it said it is going away).
+    pub fn withdraw(&self, node: &str) {
+        let mut v = self.vote.lock().unwrap();
+        if v.as_ref().is_some_and(|x| x.to == node) {
+            *v = None;
+        }
+    }
+
     /// Ask for (or renew) the lease.
     pub async fn round(&self) {
         let start = std::time::Instant::now();
@@ -916,7 +966,7 @@ impl Lease {
             let v = v.clone();
             async move {
                 // The whole ask, connecting included, must fit well inside the time the lease is held.
-                tokio::time::timeout(Duration::from_millis(1500), v.call(Op::Lease, &Value::Null, &[], Duration::from_millis(1500))).await.is_ok_and(|r| r.is_ok_and(|r| r.head["granted"] == true))
+                tokio::time::timeout(Duration::from_millis(1000), v.call(Op::Lease, &Value::Null, &[], Duration::from_millis(1000))).await.is_ok_and(|r| r.is_ok_and(|r| r.head["granted"] == true))
             }
         });
         grants += futures_count(asks).await;
@@ -929,7 +979,7 @@ impl Lease {
         }
     }
 
-    /// Keep asking, once a second. The node with the larger fingerprint waits a moment at the start, so that
+    /// Keep asking, twice a second. The node with the larger fingerprint waits a moment at the start, so that
     /// two nodes starting together do not both lose the first vote.
     pub fn run(self: &Arc<Self>, partner_fingerprint: Option<String>) {
         let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
@@ -940,7 +990,7 @@ impl Lease {
             }
             loop {
                 this.round().await;
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
         });
     }
