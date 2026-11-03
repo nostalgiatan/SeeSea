@@ -21,13 +21,15 @@ pub struct Journal {
     dir: PathBuf,
     write: Mutex<()>,
     tap: Mutex<Option<Tap>>,
+    /// Lines written since the folder was last trimmed.
+    since_trim: std::sync::atomic::AtomicU32,
 }
 
 impl Journal {
     pub fn new(dir: impl Into<PathBuf>) -> Self {
         let dir = dir.into();
         let _ = std::fs::create_dir_all(&dir);
-        let j = Self { dir, write: Mutex::new(()), tap: Mutex::new(None) };
+        let j = Self { dir, write: Mutex::new(()), tap: Mutex::new(None), since_trim: 0.into() };
         j.expire();
         j
     }
@@ -85,6 +87,11 @@ impl Journal {
     }
 
     fn write_line(&self, line: &Value) {
+        // A long-running server must keep to the size and age limits too, not only at start.
+        if self.since_trim.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 2000 {
+            self.since_trim.store(0, std::sync::atomic::Ordering::Relaxed);
+            self.expire();
+        }
         use std::io::Write;
         let _g = self.write.lock().unwrap_or_else(|e| e.into_inner());
         let file = self

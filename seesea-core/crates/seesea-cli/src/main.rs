@@ -1249,6 +1249,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                 }
             }
             state.cluster = cluster.clone();
+            state.trust_forwarded = file.trust_forwarded_for == Some(true);
             state.index = state_index;
             state.embedder = pipeline_settings.model_dir.as_ref().map(|m| seesea_cli::embedding::shared_embedder(m) as Arc<dyn seesea_pipeline::semantic::TextEmbedder>);
             server::serve(addr, state, max_concurrent, allow_open).await

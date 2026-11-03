@@ -111,30 +111,42 @@ fn event_kind(e: &Value) -> &str {
 }
 
 const QUEUE_LIMIT: usize = 20_000;
+/// And no more than this many bytes of them: journal lines carry result lists and can be large.
+const QUEUE_BYTES: usize = 64 * 1024 * 1024;
 const BATCH: usize = 100;
 
-/// Events waiting to go to the flywheel node. Bounded: when the flywheel node is away for long, the oldest are dropped.
+struct Queue {
+    events: VecDeque<(Value, usize)>,
+    bytes: usize,
+}
+
+/// Events waiting to go to the flywheel node. Bounded in count and size: when the flywheel node is away for
+/// long, the oldest are dropped (and counted).
 pub struct Outbox {
-    queue: Mutex<VecDeque<Value>>,
+    queue: Mutex<Queue>,
     dropped: std::sync::atomic::AtomicU64,
 }
 
 impl Outbox {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self { queue: Mutex::new(VecDeque::new()), dropped: 0.into() })
+        Arc::new(Self { queue: Mutex::new(Queue { events: VecDeque::new(), bytes: 0 }), dropped: 0.into() })
     }
 
     pub fn push(&self, e: Value) {
+        let size = e.to_string().len();
         let mut q = self.queue.lock().unwrap();
-        if q.len() >= QUEUE_LIMIT {
-            q.pop_front();
-            self.dropped.fetch_add(1, Ordering::Relaxed);
+        while q.events.len() >= QUEUE_LIMIT || (q.bytes + size > QUEUE_BYTES && !q.events.is_empty()) {
+            if let Some((_, n)) = q.events.pop_front() {
+                q.bytes -= n;
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+            }
         }
-        q.push_back(e);
+        q.bytes += size;
+        q.events.push_back((e, size));
     }
 
     pub fn len(&self) -> usize {
-        self.queue.lock().unwrap().len()
+        self.queue.lock().unwrap().events.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -145,17 +157,20 @@ impl Outbox {
         self.dropped.load(Ordering::Relaxed)
     }
 
-    fn take(&self) -> Vec<Value> {
+    fn take(&self) -> Vec<(Value, usize)> {
         let mut q = self.queue.lock().unwrap();
-        let n = q.len().min(BATCH);
-        q.drain(..n).collect()
+        let n = q.events.len().min(BATCH);
+        let batch: Vec<(Value, usize)> = q.events.drain(..n).collect();
+        q.bytes -= batch.iter().map(|(_, n)| n).sum::<usize>();
+        batch
     }
 
-    fn put_back(&self, events: Vec<Value>) {
+    fn put_back(&self, events: Vec<(Value, usize)>) {
         let mut q = self.queue.lock().unwrap();
-        for e in events.into_iter().rev() {
-            if q.len() < QUEUE_LIMIT {
-                q.push_front(e);
+        for (e, n) in events.into_iter().rev() {
+            if q.events.len() < QUEUE_LIMIT && q.bytes + n <= QUEUE_BYTES {
+                q.bytes += n;
+                q.events.push_front((e, n));
             }
         }
     }
@@ -166,7 +181,8 @@ impl Outbox {
         if batch.is_empty() {
             return false;
         }
-        if link.post("/v1/cluster/events", &json!({"events": batch})).await.is_ok() {
+        let events: Vec<&Value> = batch.iter().map(|(e, _)| e).collect();
+        if link.post("/v1/cluster/events", &json!({"events": events})).await.is_ok() {
             true
         } else {
             self.put_back(batch);
@@ -500,9 +516,14 @@ impl Pool {
                     }
                     return out;
                 }
-                Err(e) => {
+                // Could not even connect: the node never saw the request, so the next one may have it.
+                Err(e) if e.is_connect() => {
                     node.up.store(false, Ordering::Relaxed);
                     last = format!("{}: {e}", node.base);
+                }
+                // Anything later (a timeout, a broken connection) may have run the request already; do not run it twice.
+                Err(e) => {
+                    return (StatusCode::GATEWAY_TIMEOUT, Json(json!({"code": "upstream_failed", "message": format!("{}: {e}", node.base)}))).into_response();
                 }
             }
         }
@@ -526,39 +547,55 @@ impl Gateway {
     }
 }
 
-/// Paths a gateway answers itself (everything else is forwarded).
-fn is_local(path: &str) -> bool {
-    path == "/health" || path.starts_with("/v1/account") || path.starts_with("/v1/admin") || path == "/v1/cluster/status"
+/// Where a gateway sends a path. Exactly these paths and no others are forwarded: the node would parse
+/// anything else its own way (`/v1/x/../cluster/events` becomes `/v1/cluster/events` once the URL is
+/// normalised, and the gateway attaches the cluster key to every forwarded request).
+#[derive(Debug, PartialEq, Eq)]
+enum Target {
+    Search,
+    Flywheel,
+    /// Only the root key may use it.
+    FlywheelAdmin,
 }
 
-/// Paths that belong to the flywheel node.
-fn to_flywheel(path: &str) -> bool {
-    path == "/v1/ingest" || path == "/v1/index" || path.starts_with("/v1/websub/")
+fn target(path: &str) -> Option<Target> {
+    match path {
+        "/v1/search" | "/v1/search/batch" | "/v1/similar" | "/v1/extract" | "/v1/sources" | "/v1/sources/check" | "/v1/stats" | "/v1/feedback" | "/mcp" => Some(Target::Search),
+        "/v1/index" => Some(Target::Flywheel),
+        "/v1/ingest" => Some(Target::FlywheelAdmin),
+        p => {
+            // A WebSub callback: /v1/websub/<id> where the id is what we handed the hub.
+            let id = p.strip_prefix("/v1/websub/")?;
+            (!id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')).then_some(Target::Flywheel)
+        }
+    }
 }
 
-/// Credits the request will cost beyond its base cost, and whether it asks for something the plan lacks.
-/// The same rules the search node applies when it is a single node.
-fn meter(path: &str, query: Option<&str>, body: &[u8], grant: &Option<Extension<Grant>>, state: &AppState) -> Result<(), Response> {
+/// Charge what the request will cost beyond its base cost and refuse what the plan lacks. Runs the same
+/// rules as a single node, reading the request the way the node will: a GET's mode is in its query, a
+/// POST's in its body (reading both would let one say `fast` to the gateway and `deep` to the node).
+fn meter(method: &Method, path: &str, query: Option<&str>, body: &[u8], grant: &Option<Extension<Grant>>, state: &AppState) -> Result<(), Response> {
     let Some(Extension(g)) = grant else { return Ok(()) };
     let bad = |m: String| (StatusCode::BAD_REQUEST, Json(json!({"code": "invalid_request", "message": m}))).into_response();
-    let (mode, times) = match path {
-        "/v1/search" | "/v1/search/batch" | "/v1/similar" => {
-            let from_body: Option<Value> = serde_json::from_slice(body).ok();
-            let raw = from_body.as_ref().and_then(|b| b["mode"].as_str().map(str::to_string)).or_else(|| {
-                query.and_then(|q| url::form_urlencoded::parse(q.as_bytes()).find(|(k, _)| k == "mode").map(|(_, v)| v.into_owned()))
-            });
-            let mode = match raw {
-                Some(m) => m.parse::<Mode>().map_err(|e| bad(e.to_string()))?,
-                None => Mode::default(),
-            };
-            let times = if path == "/v1/search/batch" {
-                from_body.as_ref().and_then(|b| b["queries"].as_array()).map_or(1, |a| a.len().clamp(1, 10) as u32)
-            } else {
-                1
-            };
-            (mode, times)
-        }
+    match path {
+        "/mcp" => return crate::server::meter_mcp(&state.access, g, body).map_err(|m| bad(m)),
+        "/v1/search" | "/v1/search/batch" | "/v1/similar" => {}
         _ => return Ok(()),
+    }
+    let parsed: Option<Value> = (method != Method::GET).then(|| serde_json::from_slice(body).ok()).flatten();
+    let raw = if method == Method::GET {
+        query.and_then(|q| url::form_urlencoded::parse(q.as_bytes()).find(|(k, _)| k == "mode").map(|(_, v)| v.into_owned()))
+    } else {
+        parsed.as_ref().and_then(|b| b["mode"].as_str().map(str::to_string))
+    };
+    let mode = match raw {
+        Some(m) => m.parse::<Mode>().map_err(|e| bad(e.to_string()))?,
+        None => Mode::default(),
+    };
+    let times = if path == "/v1/search/batch" {
+        parsed.as_ref().and_then(|b| b["queries"].as_array()).map_or(1, |a| a.len().clamp(1, 10) as u32)
+    } else {
+        1
     };
     if mode == Mode::Deep && !g.plan.deep {
         return Err(bad(format!("mode=deep is not part of the plan of '{}'", g.name)));
@@ -568,21 +605,21 @@ fn meter(path: &str, query: Option<&str>, body: &[u8], grant: &Option<Extension<
     Ok(())
 }
 
-/// The gateway's fallback: forward anything that is not the gateway's own business.
+/// The gateway's fallback: forward the few paths that belong to a node, refuse everything else.
 pub async fn forward(State(s): State<AppState>, grant: Option<Extension<Grant>>, method: Method, uri: axum::http::Uri, headers: HeaderMap, body: Bytes) -> Response {
-    let Some(gw) = s.gateway.clone() else {
-        return (StatusCode::NOT_FOUND, Json(json!({"code": "not_found", "message": "no such endpoint"}))).into_response();
-    };
+    let not_found = || (StatusCode::NOT_FOUND, Json(json!({"code": "not_found", "message": "no such endpoint"}))).into_response();
+    let Some(gw) = s.gateway.clone() else { return not_found() };
     let path = uri.path();
-    if is_local(path) {
-        return (StatusCode::NOT_FOUND, Json(json!({"code": "not_found", "message": "no such endpoint"}))).into_response();
+    let Some(target) = target(path) else { return not_found() };
+    if target == Target::FlywheelAdmin && !(s.access.required() && grant.as_ref().is_some_and(|Extension(g)| g.is_root())) {
+        return (StatusCode::FORBIDDEN, Json(json!({"code": "admin_only", "message": "this needs the server's root key (--api-key)"}))).into_response();
     }
-    if let Err(r) = meter(path, uri.query(), &body, &grant, &s) {
+    if let Err(r) = meter(&method, path, uri.query(), &body, &grant, &s) {
         return r;
     }
     let pq = uri.path_and_query().map_or(path.to_string(), |p| p.as_str().to_string());
     let ct = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok());
-    let pool = if to_flywheel(path) { &gw.flywheel } else { &gw.search };
+    let pool = if target == Target::Search { &gw.search } else { &gw.flywheel };
     pool.forward(method, &pq, ct, body).await
 }
 
@@ -663,8 +700,27 @@ pub fn export(d: &Dirs, out: &std::path::Path) -> Result<Counts, String> {
         serde_json::to_vec_pretty(&json!({"format": 1, "created": chrono::Utc::now().to_rfc3339(), "counts": c})).map_err(io("manifest"))?,
     )
     .map_err(io("manifest.json"))?;
+    // The bundle holds key hashes and what people searched for: readable by its owner only.
+    lock_down(out);
     Ok(c)
 }
+
+#[cfg(unix)]
+fn lock_down(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let Ok(meta) = std::fs::metadata(path) else { return };
+    if meta.is_dir() {
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
+        for e in std::fs::read_dir(path).into_iter().flatten().flatten() {
+            lock_down(&e.path());
+        }
+    } else {
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+}
+
+#[cfg(not(unix))]
+fn lock_down(_: &std::path::Path) {}
 
 fn bundle_items(from: &std::path::Path) -> Vec<seesea_index::Item> {
     std::fs::read_to_string(from.join("items.jsonl"))

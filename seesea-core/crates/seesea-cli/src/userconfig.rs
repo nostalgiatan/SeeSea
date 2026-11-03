@@ -49,6 +49,9 @@ pub struct FileConfig {
     /// Keep each user's rate and daily budget in the auth database (true, the default), so several
     /// `serve` processes on the same file share them; false keeps them in memory (one process).
     pub shared_limits: Option<bool>,
+    /// The server sits behind a reverse proxy that sets X-Forwarded-For: count failed keys per client, not
+    /// per proxy.
+    pub trust_forwarded_for: Option<bool>,
     /// What this node does in a cluster: `single` (default, everything in one process), `gateway`,
     /// `search` or `flywheel`. Overridden by `SEESEA_ROLE`.
     pub role: Option<String>,
