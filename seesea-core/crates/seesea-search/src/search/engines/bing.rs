@@ -170,6 +170,32 @@ impl BingEngine {
         }
     }
 
+    /// Market, interface language and country for a requested language (`en`, `zh`, `ja-JP`, ...); without one,
+    /// Chinese text in the query selects the Chinese market and everything else the US one.
+    fn market(language: Option<&str>, query: &str) -> (String, String, String) {
+        let l = language.map(str::trim).filter(|l| !l.is_empty()).map(str::to_lowercase);
+        let l = l.unwrap_or_else(|| {
+            if query.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)) { "zh".into() } else { "en".into() }
+        });
+        let known = |code: &str| -> Option<(&'static str, &'static str, &'static str)> {
+            Some(match code {
+                "zh" | "zh-cn" | "zh-hans" => ("zh-CN", "zh-hans", "CN"),
+                "zh-tw" | "zh-hant" => ("zh-TW", "zh-hant", "TW"),
+                "en" | "en-us" => ("en-US", "en-US", "US"),
+                "en-gb" => ("en-GB", "en-GB", "GB"),
+                "ja" | "ja-jp" => ("ja-JP", "ja", "JP"),
+                "ko" | "ko-kr" => ("ko-KR", "ko", "KR"),
+                "de" | "de-de" => ("de-DE", "de", "DE"),
+                "fr" | "fr-fr" => ("fr-FR", "fr", "FR"),
+                "es" | "es-es" => ("es-ES", "es", "ES"),
+                "ru" | "ru-ru" => ("ru-RU", "ru", "RU"),
+                _ => return None,
+            })
+        };
+        let (m, sl, cc) = known(&l).unwrap_or(("en-US", "en-US", "US"));
+        (m.into(), sl.into(), cc.into())
+    }
+
     /// 设置 Bing cookies
     ///
     /// 设置语言和地区相关的 cookies
@@ -409,15 +435,18 @@ impl RequestResponseEngine for BingEngine {
         params: &mut RequestParams,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Configure language and region
-        let language = params.language.as_deref().unwrap_or("en").to_string();
-        let region = params.language.as_deref().unwrap_or("us").to_string();
-
-        Self::set_bing_cookies(params, &language, &region);
+        // Without an explicit market Bing picks one from the client's address, and from some networks that
+        // means unrelated local-language results for an English query.
+        let (mkt, setlang, cc) = Self::market(params.language.as_deref(), query);
+        Self::set_bing_cookies(params, &setlang, &mkt);
 
         // Build query parameters
         let mut query_params = vec![
             ("q", query.to_string()),
             ("pq", query.to_string()), // Prevents pagination issues
+            ("setmkt", mkt.clone()),
+            ("setlang", setlang.clone()),
+            ("cc", cc.clone()),
         ];
 
         // Add pagination if not first page
@@ -485,6 +514,16 @@ impl RequestResponseEngine for BingEngine {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn market_follows_language_then_script_then_defaults_to_us() {
+        let m = |l: Option<&str>, q: &str| BingEngine::market(l, q).0;
+        assert_eq!(m(None, "rust async runtime"), "en-US");
+        assert_eq!(m(None, "红烧肉怎么做"), "zh-CN");
+        assert_eq!(m(Some("ja"), "x"), "ja-JP");
+        assert_eq!(m(Some("zh-TW"), "x"), "zh-TW");
+        assert_eq!(m(Some("xx"), "x"), "en-US");
+    }
+
     use super::*;
     use seesea_derive::SearchEngine;
 

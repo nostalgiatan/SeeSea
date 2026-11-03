@@ -304,6 +304,8 @@ impl Pipeline {
                 let name = s.name().to_string();
                 match r {
                     Ok(hits) if !hits.is_empty() => SourceProbe { source: name, ok: true, hits: hits.len(), ms: ms(t), error: None },
+                    // A local store with nothing matching the probe query is not broken.
+                    Ok(_) if s.auxiliary() => SourceProbe { source: name, ok: true, hits: 0, ms: ms(t), error: None },
                     Ok(_) => SourceProbe {
                         source: name.clone(),
                         ok: false,
