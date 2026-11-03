@@ -183,6 +183,16 @@ pub struct Loaded {
     pub result: ExtractResult,
     /// The content comes from a headless browser, because the static HTML held none.
     pub rendered: bool,
+    /// Milliseconds spent downloading the static HTML, extracting from it and (when it was needed)
+    /// rendering the page, so the slow part of a search can be told apart.
+    pub timing: PageTiming,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PageTiming {
+    pub fetch_ms: u64,
+    pub extract_ms: u64,
+    pub render_ms: u64,
 }
 
 async fn extract_blocking(
@@ -218,13 +228,17 @@ pub async fn load_page(
     scope: Scope,
     timeout: Duration,
 ) -> Result<Loaded> {
+    let t = std::time::Instant::now();
     let page = tokio::time::timeout(timeout, fetcher.fetch(url))
         .await
         .map_err(|_| Error::Timeout {
             stage: "fetch",
             ms: timeout.as_millis() as u64,
         })??;
+    let fetch_ms = t.elapsed().as_millis() as u64;
+    let t = std::time::Instant::now();
     let result = extract_blocking(extractor, page.html, page.final_url.clone(), scope).await?;
+    let extract_ms = t.elapsed().as_millis() as u64;
     if result.diagnostics.not_text {
         return Err(Error::Extract(
             "the response is not text (compressed or binary data)".into(),
@@ -234,12 +248,17 @@ pub async fn load_page(
         final_url: page.final_url,
         result,
         rendered: false,
+        timing: PageTiming { fetch_ms, extract_ms, render_ms: 0 },
     };
     if loaded.result.needs_render
         && let Some(renderer) = renderer
     {
+        let t = std::time::Instant::now();
         // A failed render leaves the static result in place: it is still what the server sent.
-        if let Ok(Ok(page)) = tokio::time::timeout(timeout, renderer.fetch(url)).await
+        let rendered = tokio::time::timeout(timeout, renderer.fetch(url)).await;
+        let render_ms = t.elapsed().as_millis() as u64;
+        loaded.timing.render_ms = render_ms;
+        if let Ok(Ok(page)) = rendered
             && let Ok(result) =
                 extract_blocking(extractor, page.html, page.final_url.clone(), scope).await
             && result.diagnostics.selected_chars > loaded.result.diagnostics.selected_chars
@@ -248,6 +267,7 @@ pub async fn load_page(
                 final_url: page.final_url,
                 result,
                 rendered: true,
+                timing: loaded.timing,
             };
         }
     }
