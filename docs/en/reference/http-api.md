@@ -116,7 +116,7 @@ Response fields: `url`, `final_url` (after redirects), `meta` (title, descriptio
 | `url` | The result's URL |
 | `verdict` | `good` or `bad` |
 
-It counts as 5 observations in the first ranking layer. On success it returns `{"host": "...", "verdict": "good"}`; it returns 400 when learning is off or the URL has no host.
+Only the root key (`--api-key`), or a local server with no keys at all, may call it; any other account gets 403 `admin_only`, because the standing of a host changes the ranking every account sees. It counts as 5 observations in the first ranking layer. On success it returns `{"host": "...", "verdict": "good"}`; it returns 400 when learning is off or the URL has no host.
 
 ### POST /v1/ingest
 

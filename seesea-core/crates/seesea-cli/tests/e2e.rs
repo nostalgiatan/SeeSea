@@ -973,3 +973,33 @@ async fn a_server_on_this_machine_ignores_web_pages() {
     let r = http.get(format!("{api}/health")).header("host", "evil.example").send().await.unwrap();
     assert_eq!(r.status(), 403);
 }
+
+#[tokio::test]
+async fn only_the_root_key_may_judge_a_host() {
+    use seesea_auth::Store;
+    let base = spawn_site().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut on = settings(&base);
+    on.learn_file = Some(dir.path().join("learn.json"));
+    let store = Store::in_memory().unwrap();
+    store.create_user("ann", "default").unwrap();
+    let (_, ann) = store.create_key("ann", "laptop", None).unwrap();
+    let access = seesea_cli::access::Access::new(Some(store), std::collections::HashMap::new(), Some("root-secret".into()));
+    let pipeline = Arc::new(build_pipeline(&on).unwrap());
+    let app = router(AppState::with_access(pipeline, access), 8);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap() });
+    let http = reqwest::Client::new();
+    let body = json!({"url": "https://example.org/", "verdict": "bad"});
+
+    let r = http.post(format!("{api}/v1/feedback")).bearer_auth(&ann).json(&body).send().await.unwrap();
+    assert_eq!(r.status(), 403);
+    let r = http.post(format!("{api}/v1/feedback")).json(&body).send().await.unwrap();
+    assert_eq!(r.status(), 401);
+    let r = http.post(format!("{api}/v1/feedback")).bearer_auth("root-secret").json(&body).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    // A key that differs only in length does not get in either.
+    let r = http.post(format!("{api}/v1/feedback")).bearer_auth("root-secret-and-more").json(&body).send().await.unwrap();
+    assert_eq!(r.status(), 401);
+}

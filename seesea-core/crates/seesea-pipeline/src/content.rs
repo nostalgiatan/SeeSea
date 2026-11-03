@@ -244,6 +244,14 @@ pub async fn load_page(
             "the response is not text (compressed or binary data)".into(),
         ));
     }
+    // Markup built to hurt the parser: the page counts as unreadable, so it ranks behind the pages that
+    // were read, the journal says why, and the host's standing drops like it does for any unreadable page.
+    if result.diagnostics.hostile() {
+        return Err(Error::Extract(format!(
+            "suspicious markup ({}); the page was not used",
+            result.diagnostics.flags.join(", ")
+        )));
+    }
     let mut loaded = Loaded {
         final_url: page.final_url,
         result,
@@ -430,6 +438,19 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(err.code(), "timeout");
+    }
+
+    #[tokio::test]
+    async fn a_page_built_to_hurt_the_parser_is_an_error_and_is_quick() {
+        let page = format!("<html><body>{}text{}</body></html>", "<div>".repeat(300_000), "</div>".repeat(300_000));
+        let mock = MockFetcher::new(&[("https://a.org/deep", &page)]);
+        let t = std::time::Instant::now();
+        let err = load_page(&mock, None, &Arc::new(Extractor::new()), "https://a.org/deep", Scope::Core, Duration::from_secs(5))
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), "extract_failed");
+        assert!(err.to_string().contains("suspicious markup"), "{err}");
+        assert!(t.elapsed() < Duration::from_secs(10), "{:?}", t.elapsed());
     }
 
     #[tokio::test]
