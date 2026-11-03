@@ -28,15 +28,74 @@ pub struct Denied {
     pub limit_per_minute: u32,
 }
 
-struct Account {
-    tokens: f64,
-    updated: f64,
-    day: u64,
-    used_today: u64,
+/// One user's bucket and day count. The arithmetic lives here so the in-memory limiter and the
+/// shared one (rows in the store, for several server processes) cannot drift apart.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Account {
+    pub tokens: f64,
+    pub updated: f64,
+    pub day: u64,
+    pub used_today: u64,
 }
 
-/// Token bucket plus daily credits, per user. `now` is seconds since the Unix epoch, given by the
-/// caller; the day is the UTC day it falls in.
+impl Account {
+    pub fn fresh(plan: &Plan, now: f64, used_today: u64) -> Self {
+        Account { tokens: plan.burst as f64, updated: now, day: day_of(now), used_today }
+    }
+
+    /// Spend `cost` credits at `now`; on refusal nothing is spent.
+    pub fn spend(&mut self, plan: &Plan, cost: u32, now: f64) -> Result<Decision, Denied> {
+        let day = day_of(now);
+        if self.day != day {
+            self.day = day;
+            self.used_today = 0;
+        }
+        let rate = plan.per_minute as f64 / 60.0;
+        self.tokens = (self.tokens + (now - self.updated).max(0.0) * rate).min(plan.burst as f64);
+        self.updated = now;
+
+        if plan.per_day > 0 && self.used_today + cost as u64 > plan.per_day as u64 {
+            return Err(Denied {
+                reason: Reason::Daily,
+                retry_after_secs: ((day + 1) as f64 * 86400.0 - now).ceil().max(1.0) as u64,
+                limit_per_minute: plan.per_minute,
+            });
+        }
+        // A request dearer than the whole bucket would never pass; let it use the full bucket.
+        let need = (cost as f64).min(plan.burst as f64);
+        if self.tokens < need {
+            let wait = ((need - self.tokens) / rate).ceil().max(1.0);
+            return Err(Denied { reason: Reason::Rate, retry_after_secs: wait as u64, limit_per_minute: plan.per_minute });
+        }
+        self.tokens -= need;
+        self.used_today += cost as u64;
+        Ok(Decision {
+            limit_per_minute: plan.per_minute,
+            remaining: self.tokens as u32,
+            reset_secs: ((plan.burst as f64 - self.tokens) / rate).ceil() as u64,
+            daily_remaining: (plan.per_day > 0).then(|| (plan.per_day as u64).saturating_sub(self.used_today) as u32),
+        })
+    }
+
+    /// Charge more after the fact; the bucket may go negative, which delays the next request.
+    pub fn charge(&mut self, extra: u32) {
+        self.tokens -= extra as f64;
+        self.used_today += extra as u64;
+    }
+
+    /// Give back what `spend` took for a request that never ran.
+    pub fn refund(&mut self, cost: u32, burst: u32) {
+        self.tokens = (self.tokens + cost as f64).min(burst as f64);
+        self.used_today = self.used_today.saturating_sub(cost as u64);
+    }
+}
+
+fn day_of(now: f64) -> u64 {
+    (now.max(0.0) / 86400.0) as u64
+}
+
+/// Token bucket plus daily credits, per user, in this process. `now` is seconds since the Unix
+/// epoch, given by the caller; the day is the UTC day it falls in.
 #[derive(Default)]
 pub struct Limiter {
     accounts: Mutex<HashMap<i64, Account>>,
@@ -48,7 +107,7 @@ impl Limiter {
     }
 
     /// Spend `cost` credits for `user`. `used_today` is what the store already holds for today; it
-    /// is only read the first time a user is seen (or when the day changes).
+    /// is only read the first time a user is seen.
     pub fn check(
         &self,
         user: i64,
@@ -57,65 +116,20 @@ impl Limiter {
         now: f64,
         used_today: impl FnOnce() -> u64,
     ) -> Result<Decision, Denied> {
-        let day = (now.max(0.0) / 86400.0) as u64;
         let mut accounts = self.accounts.lock().unwrap();
-        let acct = accounts.entry(user).or_insert_with(|| Account {
-            tokens: plan.burst as f64,
-            updated: now,
-            day,
-            used_today: used_today(),
-        });
-        if acct.day != day {
-            acct.day = day;
-            acct.used_today = 0;
-        }
-        let rate = plan.per_minute as f64 / 60.0;
-        acct.tokens = (acct.tokens + (now - acct.updated).max(0.0) * rate).min(plan.burst as f64);
-        acct.updated = now;
-
-        if plan.per_day > 0 && acct.used_today + cost as u64 > plan.per_day as u64 {
-            return Err(Denied {
-                reason: Reason::Daily,
-                retry_after_secs: ((day + 1) as f64 * 86400.0 - now).ceil().max(1.0) as u64,
-                limit_per_minute: plan.per_minute,
-            });
-        }
-        let cost_f = cost as f64;
-        // A request dearer than the whole bucket would never pass; let it use the full bucket.
-        let need = cost_f.min(plan.burst as f64);
-        if acct.tokens < need {
-            let wait = ((need - acct.tokens) / rate).ceil().max(1.0);
-            return Err(Denied {
-                reason: Reason::Rate,
-                retry_after_secs: wait as u64,
-                limit_per_minute: plan.per_minute,
-            });
-        }
-        acct.tokens -= need;
-        acct.used_today += cost as u64;
-        Ok(Decision {
-            limit_per_minute: plan.per_minute,
-            remaining: acct.tokens as u32,
-            reset_secs: ((plan.burst as f64 - acct.tokens) / rate).ceil() as u64,
-            daily_remaining: (plan.per_day > 0)
-                .then(|| (plan.per_day as u64).saturating_sub(acct.used_today) as u32),
-        })
+        let acct = accounts.entry(user).or_insert_with(|| Account::fresh(plan, now, used_today()));
+        acct.spend(plan, cost, now)
     }
 
-    /// Charge more after the fact (a search turned out to be `deep`). The bucket may go negative;
-    /// that delays the next request instead of refusing this one.
     pub fn charge(&self, user: i64, extra: u32) {
         if let Some(a) = self.accounts.lock().unwrap().get_mut(&user) {
-            a.tokens -= extra as f64;
-            a.used_today += extra as u64;
+            a.charge(extra);
         }
     }
 
-    /// Give back what `check` took for a request that never ran.
     pub fn refund(&self, user: i64, cost: u32, burst: u32) {
         if let Some(a) = self.accounts.lock().unwrap().get_mut(&user) {
-            a.tokens = (a.tokens + cost as f64).min(burst as f64);
-            a.used_today = a.used_today.saturating_sub(cost as u64);
+            a.refund(cost, burst);
         }
     }
 

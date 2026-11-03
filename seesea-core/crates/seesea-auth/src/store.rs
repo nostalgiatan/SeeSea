@@ -1,3 +1,5 @@
+use crate::limiter::{Account, Decision, Denied};
+use crate::plan::Plan;
 use rand::Rng;
 use rusqlite::{Connection, OptionalExtension, params};
 use sha2::{Digest, Sha256};
@@ -109,6 +111,9 @@ CREATE TABLE IF NOT EXISTS keys (
 CREATE TABLE IF NOT EXISTS usage (
     user_id INTEGER NOT NULL REFERENCES users(id), day INTEGER NOT NULL,
     credits INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, day));
+CREATE TABLE IF NOT EXISTS buckets (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    tokens REAL NOT NULL, updated REAL NOT NULL, day INTEGER NOT NULL, used INTEGER NOT NULL);
 ";
 
 fn user_from(r: &rusqlite::Row) -> rusqlite::Result<User> {
@@ -267,6 +272,61 @@ impl Store {
         Ok(())
     }
 
+    /// Run `f` on the user's bucket inside one write transaction, so that several server processes
+    /// sharing this file see each other's spending. The result of `f` decides what is saved.
+    fn with_bucket<T>(
+        &self,
+        user_id: i64,
+        plan: &Plan,
+        now: f64,
+        f: impl FnOnce(&mut Account) -> T,
+    ) -> Result<T, AuthError> {
+        let db = self.db.lock().unwrap();
+        let tx = rusqlite::Transaction::new_unchecked(&db, rusqlite::TransactionBehavior::Immediate)?;
+        let day = crate::store::day_number(now as i64);
+        let mut acct = tx
+            .query_row("SELECT tokens, updated, day, used FROM buckets WHERE user_id = ?1", [user_id], |r| {
+                Ok(Account { tokens: r.get(0)?, updated: r.get(1)?, day: r.get::<_, i64>(2)? as u64, used_today: r.get::<_, i64>(3)? as u64 })
+            })
+            .optional()?
+            .unwrap_or_else(|| {
+                let used = tx
+                    .query_row("SELECT credits FROM usage WHERE user_id = ?1 AND day = ?2", params![user_id, day as i64], |r| r.get::<_, i64>(0))
+                    .optional()
+                    .ok()
+                    .flatten()
+                    .unwrap_or(0) as u64;
+                Account::fresh(plan, now, used)
+            });
+        let out = f(&mut acct);
+        tx.execute(
+            "INSERT INTO buckets (user_id, tokens, updated, day, used) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (user_id) DO UPDATE SET tokens = excluded.tokens, updated = excluded.updated,
+                 day = excluded.day, used = excluded.used",
+            params![user_id, acct.tokens, acct.updated, acct.day as i64, acct.used_today as i64],
+        )?;
+        tx.execute(
+            "INSERT INTO usage (user_id, day, credits) VALUES (?1, ?2, ?3)
+             ON CONFLICT (user_id, day) DO UPDATE SET credits = excluded.credits",
+            params![user_id, acct.day as i64, acct.used_today as i64],
+        )?;
+        tx.commit()?;
+        Ok(out)
+    }
+
+    /// [`Limiter::check`](crate::Limiter::check), but with the bucket kept in this file.
+    pub fn spend(&self, user_id: i64, plan: &Plan, cost: u32, now: f64) -> Result<Result<Decision, Denied>, AuthError> {
+        self.with_bucket(user_id, plan, now, |a| a.spend(plan, cost, now))
+    }
+
+    pub fn spend_more(&self, user_id: i64, plan: &Plan, extra: u32, now: f64) -> Result<(), AuthError> {
+        self.with_bucket(user_id, plan, now, |a| a.charge(extra))
+    }
+
+    pub fn give_back(&self, user_id: i64, plan: &Plan, cost: u32, now: f64) -> Result<(), AuthError> {
+        self.with_bucket(user_id, plan, now, |a| a.refund(cost, plan.burst))
+    }
+
     /// `(day, credits)` for the last `days` days, newest first.
     pub fn usage_history(&self, user: &str, days: u32) -> Result<Vec<(u64, u64)>, AuthError> {
         let owner = self.user(user)?;
@@ -328,6 +388,32 @@ mod tests {
         assert!(matches!(s.create_key("bob", "k", None), Err(AuthError::NotFound(_))));
         assert!(matches!(s.revoke_key("ss_nope"), Err(AuthError::NotFound(_))));
         assert_eq!(s.users().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn two_stores_on_one_file_share_one_bucket() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.db");
+        let (a, b) = (Store::open(&path).unwrap(), Store::open(&path).unwrap());
+        let u = a.create_user("ann", "p").unwrap();
+        let plan = Plan { per_minute: 60, burst: 4, per_day: 5, max_concurrent: 1, deep: true };
+        // Two processes spend alternately from the same bucket of 4.
+        a.spend(u.id, &plan, 1, 100.0).unwrap().unwrap();
+        b.spend(u.id, &plan, 1, 100.0).unwrap().unwrap();
+        a.spend(u.id, &plan, 1, 100.0).unwrap().unwrap();
+        b.spend(u.id, &plan, 1, 100.0).unwrap().unwrap();
+        let denied = a.spend(u.id, &plan, 1, 100.0).unwrap().unwrap_err();
+        assert_eq!(denied.reason, crate::Reason::Rate);
+        // Refilled a second later; the day total (5) is shared too, and is what `usage` shows.
+        b.spend(u.id, &plan, 1, 101.0).unwrap().unwrap();
+        assert_eq!(a.usage_today(u.id, 0), 5);
+        let denied = a.spend(u.id, &plan, 1, 103.0).unwrap().unwrap_err();
+        assert_eq!(denied.reason, crate::Reason::Daily);
+        // A refund and an after-the-fact charge go through the same shared row.
+        b.give_back(u.id, &plan, 1, 103.0).unwrap();
+        assert_eq!(a.usage_today(u.id, 0), 4);
+        a.spend_more(u.id, &plan, 2, 103.0).unwrap();
+        assert_eq!(b.usage_today(u.id, 0), 6);
     }
 
     #[test]

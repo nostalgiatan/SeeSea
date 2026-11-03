@@ -46,6 +46,9 @@ pub struct FileConfig {
     pub index_quota_mb: Option<u64>,
     /// The SQLite file with users and API keys (default: next to the models).
     pub auth_db: Option<PathBuf>,
+    /// Keep each user's rate and daily budget in the auth database (true, the default), so several
+    /// `serve` processes on the same file share them; false keeps them in memory (one process).
+    pub shared_limits: Option<bool>,
     /// Plans for API users, by name: `[plans.free] per_minute = 20`. `default` and `unlimited`
     /// exist unless redefined.
     #[serde(default)]
@@ -284,6 +287,9 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 
 # Users and API keys for `seesea serve` live in this SQLite file (see `seesea users`, `seesea keys`).
 # auth_db = "~/.local/share/seesea/auth.db"
+# Several `serve` processes may use one auth_db: users, keys, rates and daily budgets are shared through it.
+# (Concurrent-request caps and the failed-key counter stay per process.) false = keep limits in memory.
+# shared_limits = true
 
 # Plans for API users. `default` (60 credits/min, burst 30, 5000/day, 4 at once) and `unlimited`
 # exist already; a fast search costs 1 credit, a standard one 2, a deep one 5.
