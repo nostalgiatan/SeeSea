@@ -824,3 +824,69 @@ async fn only_pages_that_answered_are_remembered() {
     assert_eq!(kept[0].url, good);
     assert!(kept[0].lead.contains("Tokio"));
 }
+
+#[tokio::test]
+async fn a_page_that_cannot_be_read_is_replaced_by_the_next_candidate() {
+    let urls = ["https://one.org/tokio", "https://two.net/tokio", "https://three.io/tokio"];
+    for missing in 0..3 {
+        let hits: Vec<RawHit> = urls
+            .iter()
+            .enumerate()
+            .map(|(i, u)| hit(u, ["Tokio runtime internals explained", "Getting started with async Rust tasks", "Scheduler design notes from the maintainers"][i], &format!("asynchronous runtime for Rust, chapter {i}")))
+            .collect();
+        let pages: Vec<(&str, String)> = urls
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != missing)
+            .map(|(i, u)| {
+                let lead = format!("Edition {i} of the tokio notes covers the async runtime in a different way, with its own examples number {i}.");
+                (*u, page("Tokio runtime overview", &[lead.as_str(), RUNTIME[0], RUNTIME[1], RUNTIME[2]]))
+            })
+            .collect();
+        let p = Pipeline::new(vec![FakeSource::ok("a", hits)], FakePages::new(&pages)).config(PipelineConfig {
+            fetch_standard: 2,
+            ..Default::default()
+        });
+        let mut req = SearchRequest::new("tokio async runtime");
+        req.limit = 2;
+        let resp = p.search(&req).await.unwrap();
+        assert_eq!(resp.hits.len(), 2, "missing={missing}: {:?} {:?}", resp.hits.iter().map(|h| &h.url).collect::<Vec<_>>(), resp.degraded);
+        assert!(
+            resp.hits.iter().all(|h| h.content.is_some()),
+            "missing={missing}: {:?}",
+            resp.hits.iter().map(|h| (&h.url, h.content.is_some())).collect::<Vec<_>>()
+        );
+        assert!(resp.stages.iter().any(|s| s.stage == "fetch_slowest_page"));
+    }
+}
+
+#[tokio::test]
+async fn pages_nobody_read_rank_behind_the_ones_that_were_read() {
+    let good = "https://good.example/a";
+    let weak = "https://weak.example/b";
+    let gone = "https://gone.example/c";
+    let hits = vec![
+        hit(gone, "Tokio async runtime guide", "tokio async runtime guide for rust"),
+        hit(good, "Tokio overview", "asynchronous runtime"),
+        hit(weak, "Cheap watches", "discount tokio"),
+    ];
+    let pages = FakePages::new(&[(good, page("Tokio overview", &RUNTIME)), (weak, page("Cheap watches", &SPAM))]);
+    let p = standard_pipeline(vec![FakeSource::ok("a", hits)], pages);
+    let resp = p.search(&SearchRequest::new("tokio async runtime")).await.unwrap();
+    assert_eq!(resp.hits[0].url, good);
+    let gone_at = resp.hits.iter().position(|h| h.url == gone).unwrap();
+    assert!(gone_at >= 1 && resp.hits[gone_at].content_error.is_some());
+}
+
+#[tokio::test]
+async fn a_blocked_source_is_left_alone_for_a_while() {
+    let ok = FakeSource::ok("a", vec![hit("https://docs.example/tokio", "Tokio overview", "asynchronous runtime")]);
+    let blocked = FakeSource::failing("b", FailureKind::Blocked);
+    let pages = FakePages::new(&[("https://docs.example/tokio", page("Tokio overview", &RUNTIME))]);
+    let p = standard_pipeline(vec![ok, blocked.clone()], pages);
+    p.search(&SearchRequest::new("tokio async runtime")).await.unwrap();
+    assert_eq!(blocked.calls.load(Ordering::SeqCst), 1);
+    let again = p.search(&SearchRequest::new("tokio runtime scheduler")).await.unwrap();
+    assert_eq!(blocked.calls.load(Ordering::SeqCst), 1, "asked again while paused");
+    assert!(again.degraded.iter().any(|d| d.contains("b skipped")), "{:?}", again.degraded);
+}

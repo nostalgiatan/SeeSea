@@ -62,6 +62,20 @@ tools/auto/judge.py candidates.jsonl >> tools/search-eval/live-judgments.jsonl
 
 `suspects.jsonl` 是看起来有问题的搜索（无结果、来源全败、顶部分数低、页面多数读不了、过慢）。`candidates.jsonl` 是每个查询的前十个结果，`grade` 为空；填 0–3 后用 `judge.py` 转成评测文件，`run.sh` 之后会自动对真实网页再评一遍。
 
+## 与 Tavily 对比质量
+
+`scripts/compare-tavily.sh` 把同一批查询（每行一条）分别交给 Tavily 和 seesea，各存一份 JSON，便于逐条比较：
+
+```bash
+TAVILY_API_KEY=tvly-... SEESEA_BIN=./target/release/seesea scripts/compare-tavily.sh queries.txt out
+```
+
+模型从默认目录 `~/.local/share/seesea/models` 自动发现（文件名要和 `seesea models` 显示的一致）；脚本发现 embedding 或 reranker 缺失时直接退出，不会悄悄退回词法排序。Tavily 的排序只能当参照，不是标准答案。
+
+搜索结果的 `stages` 把慢在哪里拆开：`fetch_extract` 是整个阶段，`fetch_slowest_page`、`extract_slowest_page`、`extract_all_pages`、`render_slowest_page` 分别是最慢页面的下载、最慢页面的抽取、所有页面抽取的总和、最慢的渲染耗时。页面并发下载，所以整个阶段大约等于最慢那一个（单页超时 10 秒，并发 8）。
+
+排序上与读不到正文的页面有关的规则：前 N 个候选里读不到的页面会由后面的候选补上（最多补一轮），仍然读不到的页面只凭标题和摘要的分数排在读过的页面之后；某个搜索源返回验证码或限流（`Blocked`）后，会暂停询问它 5 分钟，再次被拦则翻倍，最长 1 小时，响应的 `degraded` 里会写明；只剩被暂停的源时不暂停。查询里的词正好是站点名（如 tokio.rs、postgresql.org、docs.rs/tokio）且内容相关时加 0.08。
+
 ## 借鉴其他搜索服务的做法
 
 - **自建索引（博查的思路）**：读过并且确实回答了问题的页面（重排序相关度 ≥ 0.5 且正文质量 ≥ 0.4）会写回本地索引，只存标题和开头，不存全文；下次搜索由 `local` 来源直接召回，网络断开也能用。写回的页面没有发布日期，不会被当成新内容。用 `--no-writeback` 关闭。

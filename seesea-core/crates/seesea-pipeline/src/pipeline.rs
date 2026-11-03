@@ -73,6 +73,9 @@ pub struct Pipeline {
     cache: Arc<dyn Cache>,
     metered: Option<Arc<Metered>>,
     recent_queries: Mutex<VecDeque<RecentQuery>>,
+    /// Sources that answered with a block (captcha, rate limit): left alone until the time shown,
+    /// which doubles with every consecutive block, so a blocked engine is not asked on every search.
+    paused: Mutex<HashMap<String, (Instant, u32)>>,
     cfg: PipelineConfig,
 }
 
@@ -158,6 +161,7 @@ impl Pipeline {
             cache: Arc::new(NoCache),
             metered: None,
             recent_queries: Mutex::new(VecDeque::new()),
+            paused: Mutex::new(HashMap::new()),
             cfg: PipelineConfig::default(),
         }
     }
@@ -456,7 +460,21 @@ impl Pipeline {
             time_range: req.time_range,
             language: req.language.clone(),
         };
-        let outcomes = futures::future::join_all(sources.iter().map(|s| {
+        // A source that was blocked a moment ago is skipped, unless that would leave nothing to ask.
+        let now = Instant::now();
+        let (active, skipped): (Vec<Arc<dyn Source>>, Vec<Arc<dyn Source>>) = {
+            let paused = self.paused.lock().unwrap();
+            let (skipped, active): (Vec<_>, Vec<_>) = sources
+                .iter()
+                .cloned()
+                .partition(|s| paused.get(s.name()).is_some_and(|(until, _)| *until > now));
+            if active.is_empty() { (skipped, Vec::new()) } else { (active, skipped) }
+        };
+        for s in &skipped {
+            let wait = self.paused.lock().unwrap().get(s.name()).map(|(u, _)| u.saturating_duration_since(now).as_secs() / 60 + 1);
+            degraded.push(format!("{} skipped: it blocked us recently (asked again in about {} min)", s.name(), wait.unwrap_or(1)));
+        }
+        let outcomes = futures::future::join_all(active.iter().map(|s| {
             let sq = sq.clone();
             let s = Arc::clone(s);
             let timeout = self.cfg.source_timeout;
@@ -476,6 +494,20 @@ impl Pipeline {
         let mut results = Vec::new();
         let mut failures = Vec::new();
         for (name, weight, r) in outcomes {
+            {
+                let mut paused = self.paused.lock().unwrap();
+                match &r {
+                    Err(e) if e.kind == FailureKind::Blocked => {
+                        let strikes = paused.get(&name).map_or(0, |(_, n)| *n) + 1;
+                        let minutes = (5u64 << (strikes - 1).min(4)).min(60);
+                        paused.insert(name.clone(), (Instant::now() + Duration::from_secs(minutes * 60), strikes));
+                    }
+                    Ok(_) => {
+                        paused.remove(&name);
+                    }
+                    Err(_) => {}
+                }
+            }
             match r {
                 Ok(hits) => results.push(SourceResults {
                     source: name,
@@ -513,7 +545,7 @@ impl Pipeline {
             degraded.push(format!(
                 "{} of {} sources failed",
                 failures.len(),
-                sources.len()
+                active.len()
             ));
         }
 
@@ -581,52 +613,88 @@ impl Pipeline {
         }
         .min(scored.len());
 
-        // Stage 3: fetch and extract the best candidates.
+        // Stage 3: fetch and extract the best candidates. A page that cannot be read is replaced by the
+        // next candidate (once), so the answer is not padded with results nobody looked at.
         let t = Instant::now();
         let mut loaded: Vec<Option<std::result::Result<Loaded, String>>> =
             (0..scored.len()).map(|_| None).collect();
+        let (mut fetched, mut timed_out, mut failed_total) = (0usize, 0usize, 0usize);
         if fetch_k > 0 {
-            let urls: Vec<String> = scored
-                .iter()
-                .take(fetch_k)
-                .map(|(c, _)| c.url.clone())
-                .collect();
-            // Pages are handed to the reranker's `prepare` as they arrive, so the encoder works while
-            // the slower downloads are still going; it never waits for that work.
-            let on_loaded: Option<content::OnLoaded> = tokio::runtime::Handle::try_current().ok().map(|rt| {
-                let reranker = Arc::clone(&self.reranker);
-                let query = req.query.clone();
-                let titles: Arc<Vec<String>> = Arc::new(scored.iter().take(fetch_k).map(|(c, _)| c.title.clone()).collect());
-                Arc::new(move |i: usize, l: &content::Loaded| {
-                    if l.result.core.trim().is_empty() {
-                        return;
+            let titles: Arc<Vec<String>> = Arc::new(scored.iter().map(|(c, _)| c.title.clone()).collect());
+            let readable = |loaded: &[Option<std::result::Result<Loaded, String>>]| {
+                loaded
+                    .iter()
+                    .filter(|l| matches!(l, Some(Ok(l)) if !l.result.core.trim().is_empty()))
+                    .count()
+            };
+            let (mut from, mut to) = (0usize, fetch_k);
+            for round in 0..2 {
+                let urls: Vec<String> = scored[from..to].iter().map(|(c, _)| c.url.clone()).collect();
+                // Pages are handed to the reranker's `prepare` as they arrive, so the encoder works while
+                // the slower downloads are still going; it never waits for that work.
+                let on_loaded: Option<content::OnLoaded> = tokio::runtime::Handle::try_current().ok().map(|rt| {
+                    let reranker = Arc::clone(&self.reranker);
+                    let query = req.query.clone();
+                    let titles = Arc::clone(&titles);
+                    Arc::new(move |i: usize, l: &content::Loaded| {
+                        if l.result.core.trim().is_empty() {
+                            return;
+                        }
+                        let (reranker, query, titles) = (Arc::clone(&reranker), query.clone(), Arc::clone(&titles));
+                        let (body, confidence) = (l.result.core.clone(), l.result.confidence);
+                        let at = from + i;
+                        rt.spawn_blocking(move || {
+                            reranker.prepare(&query, &DocView { title: &titles[at], body: &body, confidence });
+                        });
+                    }) as content::OnLoaded
+                });
+                let outs = content::load_pages_then(
+                    &self.fetcher,
+                    self.renderer.as_ref(),
+                    self.extractor_handle(),
+                    &urls,
+                    Scope::Core,
+                    self.cfg.concurrency,
+                    self.cfg.page_timeout,
+                    on_loaded,
+                )
+                .await;
+                fetched += outs.len();
+                for (k, o) in outs.into_iter().enumerate() {
+                    if let Err(e) = &o {
+                        failed_total += 1;
+                        if matches!(e, Error::Timeout { .. }) {
+                            timed_out += 1;
+                        }
                     }
-                    let (reranker, query, titles) = (Arc::clone(&reranker), query.clone(), Arc::clone(&titles));
-                    let (body, confidence) = (l.result.core.clone(), l.result.confidence);
-                    rt.spawn_blocking(move || {
-                        reranker.prepare(&query, &DocView { title: &titles[i], body: &body, confidence });
-                    });
-                }) as content::OnLoaded
-            });
-            let outs = content::load_pages_then(
-                &self.fetcher,
-                self.renderer.as_ref(),
-                self.extractor_handle(),
-                &urls,
-                Scope::Core,
-                self.cfg.concurrency,
-                self.cfg.page_timeout,
-                on_loaded,
-            )
-            .await;
-            let failed = outs.iter().filter(|o| o.is_err()).count();
-            if failed > 0 {
+                    loaded[from + k] = Some(o.map_err(|e| e.to_string()));
+                }
+                let have = readable(&loaded);
+                if round == 1 || have >= req.limit || to >= scored.len() {
+                    break;
+                }
+                (from, to) = (to, (to + (req.limit - have)).min(scored.len()));
+            }
+            if failed_total > 0 {
                 degraded.push(format!(
-                    "content: {failed} of {fetch_k} pages could not be fetched or extracted"
+                    "content: {failed_total} of {fetched} pages could not be fetched or extracted ({timed_out} timed out)"
                 ));
             }
-            for (i, o) in outs.into_iter().enumerate() {
-                loaded[i] = Some(o.map_err(|e| e.to_string()));
+            let (mut fetch_max, mut extract_max, mut extract_sum, mut render_max) = (0, 0, 0, 0);
+            for l in loaded.iter().flatten().filter_map(|l| l.as_ref().ok()) {
+                fetch_max = fetch_max.max(l.timing.fetch_ms);
+                extract_max = extract_max.max(l.timing.extract_ms);
+                extract_sum += l.timing.extract_ms;
+                render_max = render_max.max(l.timing.render_ms);
+            }
+            // Pages download side by side, so the slowest one sets the pace; extraction is CPU work.
+            for (stage, v) in [
+                ("fetch_slowest_page", fetch_max),
+                ("extract_slowest_page", extract_max),
+                ("extract_all_pages", extract_sum),
+                ("render_slowest_page", render_max),
+            ] {
+                stages.push(StageTiming { stage: stage.into(), ms: v });
             }
         }
         stages.push(StageTiming {
@@ -731,7 +799,12 @@ impl Pipeline {
                         needs_render: l.result.needs_render,
                         truncated,
                     });
-                    0.2 * s1n + 0.7 * rs.relevance + 0.1 * rs.body_quality
+                    let official = if rs.relevance >= 0.3 && rs.body_quality >= 0.5 && names_site(&req.query, &cand.url) {
+                        0.08
+                    } else {
+                        0.0
+                    };
+                    0.2 * s1n + 0.7 * rs.relevance + 0.1 * rs.body_quality + official
                 }
                 None => {
                     match &loaded[i] {
@@ -741,8 +814,9 @@ impl Pipeline {
                         }
                         None => {}
                     }
-                    // Without page content the best evidence is the snippet-level score.
-                    0.2 * s1n + 0.7 * f64::min(0.6, 0.6 * s1n)
+                    // Nobody read this page: its snippet-level score only places it behind the pages that
+                    // were read and found relevant, never among them.
+                    0.45 * (0.2 * s1n + 0.7 * f64::min(0.6, 0.6 * s1n))
                 }
             };
             if let Some(l) = &self.learner {
@@ -880,6 +954,7 @@ impl Pipeline {
             final_url: url.to_string(),
             result,
             rendered: false,
+            timing: Default::default(),
         };
         let selection = self.selection_for(&loaded, query, max_chars).await;
         Ok(Self::page_from(url, loaded, selection))
@@ -954,5 +1029,45 @@ mod diversity_tests {
         let pos = out.iter().position(|h| h.url.contains("other")).unwrap();
         assert!(pos <= 3, "other site at {pos}");
         assert!(out[0].url.ends_with("/1") && out[1].url.ends_with("/2"));
+    }
+}
+
+
+/// The query names the site: a word of it is the whole host label (`tokio` for tokio.rs, `postgresql`
+/// for postgresql.org) or the first path segment of a docs host (docs.rs/tokio/...). Such a site is the
+/// project's own, which a good answer to a question about the project usually leans on.
+fn names_site(query: &str, url: &str) -> bool {
+    const COMMON: [&str; 12] = [
+        "what", "latest", "stable", "version", "difference", "with", "from", "that", "this", "best", "model", "docs",
+    ];
+    let Ok(u) = url::Url::parse(url) else { return false };
+    let Some(host) = u.host_str() else { return false };
+    let q = query.to_lowercase();
+    let words: Vec<&str> = q
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| w.len() >= 4 && !COMMON.contains(w))
+        .collect();
+    let labels: Vec<&str> = host.split('.').collect();
+    let registrable = labels.len().saturating_sub(2);
+    let on_host = labels[registrable..labels.len().saturating_sub(1).max(registrable)]
+        .iter()
+        .flat_map(|l| l.split('-'))
+        .any(|l| words.contains(&l));
+    let first_path = u.path_segments().and_then(|mut p| p.next()).unwrap_or("").to_lowercase();
+    on_host || (labels.first().is_some_and(|l| *l == "docs") && words.contains(&first_path.as_str()))
+}
+
+#[cfg(test)]
+mod site_tests {
+    use super::names_site;
+
+    #[test]
+    fn a_site_named_by_the_query_is_recognised() {
+        assert!(names_site("rust tokio select", "https://tokio.rs/tokio/tutorial/select"));
+        assert!(names_site("rust tokio select", "https://docs.rs/tokio/latest/tokio/macro.select.html"));
+        assert!(names_site("latest stable version of PostgreSQL", "https://www.postgresql.org/docs/release/"));
+        assert!(!names_site("latest stable version of PostgreSQL", "https://versionlog.com/postgresql/17/"));
+        assert!(!names_site("rust tokio select", "https://docs.rs/serde/latest/serde/"));
+        assert!(!names_site("rust tokio select", "https://blog.csdn.net/x/article/details/1"));
     }
 }
