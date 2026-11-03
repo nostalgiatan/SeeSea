@@ -510,7 +510,16 @@ struct FeedbackBody {
 }
 
 /// Tell stage 1 whether a result was worth reading; it shifts how that host ranks later.
-async fn feedback(State(s): State<AppState>, body: Bytes) -> ApiResult<Value> {
+async fn feedback(State(s): State<AppState>, grant: Option<Extension<Grant>>, trusted: Option<Extension<crate::cluster::Trusted>>, body: Bytes) -> Result<Json<Value>, Response> {
+    // The learned standing of a host changes the ranking for every account, so a judgement is the operator's call.
+    // (From a gateway, the root key was checked there.)
+    if trusted.is_none() && s.access.required() && !grant.as_ref().is_some_and(|Extension(g)| g.is_root()) {
+        return Err((StatusCode::FORBIDDEN, Json(json!({"code": "admin_only", "message": "this needs the server's root key (--api-key)"}))).into_response());
+    }
+    feedback_inner(s, body).await.map_err(|e| e.into_response())
+}
+
+async fn feedback_inner(s: AppState, body: Bytes) -> ApiResult<Value> {
     let b: FeedbackBody = parse_body(&body)?;
     let good = match b.verdict.as_str() {
         "good" => true,

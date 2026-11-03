@@ -28,6 +28,7 @@ This page lists what seesea cannot do yet or has not verified. Each entry descri
 ## Security
 
 - SSRF guard: the client that fetches pages connects only to public addresses. Its resolver drops private addresses from every answer (loopback, RFC 1918, 100.64.0.0/10, link-local including 169.254.169.254, ULA, and IPv4-mapped, NAT64 and 6to4 forms that embed them), so a name that changes its answer at connection time is caught too. Redirects are checked against the target before the request is sent. `198.18.0.0/15` (the fake-IP range of TUN-style proxies) counts as public. With `--proxy` the proxy resolves, so only the addresses written in the URL and in redirects can be checked.
+- Markup is checked before extraction: wrapper elements nested deeper than 128 levels lose their tags and keep their content, a page with more than 100,000 elements is cut there, and a tag that never ends cuts off everything after it. A page that is nested too deeply, or has a tag that never ends, is treated as hostile: it counts as unreadable (it ranks behind the pages that were read, `content_error` says why, and the host is recorded as unreadable). Too many elements is only noted; the page is still used.
 - WebSub was checked only with unit tests and local HTTP tests, not against a real hub.
 
 ## Multiple nodes

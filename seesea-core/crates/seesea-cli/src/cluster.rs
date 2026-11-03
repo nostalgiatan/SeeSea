@@ -1384,7 +1384,7 @@ pub async fn forward(State(s): State<AppState>, grant: Option<Extension<Grant>>,
     let Some(gw) = s.gateway.clone() else { return not_found() };
     let path = uri.path();
     let Some(target) = target(path) else { return not_found() };
-    if target == Target::FlywheelAdmin && !(s.access.required() && grant.as_ref().is_some_and(|Extension(g)| g.is_root())) {
+    if (target == Target::FlywheelAdmin || path == "/v1/feedback") && !(s.access.required() && grant.as_ref().is_some_and(|Extension(g)| g.is_root())) {
         return (StatusCode::FORBIDDEN, Json(json!({"code": "admin_only", "message": "this needs the server's root key (--api-key)"}))).into_response();
     }
     if let Err(r) = meter(&method, path, uri.query(), &body, &grant, &s) {
