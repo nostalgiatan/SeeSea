@@ -748,6 +748,34 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     let body: Value = ok.json().await.unwrap();
     assert!(!body["hits"].as_array().unwrap().is_empty(), "{body}");
 
+    // A user cannot make the gateway reach what is not theirs. The path is sent as it is (a client library
+    // would tidy the dots away first).
+    async fn raw(url: &str, request_line: &str, headers: &str) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let addr = url.trim_start_matches("http://");
+        let mut c = tokio::net::TcpStream::connect(addr).await.unwrap();
+        c.write_all(format!("{request_line} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n{headers}\r\n").as_bytes()).await.unwrap();
+        let mut out = String::new();
+        c.read_to_string(&mut out).await.unwrap();
+        out
+    }
+    let auth = format!("Authorization: Bearer {ann}\r\n");
+    for path in ["/v1/x/../cluster/learn", "/v1/search/../cluster/events", "/v1/%2e%2e/cluster/learn", "//v1/search", "/v1/cluster/learn", "/v1/websub/..%2f..", "/v1/ingest", "/v1/admin/../cluster/learn"] {
+        let reply = raw(&gw_url, &format!("GET {path}"), &auth).await;
+        assert!(reply.starts_with("HTTP/1.1 404") || reply.starts_with("HTTP/1.1 403") || reply.starts_with("HTTP/1.1 400"), "{path}: {}", reply.lines().next().unwrap_or(""));
+        assert!(!reply.contains("\"hosts\""), "{path} reached the learner");
+    }
+    // The mode is read the way the node reads it: a GET's from its query, so a body cannot say `fast` instead.
+    let sneaky = raw(&gw_url, "GET /v1/search?q=rust&mode=deep", &format!("{auth}Content-Type: application/json\r\nContent-Length: 16\r\n\r\n{{\"mode\":\"fast\"}}")).await;
+    assert!(sneaky.starts_with("HTTP/1.1 400"), "{}", sneaky.lines().next().unwrap_or(""));
+    // MCP searches follow the plan too.
+    let mcp = |mode: &str| json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "search", "arguments": {"query": "rust", "mode": mode}}});
+    let deep = http.post(format!("{gw_url}/mcp")).bearer_auth(&ann).json(&mcp("deep")).send().await.unwrap();
+    assert_eq!(deep.status(), 400, "no deep search through MCP either");
+    // And ordinary users cannot write into the index.
+    let ingest = http.post(format!("{gw_url}/v1/ingest")).bearer_auth(&ann).json(&json!({"items": []})).send().await.unwrap();
+    assert_eq!(ingest.status(), 403);
+
     // What the search node did reaches the flywheel node: the journal, the learner, the index.
     let mut seen = (0, 0.0, 0);
     for _ in 0..40 {

@@ -31,6 +31,9 @@ pub struct AppState {
     pub cluster: Option<crate::cluster::Cluster>,
     /// On a gateway: the nodes requests are forwarded to.
     pub gateway: Option<Arc<crate::cluster::Gateway>>,
+    /// Behind a reverse proxy that sets `X-Forwarded-For`: take the client address from its last entry
+    /// (the one the proxy itself added). Off by default, since anyone can send that header.
+    pub trust_forwarded: bool,
 }
 
 impl AppState {
@@ -48,6 +51,7 @@ impl AppState {
             embedder: None,
             cluster: None,
             gateway: None,
+            trust_forwarded: false,
         }
     }
 }
@@ -143,7 +147,16 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Reques
     if req.uri().path() == "/health" || req.uri().path().starts_with("/v1/websub/") || !state.access.required() {
         return next.run(req).await;
     }
-    let ip = req.extensions().get::<ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip());
+    let mut ip = req.extensions().get::<ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip());
+    if state.trust_forwarded
+        && let Some(client) = headers
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.rsplit(',').next())
+            .and_then(|v| v.trim().parse::<std::net::IpAddr>().ok())
+    {
+        ip = Some(client);
+    }
     let cost = base_cost(req.uri().path());
     let allowed = match state.access.admit(presented_key(&headers), ip, cost) {
         Ok(a) => a,
@@ -449,7 +462,15 @@ struct IngestBody {
 }
 
 /// Push articles into the local index; at most 1000 per call.
-async fn ingest(State(s): State<AppState>, body: Bytes) -> ApiResult<Value> {
+async fn ingest(State(s): State<AppState>, grant: Option<Extension<Grant>>, body: Bytes) -> Result<Json<Value>, Response> {
+    // Items go into the index every search reads from: whoever may push them decides what the index says.
+    if s.access.required() && !grant.as_ref().is_some_and(|Extension(g)| g.is_root()) {
+        return Err((StatusCode::FORBIDDEN, Json(json!({"code": "admin_only", "message": "this needs the server's root key (--api-key)"}))).into_response());
+    }
+    ingest_items(s, body).await.map_err(|e| e.into_response())
+}
+
+async fn ingest_items(s: AppState, body: Bytes) -> ApiResult<Value> {
     let b: IngestBody = parse_body(&body)?;
     let Some(index) = s.index.clone() else {
         return Err(Error::InvalidRequest("the index is turned off".into()).into());
@@ -549,7 +570,36 @@ async fn sources_check(State(s): State<AppState>, Query(p): Query<CheckParams>) 
     Json(json!({"sources": probes}))
 }
 
-async fn mcp(State(s): State<AppState>, body: Bytes) -> Response {
+/// The plan applies to searches made through MCP too: a `search` tool call costs and is allowed like
+/// `GET /v1/search` with the same mode.
+pub fn meter_mcp(access: &Access, g: &Grant, body: &[u8]) -> Result<(), String> {
+    let Ok(v) = serde_json::from_slice::<Value>(body) else { return Ok(()) };
+    let messages: Vec<&Value> = match &v {
+        Value::Array(a) => a.iter().collect(),
+        one => vec![one],
+    };
+    for m in messages {
+        if m["method"] != "tools/call" || m["params"]["name"] != "search" {
+            continue;
+        }
+        let mode = match m["params"]["arguments"]["mode"].as_str() {
+            Some(raw) => raw.parse::<Mode>().map_err(|e| e.to_string())?,
+            None => Mode::default(),
+        };
+        if mode == Mode::Deep && !g.plan.deep {
+            return Err(format!("mode=deep is not part of the plan of '{}'", g.name));
+        }
+        access.charge(g, mode_extra(mode));
+    }
+    Ok(())
+}
+
+async fn mcp(State(s): State<AppState>, grant: Option<Extension<Grant>>, body: Bytes) -> Response {
+    if let Some(Extension(g)) = &grant
+        && let Err(m) = meter_mcp(&s.access, g, &body)
+    {
+        return (StatusCode::BAD_REQUEST, Json(json!({"code": "invalid_request", "message": m}))).into_response();
+    }
     let Ok(text) = std::str::from_utf8(&body) else {
         return (
             StatusCode::BAD_REQUEST,
@@ -585,7 +635,11 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
     };
     routes
         .merge(crate::account::routes())
-        .merge(crate::cluster::flywheel_routes())
+        .merge(if state.cluster.as_ref().is_some_and(|c| c.role == crate::cluster::Role::Flywheel) {
+            crate::cluster::flywheel_routes()
+        } else {
+            Router::new()
+        })
         .route("/v1/cluster/status", get(crate::cluster::status))
         .fallback(crate::cluster::forward)
         .layer(DefaultBodyLimit::max(1024 * 1024))
