@@ -80,6 +80,9 @@ impl Cluster {
         if self.key.len() < 16 {
             return Err("cluster_key must be set to a secret of at least 16 characters when role is not single".into());
         }
+        for url in self.search_nodes.iter().chain(self.flywheel.iter()) {
+            crate::tls::secure_url(url)?;
+        }
         match self.role {
             Role::Gateway if self.search_nodes.is_empty() => Err("a gateway needs search_nodes = [\"http://...\"]".into()),
             Role::Gateway | Role::Search if self.flywheel.is_none() => Err("this role needs flywheel = \"http://...\"".into()),
@@ -98,7 +101,11 @@ fn same(a: &[u8], b: &[u8]) -> bool {
 }
 
 fn client(timeout: Duration) -> reqwest::Client {
-    reqwest::Client::builder().timeout(timeout).connect_timeout(Duration::from_secs(3)).build().unwrap_or_default()
+    crate::tls::http_client(timeout).unwrap_or_else(|e| {
+        // A broken certificate setting must not silently fall back to a client that trusts less or presents nothing.
+        eprintln!("seesea: cannot build the cluster HTTP client: {e}");
+        std::process::exit(2)
+    })
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -824,7 +831,7 @@ mod tests {
         assert!("boss".parse::<Role>().is_err());
         let base = Cluster { role: Role::Gateway, key: "k".repeat(16), search_nodes: vec![], flywheel: None };
         assert!(base.check().unwrap_err().contains("search_nodes"));
-        let ok = Cluster { search_nodes: vec!["http://a".into()], flywheel: Some("http://f".into()), ..base.clone() };
+        let ok = Cluster { search_nodes: vec!["https://a".into()], flywheel: Some("https://f".into()), ..base.clone() };
         assert!(ok.check().is_ok());
         assert!(Cluster { key: "short".into(), ..ok.clone() }.check().unwrap_err().contains("cluster_key"));
         assert!(Cluster { role: Role::Search, flywheel: None, ..ok.clone() }.check().unwrap_err().contains("flywheel"));

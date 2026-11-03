@@ -52,6 +52,17 @@ pub struct FileConfig {
     /// The server sits behind a reverse proxy that sets X-Forwarded-For: count failed keys per client, not
     /// per proxy.
     pub trust_forwarded_for: Option<bool>,
+    /// TLS for `serve`: a PEM certificate chain and private key. Required for any non-loopback address.
+    pub tls_cert: Option<PathBuf>,
+    pub tls_key: Option<PathBuf>,
+    /// Also demand a client certificate signed by this CA (mutual TLS). Use it between nodes.
+    pub tls_client_ca: Option<PathBuf>,
+    /// A TLS-terminating proxy sits in front of this server and talks to it over a private link.
+    pub behind_tls_proxy: Option<bool>,
+    /// For connections to other nodes: extra CA certificates to trust, and this node's own certificate and key.
+    pub cluster_ca: Option<PathBuf>,
+    pub cluster_client_cert: Option<PathBuf>,
+    pub cluster_client_key: Option<PathBuf>,
     /// What this node does in a cluster: `single` (default, everything in one process), `gateway`,
     /// `search` or `flywheel`. Overridden by `SEESEA_ROLE`.
     pub role: Option<String>,
@@ -303,6 +314,16 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # Several `serve` processes may use one auth_db: users, keys, rates and daily budgets are shared through it.
 # (Concurrent-request caps and the failed-key counter stay per process.) false = keep limits in memory.
 # shared_limits = true
+
+# TLS. Listening on anything but loopback needs a certificate (or a proxy in front that terminates TLS).
+# tls_cert = "/etc/seesea/server.pem"
+# tls_key = "/etc/seesea/server.key"
+# behind_tls_proxy = false
+# tls_client_ca = "/etc/seesea/cluster-ca.pem"      # nodes: also require a client certificate from this CA
+# cluster_ca = "/etc/seesea/cluster-ca.pem"         # nodes: trust this CA when calling other nodes
+# cluster_client_cert = "/etc/seesea/node.pem"
+# cluster_client_key = "/etc/seesea/node.key"
+# trust_forwarded_for = false                       # behind a proxy that sets X-Forwarded-For
 
 # Several machines: give each node one job (see `seesea cluster --help` and the README). The default is
 # `single`, one process doing everything. All nodes of a cluster share one secret.

@@ -763,6 +763,11 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         Some("cpu") => seesea_embed::set_accelerator(seesea_embed::Accelerator::Cpu),
         Some(other) => return Err(Error::Config(format!("device must be gpu or cpu, not '{other}'"))),
     }
+    seesea_cli::tls::set_client(seesea_cli::tls::ClientTls {
+        ca: file.cluster_ca.clone(),
+        cert: file.cluster_client_cert.clone(),
+        key: file.cluster_client_key.clone(),
+    });
     if let Some(m) = file.model_idle_minutes {
         seesea_cli::embedding::set_model_idle_secs(m * 60);
     }
@@ -929,7 +934,10 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         let counts = match action {
             ClusterAction::Export { out } => seesea_cli::cluster::export(&dirs, out),
             ClusterAction::Import { from } => seesea_cli::cluster::import_local(&dirs, from),
-            ClusterAction::Push { from, to, key } => seesea_cli::cluster::import_remote(from, &seesea_cli::cluster::Link::new(to, key)).await,
+            ClusterAction::Push { from, to, key } => {
+                seesea_cli::tls::secure_url(to).map_err(Error::Config)?;
+                seesea_cli::cluster::import_remote(from, &seesea_cli::cluster::Link::new(to, key)).await
+            }
         }
         .map_err(Error::Config)?;
         if json {
@@ -1252,7 +1260,15 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             state.trust_forwarded = file.trust_forwarded_for == Some(true);
             state.index = state_index;
             state.embedder = pipeline_settings.model_dir.as_ref().map(|m| seesea_cli::embedding::shared_embedder(m) as Arc<dyn seesea_pipeline::semantic::TextEmbedder>);
-            server::serve(addr, state, max_concurrent, allow_open).await
+            let tls = match (&file.tls_cert, &file.tls_key) {
+                (Some(cert), Some(key)) => Some(
+                    seesea_cli::tls::server_config(&seesea_cli::tls::ServerTls { cert: cert.clone(), key: key.clone(), client_ca: file.tls_client_ca.clone() })
+                        .map_err(Error::Config)?,
+                ),
+                (None, None) => None,
+                _ => return Err(Error::Config("tls_cert and tls_key go together".into())),
+            };
+            server::serve(addr, state, max_concurrent, allow_open, tls, file.behind_tls_proxy == Some(true)).await
         }
         Command::Config { .. }
         | Command::Models { .. }

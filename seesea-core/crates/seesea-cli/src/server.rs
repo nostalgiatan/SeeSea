@@ -147,7 +147,11 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Reques
     if req.uri().path() == "/health" || req.uri().path().starts_with("/v1/websub/") || !state.access.required() {
         return next.run(req).await;
     }
-    let mut ip = req.extensions().get::<ConnectInfo<std::net::SocketAddr>>().map(|c| c.0.ip());
+    let mut ip = req
+        .extensions()
+        .get::<ConnectInfo<std::net::SocketAddr>>()
+        .map(|c| c.0.ip())
+        .or_else(|| req.extensions().get::<ConnectInfo<crate::tls::PeerAddr>>().map(|c| c.0.0.ip()));
     if state.trust_forwarded
         && let Some(client) = headers
             .get("x-forwarded-for")
@@ -655,7 +659,15 @@ pub async fn serve(
     state: AppState,
     max_concurrent: usize,
     allow_open: bool,
+    tls: Option<Arc<rustls::ServerConfig>>,
+    behind_tls_proxy: bool,
 ) -> Result<(), Error> {
+    // Keys, queries and results must not cross a network in clear text.
+    if !addr.ip().is_loopback() && tls.is_none() && !behind_tls_proxy {
+        return Err(Error::Config(format!(
+            "refusing to listen on {addr} without TLS: set tls_cert and tls_key, or behind_tls_proxy = true when a proxy in front terminates TLS"
+        )));
+    }
     if !addr.ip().is_loopback() && !state.access.required() && !allow_open {
         return Err(Error::Config(format!(
             "refusing to listen on {addr} without any API key: create one (`seesea users add NAME`, `seesea keys create NAME`), pass --api-key, or --allow-open"
@@ -664,7 +676,11 @@ pub async fn serve(
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|e| Error::Config(format!("cannot listen on {addr}: {e}")))?;
-    eprintln!("seesea listening on http://{}", listener.local_addr()?);
+    eprintln!(
+        "seesea listening on {}://{}",
+        if tls.is_some() { "https" } else { "http" },
+        listener.local_addr()?
+    );
     let access = Arc::clone(&state.access);
     let flusher = tokio::spawn({
         let access = Arc::clone(&access);
@@ -675,12 +691,20 @@ pub async fn serve(
             }
         }
     });
-    let served = axum::serve(
-        listener,
-        router(state, max_concurrent).into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .await;
+    let app = router(state, max_concurrent);
+    let served = match tls {
+        Some(config) => {
+            let tls_listener = crate::tls::TlsListener::new(listener, config)?;
+            axum::serve(tls_listener, app.into_make_service_with_connect_info::<crate::tls::PeerAddr>())
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+        }
+        None => {
+            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+                .with_graceful_shutdown(shutdown_signal())
+                .await
+        }
+    };
     flusher.abort();
     access.flush();
     served?;
