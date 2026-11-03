@@ -670,6 +670,14 @@ impl NodeHandler {
                 Some(l) => Reply::ok(Value::Null, Bytes::from(l.export())),
                 None => Reply::error("no learner here"),
             },
+            Some("journal") => {
+                let Some(j) = self.state.pipeline.journal_handle() else { return Reply::ok(Value::Null, Bytes::from_static(b"[]")) };
+                let since = head["since"].as_i64().unwrap_or(0);
+                let dir = j.dir().to_path_buf();
+                let mut lines = tokio::task::spawn_blocking(move || seesea_pipeline::Journal::read(&dir, since)).await.unwrap_or_default();
+                lines.truncate(20_000);
+                Reply::ok(Value::Null, serde_json::to_vec(&lines).unwrap_or_default())
+            }
             Some("index") => {
                 let Some(index) = self.state.index.clone() else { return Reply::ok(json!({"next": 0, "done": true}), Bytes::new()) };
                 let offset = head["offset"].as_u64().unwrap_or(0) as usize;
@@ -733,7 +741,7 @@ impl NodeHandler {
 
     async fn events(&self, peer: &PeerInfo, body: &[u8]) -> Reply {
         let Ok(Events { events }) = serde_json::from_slice(body) else { return Reply::error("body must be {\"events\": [...]}") };
-        let mut fresh = Vec::with_capacity(events.len());
+        let mut fresh: Vec<Value> = Vec::with_capacity(events.len());
         let mut marks: HashMap<u64, u64> = HashMap::new();
         {
             let seen = self.seen.lock().unwrap();
@@ -746,6 +754,13 @@ impl NodeHandler {
                     *m = (*m).max(seq);
                 }
                 fresh.push(e);
+            }
+        }
+        // The same search line can arrive at both flywheel nodes (or be copied between them): mark where it
+        // came from, so that a copy is recognised.
+        for e in fresh.iter_mut() {
+            if let (Some(epoch), Some(seq), true) = (e["id"][0].as_u64(), e["id"][1].as_u64(), e["line"].is_object()) {
+                e["line"]["_src"] = json!(format!("{}:{epoch}:{seq}", &peer.fingerprint[..8]));
             }
         }
         let applied = apply_events(&self.state, fresh).await;
@@ -959,6 +974,8 @@ pub struct Standby {
     pub diverged: AtomicBool,
     /// With a witness: the lease, whose holder is the writer.
     pub lease: Option<Arc<Lease>>,
+    /// Journal lines up to this time (seconds) have been copied.
+    pub journal_since: std::sync::atomic::AtomicI64,
 }
 
 impl Standby {
@@ -987,13 +1004,13 @@ impl Standby {
     }
 
     pub fn new(lease: Option<Arc<Lease>>) -> Arc<Self> {
-        Arc::new(Self { primary_up: AtomicBool::new(true), served: 0.into(), diverged: AtomicBool::new(false), lease })
+        Arc::new(Self { primary_up: AtomicBool::new(true), served: 0.into(), diverged: AtomicBool::new(false), lease, journal_since: 0.into() })
     }
 }
 
 /// Pull the primary's accounts and learner picture, and (with `index`) its index items. Idempotent: run it as
 /// often as you like. Returns what was copied: (accounts, learner, index items).
-pub async fn replicate_once(state: &AppState, primary: &Link, accounts: bool, learner: bool, index: bool) -> Result<(bool, bool, usize), String> {
+pub async fn replicate_once(state: &AppState, primary: &Link, accounts: bool, learner: bool, index: bool, journal: bool) -> Result<(bool, bool, usize), String> {
     let pull = |what: &str, offset: usize| {
         let head = json!({"what": what, "offset": offset});
         let client = primary.client.clone();
@@ -1007,6 +1024,31 @@ pub async fn replicate_once(state: &AppState, primary: &Link, accounts: bool, le
     }
     if let (true, Some(l)) = (learner, state.pipeline.learner_handle()) {
         done.1 = l.import(&pull("learner", 0).await?.body);
+    }
+    if let (true, Some(j)) = (journal, state.pipeline.journal_handle().cloned()) {
+        let marker = state.standby.clone();
+        let since = marker.as_ref().map_or(0, |m| m.journal_since.load(Ordering::Relaxed));
+        let r = reply_ok(primary.client.call(Op::Replicate, &json!({"what": "journal", "since": since}), &[], Duration::from_secs(60)).await)?;
+        let lines: Vec<Value> = serde_json::from_slice(&r.body).map_err(|e| e.to_string())?;
+        let newest = tokio::task::spawn_blocking(move || {
+            let key = |l: &Value| l["_src"].as_str().map_or_else(|| l.to_string(), str::to_string);
+            let ts = |l: &Value| l["ts"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()).map_or(0, |t| t.timestamp());
+            let have: std::collections::HashSet<String> = seesea_pipeline::Journal::read(j.dir(), since).iter().map(key).collect();
+            let mut newest = since;
+            for l in &lines {
+                newest = newest.max(ts(l));
+                if !have.contains(&key(l)) {
+                    j.record(l);
+                }
+            }
+            newest
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        // A little overlap, so that a line that was being written when we asked is not missed.
+        if let Some(m) = marker {
+            m.journal_since.store((newest - 120).max(0), Ordering::Relaxed);
+        }
     }
     if let (true, Some(idx)) = (index, state.index.clone()) {
         let mut offset = 0;
@@ -1035,7 +1077,7 @@ pub fn run_standby(state: AppState, primary: Link) {
             // With a lease, only the follower copies, and from whoever writes.
             let leading = state.standby.as_ref().and_then(|s| s.lease.as_ref()).is_some_and(|l| l.held());
             if !leading {
-                let round = replicate_once(&state, &primary, true, tick % 12 == 0, tick % 120 == 0).await;
+                let round = replicate_once(&state, &primary, true, tick % 12 == 0, tick % 120 == 0, tick % 6 == 0).await;
                 if let Some(st) = &state.standby {
                     st.note_round(round.is_ok(), &mut misses);
                 }

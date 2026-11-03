@@ -178,6 +178,11 @@ impl Journal {
                 .is_some_and(|n| n.starts_with("journal-") && n.ends_with(".jsonl"))
         });
         files.sort();
+        // A file holds one UTC day: skip the days that end before `since`.
+        let first_day = chrono::DateTime::from_timestamp(since.max(0), 0).map(|t| t.format("%Y%m%d").to_string());
+        if let Some(day) = first_day {
+            files.retain(|p| p.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_prefix("journal-")?.strip_suffix(".jsonl")).is_none_or(|d| d >= day.as_str()));
+        }
         let mut out = Vec::new();
         for f in files {
             let Ok(text) = std::fs::read_to_string(&f) else { continue };
