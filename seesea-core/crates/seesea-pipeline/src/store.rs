@@ -147,11 +147,86 @@ impl Cache for MemoryCache {
 /// cache must never break a search.
 pub struct FileCache {
     dir: PathBuf,
+    max_bytes: u64,
+    puts: std::sync::atomic::AtomicUsize,
 }
+
+/// The cache folder may not grow past this; the entries closest to expiry go first.
+const FILE_CACHE_MAX_BYTES: u64 = 256 * 1024 * 1024;
+/// How many writes pass between sweeps.
+const SWEEP_EVERY: usize = 200;
 
 impl FileCache {
     pub fn new(dir: impl Into<PathBuf>) -> Self {
-        Self { dir: dir.into() }
+        Self::with_limit(dir, FILE_CACHE_MAX_BYTES)
+    }
+
+    pub fn with_limit(dir: impl Into<PathBuf>, max_bytes: u64) -> Self {
+        let c = Self { dir: dir.into(), max_bytes, puts: std::sync::atomic::AtomicUsize::new(0) };
+        c.sweep_in_background();
+        c
+    }
+
+    fn sweep_in_background(&self) {
+        let (dir, max) = (self.dir.clone(), self.max_bytes);
+        // A short-lived command should not wait for housekeeping: do it on a thread of its own.
+        let _ = std::thread::Builder::new().name("cache-sweep".into()).spawn(move || {
+            Self::sweep(&dir, max);
+        });
+    }
+
+    /// Delete expired entries and leftovers of interrupted writes, then the entries that expire first
+    /// until the folder fits in `max_bytes`. Returns how many files went.
+    pub fn sweep(dir: &std::path::Path, max_bytes: u64) -> usize {
+        let Ok(rd) = std::fs::read_dir(dir) else { return 0 };
+        let now = Self::now_secs();
+        let mut removed = 0;
+        let mut live: Vec<(u64, u64, PathBuf)> = Vec::new();
+        for e in rd.flatten() {
+            let path = e.path();
+            let Ok(meta) = e.metadata() else { continue };
+            if !meta.is_file() {
+                continue;
+            }
+            match path.extension().and_then(|x| x.to_str()) {
+                Some("tmp") => {
+                    // A write in progress is younger than a minute.
+                    let old = meta.modified().ok().and_then(|m| m.elapsed().ok()).is_some_and(|d| d.as_secs() > 60);
+                    if old && std::fs::remove_file(&path).is_ok() {
+                        removed += 1;
+                    }
+                }
+                Some("bin") => {
+                    let mut head = [0u8; 8];
+                    let expires = std::fs::File::open(&path)
+                        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut head))
+                        .map(|_| u64::from_le_bytes(head))
+                        .unwrap_or(0);
+                    if expires <= now {
+                        if std::fs::remove_file(&path).is_ok() {
+                            removed += 1;
+                        }
+                    } else {
+                        live.push((expires, meta.len(), path));
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut total: u64 = live.iter().map(|(_, n, _)| n).sum();
+        if total > max_bytes {
+            live.sort_by_key(|(expires, _, _)| *expires);
+            for (_, n, path) in live {
+                if total <= max_bytes {
+                    break;
+                }
+                if std::fs::remove_file(&path).is_ok() {
+                    total -= n;
+                    removed += 1;
+                }
+            }
+        }
+        removed
     }
 
     /// FNV-1a: stable across runs and Rust versions, unlike `DefaultHasher`.
@@ -201,11 +276,37 @@ impl Cache for FileCache {
         if tokio::fs::write(&tmp, data).await.is_ok() {
             let _ = tokio::fs::rename(&tmp, &path).await;
         }
+        if self.puts.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % SWEEP_EVERY == SWEEP_EVERY - 1 {
+            self.sweep_in_background();
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sweep_drops_expired_and_oversized_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |name: &str, expires: u64, len: usize| {
+            let mut d = expires.to_le_bytes().to_vec();
+            d.extend(vec![0u8; len]);
+            std::fs::write(dir.path().join(name), d).unwrap();
+        };
+        let now = FileCache::now_secs();
+        write("a.bin", now - 10, 100); // expired
+        write("b.bin", now + 100, 1000); // expires first of the live ones
+        write("c.bin", now + 9000, 1000);
+        std::fs::write(dir.path().join("old.tmp"), b"x").unwrap();
+        let t = std::time::SystemTime::now() - std::time::Duration::from_secs(120);
+        std::fs::File::options().write(true).open(dir.path().join("old.tmp")).unwrap().set_modified(t).unwrap();
+        std::fs::write(dir.path().join("fresh.tmp"), b"x").unwrap();
+        let removed = FileCache::sweep(dir.path(), 1500);
+        let left: std::collections::BTreeSet<String> =
+            std::fs::read_dir(dir.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(removed, 3, "{left:?}");
+        assert_eq!(left, ["c.bin", "fresh.tmp"].into_iter().map(String::from).collect());
+    }
+
     use super::*;
 
     #[tokio::test]

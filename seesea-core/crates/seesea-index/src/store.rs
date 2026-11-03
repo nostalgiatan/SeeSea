@@ -5,11 +5,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 const MAX_TITLE: usize = 300;
 const MAX_LEAD: usize = 400;
-const OPEN_SHARDS: usize = 8;
+/// A search visits every day inside the retention window, so keeping fewer connections than that would reopen
+/// (and re-run the schema statements for) most of them on every search.
+const OPEN_SHARDS: usize = 64;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Item {
@@ -54,7 +56,7 @@ pub struct Stats {
 
 pub struct Store {
     dir: PathBuf,
-    open: Mutex<HashMap<i64, Connection>>,
+    open: Mutex<HashMap<i64, Arc<Mutex<Connection>>>>,
 }
 
 pub type Result<T> = std::result::Result<T, rusqlite::Error>;
@@ -187,30 +189,39 @@ impl Store {
     }
 
     fn with_shard<T>(&self, day: i64, create: bool, f: impl FnOnce(&Connection) -> Result<T>) -> Result<Option<T>> {
-        let mut open = self.open.lock().unwrap();
-        if !open.contains_key(&day) {
-            let path = self.path(day);
-            if !create && !path.exists() {
-                return Ok(None);
+        // The map is locked only to find or add the connection; the query runs under that shard's own lock,
+        // so searches over different days do not wait for each other.
+        let conn = {
+            let mut open = self.open.lock().unwrap();
+            if let Some(c) = open.get(&day) {
+                Arc::clone(c)
+            } else {
+                let path = self.path(day);
+                if !create && !path.exists() {
+                    return Ok(None);
+                }
+                std::fs::create_dir_all(&self.dir).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+                let conn = Connection::open(&path)?;
+                conn.execute_batch(
+                    "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;
+                     CREATE TABLE IF NOT EXISTS items(
+                       id INTEGER PRIMARY KEY, key INTEGER NOT NULL UNIQUE, tkey INTEGER NOT NULL UNIQUE,
+                       url TEXT NOT NULL, title TEXT NOT NULL, lead TEXT NOT NULL,
+                       published INTEGER, fetched INTEGER NOT NULL, source TEXT NOT NULL, host TEXT NOT NULL, vec BLOB);
+                     CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(title, lead, content='', tokenize='unicode61 remove_diacritics 2');",
+                )?;
+                // Shards written before vectors existed lack the column.
+                let _ = conn.execute("ALTER TABLE items ADD COLUMN vec BLOB", []);
+                if open.len() >= OPEN_SHARDS {
+                    open.clear();
+                }
+                let conn = Arc::new(Mutex::new(conn));
+                open.insert(day, Arc::clone(&conn));
+                conn
             }
-            std::fs::create_dir_all(&self.dir).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-            let conn = Connection::open(&path)?;
-            conn.execute_batch(
-                "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;
-                 CREATE TABLE IF NOT EXISTS items(
-                   id INTEGER PRIMARY KEY, key INTEGER NOT NULL UNIQUE, tkey INTEGER NOT NULL UNIQUE,
-                   url TEXT NOT NULL, title TEXT NOT NULL, lead TEXT NOT NULL,
-                   published INTEGER, fetched INTEGER NOT NULL, source TEXT NOT NULL, host TEXT NOT NULL, vec BLOB);
-                 CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(title, lead, content='', tokenize='unicode61 remove_diacritics 2');",
-            )?;
-            // Shards written before vectors existed lack the column.
-            let _ = conn.execute("ALTER TABLE items ADD COLUMN vec BLOB", []);
-            if open.len() >= OPEN_SHARDS {
-                open.clear();
-            }
-            open.insert(day, conn);
-        }
-        f(&open[&day]).map(Some)
+        };
+        let guard = conn.lock().unwrap();
+        f(&guard).map(Some)
     }
 
     /// Add items. Duplicates (same normalised URL, or same title on the same site) are skipped.

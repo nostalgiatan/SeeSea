@@ -71,7 +71,13 @@ impl Head {
 }
 
 pub struct GgufBert {
-    layers: Vec<Layer>,
+    /// Layers for the CPU: loaded up front when there is no GPU, and on first need if the GPU gives out.
+    layers: std::sync::OnceLock<Vec<Layer>>,
+    path: std::path::PathBuf,
+    n_layers: usize,
+    eps: f64,
+    /// The GPU ran out of memory or was lost: everything runs on the CPU from here on.
+    gpu_lost: std::sync::atomic::AtomicBool,
     head: Option<Head>,
     #[cfg(feature = "gpu")]
     gpu: Option<crate::gpu::GpuLayers>,
@@ -255,6 +261,24 @@ impl RawLayer {
 }
 
 impl Reader<'_> {
+    fn cpu_layers(&mut self, n_layers: usize) -> Result<Vec<Layer>> {
+        let mut layers = Vec::with_capacity(n_layers);
+        for i in 0..n_layers {
+            let p = format!("blk.{i}");
+            layers.push(Layer {
+                q: self.linear(&format!("{p}.attn_q"))?,
+                k: self.linear(&format!("{p}.attn_k"))?,
+                v: self.linear(&format!("{p}.attn_v"))?,
+                out: self.linear(&format!("{p}.attn_output"))?,
+                attn_norm: self.norm(&format!("{p}.attn_output_norm"))?,
+                up: self.linear(&format!("{p}.ffn_up"))?,
+                down: self.linear(&format!("{p}.ffn_down"))?,
+                out_norm: self.norm(&format!("{p}.layer_output_norm"))?,
+            });
+        }
+        Ok(layers)
+    }
+
     #[cfg(feature = "gpu")]
     fn raw_layer(&mut self, i: usize) -> Result<RawLayer> {
         const NAMES: [&str; 16] = [
@@ -374,38 +398,41 @@ impl GgufBert {
             .and_then(|t| t.join().ok().flatten())
             .map(|g| g.shaped(heads, hidden));
         #[cfg(feature = "gpu")]
-        let on_gpu = gpu.is_some();
+        let mut on_gpu = gpu.is_some();
         #[cfg(not(feature = "gpu"))]
         let on_gpu = false;
         let mut layers = Vec::with_capacity(n_layers);
         #[cfg(feature = "gpu")]
-        if let Some(g) = gpu.as_mut() {
-            // Decode every layer on all cores (decoding 4-bit weights is the slow part of loading),
-            // then upload them in order.
+        if gpu.is_some() {
+            // Decoding 4-bit weights is the slow part of loading, so each batch of layers is decoded on all
+            // cores; but only a few at a time, since every decoded layer is f32 and holding all of them
+            // would add over a gigabyte to the peak. Uploading can run the card out of memory (it may be
+            // shared with other programs): that is not an error, the layers just run on the CPU.
             use rayon::prelude::*;
-            let raw: Vec<RawLayer> = (0..n_layers)
-                .map(|i| r.raw_layer(i))
-                .collect::<Result<_>>()?;
-            let decoded: Vec<Result<crate::gpu::LayerData>> =
-                raw.into_par_iter().map(RawLayer::decode).collect();
-            for d in decoded {
-                g.push(eps, d?);
+            const BATCH_LAYERS: usize = 4;
+            let g_owned = gpu.take().expect("checked above");
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<crate::gpu::GpuLayers> {
+                let mut g = g_owned;
+                for start in (0..n_layers).step_by(BATCH_LAYERS) {
+                    let raw: Vec<RawLayer> = (start..(start + BATCH_LAYERS).min(n_layers))
+                        .map(|i| r.raw_layer(i))
+                        .collect::<Result<_>>()?;
+                    let decoded: Vec<Result<crate::gpu::LayerData>> = raw.into_par_iter().map(RawLayer::decode).collect();
+                    for d in decoded {
+                        g.push(eps, d?);
+                    }
+                }
+                Ok(g)
+            }));
+            match outcome {
+                Ok(Ok(g)) => gpu = Some(g),
+                Ok(Err(e)) => return Err(e),
+                Err(_) => eprintln!("seesea: the GPU could not hold the model; running on the CPU"),
             }
+            on_gpu = gpu.is_some();
         }
         if !on_gpu {
-            for i in 0..n_layers {
-                let p = format!("blk.{i}");
-                layers.push(Layer {
-                    q: r.linear(&format!("{p}.attn_q"))?,
-                    k: r.linear(&format!("{p}.attn_k"))?,
-                    v: r.linear(&format!("{p}.attn_v"))?,
-                    out: r.linear(&format!("{p}.attn_output"))?,
-                    attn_norm: r.norm(&format!("{p}.attn_output_norm"))?,
-                    up: r.linear(&format!("{p}.ffn_up"))?,
-                    down: r.linear(&format!("{p}.ffn_down"))?,
-                    out_norm: r.norm(&format!("{p}.layer_output_norm"))?,
-                });
-            }
+            layers = r.cpu_layers(n_layers)?;
         }
         let positions = r.dense("position_embd.weight")?;
         let type_embedding = r.dense("token_types.weight")?;
@@ -452,8 +479,16 @@ impl GgufBert {
         let tokenizer = tokenizer_job
             .join()
             .map_err(|_| EmbedError::Tokenizer("the tokenizer builder panicked".into()))??;
+        let layer_cell = std::sync::OnceLock::new();
+        if !layers.is_empty() {
+            let _ = layer_cell.set(layers);
+        }
         let model = Self {
-            layers,
+            layers: layer_cell,
+            path: path.to_path_buf(),
+            n_layers,
+            eps,
+            gpu_lost: std::sync::atomic::AtomicBool::new(false),
             head,
             #[cfg(feature = "gpu")]
             gpu,
@@ -476,12 +511,32 @@ impl GgufBert {
     pub fn on_gpu(&self) -> bool {
         #[cfg(feature = "gpu")]
         {
-            self.gpu.is_some()
+            self.gpu.is_some() && !self.gpu_lost.load(std::sync::atomic::Ordering::Relaxed)
         }
         #[cfg(not(feature = "gpu"))]
         {
             false
         }
+    }
+
+    /// The CPU copy of the layers, read from the file the first time it is needed.
+    fn cpu_layers(&self) -> Result<&Vec<Layer>> {
+        if let Some(l) = self.layers.get() {
+            return Ok(l);
+        }
+        let io = |source| EmbedError::Io { path: self.path.display().to_string(), source };
+        let mut file = std::fs::File::open(&self.path).map_err(io)?;
+        let c = Content::read(&mut file).map_err(bad)?;
+        let device = Device::Cpu;
+        let mut r = Reader {
+            c: &c,
+            file: &mut file,
+            device: &device,
+            eps: self.eps,
+            dequantize: std::env::var_os("SEESEA_EMBED_QUANTIZED").is_none(),
+        };
+        let loaded = r.cpu_layers(self.n_layers)?;
+        Ok(self.layers.get_or_init(|| loaded))
     }
 
     pub fn hidden(&self) -> usize {
@@ -530,10 +585,27 @@ impl GgufBert {
         x = self.embed_norm.forward(&x)?;
 
         #[cfg(feature = "gpu")]
-        if let Some(g) = &self.gpu {
-            let out = g.forward(x.flatten_all()?.to_vec1()?, mask, batch, seq);
-            return Ok(Tensor::from_vec(out, (batch, seq, self.hidden), dev)?);
+        if let Some(g) = &self.gpu
+            && !self.gpu_lost.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            let input: Vec<f32> = x.flatten_all()?.to_vec1()?;
+            // A card that runs out of memory (or is taken away) panics inside the GPU library, and every
+            // later call panics too. Catch it once, say so, and carry on with the CPU.
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if std::env::var_os("SEESEA_SIMULATE_GPU_LOSS").is_some() {
+                    panic!("simulated GPU loss");
+                }
+                g.forward(input, mask, batch, seq)
+            })) {
+                Ok(out) => return Ok(Tensor::from_vec(out, (batch, seq, self.hidden), dev)?),
+                Err(_) => {
+                    if !self.gpu_lost.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                        eprintln!("seesea: the GPU failed (out of memory?); this model now runs on the CPU. Set SEESEA_EMBED_DEVICE=cpu to skip the GPU.");
+                    }
+                }
+            }
         }
+        let layers = self.cpu_layers()?;
 
         let head_dim = self.hidden / self.heads;
         // Valid (non-padding) length of each row; padding is on the right.
@@ -543,7 +615,7 @@ impl GgufBert {
             .collect();
         let flat = |t: &Tensor| -> candle_core::Result<Vec<f32>> { t.flatten_all()?.to_vec1() };
 
-        for l in &self.layers {
+        for l in layers {
             let (q, k, v) = (
                 flat(&l.q.forward(&x)?)?,
                 flat(&l.k.forward(&x)?)?,
