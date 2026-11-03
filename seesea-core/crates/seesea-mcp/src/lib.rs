@@ -62,7 +62,10 @@ pub fn tools() -> Value {
                     "language": {"type": "string", "description": "Language code such as 'en' or 'zh'."},
                     "sources": {"type": "array", "items": {"type": "string"}, "description": "Restrict to these sources; see the 'sources' tool."},
                     "max_chars_per_result": {"type": "integer", "minimum": 1, "default": 3000, "description": "Cap on page text returned per result."},
-                    "full_content": {"type": "boolean", "default": false, "description": "Return whole pages instead of the relevant sections."}
+                    "full_content": {"type": "boolean", "default": false, "description": "Return whole pages instead of the relevant sections."},
+                    "include_domains": {"type": "array", "items": {"type": "string"}, "description": "Only results from these sites (host or parent domain)."},
+                    "exclude_domains": {"type": "array", "items": {"type": "string"}, "description": "Leave out these sites."},
+                    "topic": {"type": "string", "enum": ["general", "news"], "description": "news treats the query as one about recent events."}
                 },
                 "required": ["query"]
             }

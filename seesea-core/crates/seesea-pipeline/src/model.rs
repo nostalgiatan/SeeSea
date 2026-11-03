@@ -76,6 +76,15 @@ pub struct SearchRequest {
     /// Return the whole extracted page instead of only the sections relevant to the query.
     #[serde(default)]
     pub full_content: bool,
+    /// Only results from these sites (a host or a parent domain, e.g. `docs.rs`).
+    #[serde(default)]
+    pub include_domains: Vec<String>,
+    /// Never results from these sites.
+    #[serde(default)]
+    pub exclude_domains: Vec<String>,
+    /// `general` (default) or `news`, which treats the query as one about recent events.
+    #[serde(default)]
+    pub topic: Option<String>,
 }
 
 fn default_limit() -> usize {
@@ -97,7 +106,14 @@ impl SearchRequest {
             sources: Vec::new(),
             max_chars_per_result: default_section_chars(),
             full_content: false,
+            include_domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            topic: None,
         }
+    }
+
+    pub fn is_news(&self) -> bool {
+        self.topic.as_deref() == Some("news")
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -113,6 +129,12 @@ impl SearchRequest {
             return Err(Error::InvalidRequest(
                 "limit must be between 1 and 50".into(),
             ));
+        }
+        if let Some(t) = &self.topic
+            && t != "general"
+            && t != "news"
+        {
+            return Err(Error::InvalidRequest(format!("unknown topic '{t}', expected general or news")));
         }
         if self.max_chars_per_result == 0 {
             return Err(Error::InvalidRequest(

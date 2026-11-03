@@ -66,6 +66,7 @@ pub struct Pipeline {
     /// Nudges stage-1 scores by what hosts and sources delivered in earlier searches.
     learner: Option<Arc<crate::learn::Learner>>,
     journal: Option<Arc<crate::journal::Journal>>,
+    sink: Option<Arc<dyn crate::source::Sink>>,
     extractor: OnceLock<Arc<Extractor>>,
     reranker: Arc<dyn Reranker>,
     section_scorer: Option<Arc<dyn SectionScorer>>,
@@ -150,6 +151,7 @@ impl Pipeline {
             renderer: None,
             learner: None,
             journal: None,
+            sink: None,
             extractor: OnceLock::new(),
             reranker: Arc::new(LexicalReranker),
             section_scorer: None,
@@ -183,6 +185,12 @@ impl Pipeline {
 
     pub fn journal(mut self, journal: Arc<crate::journal::Journal>) -> Self {
         self.journal = Some(journal);
+        self
+    }
+
+    /// Where pages that were read and proved useful are kept for later searches.
+    pub fn sink(mut self, sink: Arc<dyn crate::source::Sink>) -> Self {
+        self.sink = Some(sink);
         self
     }
 
@@ -350,7 +358,7 @@ impl Pipeline {
         let mut names: Vec<&str> = sources.iter().map(|s| s.name()).collect();
         names.sort_unstable();
         format!(
-            "{:?}:{}:{:?}:{:?}:{}:{}:{}",
+            "{:?}:{}:{:?}:{:?}:{}:{}:{}:{}:{}:{:?}",
             req.mode,
             req.limit,
             req.time_range,
@@ -358,6 +366,9 @@ impl Pipeline {
             names.join(","),
             req.full_content,
             req.max_chars_per_result,
+            req.include_domains.join(","),
+            req.exclude_domains.join(","),
+            req.topic,
         )
     }
 
@@ -405,7 +416,12 @@ impl Pipeline {
     async fn search_inner(&self, req: &SearchRequest) -> Result<SearchResponse> {
         req.validate()?;
         let started = Instant::now();
-        let sources = self.select_sources(&req.sources, rank::Recency::of(&req.query))?;
+        let recency = if req.is_news() {
+            rank::Recency::of(&req.query).max(rank::Recency::Recent)
+        } else {
+            rank::Recency::of(&req.query)
+        };
+        let sources = self.select_sources(&req.sources, recency)?;
 
         let scope = Self::cache_scope(req, &sources);
         let tokens = token_set(&req.query);
@@ -498,8 +514,21 @@ impl Pipeline {
 
         // Stage 2: fuse and rank on snippets.
         let t = Instant::now();
-        let candidates = fusion::fuse(&results, &self.cfg.fusion);
-        let q = QueryInfo::new(&req.query);
+        let mut candidates = fusion::fuse(&results, &self.cfg.fusion);
+        if !req.include_domains.is_empty() || !req.exclude_domains.is_empty() {
+            let on = |host: &str, list: &[String]| {
+                list.iter().any(|d| {
+                    let d = d.trim().trim_start_matches("www.").to_lowercase();
+                    !d.is_empty() && (host == d || host.ends_with(&format!(".{d}")))
+                })
+            };
+            candidates.retain(|c| {
+                let host = host_of(&c.url);
+                (req.include_domains.is_empty() || on(&host, &req.include_domains)) && !on(&host, &req.exclude_domains)
+            });
+        }
+        let mut q = QueryInfo::new(&req.query);
+        q.recency = recency;
         let now = Utc::now();
         let mut scored: Vec<(fusion::Candidate, ScoreParts)> = candidates
             .into_iter()
@@ -724,6 +753,24 @@ impl Pipeline {
         let hits = crate::cluster::group_events(hits);
         let mut hits = diversify(hits);
         hits.truncate(req.limit);
+        if let Some(sink) = &self.sink {
+            let pages: Vec<crate::source::Remembered> = hits
+                .iter()
+                .filter(|h| h.score_parts.relevance >= 0.5 && h.score_parts.body_quality >= 0.4)
+                .filter_map(|h| {
+                    let lead: String = h.content.as_ref()?.sections.first()?.markdown.chars().take(400).collect();
+                    Some(crate::source::Remembered {
+                        url: h.url.clone(),
+                        title: h.title.clone(),
+                        lead,
+                        published: h.published,
+                    })
+                })
+                .collect();
+            if !pages.is_empty() {
+                sink.remember(pages);
+            }
+        }
         stages.push(StageTiming {
             stage: "assemble".into(),
             ms: ms(t),

@@ -107,6 +107,9 @@ struct NetArgs {
     /// Do not adapt stage-1 ranking to what earlier searches found.
     #[arg(long, global = true)]
     no_learn: bool,
+    /// Do not add pages that were read and answered a search to the local index.
+    #[arg(long, env = "SEESEA_NO_WRITEBACK", global = true)]
+    no_writeback: bool,
     /// Do not record searches for `seesea report`.
     #[arg(long, env = "SEESEA_NO_JOURNAL", global = true)]
     no_journal: bool,
@@ -159,6 +162,15 @@ enum Command {
         /// Append a JSON line per search to this file.
         #[arg(long)]
         log: Option<PathBuf>,
+        /// Only results from these sites (comma separated hosts or parent domains).
+        #[arg(long, value_delimiter = ',')]
+        include: Vec<String>,
+        /// Leave out these sites.
+        #[arg(long, value_delimiter = ',')]
+        exclude: Vec<String>,
+        /// general or news (news treats the query as one about recent events).
+        #[arg(long)]
+        topic: Option<String>,
     },
     /// Read one page: a URL, a local HTML file, or `-` for standard input.
     Extract {
@@ -384,6 +396,7 @@ fn apply_file(net: &mut NetArgs, f: &FileConfig, use_model: bool) {
     net.no_render |= f.no_render.unwrap_or(false);
     net.no_learn |= f.no_learn.unwrap_or(false);
     net.no_journal |= f.no_journal.unwrap_or(false);
+    net.no_writeback |= f.no_writeback.unwrap_or(false);
     net.no_index |= f.no_index.unwrap_or(false);
     fill(&mut net.index_dir, &f.index_dir);
     net.retention_days = f.retention_days;
@@ -438,6 +451,7 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         lightpanda: net.lightpanda.clone(),
         no_render: net.no_render,
         learn_file: (!net.no_learn).then(userconfig::default_learn_file),
+        no_writeback: net.no_writeback,
         journal_dir: (!net.no_journal).then(userconfig::default_journal_dir),
         explore: net.explore.unwrap_or(0.0),
         index_dir: (!net.no_index).then(|| net.index_dir.clone().unwrap_or_else(userconfig::default_index_dir)),
@@ -885,6 +899,9 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             max_chars,
             full,
             log,
+            include,
+            exclude,
+            topic,
         } => {
             let mut req = SearchRequest::new(query.join(" "));
             req.mode = mode.parse::<Mode>()?;
@@ -894,6 +911,9 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             req.sources = sources;
             req.max_chars_per_result = max_chars;
             req.full_content = full;
+            req.include_domains = include;
+            req.exclude_domains = exclude;
+            req.topic = topic;
             let resp = pipeline.search(&req).await?;
             if let Some(path) = &log {
                 append_log(path, &resp).await?;
@@ -1122,6 +1142,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             let access = seesea_cli::access::Access::new(Some(store), file.plans.clone(), api_key);
             let mut state = AppState::with_access(pipeline, access);
             state.index = state_index;
+            state.embedder = pipeline_settings.model_dir.as_ref().map(|m| seesea_cli::embedding::shared_embedder(m) as Arc<dyn seesea_pipeline::semantic::TextEmbedder>);
             server::serve(addr, state, max_concurrent, allow_open).await
         }
         Command::Config { .. }

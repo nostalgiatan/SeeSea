@@ -51,6 +51,8 @@ pub struct Settings {
     pub learn_file: Option<PathBuf>,
     /// Where searches are recorded for `seesea report`; none means they are not.
     pub journal_dir: Option<PathBuf>,
+    /// Do not keep pages that were read and answered a search in the local index.
+    pub no_writeback: bool,
     pub explore: f64,
     /// Folder of the local fresh-news index; none means no `local` source.
     pub index_dir: Option<PathBuf>,
@@ -173,8 +175,11 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
     let renderer = (!settings.no_render)
         .then(|| seesea_fetch::render::Renderer::discover(settings.lightpanda.as_deref()))
         .flatten();
+    let mut sink = None;
     if let Some(dir) = &settings.index_dir {
-        let mut local = seesea_index::IndexSource::new(seesea_index::Index::open(dir));
+        let index = seesea_index::Index::open(dir);
+        sink = Some(Arc::new(seesea_index::IndexSink(index.clone())) as Arc<dyn seesea_pipeline::Sink>);
+        let mut local = seesea_index::IndexSource::new(index);
         if let Some(m) = &settings.model_dir {
             local = local.embedder(crate::embedding::shared_embedder(m));
         }
@@ -186,6 +191,9 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
             ..Default::default()
         })
         .cache(cache);
+    if let Some(sink) = sink.filter(|_| !settings.no_writeback) {
+        pipeline = pipeline.sink(sink);
+    }
     if let Some(dir) = &settings.journal_dir {
         pipeline = pipeline.journal(Arc::new(seesea_pipeline::Journal::new(dir.clone())));
     }
