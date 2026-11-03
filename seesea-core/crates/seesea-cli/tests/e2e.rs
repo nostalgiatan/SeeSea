@@ -686,6 +686,7 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     use seesea_cli::wire::{Mesh, PeerInfo, PeerRole, Peers};
     let base = spawn_site().await;
     let dir = tempfile::tempdir().unwrap();
+    let dir_path = dir.path().to_path_buf();
 
     // Every node has its own key pair; each trusts the fingerprints of the nodes it deals with.
     let ids: std::collections::HashMap<&str, _> = ["fly", "fly2", "s0", "s1", "gw", "op", "intruder"].into_iter().map(|n| (n, identity(dir.path(), n))).collect();
@@ -913,7 +914,12 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     }
     // The standby follows the primary; when the primary is gone, users and searches carry on through the standby.
     let primary_link = Link::new(&mesh("fly2", vec![listed("fly", PeerRole::Flywheel)]), &fly_url).unwrap();
-    let copied = seesea_cli::cluster::replicate_once(&fly2, &primary_link, true, true, true).await.unwrap();
+    let copied = seesea_cli::cluster::replicate_once(&fly2, &primary_link, true, true, true, true).await.unwrap();
+    let count = |dir: &str| seesea_pipeline::Journal::read(&dir_path.join(dir), 0).iter().filter(|l| l["type"] == "search").count();
+    let (on_primary, on_standby) = (count("fly-journal"), count("fly2-journal"));
+    assert!(on_primary >= 1 && on_standby == on_primary, "the standby has the primary's journal: {on_primary} vs {on_standby}");
+    seesea_cli::cluster::replicate_once(&fly2, &primary_link, false, false, false, true).await.unwrap();
+    assert_eq!(count("fly2-journal"), on_standby, "copying again adds nothing");
     assert!(copied.0 && copied.1 && copied.2 >= 1, "accounts, learner, index items: {copied:?}");
     assert!(index2.store.search("zebra", None, 5).unwrap().len() == 1, "the pushed items are on the standby");
     fly_wire.close();
