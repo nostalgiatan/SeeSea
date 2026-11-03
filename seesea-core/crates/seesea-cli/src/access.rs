@@ -42,6 +42,13 @@ pub struct Grant {
     pub name: String,
 }
 
+impl Grant {
+    /// Whether this is the server's root key, which belongs to no user.
+    pub fn is_root(&self) -> bool {
+        self.user_id.is_none() && self.name == "root"
+    }
+}
+
 pub struct Allowed {
     pub grant: Grant,
     pub headers: Vec<(&'static str, String)>,
@@ -58,6 +65,9 @@ pub struct Access {
     store: Option<Store>,
     plans: HashMap<String, Plan>,
     limiter: Limiter,
+    /// Buckets and day totals live in the store, so several server processes on one auth database
+    /// share them. Concurrency caps and the per-address failure counter stay per process.
+    shared: bool,
     root_key: Option<Arc<str>>,
     permits: Mutex<HashMap<i64, (u32, Arc<Semaphore>)>>,
     failures: Mutex<HashMap<IpAddr, (f64, u32)>>,
@@ -80,10 +90,17 @@ impl Access {
             store,
             plans: all,
             limiter: Limiter::new(),
+            shared: true,
             root_key: root_key.filter(|k| !k.is_empty()).map(Into::into),
             permits: Mutex::default(),
             failures: Mutex::default(),
         }
+    }
+
+    /// Keep buckets in this process instead of the store (no write per request; one process only).
+    pub fn local_limits(mut self) -> Self {
+        self.shared = false;
+        self
     }
 
     pub fn open() -> Self {
@@ -99,7 +116,15 @@ impl Access {
         self.root_key.is_some() || self.store.as_ref().is_some_and(|s| s.users().is_ok_and(|u| !u.is_empty()))
     }
 
-    fn plan_for(&self, name: &str) -> Plan {
+    pub fn store(&self) -> Option<&Store> {
+        self.store.as_ref()
+    }
+
+    pub fn has_plan(&self, name: &str) -> bool {
+        self.plans.contains_key(name)
+    }
+
+    pub fn plan_for(&self, name: &str) -> Plan {
         self.plans.get(name).or_else(|| self.plans.get("default")).cloned().unwrap_or_default()
     }
 
@@ -154,10 +179,17 @@ impl Access {
             }
         };
         let plan = self.plan_for(&user.plan);
-        let decision = self
-            .limiter
-            .check(user.id, &plan, cost, t, || store.usage_today(user.id, day_number(t as i64)))
-            .map_err(|d| {
+        let spent = if self.shared {
+            match store.spend(user.id, &plan, cost, t) {
+                Ok(r) => r,
+                Err(e) => {
+                    return Err(Refusal::Limited { denied: None, code: "internal_error", message: e.to_string(), retry_after: 5 });
+                }
+            }
+        } else {
+            self.limiter.check(user.id, &plan, cost, t, || store.usage_today(user.id, day_number(t as i64)))
+        };
+        let decision = spent.map_err(|d| {
                 let (code, message) = match d.reason {
                     Reason::Rate => ("rate_limited", format!("more than {} credits per minute; retry in {} s", d.limit_per_minute, d.retry_after_secs)),
                     Reason::Daily => ("quota_exceeded", "the daily credit budget of this plan is spent".to_string()),
@@ -166,7 +198,12 @@ impl Access {
             })?;
         let permit = self.permit(user.id, plan.max_concurrent).ok_or_else(|| {
             // Nothing ran, so the credits go back.
-            self.limiter.refund(user.id, cost, plan.burst);
+            match (&self.store, self.shared) {
+                (Some(s), true) => {
+                    let _ = s.give_back(user.id, &plan, cost, t);
+                }
+                _ => self.limiter.refund(user.id, cost, plan.burst),
+            }
             Refusal::Limited {
                 denied: None,
                 code: "too_many_concurrent",
@@ -202,13 +239,18 @@ impl Access {
         if let Some(id) = grant.user_id
             && extra > 0
         {
-            self.limiter.charge(id, extra);
+            match (&self.store, self.shared) {
+                (Some(s), true) => {
+                    let _ = s.spend_more(id, &grant.plan, extra, now());
+                }
+                _ => self.limiter.charge(id, extra),
+            }
         }
     }
 
     /// Write the day's totals back so they survive a restart.
     pub fn flush(&self) {
-        let Some(store) = &self.store else { return };
+        let Some(store) = self.store.as_ref().filter(|_| !self.shared) else { return };
         let day = day_number(now() as i64);
         for (user, used) in self.limiter.used_today(day) {
             let _ = store.set_usage(user, day, used);
@@ -228,7 +270,7 @@ mod tests {
         let store = Store::in_memory().unwrap();
         store.create_user("ann", "p").unwrap();
         let (_, key) = store.create_key("ann", "k", None).unwrap();
-        let access = Access::new(Some(store), HashMap::from([("p".to_string(), plan)]), None);
+        let access = Access::new(Some(store), HashMap::from([("p".to_string(), plan)]), None).local_limits();
         (access, key)
     }
 
@@ -279,6 +321,27 @@ mod tests {
         }
         assert!(matches!(a.admit(Some(&key), ip(9), 1), Err(Refusal::Limited { code: "too_many_failures", .. })));
         assert!(a.admit(Some(&key), ip(10), 1).is_ok(), "another address is unaffected");
+    }
+
+    #[test]
+    fn two_servers_on_one_database_share_a_users_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.db");
+        let plan = Plan { per_minute: 60, burst: 3, per_day: 0, max_concurrent: 10, deep: true };
+        let plans = HashMap::from([("p".to_string(), plan)]);
+        let one = Access::new(Some(Store::open(&path).unwrap()), plans.clone(), None);
+        let two = Access::new(Some(Store::open(&path).unwrap()), plans, None);
+        let store = Store::open(&path).unwrap();
+        store.create_user("ann", "p").unwrap();
+        let (_, key) = store.create_key("ann", "k", None).unwrap();
+        one.admit(Some(&key), ip(5), 1).unwrap();
+        two.admit(Some(&key), ip(5), 1).unwrap();
+        one.admit(Some(&key), ip(5), 1).unwrap();
+        // The bucket of 3 is empty for whichever server is asked next.
+        assert!(matches!(two.admit(Some(&key), ip(5), 1), Err(Refusal::Limited { code: "rate_limited", .. })));
+
+        let (_, key2) = store.create_key("ann", "k2", None).unwrap();
+        assert!(matches!(one.admit(Some(&key2), ip(5), 1), Err(Refusal::Limited { code: "rate_limited", .. })), "keys of one user share the bucket");
     }
 
     #[test]

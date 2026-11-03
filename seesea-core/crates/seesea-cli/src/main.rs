@@ -1159,7 +1159,10 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                     }
                 }
             }
-            let access = seesea_cli::access::Access::new(Some(store), file.plans.clone(), api_key);
+            let mut access = seesea_cli::access::Access::new(Some(store), file.plans.clone(), api_key);
+            if file.shared_limits == Some(false) {
+                access = access.local_limits();
+            }
             let mut state = AppState::with_access(pipeline, access);
             state.index = state_index;
             state.embedder = pipeline_settings.model_dir.as_ref().map(|m| seesea_cli::embedding::shared_embedder(m) as Arc<dyn seesea_pipeline::semantic::TextEmbedder>);

@@ -202,6 +202,7 @@ impl Store {
                 }
                 std::fs::create_dir_all(&self.dir).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
                 let conn = Connection::open(&path)?;
+                conn.busy_timeout(std::time::Duration::from_secs(5))?;
                 conn.execute_batch(
                     "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;
                      CREATE TABLE IF NOT EXISTS items(

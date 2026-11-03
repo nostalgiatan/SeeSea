@@ -96,6 +96,8 @@ impl Registry {
                 let _ = std::fs::create_dir_all(d);
             }
             let c = Connection::open(&self.path)?;
+            // Several server processes may share this file; wait for each other instead of failing.
+            c.busy_timeout(std::time::Duration::from_secs(5))?;
             c.execute_batch(
                 "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;
                  CREATE TABLE IF NOT EXISTS feeds(url TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', origin TEXT NOT NULL,
@@ -103,11 +105,35 @@ impl Registry {
                    next_due INTEGER NOT NULL DEFAULT 0, interval INTEGER NOT NULL, total INTEGER NOT NULL DEFAULT 0, last_error TEXT);
                  CREATE TABLE IF NOT EXISTS subs(id TEXT PRIMARY KEY, topic TEXT NOT NULL UNIQUE, hub TEXT NOT NULL, secret TEXT NOT NULL,
                    status TEXT NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, asked INTEGER NOT NULL DEFAULT 0, received INTEGER NOT NULL DEFAULT 0);
+                 CREATE TABLE IF NOT EXISTS leases(name TEXT PRIMARY KEY, holder TEXT NOT NULL, until INTEGER NOT NULL);
                  CREATE TABLE IF NOT EXISTS hosts(host TEXT PRIMARY KEY, queued INTEGER NOT NULL, tried INTEGER, found INTEGER NOT NULL DEFAULT 0);",
             )?;
             *g = Some(c);
         }
         f(g.as_ref().unwrap()).map(Some)
+    }
+
+    /// Take or renew the named lease for `holder` until `now + ttl`. Succeeds when nobody holds it, the
+    /// holder is `holder`, or the previous holder's time ran out (it crashed or stopped renewing).
+    /// This is how several servers sharing one index folder agree on who does the background work.
+    pub fn try_lease(&self, name: &str, holder: &str, ttl: i64, now: i64) -> Result<bool> {
+        Ok(self
+            .with(true, |c| {
+                // The WHERE clause makes the take-over atomic: one statement, one winner.
+                let n = c.execute(
+                    "INSERT INTO leases(name,holder,until) VALUES(?1,?2,?3)
+                     ON CONFLICT(name) DO UPDATE SET holder=excluded.holder, until=excluded.until
+                     WHERE leases.holder=excluded.holder OR leases.until<=?4",
+                    params![name, holder, now + ttl, now],
+                )?;
+                Ok(n > 0)
+            })?
+            .unwrap_or(false))
+    }
+
+    /// Give a lease up early (a clean shutdown), so another server need not wait for it to run out.
+    pub fn release_lease(&self, name: &str, holder: &str) {
+        let _ = self.with(false, |c| Ok(c.execute("DELETE FROM leases WHERE name=?1 AND holder=?2", params![name, holder])?));
     }
 
     /// Register a feed unless it is known. Returns whether it was new.
@@ -313,6 +339,20 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let r = Registry::new(d.path().join("feeds.db"));
         (d, r)
+    }
+
+    #[test]
+    fn a_lease_has_one_holder_until_it_runs_out_or_is_released() {
+        let d = tempfile::tempdir().unwrap();
+        let (a, b) = (Registry::new(d.path().join("feeds.db")), Registry::new(d.path().join("feeds.db")));
+        assert!(a.try_lease("poll", "a", 100, 1000).unwrap());
+        assert!(a.try_lease("poll", "a", 100, 1050).unwrap(), "the holder renews");
+        assert!(!b.try_lease("poll", "b", 100, 1100).unwrap(), "held until 1150");
+        assert!(b.try_lease("poll", "b", 100, 1150).unwrap(), "taken over once it runs out");
+        assert!(!a.try_lease("poll", "a", 100, 1200).unwrap());
+        b.release_lease("poll", "b");
+        assert!(a.try_lease("poll", "a", 100, 1201).unwrap(), "released leases are free at once");
+        assert!(b.try_lease("other", "b", 100, 1201).unwrap(), "leases are per name");
     }
 
     #[test]

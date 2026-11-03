@@ -201,10 +201,18 @@ impl Poller {
         report
     }
 
-    /// Poll forever, once per `every`.
+    /// Poll forever, once per `every`. With several servers on one index folder only the holder of the
+    /// `poll` lease works each round; the others check again next time and take over if it goes quiet.
     pub async fn run(&self, every: Duration) {
+        let me = format!("{}-{:08x}", std::process::id(), rand::random::<u32>());
+        // A round may take a while; the lease outlives two intervals plus slack, and is renewed each round.
+        let ttl = (every.as_secs() * 2 + 120) as i64;
         loop {
-            let _ = self.poll_once().await;
+            let mine = self.index.registry.try_lease("poll", &me, ttl, crate::now()).unwrap_or(true);
+            if mine {
+                let _ = self.poll_once().await;
+                let _ = self.index.registry.try_lease("poll", &me, ttl, crate::now());
+            }
             tokio::time::sleep(every).await;
         }
     }

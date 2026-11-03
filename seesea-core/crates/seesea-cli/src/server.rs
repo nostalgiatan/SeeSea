@@ -552,6 +552,7 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
         .route("/v1/websub/{id}", get(websub_verify).post(websub_deliver))
         .route("/v1/index", get(index_info))
         .route("/mcp", post(mcp))
+        .merge(crate::account::routes())
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(ConcurrencyLimitLayer::new(max_concurrent.max(1)))

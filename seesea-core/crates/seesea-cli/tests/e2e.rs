@@ -426,6 +426,61 @@ async fn users_keys_plans_and_limits_over_http() {
 }
 
 #[tokio::test]
+async fn accounts_are_managed_over_http_by_the_root_key_and_the_users_themselves() {
+    use seesea_auth::Store;
+    let base = spawn_site().await;
+    let access = seesea_cli::access::Access::new(Some(Store::in_memory().unwrap()), Default::default(), Some("root-secret".into()));
+    let api = spawn_with_access(&base, access).await;
+    let http = reqwest::Client::new();
+    let call = |method: reqwest::Method, path: &str, key: &str, body: Option<Value>| {
+        let mut r = http.request(method, format!("{api}{path}")).header("authorization", format!("Bearer {key}"));
+        if let Some(b) = body {
+            r = r.json(&b);
+        }
+        r.send()
+    };
+    use reqwest::Method as M;
+
+    // The operator creates a user and a key.
+    let made = call(M::POST, "/v1/admin/users", "root-secret", Some(json!({"name": "ann", "plan": "default"}))).await.unwrap();
+    assert_eq!(made.status(), 201);
+    assert_eq!(call(M::POST, "/v1/admin/users", "root-secret", Some(json!({"name": "ann"}))).await.unwrap().status(), 409);
+    assert_eq!(call(M::POST, "/v1/admin/users", "root-secret", Some(json!({"name": "bob", "plan": "nope"}))).await.unwrap().status(), 400);
+    let k: Value = call(M::POST, "/v1/admin/users/ann/keys", "root-secret", Some(json!({"name": "laptop"}))).await.unwrap().json().await.unwrap();
+    let ann = k["key"].as_str().unwrap().to_string();
+    assert_eq!(call(M::POST, "/v1/admin/users/zed/keys", "root-secret", None).await.unwrap().status(), 404);
+
+    // Users cannot use the admin endpoints; the account endpoints need a user and not the root key.
+    assert_eq!(call(M::GET, "/v1/admin/users", &ann, None).await.unwrap().status(), 403);
+    assert_eq!(call(M::GET, "/v1/account", "root-secret", None).await.unwrap().status(), 403);
+    let list: Value = call(M::GET, "/v1/admin/users", "root-secret", None).await.unwrap().json().await.unwrap();
+    assert_eq!(list["users"][0]["name"], "ann");
+
+    // A user sees their own account, makes a second key, and revokes the first with it.
+    let me: Value = call(M::GET, "/v1/account", &ann, None).await.unwrap().json().await.unwrap();
+    assert_eq!(me["user"]["name"], "ann");
+    assert_eq!(me["plan"]["per_minute"], 60);
+    assert_eq!(me["keys"].as_array().unwrap().len(), 1);
+    let second: Value = call(M::POST, "/v1/account/keys", &ann, Some(json!({"name": "ci", "expires_days": 30}))).await.unwrap().json().await.unwrap();
+    let ann2 = second["key"].as_str().unwrap().to_string();
+    let first_id = me["keys"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(call(M::DELETE, &format!("/v1/account/keys/{first_id}"), &ann2, None).await.unwrap().status(), 200);
+    assert_eq!(call(M::GET, "/v1/account", &ann, None).await.unwrap().status(), 401, "the revoked key is dead");
+
+    // Another user's key looks like a key that does not exist.
+    call(M::POST, "/v1/admin/users", "root-secret", Some(json!({"name": "bob"}))).await.unwrap();
+    let bob: Value = call(M::POST, "/v1/admin/users/bob/keys", "root-secret", None).await.unwrap().json().await.unwrap();
+    let bob_id = bob["info"]["id"].as_str().unwrap().to_string();
+    assert_eq!(call(M::DELETE, &format!("/v1/account/keys/{bob_id}"), &ann2, None).await.unwrap().status(), 404);
+
+    // Disabling and changing the plan take effect at once.
+    let patched = call(M::PATCH, "/v1/admin/users/ann", "root-secret", Some(json!({"disabled": true}))).await.unwrap();
+    assert_eq!(patched.status(), 200);
+    assert_eq!(call(M::GET, "/v1/account", &ann2, None).await.unwrap().status(), 401);
+    assert_eq!(call(M::PATCH, "/v1/admin/users/ann", "root-secret", Some(json!({"colour": "red"}))).await.unwrap().status(), 400);
+}
+
+#[tokio::test]
 async fn a_revoked_key_stops_working_and_an_open_server_needs_nothing() {
     use seesea_auth::Store;
     let base = spawn_site().await;
