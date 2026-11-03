@@ -143,7 +143,7 @@ fn event_kind(e: &Value) -> &str {
 const QUEUE_LIMIT: usize = 20_000;
 /// And no more than this many bytes of them in memory: journal lines carry result lists and can be large.
 const QUEUE_BYTES: usize = 64 * 1024 * 1024;
-const BATCH: usize = 100;
+const BATCH: usize = 500;
 /// What goes to disk once memory is full (and stays there until the flywheel node takes it).
 const SPOOL_SEGMENT: u64 = 8 * 1024 * 1024;
 const SPOOL_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
@@ -167,6 +167,8 @@ struct Spool {
     tail_bytes: u64,
     events: usize,
     bytes: u64,
+    /// The file being appended to (kept open between events).
+    out: Option<(u64, std::fs::File)>,
 }
 
 impl Spool {
@@ -176,7 +178,7 @@ impl Spool {
             .map(|rd| rd.flatten().filter_map(|e| e.file_name().to_str()?.strip_prefix("spool-")?.strip_suffix(".jsonl")?.parse().ok()).collect())
             .unwrap_or_default();
         found.sort();
-        let mut s = Self { dir, head: found.first().copied().unwrap_or(0), tail: found.last().map_or(0, |n| n + 1), tail_bytes: 0, events: 0, bytes: 0 };
+        let mut s = Self { dir, head: found.first().copied().unwrap_or(0), tail: found.last().map_or(0, |n| n + 1), tail_bytes: 0, events: 0, bytes: 0, out: None };
         for n in found {
             if let Ok(text) = std::fs::read_to_string(s.path(n)) {
                 s.events += text.lines().count();
@@ -194,7 +196,10 @@ impl Spool {
     fn append(&mut self, q: &Queued) -> u64 {
         use std::io::Write;
         let line = format!("{}\n", json!({"id": [q.id.0, q.id.1], "e": q.event}));
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(self.path(self.tail))
+        if self.out.as_ref().is_none_or(|(n, _)| *n != self.tail) {
+            self.out = std::fs::OpenOptions::new().create(true).append(true).open(self.path(self.tail)).ok().map(|f| (self.tail, f));
+        }
+        if let Some((_, f)) = self.out.as_mut()
             && f.write_all(line.as_bytes()).is_ok()
         {
             self.tail_bytes += line.len() as u64;
@@ -572,6 +577,22 @@ impl NodeHandler {
     async fn http(&self, req: Request) -> Reply {
         let Ok(_permit) = self.permits.try_acquire() else { return Reply::busy() };
         let head = &req.head;
+        // Even a gateway that has been taken over can only ask for what its role's paths are.
+        let allowed = (|| {
+            let uri: axum::http::Uri = head["uri"].as_str()?.parse().ok()?;
+            let method = head["method"].as_str()?;
+            if uri.scheme().is_some() || uri.authority().is_some() || !uri.path().starts_with('/') || !matches!(method, "GET" | "POST" | "PATCH" | "DELETE") {
+                return None;
+            }
+            let ok = match target(uri.path())? {
+                Target::Search => !self.flywheel,
+                Target::Flywheel | Target::FlywheelAdmin | Target::Accounts => self.flywheel,
+            };
+            ok.then_some(())
+        })();
+        if allowed.is_none() {
+            return Reply::error("this node does not serve that request");
+        }
         let build = || -> Result<axum::http::Request<axum::body::Body>, String> {
             let mut b = axum::http::Request::builder().method(head["method"].as_str().unwrap_or("GET")).uri(head["uri"].as_str().ok_or("no uri")?);
             if let Some(ct) = head["content_type"].as_str() {
@@ -785,19 +806,19 @@ pub async fn apply_events(s: &AppState, events: Vec<Value>) -> usize {
 
 /// Pull the primary's accounts and learner picture, and (with `index`) its index items. Idempotent: run it as
 /// often as you like. Returns what was copied: (accounts, learner, index items).
-pub async fn replicate_once(state: &AppState, primary: &Link, index: bool) -> Result<(bool, bool, usize), String> {
+pub async fn replicate_once(state: &AppState, primary: &Link, accounts: bool, learner: bool, index: bool) -> Result<(bool, bool, usize), String> {
     let pull = |what: &str, offset: usize| {
         let head = json!({"what": what, "offset": offset});
         let client = primary.client.clone();
         async move { reply_ok(client.call(Op::Replicate, &head, &[], Duration::from_secs(60)).await) }
     };
     let mut done = (false, false, 0);
-    if let Some(store) = state.access.store() {
+    if let (true, Some(store)) = (accounts, state.access.store()) {
         let dump: seesea_auth::Dump = serde_json::from_slice(&pull("accounts", 0).await?.body).map_err(|e| e.to_string())?;
         store.sync(&dump).map_err(|e| e.to_string())?;
         done.0 = true;
     }
-    if let Some(l) = state.pipeline.learner_handle() {
+    if let (true, Some(l)) = (learner, state.pipeline.learner_handle()) {
         done.1 = l.import(&pull("learner", 0).await?.body);
     }
     if let (true, Some(idx)) = (index, state.index.clone()) {
@@ -817,15 +838,15 @@ pub async fn replicate_once(state: &AppState, primary: &Link, index: bool) -> Re
     Ok(done)
 }
 
-/// Keep following: accounts and learner every 30 seconds, the index every 10 minutes.
+/// Keep following: accounts every 5 seconds, the learner picture every minute, the index every 10 minutes.
 pub fn run_standby(state: AppState, primary: Link) {
     let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
     rt.spawn(async move {
         let mut tick = 0u32;
         loop {
-            let _ = replicate_once(&state, &primary, tick % 20 == 0).await;
+            let _ = replicate_once(&state, &primary, true, tick % 12 == 0, tick % 120 == 0).await;
             tick = tick.wrapping_add(1);
-            tokio::time::sleep(Duration::from_secs(30)).await;
+            tokio::time::sleep(Duration::from_secs(5)).await;
         }
     });
 }
@@ -866,8 +887,13 @@ impl Pool {
 
     /// Check every node now.
     pub async fn check(&self) {
-        for n in &self.nodes {
-            n.up.store(n.client.ping().await, Ordering::Relaxed);
+        let mut checks = tokio::task::JoinSet::new();
+        for (i, n) in self.nodes.iter().enumerate() {
+            let client = n.client.clone();
+            checks.spawn(async move { (i, client.ping().await) });
+        }
+        while let Some(Ok((i, up))) = checks.join_next().await {
+            self.nodes[i].up.store(up, Ordering::Relaxed);
         }
     }
 

@@ -141,7 +141,7 @@ impl Access {
 
     /// Whether a key is needed at all.
     pub fn required(&self) -> bool {
-        self.root_key.is_some() || self.remote.is_some() || self.store.as_ref().is_some_and(|s| s.users().is_ok_and(|u| !u.is_empty()))
+        self.root_key.is_some() || self.remote.is_some() || self.store.as_ref().is_some_and(|s| s.has_users())
     }
 
     pub fn store(&self) -> Option<&Store> {
@@ -154,6 +154,15 @@ impl Access {
 
     pub fn plan_for(&self, name: &str) -> Plan {
         self.plans.get(name).or_else(|| self.plans.get("default")).cloned().unwrap_or_default()
+    }
+
+    /// Whether this address has failed to authenticate too often lately.
+    pub fn blocked(&self, ip: Option<IpAddr>) -> bool {
+        self.turned_away(ip, now())
+    }
+
+    pub fn failed(&self, ip: Option<IpAddr>) {
+        self.note_failure(ip, now());
     }
 
     fn turned_away(&self, ip: Option<IpAddr>, now: f64) -> bool {

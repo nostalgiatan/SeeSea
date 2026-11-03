@@ -146,18 +146,36 @@ fn encode(tag: u8, head: &Value, body: &[u8]) -> Vec<u8> {
     out
 }
 
-async fn read_frame(recv: &mut quinn::RecvStream) -> Result<(u8, Value, Bytes), String> {
+/// The largest body each operation may carry. A peer that announces more is cut off before any of it is read.
+fn max_body(tag: u8) -> usize {
+    match Op::from_u8(tag) {
+        Some(Op::Events) => 32 * 1024 * 1024,
+        Some(Op::LearnMerge) => MAX_BODY,
+        Some(Op::Http) => 2 * 1024 * 1024,
+        Some(_) => 64 * 1024,
+        // Replies: a forwarded answer can be large; anything else is small.
+        None => MAX_BODY,
+    }
+}
+
+/// Read one frame. The body buffer grows as data arrives, so announcing a huge length costs nothing by itself.
+async fn read_frame(recv: &mut quinn::RecvStream, replies: bool) -> Result<(u8, Value, Bytes), String> {
     let mut fixed = [0u8; 9];
     recv.read_exact(&mut fixed).await.map_err(|e| format!("reading a frame: {e}"))?;
     let hlen = u32::from_be_bytes(fixed[1..5].try_into().unwrap()) as usize;
     let blen = u32::from_be_bytes(fixed[5..9].try_into().unwrap()) as usize;
-    if hlen > MAX_HEAD || blen > MAX_BODY {
+    let limit = if replies { MAX_BODY } else { max_body(fixed[0]) };
+    if hlen > MAX_HEAD || blen > limit {
         return Err(format!("frame too large ({hlen} + {blen} bytes)"));
     }
     let mut head = vec![0u8; hlen];
     recv.read_exact(&mut head).await.map_err(|e| format!("reading a frame head: {e}"))?;
-    let mut body = vec![0u8; blen];
-    recv.read_exact(&mut body).await.map_err(|e| format!("reading a frame body: {e}"))?;
+    let mut body = Vec::new();
+    while body.len() < blen {
+        let start = body.len();
+        body.resize(start + (blen - start).min(256 * 1024), 0);
+        recv.read_exact(&mut body[start..]).await.map_err(|e| format!("reading a frame body: {e}"))?;
+    }
     let head = if head.is_empty() { Value::Null } else { serde_json::from_slice(&head).map_err(|e| format!("frame head: {e}"))? };
     Ok((fixed[0], head, Bytes::from(body)))
 }
@@ -234,6 +252,13 @@ impl Identity {
             .map_err(|e| format!("{}: {e}", cert.display()))?;
         let first = chain.first().ok_or_else(|| format!("{} holds no certificate", cert.display()))?;
         let fingerprint = fingerprint(first);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if std::fs::metadata(key).is_ok_and(|m| m.permissions().mode() & 0o077 != 0) {
+                eprintln!("seesea: warning: {} can be read by other users; run chmod 600 on it", key.display());
+            }
+        }
         let key = PrivateKeyDer::from_pem_file(key).map_err(|e| format!("{}: {e}", key.display()))?;
         Ok(Self { chain, key, fingerprint })
     }
@@ -484,12 +509,15 @@ async fn serve_stream(conn: quinn::Connection, mut send: quinn::SendStream, mut 
         conn.close(2u32.into(), b"revoked");
         return;
     };
-    let read = tokio::time::timeout(Duration::from_secs(30), read_frame(&mut recv)).await;
+    let read = tokio::time::timeout(Duration::from_secs(30), read_frame(&mut recv, false)).await;
     let reply = match read {
         Ok(Ok((tag, head, body))) => match Op::from_u8(tag) {
             None => Reply::error(format!("unknown operation {tag}")),
             Some(op) if !peer.role.may(op) => Reply { status: Status::Forbidden, head: serde_json::json!({"message": format!("{:?} may not {:?}", peer.role, op)}), body: Bytes::new() },
-            Some(op) => handler.handle(&peer, Request { op, head, body }).await,
+            Some(op) => match tokio::time::timeout(Duration::from_secs(125), handler.handle(&peer, Request { op, head, body })).await {
+                Ok(r) => r,
+                Err(_) => Reply::error("the node took too long"),
+            },
         },
         Ok(Err(e)) => Reply::error(e),
         Err(_) => Reply::error("the request was not sent in time"),
@@ -623,7 +651,7 @@ impl Client {
         let exchange = async {
             send.write_all(&frame).await.map_err(|e| failed(e.to_string()))?;
             send.finish().map_err(|e| failed(e.to_string()))?;
-            read_frame(&mut recv).await.map_err(failed)
+            read_frame(&mut recv, true).await.map_err(failed)
         };
         let (tag, head, body) = match tokio::time::timeout(limit, exchange).await {
             Ok(r) => r?,

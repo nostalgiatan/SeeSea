@@ -799,6 +799,24 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     assert_eq!(http.get(format!("{gw_url}/v1/account")).bearer_auth("ss_nope_nope").send().await.unwrap().status(), 401);
     assert_eq!(http.get(format!("{gw_url}/v1/account")).send().await.unwrap().status(), 401);
     assert_eq!(http.get(format!("{gw_url}/v1/account/../cluster")).bearer_auth(&ann).send().await.unwrap().status(), 404);
+    // Even a gateway's key opens only the paths of the node's own job; anything else is refused on arrival.
+    {
+        use seesea_cli::wire::{Client, Op};
+        let ask = |to: &str, uri: &str| {
+            let c = Client::new(&mesh("gw", vec![listed("s0", PeerRole::Search), listed("fly", PeerRole::Flywheel)]), to, if to == fly_url { PeerRole::Flywheel } else { PeerRole::Search }).unwrap();
+            let head = json!({"method": "GET", "uri": uri, "content_type": null});
+            async move { c.call(Op::Http, &head, b"", std::time::Duration::from_secs(5)).await.unwrap() }
+        };
+        assert_eq!(ask(&search_urls[0], "/v1/ingest").await.status, seesea_cli::wire::Status::Error, "a search node serves no index writes");
+        assert_eq!(ask(&fly_url, "/v1/search?q=x").await.status, seesea_cli::wire::Status::Error, "the flywheel node runs no searches");
+        assert_eq!(ask(&search_urls[0], "http://evil.example/v1/search").await.status, seesea_cli::wire::Status::Error);
+        assert_eq!(ask(&search_urls[0], "/v1/x/../cluster").await.status, seesea_cli::wire::Status::Error);
+        // A body far beyond what the operation may carry is cut off.
+        let c = Client::new(&mesh("gw", vec![listed("s0", PeerRole::Search)]), &search_urls[0], PeerRole::Search).unwrap();
+        let big = vec![0u8; 3 * 1024 * 1024];
+        let r = c.call(Op::Http, &json!({"method": "POST", "uri": "/v1/search"}), &big, std::time::Duration::from_secs(10)).await;
+        assert!(!matches!(r, Ok(ref r) if r.status == seesea_cli::wire::Status::Ok));
+    }
     // A search node's HTTP port answers nobody: the old shared-secret header opens nothing.
     assert_eq!(http.get(format!("{}/v1/search?q=rust", http_urls[0])).send().await.unwrap().status(), 401);
     assert_eq!(http.get(format!("{}/v1/search?q=rust&mode=fast", http_urls[0])).header("x-seesea-cluster", "anything-at-all-0123456789").send().await.unwrap().status(), 401);
@@ -892,7 +910,7 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     }
     // The standby follows the primary; when the primary is gone, users and searches carry on through the standby.
     let primary_link = Link::new(&mesh("fly2", vec![listed("fly", PeerRole::Flywheel)]), &fly_url).unwrap();
-    let copied = seesea_cli::cluster::replicate_once(&fly2, &primary_link, true).await.unwrap();
+    let copied = seesea_cli::cluster::replicate_once(&fly2, &primary_link, true, true, true).await.unwrap();
     assert!(copied.0 && copied.1 && copied.2 >= 1, "accounts, learner, index items: {copied:?}");
     assert!(index2.store.search("zebra", None, 5).unwrap().len() == 1, "the pushed items are on the standby");
     fly_wire.close();
@@ -903,4 +921,13 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     assert_eq!(http.get(format!("{gw2_url}/v1/account")).bearer_auth(&ann).send().await.unwrap().status(), 200);
     let status: Value = http.get(format!("{gw_url}/v1/cluster/status")).bearer_auth(&ann).send().await.unwrap().json().await.unwrap();
     assert_eq!(status["role"], "gateway");
+    // Wrong keys on the account endpoints are counted per client address, like everywhere else.
+    let mut last = 0;
+    for _ in 0..40 {
+        last = http.get(format!("{gw2_url}/v1/account")).bearer_auth("ss_nope_wrongwrongwrong").send().await.unwrap().status().as_u16();
+        if last == 429 {
+            break;
+        }
+    }
+    assert_eq!(last, 429, "guessing keys through the account endpoints is throttled");
 }
