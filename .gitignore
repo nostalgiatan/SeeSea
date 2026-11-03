@@ -66,3 +66,4 @@ building/
 xinhua_results_*.html
 xinhua_screenshot_*.png
 models/
+runs/

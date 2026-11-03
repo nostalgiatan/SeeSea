@@ -107,6 +107,9 @@ struct NetArgs {
     /// Do not adapt stage-1 ranking to what earlier searches found.
     #[arg(long, global = true)]
     no_learn: bool,
+    /// Do not record searches for `seesea report`.
+    #[arg(long, env = "SEESEA_NO_JOURNAL", global = true)]
+    no_journal: bool,
     /// Chance (0..1) per search of also reading one lower-ranked result.
     #[arg(long, env = "SEESEA_EXPLORE", global = true)]
     explore: Option<f64>,
@@ -231,6 +234,15 @@ enum Command {
         url: String,
         #[arg(value_parser = ["good", "bad"])]
         verdict: String,
+    },
+    /// Summarise the recorded searches: failing sources, empty results, unreadable hosts, and files to judge.
+    Report {
+        /// How far back to look: 90s, 15m, 2h, 7d (default 7d).
+        #[arg(long, default_value = "7d")]
+        since: String,
+        /// Where to write report.md, report.json, suspects.jsonl and candidates.jsonl (default: a new folder under the data folder).
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
     /// Inspect or clear what stage 1 has learned from earlier searches.
     Learn {
@@ -371,6 +383,7 @@ fn apply_file(net: &mut NetArgs, f: &FileConfig, use_model: bool) {
     fill(&mut net.auth_db, &f.auth_db);
     net.no_render |= f.no_render.unwrap_or(false);
     net.no_learn |= f.no_learn.unwrap_or(false);
+    net.no_journal |= f.no_journal.unwrap_or(false);
     net.no_index |= f.no_index.unwrap_or(false);
     fill(&mut net.index_dir, &f.index_dir);
     net.retention_days = f.retention_days;
@@ -425,6 +438,7 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         lightpanda: net.lightpanda.clone(),
         no_render: net.no_render,
         learn_file: (!net.no_learn).then(userconfig::default_learn_file),
+        journal_dir: (!net.no_journal).then(userconfig::default_journal_dir),
         explore: net.explore.unwrap_or(0.0),
         index_dir: (!net.no_index).then(|| net.index_dir.clone().unwrap_or_else(userconfig::default_index_dir)),
         retention_days: net.retention_days,
@@ -776,6 +790,30 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         }
         _ => {}
     }
+    if let Command::Report { since, out } = &cli.command {
+        let secs = match since.strip_suffix('d') {
+            Some(n) => n.parse::<u64>().map(|n| n * 86400).map_err(|_| Error::InvalidRequest(format!("not an interval: {since}")))?,
+            None => parse_interval(since)?.as_secs(),
+        };
+        let from = chrono::Utc::now().timestamp() - secs as i64;
+        let events = seesea_pipeline::Journal::read(&userconfig::default_journal_dir(), from);
+        let report = seesea_pipeline::report::build(&events);
+        let dir = out.clone().unwrap_or_else(|| {
+            userconfig::data_dir().join("reports").join(chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string())
+        });
+        std::fs::create_dir_all(&dir)?;
+        let lines = |v: &[serde_json::Value]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("\n") + "\n";
+        std::fs::write(dir.join("report.md"), seesea_pipeline::report::markdown(&report))?;
+        std::fs::write(dir.join("report.json"), serde_json::to_string_pretty(&report)?)?;
+        std::fs::write(dir.join("suspects.jsonl"), lines(&report.suspects))?;
+        std::fs::write(dir.join("candidates.jsonl"), lines(&report.candidates))?;
+        if json {
+            return print_json(&serde_json::json!({"dir": dir, "searches": report.searches, "suspects": report.suspects.len(), "candidates": report.candidates.len()}));
+        }
+        print!("{}", seesea_pipeline::report::markdown(&report));
+        println!("\nFiles written to {}", dir.display());
+        return Ok(());
+    }
     match &cli.command {
         Command::Feedback { .. } | Command::Learn { .. } => {
             let path = userconfig::default_learn_file();
@@ -787,6 +825,9 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                         return Err(Error::InvalidRequest(format!("not a URL: {url}")));
                     }
                     learner.feedback(&host, verdict == "good");
+                    if !cli.net.no_journal {
+                        seesea_pipeline::Journal::new(userconfig::default_journal_dir()).feedback(url, verdict == "good");
+                    }
                     println!("{host}: marked {verdict}");
                 }
                 Command::Learn { action: LearnAction::Reset } => {
@@ -829,6 +870,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
     // An evaluation must not change the ranking it is measuring.
     if matches!(cli.command, Command::Eval { .. }) {
         pipeline_settings.learn_file = None;
+        pipeline_settings.journal_dir = None;
     }
     let pipeline = Arc::new(build_pipeline(&pipeline_settings)?);
 
@@ -1088,6 +1130,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         | Command::Keys { .. }
         | Command::Usage { .. }
         | Command::Feedback { .. }
+        | Command::Report { .. }
         | Command::Learn { .. }
         | Command::Feeds { .. }
         | Command::Poll { .. }

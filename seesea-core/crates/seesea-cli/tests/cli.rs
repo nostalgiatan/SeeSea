@@ -14,7 +14,8 @@ fn seesea(args: &[&str]) -> Command {
         .env_remove("SEESEA_BRAVE_API_KEY")
         .env_remove("SEESEA_PROXY")
         .env_remove("SEESEA_CACHE_DIR")
-        .env_remove("SEESEA_API_KEY");
+        .env_remove("SEESEA_API_KEY")
+        .env("SEESEA_NO_JOURNAL", "true");
     cmd
 }
 
