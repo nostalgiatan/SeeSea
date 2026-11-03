@@ -45,6 +45,8 @@ pub enum Role {
     Gateway,
     Search,
     Flywheel,
+    /// Holds no data; the third vote that lets two flywheel nodes agree on who may write.
+    Witness,
 }
 
 impl std::str::FromStr for Role {
@@ -55,7 +57,8 @@ impl std::str::FromStr for Role {
             "gateway" => Ok(Role::Gateway),
             "search" => Ok(Role::Search),
             "flywheel" => Ok(Role::Flywheel),
-            other => Err(format!("role must be single, gateway, search or flywheel, not '{other}'")),
+            "witness" => Ok(Role::Witness),
+            other => Err(format!("role must be single, gateway, search, flywheel or witness, not '{other}'")),
         }
     }
 }
@@ -70,6 +73,10 @@ pub struct Cluster {
     pub flywheel: Option<String>,
     /// Gateway and search nodes: a second flywheel node that follows the first and takes over when it is away.
     pub flywheel_standby: Option<String>,
+    /// Two flywheel nodes and a witness: the other flywheel node (`partner`) and the witness vote on who holds the
+    /// write lease. Only the holder takes writes; the other follows it. Needs both.
+    pub partner: Option<String>,
+    pub witness: Option<String>,
     /// A flywheel node that follows another one (and so is the standby of it): the primary's address.
     pub standby_of: Option<String>,
     /// Search and flywheel nodes: the UDP address to listen on for the other nodes.
@@ -96,10 +103,19 @@ impl Cluster {
         if self.mesh.is_none() {
             return Err("a clustered node needs node_cert, node_key and cluster_peers (see `seesea cluster keygen`)".into());
         }
+        if self.partner.is_some() != self.witness.is_some() {
+            return Err("partner and witness go together (two flywheel nodes and a witness vote on who writes)".into());
+        }
+        if self.partner.is_some() && self.role != Role::Flywheel {
+            return Err("partner and witness belong on a flywheel node".into());
+        }
+        if self.role == Role::Witness && self.listen.is_none() {
+            return Err("a witness needs cluster_listen".into());
+        }
         if self.standby_of.is_some() && self.role != Role::Flywheel {
             return Err("standby_of belongs on a flywheel node".into());
         }
-        for url in self.search_nodes.iter().chain(self.flywheel.iter()).chain(self.flywheel_standby.iter()).chain(self.standby_of.iter()) {
+        for url in self.search_nodes.iter().chain(self.flywheel.iter()).chain(self.flywheel_standby.iter()).chain(self.standby_of.iter()).chain(self.partner.iter()).chain(self.witness.iter()) {
             wire::parse_url(url)?;
         }
         match self.role {
@@ -107,7 +123,7 @@ impl Cluster {
             Role::Gateway | Role::Search if self.flywheel.is_none() => return Err("this role needs flywheel = \"quic://host:port\"".into()),
             _ => {}
         }
-        if matches!(self.role, Role::Search | Role::Flywheel) && self.listen.is_none() {
+        if matches!(self.role, Role::Search | Role::Flywheel | Role::Witness) && self.listen.is_none() {
             return Err("this role needs cluster_listen = \"0.0.0.0:7443\" (the UDP address the other nodes connect to)".into());
         }
         Ok(())
@@ -421,7 +437,7 @@ impl Link {
     }
 
     async fn index_search(&self, q: &str, limit: usize, range: Option<String>) -> Result<Vec<RemoteHit>, String> {
-        let r = reply_ok(self.client.call(Op::IndexSearch, &json!({"q": q, "limit": limit, "range": range}), &[], SHORT).await)?;
+        let r = reply_ok(self.client.call(Op::IndexSearch, &json!({"q": q, "limit": limit, "range": range}), &[], Duration::from_secs(4)).await)?;
         serde_json::from_slice(&r.body).map_err(|e| e.to_string())
     }
 }
@@ -516,6 +532,9 @@ struct RemoteHit {
 /// who may ask what is already decided by the peer's role.
 pub struct NodeHandler {
     flywheel: bool,
+    witness: bool,
+    /// With a witness: only the holder of the write lease takes writes.
+    lease: Option<Arc<Lease>>,
     state: AppState,
     app: Router,
     /// Requests in flight; beyond this the node says "busy" instead of queueing, and the gateway tries another.
@@ -526,7 +545,7 @@ pub struct NodeHandler {
 }
 
 /// Start listening for the other nodes.
-pub fn start_wire(state: AppState, max_concurrent: usize, c: &Cluster) -> Result<wire::Server, String> {
+pub fn start_wire(state: AppState, max_concurrent: usize, c: &Cluster, lease: Option<Arc<Lease>>) -> Result<wire::Server, String> {
     let listen = c.listen.ok_or("no cluster_listen address")?;
     let app = crate::server::router(state.clone(), max_concurrent);
     let seen_file = c.state_dir.as_ref().filter(|_| c.role == Role::Flywheel).map(|d| d.join("applied.json"));
@@ -538,6 +557,8 @@ pub fn start_wire(state: AppState, max_concurrent: usize, c: &Cluster) -> Result
         .unwrap_or_default();
     let handler = Arc::new(NodeHandler {
         flywheel: c.role == Role::Flywheel,
+        witness: c.role == Role::Witness,
+        lease,
         state,
         app,
         permits: tokio::sync::Semaphore::new(max_concurrent.max(1)),
@@ -556,7 +577,20 @@ impl wire::Handler for NodeHandler {
             st.served.fetch_add(1, Ordering::Relaxed);
         }
         match req.op {
-            Op::Ping => Reply::ok(Value::Null, Bytes::new()),
+            Op::Ping => return Reply::ok(Value::Null, Bytes::new()),
+            Op::Lease => {
+                let Some(l) = &self.lease else { return Reply::error("no vote here") };
+                return Reply::ok(json!({"granted": l.grant(&peer.fingerprint)}), Bytes::new());
+            }
+            _ if self.witness => return Reply::error("a witness only votes"),
+            _ => {}
+        }
+        // Writes and reads of what the flywheel holds go to the holder of the lease only.
+        if self.flywheel && !matches!(req.op, Op::Replicate) && self.lease.as_ref().is_some_and(|l| !l.held()) {
+            return Reply { status: Status::NotLeader, head: Value::Null, body: Bytes::new() };
+        }
+        match req.op {
+            Op::Ping | Op::Lease => unreachable!("answered above"),
             Op::Http => self.http(req).await,
             _ if !self.flywheel => Reply::error("this node is not the flywheel node"),
             Op::Events => self.events(peer, &req.body).await,
@@ -806,6 +840,111 @@ pub async fn apply_events(s: &AppState, events: Vec<Value>) -> usize {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The write lease: two flywheel nodes and a witness vote on who may write.
+// ---------------------------------------------------------------------------------------------
+
+/// How long a voter keeps a promise not to vote for anyone else.
+const LEASE_PROMISE: Duration = Duration::from_secs(6);
+/// How long the holder believes it holds the lease after asking. Shorter than the promise, so that the holder
+/// has stopped writing before any voter could have voted for someone else (this needs the clocks to tick at
+/// the same rate, not to agree).
+const LEASE_HOLD: Duration = Duration::from_secs(4);
+
+struct Vote {
+    to: String,
+    until: std::time::Instant,
+}
+
+/// One node's part in the vote: it grants the lease to one node at a time, and a flywheel node asks the others
+/// for it. A node holds the lease when a majority of the three (itself included) granted it.
+pub struct Lease {
+    me: String,
+    voters: Vec<Arc<wire::Client>>,
+    vote: Mutex<Option<Vote>>,
+    held_until: Mutex<Option<std::time::Instant>>,
+    epoch: std::sync::atomic::AtomicU64,
+}
+
+impl Lease {
+    /// `me` is this node's certificate fingerprint; `voters` are the other two (none on a witness).
+    pub fn new(me: String, voters: Vec<Arc<wire::Client>>) -> Arc<Self> {
+        Arc::new(Self { me, voters, vote: Mutex::new(None), held_until: Mutex::new(None), epoch: 0.into() })
+    }
+
+    pub fn held(&self) -> bool {
+        self.held_until.lock().unwrap().is_some_and(|t| std::time::Instant::now() < t)
+    }
+
+    /// How many times this node has become the writer.
+    pub fn epoch(&self) -> u64 {
+        self.epoch.load(Ordering::Relaxed)
+    }
+
+    /// Whether `node` gets this node's vote now.
+    pub fn grant(&self, node: &str) -> bool {
+        let now = std::time::Instant::now();
+        let mut v = self.vote.lock().unwrap();
+        match v.as_ref() {
+            Some(cur) if cur.to != node && now < cur.until => false,
+            _ => {
+                *v = Some(Vote { to: node.to_string(), until: now + LEASE_PROMISE });
+                true
+            }
+        }
+    }
+
+    /// Ask for (or renew) the lease.
+    pub async fn round(&self) {
+        let start = std::time::Instant::now();
+        let mut grants = usize::from(self.grant(&self.me));
+        let asks = self.voters.iter().map(|v| {
+            let v = v.clone();
+            async move {
+                // The whole ask, connecting included, must fit well inside the time the lease is held.
+                tokio::time::timeout(Duration::from_millis(1500), v.call(Op::Lease, &Value::Null, &[], Duration::from_millis(1500))).await.is_ok_and(|r| r.is_ok_and(|r| r.head["granted"] == true))
+            }
+        });
+        grants += futures_count(asks).await;
+        let mut held = self.held_until.lock().unwrap();
+        if grants * 2 > self.voters.len() + 1 {
+            if !held.is_some_and(|t| start < t) {
+                self.epoch.fetch_add(1, Ordering::Relaxed);
+            }
+            *held = Some(start + LEASE_HOLD);
+        }
+    }
+
+    /// Keep asking, once a second. The node with the larger fingerprint waits a moment at the start, so that
+    /// two nodes starting together do not both lose the first vote.
+    pub fn run(self: &Arc<Self>, partner_fingerprint: Option<String>) {
+        let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
+        let this = Arc::clone(self);
+        rt.spawn(async move {
+            if partner_fingerprint.is_some_and(|p| p < this.me) {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+            loop {
+                this.round().await;
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        });
+    }
+}
+
+/// Run the futures together and count how many came out true.
+async fn futures_count<F: std::future::Future<Output = bool> + Send + 'static>(fs: impl Iterator<Item = F>) -> usize {
+    let mut set = tokio::task::JoinSet::new();
+    for f in fs {
+        set.spawn(f);
+    }
+    let mut n = 0;
+    while let Some(Ok(yes)) = set.join_next().await {
+        n += usize::from(yes);
+    }
+    n
+}
+
+// ---------------------------------------------------------------------------------------------
 // Standby flywheel: follow the primary.
 // ---------------------------------------------------------------------------------------------
 
@@ -818,15 +957,25 @@ pub struct Standby {
     /// The primary is back but this node took writes while it was away: the two now differ and an operator has to
     /// choose which to keep (usually: make the old primary follow this one).
     pub diverged: AtomicBool,
+    /// With a witness: the lease, whose holder is the writer.
+    pub lease: Option<Arc<Lease>>,
 }
 
 impl Standby {
+    /// Whether this node should do the work only one node should (reading feeds).
+    pub fn active(&self) -> bool {
+        match &self.lease {
+            Some(l) => l.held(),
+            None => !self.primary_up.load(Ordering::Relaxed),
+        }
+    }
+
     /// Record how a replication round went.
     pub fn note_round(&self, reached: bool, misses: &mut u32) {
         if reached {
             *misses = 0;
             self.primary_up.store(true, Ordering::Relaxed);
-            if self.served.swap(0, Ordering::Relaxed) > 0 && !self.diverged.swap(true, Ordering::Relaxed) {
+            if self.served.swap(0, Ordering::Relaxed) > 0 && self.lease.is_none() && !self.diverged.swap(true, Ordering::Relaxed) {
                 eprintln!("seesea: the primary flywheel is reachable again, but this standby took writes while it was away: the two differ now. Decide which one to keep (see the README, \"failover\").");
             }
         } else {
@@ -837,8 +986,8 @@ impl Standby {
         }
     }
 
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self { primary_up: AtomicBool::new(true), served: 0.into(), diverged: AtomicBool::new(false) })
+    pub fn new(lease: Option<Arc<Lease>>) -> Arc<Self> {
+        Arc::new(Self { primary_up: AtomicBool::new(true), served: 0.into(), diverged: AtomicBool::new(false), lease })
     }
 }
 
@@ -883,9 +1032,13 @@ pub fn run_standby(state: AppState, primary: Link) {
         let mut tick = 0u32;
         let mut misses = 0u32;
         loop {
-            let round = replicate_once(&state, &primary, true, tick % 12 == 0, tick % 120 == 0).await;
-            if let Some(st) = &state.standby {
-                st.note_round(round.is_ok(), &mut misses);
+            // With a lease, only the follower copies, and from whoever writes.
+            let leading = state.standby.as_ref().and_then(|s| s.lease.as_ref()).is_some_and(|l| l.held());
+            if !leading {
+                let round = replicate_once(&state, &primary, true, tick % 12 == 0, tick % 120 == 0).await;
+                if let Some(st) = &state.standby {
+                    st.note_round(round.is_ok(), &mut misses);
+                }
             }
             tick = tick.wrapping_add(1);
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -1002,6 +1155,7 @@ impl Pool {
                     last = m;
                 }
                 Err(CallError::Busy) => busy = true,
+                Err(CallError::NotLeader) => last = "not the writer".into(),
                 // Reading never changes anything, so a read that got no answer can be asked of the next node.
                 Err(CallError::Failed(m)) if method == Method::GET => {
                     node.up.store(false, Ordering::Relaxed);
@@ -1159,7 +1313,7 @@ pub async fn status(State(s): State<AppState>) -> Json<Value> {
     match &s.gateway {
         Some(g) => Json(json!({"role": role, "search_nodes": {"total": g.search.nodes.len(), "healthy": g.search.healthy()}, "flywheel": {"healthy": g.flywheel.healthy() > 0}})),
         None => match &s.standby {
-            Some(st) => Json(json!({"role": role, "standby": {"primary_up": st.primary_up.load(Ordering::Relaxed), "diverged": st.diverged.load(Ordering::Relaxed)}})),
+            Some(st) => Json(json!({"role": role, "standby": {"primary_up": st.primary_up.load(Ordering::Relaxed), "diverged": st.diverged.load(Ordering::Relaxed)}, "writer": st.lease.as_ref().map(|l| l.held()), "epoch": st.lease.as_ref().map(|l| l.epoch())})),
             None => Json(json!({"role": role})),
         },
     }
@@ -1361,7 +1515,7 @@ mod tests {
         std::fs::write(d.path().join("c"), cert).unwrap();
         std::fs::write(d.path().join("k"), key).unwrap();
         let mesh = Mesh { identity: wire::Identity::load(&d.path().join("c"), &d.path().join("k")).unwrap(), peers: wire::Peers::fixed(vec![]) };
-        let base = Cluster { role: Role::Gateway, search_nodes: vec![], flywheel: None, flywheel_standby: None, standby_of: None, listen: None, state_dir: None, mesh: Some(mesh) };
+        let base = Cluster { role: Role::Gateway, search_nodes: vec![], flywheel: None, flywheel_standby: None, standby_of: None, partner: None, witness: None, listen: None, state_dir: None, mesh: Some(mesh) };
         assert!(base.check().unwrap_err().contains("search_nodes"));
         let ok = Cluster { search_nodes: vec!["quic://10.0.0.1:7443".into()], flywheel: Some("quic://10.0.0.2:7443".into()), ..base.clone() };
         assert!(ok.check().is_ok());
@@ -1369,7 +1523,7 @@ mod tests {
         assert!(Cluster { mesh: None, ..ok.clone() }.check().unwrap_err().contains("node_cert"));
         assert!(Cluster { role: Role::Search, ..ok.clone() }.check().unwrap_err().contains("cluster_listen"));
         assert!(Cluster { role: Role::Search, flywheel: None, listen: Some("0.0.0.0:7443".parse().unwrap()), ..ok.clone() }.check().unwrap_err().contains("flywheel"));
-        assert!(Cluster { role: Role::Single, mesh: None, search_nodes: vec![], flywheel: None, flywheel_standby: None, standby_of: None, listen: None, state_dir: None }.check().is_ok());
+        assert!(Cluster { role: Role::Single, mesh: None, search_nodes: vec![], flywheel: None, flywheel_standby: None, standby_of: None, partner: None, witness: None, listen: None, state_dir: None }.check().is_ok());
     }
 
     #[test]
@@ -1414,8 +1568,27 @@ mod tests {
     }
 
     #[test]
+    fn a_voter_backs_one_node_at_a_time() {
+        let l = Lease::new("me".into(), vec![]);
+        assert!(l.grant("a"), "the first to ask gets the vote");
+        assert!(l.grant("a"), "and keeps it when it asks again");
+        assert!(!l.grant("b"), "nobody else while the promise lasts");
+        assert!(!l.held(), "voting for someone says nothing about holding");
+        *l.vote.lock().unwrap() = Some(Vote { to: "a".into(), until: std::time::Instant::now() - Duration::from_secs(1) });
+        assert!(l.grant("b"), "once the promise has run out, another may have it");
+    }
+
+    #[tokio::test]
+    async fn without_other_voters_a_lone_node_holds_nothing_but_two_of_three_do() {
+        // A lone voter is one vote of one: it holds. (This is only the arithmetic; real nodes have two voters.)
+        let solo = Lease::new("me".into(), vec![]);
+        solo.round().await;
+        assert!(solo.held() && solo.epoch() == 1);
+    }
+
+    #[test]
     fn a_standby_notices_when_both_nodes_took_writes() {
-        let st = Standby::new();
+        let st = Standby::new(None);
         let mut misses = 0;
         st.note_round(true, &mut misses);
         assert!(st.primary_up.load(Ordering::Relaxed) && !st.diverged.load(Ordering::Relaxed));
