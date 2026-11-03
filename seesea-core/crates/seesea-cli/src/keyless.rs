@@ -400,7 +400,6 @@ pub fn parse_wikipedia_in(body: &str, lang: &str) -> Result<Vec<RawHit>, SourceE
                         .replace("%3A", ":")
                 ),
                 snippet: plain(&text(r, "snippet")),
-                published: timestamp(&text(r, "timestamp")),
                 title,
                 ..Default::default()
             })
@@ -452,9 +451,6 @@ pub fn parse_stackexchange(body: &str) -> Result<Vec<RawHit>, SourceError> {
                     if answered { "" } else { "(unanswered) " },
                     plain(&text(r, "excerpt"))
                 ),
-                published: r["last_activity_date"]
-                    .as_i64()
-                    .and_then(|t| DateTime::from_timestamp(t, 0)),
                 ..Default::default()
             })
         })
@@ -543,7 +539,6 @@ pub fn parse_github(body: &str) -> Result<Vec<RawHit>, SourceError> {
                     text(r, "description"),
                     r["stargazers_count"].as_u64().unwrap_or(0)
                 ),
-                published: timestamp(&text(r, "pushed_at")),
                 url,
                 ..Default::default()
             })
@@ -624,7 +619,7 @@ mod tests {
             "https://en.wikipedia.org/wiki/Rust_%28programming_language%29"
         );
         assert_eq!(hits[0].snippet, "Rust is a \"general\" language");
-        assert!(hits[0].published.is_some());
+        assert!(hits[0].published.is_none(), "edit time is not a publication date");
         assert!(parse_wikipedia_in("{}", "en").is_err());
         assert_eq!(wikipedia_language(&q("rust")), "en");
         assert_eq!(wikipedia_language(&q("中国的首都")), "zh");
