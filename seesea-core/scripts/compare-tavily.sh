@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Run the same queries through Tavily and seesea; write one JSON file per query and engine.
 # usage: TAVILY_API_KEY=tvly-... scripts/compare-tavily.sh QUERIES.txt OUTDIR [seesea args...]
-# QUERIES.txt: one query per line. Extra args go to `seesea search` (e.g. --model-dir ... --rerank-model ...).
+# QUERIES.txt: one query per line. Extra args go to `seesea search`; models come from the default models directory.
 set -u
 Q=${1:?queries file}; OUT=${2:?output dir}; shift 2
 : "${TAVILY_API_KEY:?set TAVILY_API_KEY}"
 BIN=${SEESEA_BIN:-seesea}
+if ! "$BIN" models 2>&1 | tee /dev/stderr | grep -qi "valid\|ok\|ready"; then
+  echo "seesea models shows no usable model; fix that first" >&2; exit 1
+fi
 mkdir -p "$OUT/tavily" "$OUT/seesea"
 i=0
 while IFS= read -r q; do
