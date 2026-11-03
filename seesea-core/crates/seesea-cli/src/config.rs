@@ -124,7 +124,7 @@ pub fn build_poller(settings: &Settings, index: Arc<seesea_index::Index>) -> Res
     if let Some(m) = settings.model_dir.as_deref().filter(|m| m.exists()) {
         poller = poller.embedder(crate::embedding::shared_embedder(m));
     }
-    if let Some(r) = (!settings.no_render).then(|| seesea_fetch::render::Renderer::discover(settings.lightpanda.as_deref())).flatten() {
+    if let Some(r) = (!settings.no_render).then(|| seesea_fetch::render::Renderer::discover_with(settings.lightpanda.as_deref(), Some(&crate::userconfig::managed_renderer()))).flatten() {
         poller = poller.renderer(Arc::new(seesea_pipeline::content::RenderFetcher { renderer: r, options: fetch }));
     }
     Ok(poller)
@@ -175,7 +175,7 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
         })
         .transpose()?;
     let renderer = (!settings.no_render)
-        .then(|| seesea_fetch::render::Renderer::discover(settings.lightpanda.as_deref()))
+        .then(|| seesea_fetch::render::Renderer::discover_with(settings.lightpanda.as_deref(), Some(&crate::userconfig::managed_renderer())))
         .flatten();
     let mut sink = None;
     if let Some(dir) = &settings.index_dir {

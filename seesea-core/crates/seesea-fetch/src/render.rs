@@ -100,6 +100,11 @@ impl Renderer {
 
     /// The configured binary, else `$SEESEA_LIGHTPANDA`, else `lightpanda` on `PATH`.
     pub fn discover(configured: Option<&Path>) -> Option<Self> {
+        Self::discover_with(configured, None)
+    }
+
+    /// Like [`discover`](Self::discover), with a last place to look (the folder the installer uses).
+    pub fn discover_with(configured: Option<&Path>, managed: Option<&Path>) -> Option<Self> {
         let from_env = std::env::var_os(BINARY_ENV)
             .filter(|v| !v.is_empty())
             .map(PathBuf::from);
@@ -108,6 +113,7 @@ impl Renderer {
             .or(from_env)
             .filter(|p| p.is_file())
             .or_else(|| find_on_path("lightpanda"))
+            .or_else(|| managed.filter(|p| p.is_file()).map(Path::to_path_buf))
             .map(Self::new)
     }
 
