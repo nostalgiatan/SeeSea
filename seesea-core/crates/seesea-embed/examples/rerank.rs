@@ -32,8 +32,19 @@ fn main() {
     }
     let long = "The Tokio runtime schedules asynchronous tasks across worker threads. ".repeat(40);
     let batch: Vec<&str> = (0..16).map(|_| long.as_str()).collect();
-    let t = Instant::now();
-    r.score("how does the tokio scheduler work", &batch)
-        .unwrap();
-    println!("\n16 pairs of ~280 tokens: {:?}", t.elapsed());
+    // The first run of a new shape compiles GPU kernels; the later ones are what a server sees.
+    for run in 0..4 {
+        let t = Instant::now();
+        r.score("how does the tokio scheduler work", &batch).unwrap();
+        println!("\n16 pairs of ~280 tokens, run {run}: {:?}", t.elapsed());
+    }
+    for n in [1usize, 4, 32] {
+        let b: Vec<&str> = (0..n).map(|_| long.as_str()).collect();
+        let t = Instant::now();
+        r.score("how does the tokio scheduler work", &b).unwrap();
+        let first = t.elapsed();
+        let t = Instant::now();
+        r.score("how does the tokio scheduler work", &b).unwrap();
+        println!("{n:>2} pairs: first {first:?}, again {:?} ({:.1} ms per pair)", t.elapsed(), t.elapsed().as_secs_f64() * 1000.0 / n as f64);
+    }
 }
