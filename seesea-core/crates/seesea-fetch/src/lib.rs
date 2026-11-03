@@ -4,12 +4,14 @@
 //! is repeated on the final URL after redirects. A host name is also resolved and every address it
 //! maps to is checked, so a public-looking name that points at a private address is refused.
 //!
-//! The DNS check is deliberately forgiving, because it must not make the tool unusable in odd
-//! networks: addresses in `198.18.0.0/15` (the "fake IP" range that Clash-style TUN proxies answer
-//! every lookup with) count as public, a lookup that fails or takes too long is not a reason to
-//! refuse, and with a proxy configured the proxy does the resolving, so there is nothing to check.
-//! It is a check before connecting, not at connection time: a name that changes its answer between
-//! the check and the connection is not caught.
+//! The request itself goes through a client that only connects to public addresses: its resolver drops
+//! private addresses from every answer (so a name that changes its answer between a check and the
+//! connection is not caught out), and a redirect to a private or non-http target is refused before the
+//! request is sent. Addresses in `198.18.0.0/15` (the "fake IP" range that Clash-style TUN proxies answer
+//! every lookup with) count as public. With a proxy configured the proxy does the resolving, so only the
+//! written addresses (the url and the redirects) can be checked.
+//!
+//! The body is read in pieces and cut off at `max_bytes`; the rest is never held in memory.
 
 pub mod render;
 
@@ -94,45 +96,18 @@ pub fn check_target_with(raw: &str, allow_private: bool) -> Result<Url, FetchErr
             Err(FetchError::InvalidUrl("url has no host".into()))
         };
     }
-    match url.host() {
-        None => Err(FetchError::InvalidUrl("url has no host".into())),
-        Some(Host::Domain(d)) => {
-            let d = d.to_ascii_lowercase();
-            if d == "localhost" || d.ends_with(".localhost") || d.ends_with(".internal") {
-                Err(FetchError::Blocked("local hosts are not allowed".into()))
-            } else {
-                Ok(url)
-            }
-        }
-        Some(Host::Ipv4(ip)) => check_ip(IpAddr::V4(ip)).map(|_| url),
-        Some(Host::Ipv6(ip)) => check_ip(IpAddr::V6(ip)).map(|_| url),
+    if url.host().is_none() {
+        return Err(FetchError::InvalidUrl("url has no host".into()));
     }
+    if seesea_net::guard::forbidden_url(&url) {
+        return Err(FetchError::Blocked("private addresses are not allowed".into()));
+    }
+    Ok(url)
 }
 
 fn check_ip(ip: IpAddr) -> Result<(), FetchError> {
-    let blocked = match ip {
-        IpAddr::V4(v4) => {
-            v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.is_broadcast()
-        }
-        IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return check_ip(IpAddr::V4(v4));
-            }
-            let first = v6.segments()[0];
-            v6.is_loopback()
-                || v6.is_unspecified()
-                || (first & 0xfe00) == 0xfc00
-                || (first & 0xffc0) == 0xfe80
-        }
-    };
-    if blocked {
-        Err(FetchError::Blocked(
-            "private addresses are not allowed".into(),
-        ))
+    if seesea_net::guard::forbidden_ip(ip) {
+        Err(FetchError::Blocked("private addresses are not allowed".into()))
     } else {
         Ok(())
     }
@@ -196,9 +171,11 @@ pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchErro
     let mut attempt = 0;
     let response = loop {
         let left = budget.saturating_sub(started.elapsed()).as_secs().max(1);
-        let response = client
-            .get_page(url.as_str(), left, attempt, !opts.browser_headers)
-            .await
+        let response = if opts.allow_private {
+            client.get_page(url.as_str(), left, attempt, !opts.browser_headers).await
+        } else {
+            client.get_public_page(url.as_str(), left, attempt, !opts.browser_headers).await
+        }
             .map_err(|e| FetchError::Network(e.to_string()))?;
         let status = response.status().as_u16();
         attempt += 1;
@@ -231,23 +208,44 @@ pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchErro
     if !response.status().is_success() {
         return Err(FetchError::Status(status));
     }
-    let mut html = response
-        .text()
-        .await
-        .map_err(|e| FetchError::Read(e.to_string()))?;
-    if html.len() > opts.max_bytes {
-        let mut cut = opts.max_bytes;
-        while !html.is_char_boundary(cut) {
-            cut -= 1;
-        }
-        html.truncate(cut);
-    }
+    let html = read_capped(response, opts.max_bytes).await?;
     Ok(Page {
         url: url.to_string(),
         final_url,
         status,
         html,
     })
+}
+
+
+/// The charset named in a `Content-Type` header, if any.
+fn charset_of(content_type: &str) -> Option<&'static encoding_rs::Encoding> {
+    content_type
+        .split(';')
+        .filter_map(|p| p.trim().strip_prefix("charset="))
+        .find_map(|c| encoding_rs::Encoding::for_label(c.trim_matches('"').as_bytes()))
+}
+
+/// Read the body in pieces, stop at `max` bytes, and decode it (UTF-8 unless the header says otherwise).
+async fn read_capped(mut response: seesea_net::reqwest::Response, max: usize) -> Result<String, FetchError> {
+    let encoding = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .and_then(charset_of)
+        .unwrap_or(encoding_rs::UTF_8);
+    let mut bytes: Vec<u8> = Vec::new();
+    while bytes.len() < max {
+        match response.chunk().await.map_err(|e| FetchError::Read(e.to_string()))? {
+            Some(chunk) => {
+                let room = max - bytes.len();
+                bytes.extend_from_slice(&chunk[..chunk.len().min(room)]);
+            }
+            None => break,
+        }
+    }
+    let (text, _, _) = encoding.decode(&bytes);
+    Ok(text.into_owned())
 }
 
 #[cfg(test)]
@@ -277,6 +275,8 @@ mod tests {
             "fd00::1",
             "fe80::1",
             "::ffff:10.0.0.1",
+            "100.100.100.200",
+            "64:ff9b::a00:1",
         ] {
             assert!(first_private(&[ip(bad)]).is_some(), "{bad}");
         }

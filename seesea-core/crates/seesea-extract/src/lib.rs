@@ -22,6 +22,79 @@ use serde::Serialize;
 pub use meta::Meta;
 pub use model::Model;
 
+/// Elements nested deeper than this are not parsed. Real pages stay under a few hundred; the HTML parser
+/// scans the stack of open elements for every start tag, so a page of hundreds of thousands of `<div>`
+/// would keep a core busy for minutes.
+pub const MAX_NESTING: usize = 3000;
+
+/// Elements whose end tag may be left out, or that have none: they do not deepen the nesting.
+const FLAT: &[&str] = &[
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
+    "p", "li", "dt", "dd", "tr", "td", "th", "option", "optgroup", "thead", "tbody", "tfoot", "colgroup", "rt", "rp",
+    "html", "head", "body",
+];
+
+/// `html` up to the point where the element nesting would pass `max` (all of it when it never does).
+///
+/// A single linear pass that counts start tags against end tags. It only has to be right about
+/// pathological input: a page that never gets near the limit comes back unchanged.
+pub fn cap_nesting(html: &str, max: usize) -> &str {
+    let b = html.as_bytes();
+    let (mut i, mut depth) = (0usize, 0usize);
+    while i < b.len() {
+        if b[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        let rest = &b[i + 1..];
+        if rest.starts_with(b"!--") {
+            // A comment runs to `-->`.
+            i = html[i..].find("-->").map_or(b.len(), |e| i + e + 3);
+            continue;
+        }
+        let closing = rest.first() == Some(&b'/');
+        let name_at = i + 1 + usize::from(closing);
+        let name_len = b[name_at.min(b.len())..].iter().take_while(|c| c.is_ascii_alphanumeric()).count();
+        if name_len == 0 {
+            i += 1;
+            continue;
+        }
+        let name = html[name_at..name_at + name_len].to_ascii_lowercase();
+        if matches!(name.as_str(), "script" | "style" | "textarea" | "title") && !closing {
+            // Raw text: markup inside is not markup. Skip to the matching end tag.
+            let from = name_at + name_len;
+            let nb = name.as_bytes();
+            let mut j = from;
+            while j + 2 + nb.len() <= b.len() && !(b[j] == b'<' && b[j + 1] == b'/' && b[j + 2..j + 2 + nb.len()].eq_ignore_ascii_case(nb)) {
+                j += 1;
+            }
+            // Past the end tag too, so that it is not counted as closing something it never opened.
+            i = if j + 2 + nb.len() > b.len() { b.len() } else { j + 2 + nb.len() };
+            continue;
+        }
+        if closing {
+            depth = depth.saturating_sub(1);
+        } else if !FLAT.contains(&name.as_str()) {
+            // `<x ... />` is self-closing for foreign elements; find the end of the tag.
+            let window = &b[name_at..b.len().min(name_at + 4096)];
+            let tag_end = window.iter().position(|c| *c == b'>').map_or(0, |e| name_at + e);
+            if !(tag_end > 0 && b.get(tag_end - 1) == Some(&b'/')) {
+                depth += 1;
+                if depth > max {
+                    return &html[..i];
+                }
+            }
+        }
+        i = name_at + name_len;
+    }
+    html
+}
+
+/// Parse a page the way extraction does: with the nesting limit.
+pub fn parse_document(html: &str) -> Html {
+    Html::parse_document(cap_nesting(html, MAX_NESTING))
+}
+
 const DEFAULT_MODEL: &[u8] = include_bytes!("../model/default.json.gz");
 
 /// Which annotation convention to follow. `Core` keeps the article body only; `Extended` also
@@ -145,6 +218,7 @@ impl Extractor {
                 diagnostics: Diagnostics { blocks: 0, selected_blocks: 0, selected_chars: 0, visible_chars: 0, threshold: self.threshold(opts), fallback: false, not_text: true },
             };
         }
+        let html = cap_nesting(html, MAX_NESTING);
         let doc = Html::parse_document(html);
         let meta = meta::extract(&doc);
         let blocks = blocks::segment_doc(&doc);
@@ -231,4 +305,47 @@ fn looks_binary(html: &str) -> bool {
 fn js_app_marker(html: &str) -> bool {
     let l = html.to_lowercase();
     ["id=\"root\"", "id=\"__next\"", "id=\"app\"", "id=\"__nuxt\"", "enable javascript", "requires javascript", "需要启用javascript", "请开启javascript"].iter().any(|m| l.contains(m))
+}
+
+#[cfg(test)]
+mod nesting_tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_pages_come_back_unchanged() {
+        let page = "<html><head><title>A <b>t</b></title><script>if (a<b) { x = '<div><div>'; }</script></head><body><div><p>one<p>two<ul><li>a<li>b</ul><br><img src=x><svg><path/></svg></div><!-- <div><div> --></body></html>";
+        assert_eq!(cap_nesting(page, 8), page);
+    }
+
+    #[test]
+    fn markup_inside_scripts_and_comments_does_not_count() {
+        let page = format!("<body><script>{}</script><!--{}--><style>{}</style><div>x</div>", "<div>".repeat(500), "<div>".repeat(500), "<span>".repeat(500));
+        assert_eq!(cap_nesting(&page, 5), page);
+    }
+
+    #[test]
+    fn a_page_nested_too_deep_is_cut_where_it_passes_the_limit() {
+        let page = format!("<body>{}text{}", "<div>".repeat(10_000), "</div>".repeat(10_000));
+        let cut = cap_nesting(&page, 100);
+        assert_eq!(cut.matches("<div>").count(), 100);
+        assert!(!cut.contains("text"));
+    }
+
+    #[test]
+    fn unterminated_tags_are_bounded() {
+        let page = "<a".repeat(2_000_000);
+        let t = std::time::Instant::now();
+        let cut = cap_nesting(&page, MAX_NESTING);
+        assert!(cut.len() < page.len());
+        assert!(t.elapsed().as_secs() < 5);
+    }
+
+    #[test]
+    fn hostile_nesting_is_extracted_quickly() {
+        let page = format!("<html><body>{}hello world. this is text.{}</body></html>", "<div>".repeat(400_000), "</div>".repeat(400_000));
+        let t = std::time::Instant::now();
+        let r = Extractor::new().extract(&page, "https://example.com/", &Options::default());
+        assert!(t.elapsed().as_secs() < 10, "{:?}", t.elapsed());
+        let _ = r;
+    }
 }

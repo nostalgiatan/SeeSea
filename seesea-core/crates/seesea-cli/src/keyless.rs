@@ -262,7 +262,7 @@ fn duckduckgo_target(href: &str) -> Option<String> {
 }
 
 pub fn parse_duckduckgo(body: &str) -> Result<Vec<RawHit>, SourceError> {
-    let doc = Html::parse_document(body);
+    let doc = seesea_extract::parse_document(body);
     let (result, title, snippet) = (
         sel("div.result"),
         sel("a.result__a"),
@@ -306,7 +306,7 @@ fn mojeek_url(q: &SourceQuery) -> Option<String> {
 }
 
 pub fn parse_mojeek(body: &str) -> Result<Vec<RawHit>, SourceError> {
-    let doc = Html::parse_document(body);
+    let doc = seesea_extract::parse_document(body);
     let (item, title, snippet) = (sel("ul.results-standard > li"), sel("a.title"), sel("p.s"));
     let hits: Vec<RawHit> = doc
         .select(&item)

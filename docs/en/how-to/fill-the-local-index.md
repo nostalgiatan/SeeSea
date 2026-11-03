@@ -96,4 +96,4 @@ When a feed names a WebSub hub, give the server an address the hub can reach:
 seesea serve --public-url https://seesea.example.com
 ```
 
-The server subscribes to the hub, receives pushes at `/v1/websub/{id}` and renews before expiry. Polling stays as the fallback.
+The server subscribes to the hub, receives pushes at `/v1/websub/{id}` and renews before expiry. Polling stays as the fallback. Only `https` hubs are subscribed to, and a hub at a private address, or a name that resolves to one, is skipped.

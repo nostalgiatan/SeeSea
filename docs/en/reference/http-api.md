@@ -7,7 +7,7 @@
 - A request body is at most 1 MiB.
 - A request takes at most 120 seconds; after that the server answers 504 with the code `timeout`.
 - `--max-concurrent` caps how many requests are handled at once.
-- Bodies and responses are JSON. POST requests do not need a particular `Content-Type`.
+- Bodies and responses are JSON. A server that listens on a loopback address and has no key answers only requests whose `Host` is `localhost` or a loopback address (otherwise 403 `forbidden_host`), and a POST must carry `Content-Type: application/json` (otherwise 415 `unsupported_media_type`), so a web page cannot drive a local server through the user's browser. With a key set, or on another address, POST needs no particular `Content-Type`.
 - A gateway node answers only `/health`, `/v1/cluster/status` and the account and admin endpoints (forwarded to the flywheel); everything else is forwarded to the search nodes.
 
 ## Authentication

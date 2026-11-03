@@ -96,4 +96,4 @@ seesea index prune    # 立即按保留策略清理
 seesea serve --public-url https://seesea.example.com
 ```
 
-服务会向 hub 订阅，回调在 `/v1/websub/{id}`，到期前自动续订。轮询仍作为兜底。
+服务会向 hub 订阅，回调在 `/v1/websub/{id}`，到期前自动续订。轮询仍作为兜底。只订阅 `https` 的 hub，hub 地址是私有地址或解析到私有地址时不订阅。

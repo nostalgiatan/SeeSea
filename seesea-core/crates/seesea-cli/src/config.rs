@@ -308,6 +308,9 @@ impl ReqwestHub {
             .user_agent("seesea/0.1 (WebSub subscriber)");
         if let Some(p) = &settings.proxy {
             b = b.proxy(reqwest::Proxy::all(p).map_err(|e| Error::Config(format!("proxy: {e}")))?);
+        } else {
+            // The hub address comes from a feed: a name that leads to a private address is not followed.
+            b = b.dns_resolver(std::sync::Arc::new(seesea_net::guard::PublicOnly));
         }
         Ok(Self { client: b.build().map_err(|e| Error::Config(e.to_string()))? })
     }
@@ -316,6 +319,10 @@ impl ReqwestHub {
 #[async_trait::async_trait]
 impl seesea_index::websub::HubClient for ReqwestHub {
     async fn post_form(&self, url: &str, form: &[(&str, &str)]) -> std::result::Result<u16, String> {
+        let parsed = url::Url::parse(url).map_err(|e| e.to_string())?;
+        if seesea_net::guard::forbidden_url(&parsed) {
+            return Err("the hub is a local or private address".into());
+        }
         self.client.post(url).form(form).send().await.map(|r| r.status().as_u16()).map_err(|e| e.to_string())
     }
 }

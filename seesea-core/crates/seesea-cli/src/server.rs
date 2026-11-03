@@ -34,6 +34,9 @@ pub struct AppState {
     /// Behind a reverse proxy that sets `X-Forwarded-For`: take the client address from its last entry
     /// (the one the proxy itself added). Off by default, since anyone can send that header.
     pub trust_forwarded: bool,
+    /// Listening on a loopback address with nothing in front: only requests addressed to a local name are
+    /// answered, so a web page cannot reach the server through a name it controls (DNS rebinding).
+    pub local_only: bool,
     /// On a standby flywheel node: whether it can see its primary and whether it took writes meanwhile.
     pub standby: Option<Arc<crate::cluster::Standby>>,
 }
@@ -54,6 +57,7 @@ impl AppState {
             cluster: None,
             gateway: None,
             trust_forwarded: false,
+            local_only: false,
             standby: None,
         }
     }
@@ -134,6 +138,49 @@ fn reply_timeout() -> Response {
         Json(json!({"code": "timeout", "message": format!("the request took longer than {} s", REQUEST_LIMIT.as_secs())})),
     )
         .into_response()
+}
+
+/// Whether the `Host` header names this machine: `localhost`, a loopback address, with or without a port.
+fn host_is_local(host: &str) -> bool {
+    let name = if let Some(rest) = host.strip_prefix('[') {
+        rest.split(']').next().unwrap_or("")
+    } else {
+        host.rsplit_once(':').map_or(host, |(h, _)| h)
+    };
+    let name = name.trim_end_matches('.').to_ascii_lowercase();
+    name == "localhost" || name.ends_with(".localhost") || name.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
+/// Whether the request body is declared as JSON.
+fn declares_json(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(';').next().unwrap_or("").trim().to_ascii_lowercase())
+        .is_some_and(|t| t == "application/json" || t.ends_with("+json"))
+}
+
+/// Keep web pages away from a server on this machine.
+///
+/// A page can make the browser send a request to `127.0.0.1`: with a simple POST (no preflight) if the body
+/// is declared as text or a form, or after rebinding a name it controls to `127.0.0.1`. Requiring a local
+/// `Host` stops the second; requiring a JSON content type, which browsers only send after a preflight that
+/// this server never answers, stops the first. A server that needs a key does not need the second check,
+/// since a page cannot add the `Authorization` header either.
+async fn local_guard(State(state): State<AppState>, headers: HeaderMap, req: Request, next: Next) -> Response {
+    if req.extensions().get::<crate::cluster::Trusted>().is_some() || req.uri().path().starts_with("/v1/websub/") {
+        return next.run(req).await;
+    }
+    if state.local_only {
+        let local = headers.get(header::HOST).and_then(|v| v.to_str().ok()).is_some_and(host_is_local);
+        if !local {
+            return (StatusCode::FORBIDDEN, Json(json!({"code": "forbidden_host", "message": "this server answers only for localhost; use http://127.0.0.1:<port>"}))).into_response();
+        }
+        if req.method() == axum::http::Method::POST && !state.access.required() && !declares_json(&headers) {
+            return (StatusCode::UNSUPPORTED_MEDIA_TYPE, Json(json!({"code": "unsupported_media_type", "message": "send the body with Content-Type: application/json"}))).into_response();
+        }
+    }
+    next.run(req).await
 }
 
 async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Request, next: Next) -> Response {
@@ -666,6 +713,7 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
         .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(ConcurrencyLimitLayer::new(max_concurrent.max(1)))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn_with_state(state.clone(), local_guard))
         .layer(middleware::from_fn(deadline))
         .with_state(state)
 }
@@ -673,7 +721,7 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
 /// Serve until Ctrl-C.
 pub async fn serve(
     addr: std::net::SocketAddr,
-    state: AppState,
+    mut state: AppState,
     max_concurrent: usize,
     allow_open: bool,
     tls: Option<Arc<rustls::ServerConfig>>,
@@ -690,6 +738,7 @@ pub async fn serve(
             "refusing to listen on {addr} without any API key: create one (`seesea users add NAME`, `seesea keys create NAME`), pass --api-key, or --allow-open"
         )));
     }
+    state.local_only = addr.ip().is_loopback() && !behind_tls_proxy && !state.trust_forwarded;
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|e| Error::Config(format!("cannot listen on {addr}: {e}")))?;
@@ -755,6 +804,16 @@ async fn shutdown_signal() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_local_names_count_as_local() {
+        for ok in ["localhost", "localhost:8080", "127.0.0.1:8080", "127.0.0.1", "[::1]:8080", "[::1]", "app.localhost:1", "LOCALHOST."] {
+            assert!(host_is_local(ok), "{ok}");
+        }
+        for bad in ["evil.example", "evil.example:8080", "127.0.0.1.evil.example", "10.0.0.5:8080", "0.0.0.0:8080", ""] {
+            assert!(!host_is_local(bad), "{bad}");
+        }
+    }
 
     #[test]
     fn keys_are_read_from_either_header() {

@@ -169,14 +169,53 @@ fn max_body(tag: u8) -> usize {
 
 /// Read one frame. The body buffer grows as data arrives, so announcing a huge length costs nothing by itself.
 async fn read_frame(recv: &mut quinn::RecvStream, replies: bool) -> Result<(u8, Value, Bytes), String> {
+    read_frame_as(recv, replies, None, None).await.map(|(tag, head, body, _)| (tag, head, body))
+}
+
+/// Memory that frames being read or handled may hold at once, counted in KiB. A body is parsed into JSON
+/// values that take several times its size, so each byte is charged `PARSED_FACTOR` times.
+const IN_FLIGHT_KIB: usize = 512 * 1024;
+const PARSED_FACTOR: usize = 4;
+
+pub struct FrameBudget(Arc<tokio::sync::Semaphore>);
+
+impl FrameBudget {
+    pub fn new() -> Self {
+        Self(Arc::new(tokio::sync::Semaphore::new(IN_FLIGHT_KIB)))
+    }
+}
+
+/// Like [`read_frame`]. With `role` known, a frame announcing an operation the role may not use is held to the
+/// small default limit (it is refused anyway, so none of it is worth reading), and with a `budget` the body is
+/// only read once memory for it is free; the returned permit gives that memory back when dropped.
+async fn read_frame_as(
+    recv: &mut quinn::RecvStream,
+    replies: bool,
+    role: Option<PeerRole>,
+    budget: Option<&FrameBudget>,
+) -> Result<(u8, Value, Bytes, Option<tokio::sync::OwnedSemaphorePermit>), String> {
     let mut fixed = [0u8; 9];
     recv.read_exact(&mut fixed).await.map_err(|e| format!("reading a frame: {e}"))?;
     let hlen = u32::from_be_bytes(fixed[1..5].try_into().unwrap()) as usize;
     let blen = u32::from_be_bytes(fixed[5..9].try_into().unwrap()) as usize;
-    let limit = if replies { MAX_BODY } else { max_body(fixed[0]) };
+    let refused = role.zip(Op::from_u8(fixed[0])).is_some_and(|(r, op)| !r.may(op));
+    let limit = if replies {
+        MAX_BODY
+    } else if refused {
+        64 * 1024
+    } else {
+        max_body(fixed[0])
+    };
     if hlen > MAX_HEAD || blen > limit {
         return Err(format!("frame too large ({hlen} + {blen} bytes)"));
     }
+    let permit = match budget {
+        Some(b) => {
+            let kib = (blen.saturating_mul(PARSED_FACTOR) / 1024 + 1).min(IN_FLIGHT_KIB) as u32;
+            Some(b.0.clone().acquire_many_owned(kib).await.map_err(|e| e.to_string())?)
+        }
+        None => None,
+    };
     let mut head = vec![0u8; hlen];
     recv.read_exact(&mut head).await.map_err(|e| format!("reading a frame head: {e}"))?;
     let mut body = Vec::new();
@@ -186,7 +225,7 @@ async fn read_frame(recv: &mut quinn::RecvStream, replies: bool) -> Result<(u8, 
         recv.read_exact(&mut body[start..]).await.map_err(|e| format!("reading a frame body: {e}"))?;
     }
     let head = if head.is_empty() { Value::Null } else { serde_json::from_slice(&head).map_err(|e| format!("frame head: {e}"))? };
-    Ok((fixed[0], head, Bytes::from(body)))
+    Ok((fixed[0], head, Bytes::from(body), permit))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -481,6 +520,7 @@ pub fn serve(mesh: &Mesh, addr: SocketAddr, handler: Arc<dyn Handler>) -> Result
     let endpoint = quinn::Endpoint::server(config, addr).map_err(|e| format!("cannot listen on udp {addr}: {e}"))?;
     let local = endpoint.local_addr().map_err(|e| e.to_string())?;
     let peers = mesh.peers.clone();
+    let budget = Arc::new(FrameBudget::new());
     let accepting = endpoint.clone();
     tokio::spawn(async move {
         let endpoint = accepting;
@@ -494,10 +534,10 @@ pub fn serve(mesh: &Mesh, addr: SocketAddr, handler: Arc<dyn Handler>) -> Result
                 let _ = incoming.retry();
                 continue;
             }
-            let (peers, handler) = (peers.clone(), handler.clone());
+            let (peers, handler, budget) = (peers.clone(), handler.clone(), budget.clone());
             tokio::spawn(async move {
                 if let Ok(conn) = incoming.await {
-                    serve_connection(conn, peers, handler).await;
+                    serve_connection(conn, peers, handler, budget).await;
                 }
             });
         }
@@ -510,26 +550,26 @@ fn peer_fingerprint(conn: &quinn::Connection) -> Option<String> {
     certs.first().map(|c| fingerprint(c))
 }
 
-async fn serve_connection(conn: quinn::Connection, peers: Arc<Peers>, handler: Arc<dyn Handler>) {
+async fn serve_connection(conn: quinn::Connection, peers: Arc<Peers>, handler: Arc<dyn Handler>, budget: Arc<FrameBudget>) {
     let Some(fp) = peer_fingerprint(&conn) else {
         conn.close(1u32.into(), b"no certificate");
         return;
     };
     while let Ok((send, recv)) = conn.accept_bi().await {
-        let (conn, peers, handler, fp) = (conn.clone(), peers.clone(), handler.clone(), fp.clone());
-        tokio::spawn(async move { serve_stream(conn, send, recv, &fp, peers, handler).await });
+        let (conn, peers, handler, fp, budget) = (conn.clone(), peers.clone(), handler.clone(), fp.clone(), budget.clone());
+        tokio::spawn(async move { serve_stream(conn, send, recv, &fp, peers, handler, budget).await });
     }
 }
 
-async fn serve_stream(conn: quinn::Connection, mut send: quinn::SendStream, mut recv: quinn::RecvStream, fp: &str, peers: Arc<Peers>, handler: Arc<dyn Handler>) {
+async fn serve_stream(conn: quinn::Connection, mut send: quinn::SendStream, mut recv: quinn::RecvStream, fp: &str, peers: Arc<Peers>, handler: Arc<dyn Handler>, budget: Arc<FrameBudget>) {
     // Checked on every request, so a node taken out of the list loses an open connection at once.
     let Some(peer) = peers.lookup(fp) else {
         conn.close(2u32.into(), b"revoked");
         return;
     };
-    let read = tokio::time::timeout(Duration::from_secs(30), read_frame(&mut recv, false)).await;
+    let read = tokio::time::timeout(Duration::from_secs(30), read_frame_as(&mut recv, false, Some(peer.role), Some(&budget))).await;
     let reply = match read {
-        Ok(Ok((tag, head, body))) => match Op::from_u8(tag) {
+        Ok(Ok((tag, head, body, _held))) => match Op::from_u8(tag) {
             None => Reply::error(format!("unknown operation {tag}")),
             Some(op) if !peer.role.may(op) => Reply { status: Status::Forbidden, head: serde_json::json!({"message": format!("{:?} may not {:?}", peer.role, op)}), body: Bytes::new() },
             Some(op) => match tokio::time::timeout(Duration::from_secs(125), handler.handle(&peer, Request { op, head, body })).await {
@@ -838,6 +878,9 @@ mod tests {
         assert_eq!((r.head["from"].as_str(), &r.body[..]), (Some("gw"), &b"payload"[..]));
         // …but a gateway may not send events.
         assert!(matches!(gw.call(Op::Events, &Value::Null, b"{}", Duration::from_secs(5)).await, Err(CallError::Refused(_))));
+
+        // A body for an operation the role may not use is not read, however large the sender says it is.
+        assert!(gw.call(Op::Events, &Value::Null, &vec![0u8; 5 * 1024 * 1024], Duration::from_secs(5)).await.is_err());
 
         // A node that is not listed cannot even connect.
         let stranger_mesh = Mesh { identity: stranger_id, peers: Peers::fixed(vec![server_listed.clone()]) };
