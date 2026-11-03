@@ -124,6 +124,11 @@ fn hash(key: &str) -> String {
     Sha256::digest(key.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// `len` random lowercase hex digits, for keys and other secrets.
+pub fn random_hex(len: usize) -> String {
+    hex(len)
+}
+
 fn hex(len: usize) -> String {
     let mut rng = rand::rng();
     (0..len).map(|_| char::from_digit(rng.random_range(0..16u32), 16).unwrap()).collect()

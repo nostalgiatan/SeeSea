@@ -30,6 +30,12 @@ seesea serve --addr 127.0.0.1:8080
 curl "http://127.0.0.1:8080/v1/search?q=rust+async&mode=fast"
 ```
 
+在浏览器里用：
+
+```bash
+seesea desk        # 打开工作台：搜索、读网页，并能启动 HTTP 接口和远程 MCP
+```
+
 不配置任何东西也能搜索：Bing、DuckDuckGo、Mojeek 和 Wikipedia 是内置来源。这些来源常被验证码拦截，想要更稳定，请接入自建的 SearXNG 或 Brave Search，见[配置搜索来源](docs/how-to/configure-sources.md)。
 
 ## 它是怎么工作的
@@ -52,6 +58,7 @@ curl "http://127.0.0.1:8080/v1/search?q=rust+async&mode=fast"
 |---|---|
 | 第一次用 | [教程：第一次搜索](docs/tutorials/first-search.md) |
 | 接入 SearXNG 或 Brave | [配置搜索来源](docs/how-to/configure-sources.md) |
+| 在浏览器里搜索、启停服务 | [使用工作台](docs/how-to/use-the-workbench.md) |
 | 给 MCP 客户端用 | [接入 MCP 客户端](docs/how-to/connect-an-mcp-client.md) |
 | 对外提供服务 | [运行 HTTP 服务并发放密钥](docs/how-to/run-the-server.md) |
 | 部署集群 | [部署多节点集群](docs/how-to/deploy-a-cluster.md) |

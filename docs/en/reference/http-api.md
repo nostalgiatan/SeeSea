@@ -160,7 +160,13 @@ These need the root key; an open server without keys does not offer them.
 
 ## MCP
 
-`POST /mcp` is the HTTP entry point for MCP; see the [MCP reference](mcp.md).
+`POST /mcp` is the HTTP entry point for MCP; see the [MCP reference](mcp.md). Each POST gets one JSON reply; `GET` and `DELETE` return 405 with `Allow: POST`, since this entry has no stream to open and no session to end. When a request carries an `Origin` header, it must name the same host as `Host` (and a local name, on a local server), or the answer is 403 `forbidden_origin`: a web page always sends `Origin`, an MCP client program does not.
+
+To offer MCP without the rest of the API, start the Remote MCP service from the [workbench](workbench.md).
+
+## Page
+
+`GET /` returns the web page of the [workbench](workbench.md), and `/ui/` holds its files. These paths need no key.
 
 ## Errors
 

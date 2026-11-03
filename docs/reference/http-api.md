@@ -160,7 +160,13 @@ WebSub 回调：GET 回应 hub 的订阅验证，POST 接收推送。不需要�
 
 ## MCP
 
-`POST /mcp` 是 MCP 的 HTTP 入口，见 [MCP 参考](mcp.md)。
+`POST /mcp` 是 MCP 的 HTTP 入口，见 [MCP 参考](mcp.md)。每个 POST 得到一个 JSON 回复；`GET` 和 `DELETE` 返回 405 并带 `Allow: POST`，因为这个入口没有可打开的流，也没有会话要结束。请求带 `Origin` 头时，它必须和 `Host` 指向同一个主机（本机服务还必须是本机名字），否则返回 403 `forbidden_origin`：网页总会带 `Origin`，MCP 客户端程序不带。
+
+只想提供 MCP 而不开放其他接口时，用[工作台](workbench.md)启动“远程 MCP”服务。
+
+## 页面
+
+`GET /` 返回[工作台](workbench.md)的网页，`/ui/` 下是它的文件。这些路径不需要密钥。
 
 ## 错误
 

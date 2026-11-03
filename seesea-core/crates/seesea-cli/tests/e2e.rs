@@ -681,7 +681,7 @@ fn identity(dir: &std::path::Path, name: &str) -> seesea_cli::wire::Identity {
 
 #[tokio::test]
 async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
-    use seesea_auth::{Plan, Store};
+    use seesea_auth::Plan;
     use seesea_cli::cluster::{Cluster, Gateway, Link, Role, start_wire};
     use seesea_cli::wire::{Mesh, PeerInfo, PeerRole, Peers};
     let base = spawn_site().await;
@@ -1002,4 +1002,149 @@ async fn only_the_root_key_may_judge_a_host() {
     // A key that differs only in length does not get in either.
     let r = http.post(format!("{api}/v1/feedback")).bearer_auth("root-secret-and-more").json(&body).send().await.unwrap();
     assert_eq!(r.status(), 401);
+}
+
+#[tokio::test]
+async fn the_workbench_page_needs_no_key_but_the_data_behind_it_does() {
+    let base = spawn_site().await;
+    let pipeline = Arc::new(build_pipeline(&settings(&base)).unwrap());
+    let app = router(AppState::new(pipeline, Some("sekret-sekret-sekret".into())), 8);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let http = reqwest::Client::new();
+
+    for (path, kind) in [("/", "text/html"), ("/ui/app.js", "text/javascript"), ("/ui/app.css", "text/css"), ("/ui/mark.svg", "image/svg+xml")] {
+        let r = http.get(format!("{api}{path}")).send().await.unwrap();
+        assert_eq!(r.status(), 200, "{path}");
+        assert!(r.headers()["content-type"].to_str().unwrap().starts_with(kind), "{path}");
+        let csp = r.headers()["content-security-policy"].to_str().unwrap().to_string();
+        assert!(csp.contains("default-src 'none'") && csp.contains("script-src 'self'") && !csp.contains("unsafe-inline"), "{csp}");
+    }
+    // The page holds no data: everything it shows comes through calls that want the key.
+    assert_eq!(http.get(format!("{api}/v1/sources")).send().await.unwrap().status(), 401);
+    assert_eq!(http.get(format!("{api}/desk/api/state")).send().await.unwrap().status(), 401);
+    let r = http.get(format!("{api}/v1/sources")).bearer_auth("sekret-sekret-sekret").send().await.unwrap();
+    assert_eq!(r.status(), 200);
+}
+
+#[tokio::test]
+async fn the_mcp_endpoint_is_ready_for_remote_clients_and_closed_to_web_pages() {
+    let base = spawn_site().await;
+    let pipeline = Arc::new(build_pipeline(&settings(&base)).unwrap());
+    let app = router(AppState::new(pipeline, None), 8);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let api = format!("http://{addr}");
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let http = reqwest::Client::new();
+    let init = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}});
+
+    // No stream to open and no session to end: the transport allows a plain 405 for both.
+    for method in [reqwest::Method::GET, reqwest::Method::DELETE] {
+        let r = http.request(method, format!("{api}/mcp")).send().await.unwrap();
+        assert_eq!(r.status(), 405);
+        assert_eq!(r.headers()["allow"], "POST");
+    }
+    // A program sends no Origin and gets its answer.
+    let r = http.post(format!("{api}/mcp")).json(&init).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let v: Value = r.json().await.unwrap();
+    assert_eq!(v["result"]["serverInfo"]["name"], "seesea");
+    // A page from another site always sends one.
+    let r = http.post(format!("{api}/mcp")).header("origin", "https://evil.example").json(&init).send().await.unwrap();
+    assert_eq!(r.status(), 403);
+    // A page served by the server itself is fine.
+    let r = http.post(format!("{api}/mcp")).header("origin", format!("http://{addr}")).json(&init).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+}
+
+#[tokio::test]
+async fn the_workbench_starts_stops_and_secures_its_services() {
+    let base = spawn_site().await;
+    let dir = tempfile::tempdir().unwrap();
+    let pipeline = Arc::new(build_pipeline(&settings(&base)).unwrap());
+    let desk = seesea_cli::desk::Desk::new(dir.path().join("desk.json"), dir.path().join("auth.db"), seesea_auth::default_plans());
+    let mut state = AppState::new(pipeline, None);
+    desk.attach(state.clone());
+    state.desk = Some(Arc::clone(&desk));
+    let app = router(state, 8);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let wb = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let http = reqwest::Client::new();
+    let act = |path: &str, body: Value| {
+        let req = http.post(format!("{wb}/desk/api/services/{path}")).json(&body);
+        async move { req.send().await.unwrap() }
+    };
+
+    let st: Value = http.get(format!("{wb}/desk/api/state")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(st["services"].as_array().unwrap().len(), 2);
+    assert_eq!(st["services"][1]["config"]["addr"], "127.0.0.1:8090");
+
+    // Settings are checked when saved, and a key is made when the mode needs one.
+    let r = act("mcp/config", json!({"addr": "not an address"})).await;
+    assert_eq!(r.status(), 400);
+    let r = act("mcp/config", json!({"addr": "127.0.0.1:0", "auth": "key"})).await;
+    assert_eq!(r.status(), 200);
+    let st: Value = r.json().await.unwrap();
+    let key = st["services"][1]["config"]["root_key"].as_str().unwrap().to_string();
+    assert!(key.starts_with("root-") && key.len() >= 16);
+    assert!(std::fs::read_to_string(dir.path().join("desk.json")).unwrap().contains(&key));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(dir.path().join("desk.json")).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
+    // Accounts-only needs a user; a non-local address needs TLS and a key.
+    let r = act("api/config", json!({"addr": "127.0.0.1:0", "auth": "accounts"})).await;
+    assert_eq!(r.status(), 200);
+    let r = act("api/start", json!(null)).await;
+    assert_eq!(r.status(), 400);
+    assert!(r.json::<Value>().await.unwrap()["message"].as_str().unwrap().contains("no user"));
+    act("api/config", json!({"addr": "0.0.0.0:0", "auth": "open"})).await;
+    let r = act("api/start", json!(null)).await;
+    assert_eq!(r.status(), 400);
+    assert!(r.json::<Value>().await.unwrap()["message"].as_str().unwrap().contains("refusing"));
+
+    // The MCP service answers /mcp with its key and nothing else.
+    let r = act("mcp/start", json!(null)).await;
+    assert_eq!(r.status(), 200);
+    let st: Value = r.json().await.unwrap();
+    assert_eq!(st["services"][1]["running"], true);
+    let mcp = format!("http://{}", st["services"][1]["addr"].as_str().unwrap());
+    let init = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"});
+    assert_eq!(http.post(format!("{mcp}/mcp")).json(&init).send().await.unwrap().status(), 401);
+    let r = http.post(format!("{mcp}/mcp")).bearer_auth(&key).json(&init).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let tools: Value = r.json().await.unwrap();
+    assert!(tools["result"]["tools"].as_array().unwrap().iter().any(|t| t["name"] == "search"));
+    assert_eq!(http.get(format!("{mcp}/v1/sources")).bearer_auth(&key).send().await.unwrap().status(), 404);
+    assert_eq!(http.get(format!("{mcp}/health")).send().await.unwrap().status(), 200);
+    // A second start is refused, and stopping really closes the port.
+    assert_eq!(act("mcp/start", json!(null)).await.status(), 400);
+    let r = act("mcp/stop", json!(null)).await;
+    assert_eq!(r.json::<Value>().await.unwrap()["services"][1]["running"], false);
+    assert!(http.get(format!("{mcp}/health")).send().await.is_err());
+
+    // A new key replaces the old one on the next start.
+    let r = act("mcp/rotate", json!(null)).await;
+    let st: Value = r.json().await.unwrap();
+    assert_ne!(st["services"][1]["config"]["root_key"].as_str().unwrap(), key);
+
+    // Accounts: a user and a key made from the page work on a service that uses accounts.
+    let r = http.post(format!("{wb}/desk/api/users")).json(&json!({"name": "ann"})).send().await.unwrap();
+    assert_eq!(r.status(), 201);
+    let k: Value = http.post(format!("{wb}/desk/api/users/ann/keys")).json(&json!({"name": "t"})).send().await.unwrap().json().await.unwrap();
+    let user_key = k["key"].as_str().unwrap().to_string();
+    act("api/config", json!({"addr": "127.0.0.1:0", "auth": "accounts"})).await;
+    let st: Value = act("api/start", json!(null)).await.json().await.unwrap();
+    let api = format!("http://{}", st["services"][0]["addr"].as_str().unwrap());
+    assert_eq!(http.get(format!("{api}/v1/sources")).send().await.unwrap().status(), 401);
+    assert_eq!(http.get(format!("{api}/v1/sources")).bearer_auth(&user_key).send().await.unwrap().status(), 200);
+    let r = http.post(format!("{wb}/desk/api/keys/{}/revoke", k["id"].as_str().unwrap())).json(&json!({})).send().await.unwrap();
+    assert_eq!(r.status(), 204);
+    assert_eq!(http.get(format!("{api}/v1/sources")).bearer_auth(&user_key).send().await.unwrap().status(), 401);
+    desk.stop_all().await;
 }

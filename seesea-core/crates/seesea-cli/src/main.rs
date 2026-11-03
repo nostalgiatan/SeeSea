@@ -301,6 +301,18 @@ enum Command {
         #[arg(long, env = "SEESEA_PUBLIC_URL")]
         public_url: Option<String>,
     },
+    /// Open the workbench: search from a browser page on this machine, and run the JSON API and a remote MCP server from it.
+    Desk {
+        /// Where the workbench itself listens; loopback only.
+        #[arg(long, default_value = "127.0.0.1:7878")]
+        addr: std::net::SocketAddr,
+        /// Do not open the page in a browser.
+        #[arg(long)]
+        no_open: bool,
+        /// Poll the index's feeds in the background at this interval (e.g. 15m); `0` turns it off.
+        #[arg(long, default_value = "15m")]
+        poll_every: String,
+    },
     /// Run as an MCP server over standard input and output.
     Mcp,
 }
@@ -791,13 +803,13 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
     let json = cli.net.json;
     let config_path = cli.net.config.clone().unwrap_or_else(userconfig::default_path);
     let file = userconfig::load(&config_path)?.unwrap_or_default();
-    let long_lived = matches!(cli.command, Command::Serve { .. } | Command::Mcp);
+    let long_lived = matches!(cli.command, Command::Serve { .. } | Command::Desk { .. } | Command::Mcp);
     // The model is only loaded (in the background) for commands that rerank page content.
     let use_model = match &cli.command {
         Command::Search { mode, .. } | Command::Eval { mode, .. } => {
             !mode.eq_ignore_ascii_case("fast")
         }
-        Command::Serve { .. } | Command::Mcp | Command::Poll { .. } => true,
+        Command::Serve { .. } | Command::Desk { .. } | Command::Mcp | Command::Poll { .. } => true,
         Command::Index { action: Some(IndexAction::Embed | IndexAction::Near { .. }) } => true,
         // Models only help `extract` choose sections for a query.
         Command::Extract { query, .. } => query.is_some(),
@@ -1374,6 +1386,38 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             if let Some(l) = &lease {
                 l.release().await;
             }
+            served
+        }
+        Command::Desk { addr, no_open, poll_every } => {
+            if !addr.ip().is_loopback() {
+                return Err(Error::Config("the workbench manages this machine and listens on loopback only; run `seesea serve` for a network address".into()));
+            }
+            let auth_db = cli.net.auth_db.clone().unwrap_or_else(userconfig::default_auth_db);
+            let mut state_index = None;
+            if let Some(dir) = pipeline_settings.index_dir.clone() {
+                let index = seesea_index::Index::open(dir);
+                state_index = Some(Arc::clone(&index));
+                let every = parse_interval(&poll_every)?;
+                if !every.is_zero() {
+                    let poller = seesea_cli::config::build_poller(&pipeline_settings, Arc::clone(&index))?;
+                    tokio::spawn(async move { poller.run(every).await });
+                }
+            }
+            // The workbench itself needs no key: it answers this machine only, and the services it starts have their own.
+            let mut state = AppState::with_access(pipeline, seesea_cli::access::Access::new(None, file.plans.clone(), None));
+            state.index = state_index;
+            state.embedder = pipeline_settings.model_dir.as_ref().map(|m| seesea_cli::embedding::shared_embedder(m) as Arc<dyn seesea_pipeline::semantic::TextEmbedder>);
+            let desk = seesea_cli::desk::Desk::new(userconfig::data_dir().join("desk.json"), auth_db, seesea_auth::default_plans().into_iter().chain(file.plans.clone()).collect());
+            desk.attach(state.clone());
+            desk.autostart().await;
+            state.desk = Some(Arc::clone(&desk));
+            let url = format!("http://{addr}/");
+            eprintln!("seesea workbench: {url}");
+            if !no_open {
+                seesea_cli::desk::open_browser(&url);
+            }
+            let served = server::serve(addr, state, 64, false, None, false).await;
+            desk.stop_all().await;
             served
         }
         Command::Config { .. }
