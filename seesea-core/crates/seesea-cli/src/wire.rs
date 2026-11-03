@@ -69,6 +69,8 @@ pub enum Op {
     Refund = 8,
     /// A standby flywheel node pulls what the primary holds: head `{what: "accounts"|"learner"|"index", offset?}`.
     Replicate = 9,
+    /// Ask a voter for the write lease: head `{}`; reply head `{granted: bool}`. Flywheel and witness nodes only.
+    Lease = 10,
 }
 
 impl Op {
@@ -84,6 +86,7 @@ impl Op {
             7 => Op::Charge,
             8 => Op::Refund,
             9 => Op::Replicate,
+            10 => Op::Lease,
             _ => return None,
         })
     }
@@ -98,6 +101,8 @@ pub enum Status {
     Busy = 2,
     /// The peer's role does not allow this.
     Forbidden = 3,
+    /// This flywheel node does not hold the write lease; the other one does. Nothing was done.
+    NotLeader = 4,
 }
 
 impl Status {
@@ -106,6 +111,7 @@ impl Status {
             0 => Status::Ok,
             2 => Status::Busy,
             3 => Status::Forbidden,
+            4 => Status::NotLeader,
             _ => Status::Error,
         }
     }
@@ -189,6 +195,8 @@ pub enum PeerRole {
     Gateway,
     Search,
     Flywheel,
+    /// Votes on who may write, holds no data.
+    Witness,
     /// A person with a node's key, moving data in (`seesea cluster push`).
     Operator,
 }
@@ -200,8 +208,9 @@ impl std::str::FromStr for PeerRole {
             "gateway" => Ok(Self::Gateway),
             "search" => Ok(Self::Search),
             "flywheel" => Ok(Self::Flywheel),
+            "witness" => Ok(Self::Witness),
             "operator" => Ok(Self::Operator),
-            other => Err(format!("peer role must be gateway, search, flywheel or operator, not '{other}'")),
+            other => Err(format!("peer role must be gateway, search, flywheel, witness or operator, not '{other}'")),
         }
     }
 }
@@ -213,7 +222,7 @@ impl PeerRole {
             (_, Op::Ping) => true,
             (Self::Gateway, Op::Http | Op::Admit | Op::Charge | Op::Refund) => true,
             (Self::Search, Op::Events | Op::LearnGet | Op::IndexSearch) => true,
-            (Self::Flywheel, Op::Replicate) => true,
+            (Self::Flywheel, Op::Replicate | Op::Lease) => true,
             (Self::Operator, Op::Events | Op::LearnGet | Op::LearnMerge) => true,
             _ => false,
         }
@@ -321,6 +330,11 @@ impl Peers {
     /// Take a node out (a fixed list only; a file is edited by hand).
     pub fn revoke(&self, fingerprint: &str) {
         self.listed.lock().unwrap().by_fingerprint.remove(fingerprint);
+    }
+
+    /// Everyone listed with this role.
+    pub fn with_role(&self, role: PeerRole) -> Vec<PeerInfo> {
+        self.listed.lock().unwrap().by_fingerprint.values().filter(|p| p.role == role).cloned().collect()
     }
 
     pub fn lookup(&self, fingerprint: &str) -> Option<PeerInfo> {
@@ -546,6 +560,8 @@ pub enum CallError {
     Failed(String),
     /// The peer's role does not allow it.
     Refused(String),
+    /// A flywheel node that is not the current writer; the other one is.
+    NotLeader,
 }
 
 impl std::fmt::Display for CallError {
@@ -553,6 +569,7 @@ impl std::fmt::Display for CallError {
         match self {
             Self::Unreachable(m) | Self::Failed(m) | Self::Refused(m) => f.write_str(m),
             Self::Busy => f.write_str("the node is busy"),
+            Self::NotLeader => f.write_str("the node does not hold the write lease"),
         }
     }
 }
@@ -646,7 +663,12 @@ impl Client {
     }
 
     pub async fn call(&self, op: Op, head: &Value, body: &[u8], limit: Duration) -> Result<Reply, CallError> {
-        let (mut send, mut recv) = self.open().await?;
+        // Connecting counts against the same limit: a node that is gone must not hold the caller for the
+        // connect timeout on top of it.
+        let (mut send, mut recv) = match tokio::time::timeout(limit, self.open()).await {
+            Ok(r) => r?,
+            Err(_) => return Err(CallError::Unreachable(format!("{}: could not connect in time", self.target))),
+        };
         let failed = |m: String| CallError::Failed(format!("{}: {m}", self.target));
         let frame = encode(op as u8, head, body);
         let exchange = async {
@@ -661,6 +683,7 @@ impl Client {
         let reply = Reply { status: Status::from_u8(tag), head, body };
         match reply.status {
             Status::Busy => Err(CallError::Busy),
+            Status::NotLeader => Err(CallError::NotLeader),
             Status::Forbidden => Err(CallError::Refused(reply.head["message"].as_str().unwrap_or("forbidden").to_string())),
             _ => Ok(reply),
         }
@@ -707,6 +730,7 @@ impl Failover {
                     return Ok(r);
                 }
                 Err(e @ CallError::Refused(_)) => return Err(e),
+                Err(CallError::NotLeader) => last = Some(CallError::NotLeader),
                 Err(e) => {
                     self.down.lock().unwrap()[i] = Some(Instant::now());
                     last = Some(e);
@@ -771,7 +795,7 @@ mod tests {
         assert!(PeerRole::Search.may(Op::Events) && !PeerRole::Search.may(Op::Http) && !PeerRole::Search.may(Op::LearnMerge));
         assert!(PeerRole::Operator.may(Op::LearnMerge) && !PeerRole::Operator.may(Op::Http));
         assert!(!PeerRole::Flywheel.may(Op::Events) && PeerRole::Flywheel.may(Op::Replicate) && !PeerRole::Search.may(Op::Replicate));
-        assert!(PeerRole::Flywheel.may(Op::Ping));
+        assert!(PeerRole::Flywheel.may(Op::Ping) && PeerRole::Flywheel.may(Op::Lease) && !PeerRole::Search.may(Op::Lease) && !PeerRole::Gateway.may(Op::Lease));
     }
 
     #[tokio::test]

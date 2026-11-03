@@ -78,6 +78,10 @@ pub struct FileConfig {
     pub flywheel_standby: Option<String>,
     /// On a flywheel node: follow this primary (accounts, learner picture, index) and be its standby.
     pub standby_of: Option<String>,
+    /// Two flywheel nodes and a witness vote on who may write (no split brain): on each flywheel node, the other
+    /// one and the witness.
+    pub partner: Option<String>,
+    pub witness: Option<String>,
     /// Plans for API users, by name: `[plans.free] per_minute = 20`. `default` and `unlimited`
     /// exist unless redefined.
     #[serde(default)]
@@ -342,6 +346,8 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # cluster_listen = "0.0.0.0:7443"                    # search and flywheel nodes (UDP)
 # search_nodes = ["quic://10.0.0.2:7443", "quic://10.0.0.4:7443"]   # gateway
 # flywheel_standby = "quic://10.0.0.5:7443"                           # gateway and search nodes: takes over when the flywheel is away
+# partner = "quic://10.0.0.5:7443"    # flywheel nodes with a witness: the other flywheel node …
+# witness = "quic://10.0.0.6:7443"    # … and the witness (role = "witness"); only the node holding the lease writes
 # standby_of = "quic://10.0.0.3:7443"                                # on the standby flywheel itself
 # flywheel = "quic://10.0.0.3:7443"                                  # gateway and search nodes
 

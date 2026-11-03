@@ -1012,6 +1012,8 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             flywheel: file.flywheel.clone(),
             flywheel_standby: file.flywheel_standby.clone(),
             standby_of: file.standby_of.clone(),
+            partner: file.partner.clone(),
+            witness: file.witness.clone(),
             listen: file.cluster_listen.as_deref().map(|l| l.parse().map_err(|e| Error::Config(format!("cluster_listen '{l}': {e}")))).transpose()?,
             state_dir: Some(userconfig::data_dir()),
             mesh: load_mesh(&file).map_err(Error::Config)?,
@@ -1027,8 +1029,8 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             pipeline_settings.spool_dir = Some(userconfig::default_spool_dir());
             pipeline_settings.index_dir = None;
         }
-        Some(seesea_cli::cluster::Role::Gateway) => {
-            // The gateway only forwards: no models, no index, nothing learned here.
+        Some(seesea_cli::cluster::Role::Gateway | seesea_cli::cluster::Role::Witness) => {
+            // The gateway only forwards (a witness only votes): no models, no index, nothing learned here.
             pipeline_settings.model_dir = None;
             pipeline_settings.rerank_model = None;
             pipeline_settings.index_dir = None;
@@ -1277,8 +1279,27 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         } => {
             // A gateway keeps no accounts: they live with the flywheel node, so any number of gateways can run.
             let is_gateway = cluster.as_ref().is_some_and(|c| c.role == seesea_cli::cluster::Role::Gateway);
-            let store = if is_gateway { None } else { Some(open_auth(&cli.net)?) };
-            let standby_flag = cluster.as_ref().filter(|c| c.standby_of.is_some()).map(|_| seesea_cli::cluster::Standby::new());
+            let is_witness = cluster.as_ref().is_some_and(|c| c.role == seesea_cli::cluster::Role::Witness);
+            let store = if is_gateway || is_witness { None } else { Some(open_auth(&cli.net)?) };
+            // The write lease: a flywheel node with a partner and a witness, or the witness itself.
+            let lease = match cluster.as_ref() {
+                Some(c) if c.role == seesea_cli::cluster::Role::Witness => Some(seesea_cli::cluster::Lease::new(c.mesh.as_ref().expect("checked").identity.fingerprint.clone(), vec![])),
+                Some(c) if c.partner.is_some() => {
+                    let mesh = c.mesh.as_ref().expect("checked");
+                    let voters = [(c.partner.as_deref().unwrap(), seesea_cli::wire::PeerRole::Flywheel), (c.witness.as_deref().unwrap(), seesea_cli::wire::PeerRole::Witness)]
+                        .into_iter()
+                        .map(|(u, r)| seesea_cli::wire::Client::new(mesh, u, r))
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(Error::Config)?;
+                    let l = seesea_cli::cluster::Lease::new(mesh.identity.fingerprint.clone(), voters);
+                    let other = mesh.peers.with_role(seesea_cli::wire::PeerRole::Flywheel).into_iter().map(|p| p.fingerprint).find(|f| *f != mesh.identity.fingerprint);
+                    l.run(other);
+                    Some(l)
+                }
+                _ => None,
+            };
+            let follows = cluster.as_ref().is_some_and(|c| c.standby_of.is_some() || c.partner.is_some());
+            let standby_flag = follows.then(|| seesea_cli::cluster::Standby::new(lease.clone().filter(|_| cluster.as_ref().is_some_and(|c| c.role == seesea_cli::cluster::Role::Flywheel))));
             let mut state_index = None;
             if let Some(dir) = pipeline_settings.index_dir.clone() {
                 let index = seesea_index::Index::open(dir);
@@ -1291,7 +1312,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                         Some(st) => {
                             tokio::spawn(async move {
                                 loop {
-                                    if !st.primary_up.load(std::sync::atomic::Ordering::Relaxed) {
+                                    if st.active() {
                                         poller.poll_once().await;
                                     }
                                     tokio::time::sleep(every).await;
@@ -1340,10 +1361,10 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                 (None, None) => None,
                 _ => return Err(Error::Config("tls_cert and tls_key go together".into())),
             };
-            if let Some(c) = cluster.as_ref().filter(|c| matches!(c.role, seesea_cli::cluster::Role::Search | seesea_cli::cluster::Role::Flywheel)) {
-                let wire = seesea_cli::cluster::start_wire(state.clone(), max_concurrent, c).map_err(Error::Config)?;
+            if let Some(c) = cluster.as_ref().filter(|c| matches!(c.role, seesea_cli::cluster::Role::Search | seesea_cli::cluster::Role::Flywheel | seesea_cli::cluster::Role::Witness)) {
+                let wire = seesea_cli::cluster::start_wire(state.clone(), max_concurrent, c, lease.clone()).map_err(Error::Config)?;
                 eprintln!("seesea-wire listening on quic udp {}", wire.addr);
-                if let Some(primary) = &c.standby_of {
+                if let Some(primary) = c.standby_of.as_ref().or(c.partner.as_ref()) {
                     let link = seesea_cli::cluster::Link::new(c.mesh.as_ref().expect("checked"), primary).map_err(Error::Config)?;
                     seesea_cli::cluster::run_standby(state.clone(), link);
                 }

@@ -697,6 +697,8 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
         flywheel: fly.map(String::from),
         flywheel_standby: None,
         standby_of: None,
+        partner: None,
+        witness: None,
         listen: Some("127.0.0.1:0".parse().unwrap()),
         state_dir: Some(std::env::temp_dir().join(format!("seesea-e2e-{}-{me}", std::process::id()))),
         mesh: Some(mesh(me, peers)),
@@ -709,7 +711,7 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     let plans2 = std::collections::HashMap::from([("small".to_string(), Plan { per_minute: 600, burst: 100, per_day: 0, max_concurrent: 4, deep: false })]);
     let mut fly2 = AppState::with_access(Arc::new(build_pipeline(&standby_settings).unwrap()), seesea_cli::access::Access::new(Some(store2), plans2, None));
     fly2.index = Some(index2.clone());
-    fly2.standby = Some(seesea_cli::cluster::Standby::new());
+    fly2.standby = Some(seesea_cli::cluster::Standby::new(None));
     let fly2_cluster = cluster(
         Role::Flywheel,
         "fly2",
@@ -718,7 +720,7 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
         None,
     );
     fly2.cluster = Some(fly2_cluster.clone());
-    let fly2_wire = start_wire(fly2.clone(), 8, &fly2_cluster).unwrap();
+    let fly2_wire = start_wire(fly2.clone(), 8, &fly2_cluster, None).unwrap();
     let fly2_url = format!("quic://{}", fly2_wire.addr);
 
     // The flywheel node: index, learner, journal. It lets search nodes, the gateway and an operator in.
@@ -743,7 +745,7 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
         None,
     );
     fly.cluster = Some(fly_cluster.clone());
-    let fly_wire = start_wire(fly, 8, &fly_cluster).unwrap();
+    let fly_wire = start_wire(fly, 8, &fly_cluster, None).unwrap();
     let fly_url = format!("quic://{}", fly_wire.addr);
 
     // Two search nodes that keep nothing of their own; they answer only the gateway.
@@ -761,7 +763,7 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
         };
         let mut st = AppState::new(Arc::new(build_pipeline(&s).unwrap()), None);
         st.cluster = Some(c.clone());
-        let w = start_wire(st.clone(), 8, &c).unwrap();
+        let w = start_wire(st.clone(), 8, &c, None).unwrap();
         search_urls.push(format!("quic://{}", w.addr));
         wires.push(w);
         http_urls.push(spawn_node(st).await.0);
