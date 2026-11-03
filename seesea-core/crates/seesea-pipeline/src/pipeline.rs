@@ -65,6 +65,7 @@ pub struct Pipeline {
     renderer: Option<Arc<dyn PageFetcher>>,
     /// Nudges stage-1 scores by what hosts and sources delivered in earlier searches.
     learner: Option<Arc<crate::learn::Learner>>,
+    journal: Option<Arc<crate::journal::Journal>>,
     extractor: OnceLock<Arc<Extractor>>,
     reranker: Arc<dyn Reranker>,
     section_scorer: Option<Arc<dyn SectionScorer>>,
@@ -133,6 +134,7 @@ impl Pipeline {
             fetcher,
             renderer: None,
             learner: None,
+            journal: None,
             extractor: OnceLock::new(),
             reranker: Arc::new(LexicalReranker),
             section_scorer: None,
@@ -162,6 +164,15 @@ impl Pipeline {
     pub fn learner(mut self, learner: Arc<crate::learn::Learner>) -> Self {
         self.learner = Some(learner);
         self
+    }
+
+    pub fn journal(mut self, journal: Arc<crate::journal::Journal>) -> Self {
+        self.journal = Some(journal);
+        self
+    }
+
+    pub fn journal_handle(&self) -> Option<&Arc<crate::journal::Journal>> {
+        self.journal.as_ref()
     }
 
     pub fn learner_handle(&self) -> Option<&Arc<crate::learn::Learner>> {
@@ -369,6 +380,14 @@ impl Pipeline {
     }
 
     pub async fn search(&self, req: &SearchRequest) -> Result<SearchResponse> {
+        let result = self.search_inner(req).await;
+        if let Some(j) = &self.journal {
+            j.search(req, &result);
+        }
+        result
+    }
+
+    async fn search_inner(&self, req: &SearchRequest) -> Result<SearchResponse> {
         req.validate()?;
         let started = Instant::now();
         let sources = self.select_sources(&req.sources, rank::Recency::of(&req.query))?;

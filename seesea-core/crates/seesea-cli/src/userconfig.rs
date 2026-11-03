@@ -26,6 +26,8 @@ pub struct FileConfig {
     pub no_render: Option<bool>,
     /// Do not adapt stage-1 ranking to how hosts and sources delivered before.
     pub no_learn: Option<bool>,
+    /// Do not keep a record of searches (see `seesea report`).
+    pub no_journal: Option<bool>,
     /// Chance per search (0..1) of reading one lower-ranked result to keep the learning unbiased.
     pub explore: Option<f64>,
     /// Do not keep a local index of fresh articles (no `local` source, no feed polling).
@@ -174,6 +176,11 @@ pub fn default_learn_file() -> PathBuf {
     data_dir().join("learn.json")
 }
 
+/// The record of searches that `seesea report` reads.
+pub fn default_journal_dir() -> PathBuf {
+    data_dir().join("journal")
+}
+
 /// Fresh articles from feeds and pushes.
 pub fn default_index_dir() -> PathBuf {
     data_dir().join("index")
@@ -243,6 +250,8 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 
 # Stage 1 learns from the pages it reads which hosts and sources deliver (see `seesea learn show`).
 # no_learn = false
+# Every search is recorded under the data folder (journal/) for `seesea report`; turn that off here.
+# no_journal = false
 # explore = 0.05             # now and then read a lower-ranked result too, so ranks are not judged by hearsay
 # fuzzy_cache = 0.8          # reuse cached results for similar queries
 # cache_dir = "~/.cache/seesea"   # default depends on the OS (~/Library/Caches on macOS, %LOCALAPPDATA% on Windows)

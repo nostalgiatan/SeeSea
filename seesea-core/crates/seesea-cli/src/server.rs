@@ -284,6 +284,9 @@ async fn feedback(State(s): State<AppState>, body: Bytes) -> ApiResult<Value> {
         return Err(Error::InvalidRequest("learning is off, or the url has no host".into()).into());
     };
     learner.feedback(&host, good);
+    if let Some(j) = s.pipeline.journal_handle() {
+        j.feedback(&b.url, good);
+    }
     Ok(Json(json!({"host": host, "verdict": b.verdict})))
 }
 

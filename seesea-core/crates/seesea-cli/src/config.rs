@@ -49,6 +49,8 @@ pub struct Settings {
     pub no_render: bool,
     /// Where stage 1 keeps what it learned; none means it does not learn.
     pub learn_file: Option<PathBuf>,
+    /// Where searches are recorded for `seesea report`; none means they are not.
+    pub journal_dir: Option<PathBuf>,
     pub explore: f64,
     /// Folder of the local fresh-news index; none means no `local` source.
     pub index_dir: Option<PathBuf>,
@@ -184,6 +186,9 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
             ..Default::default()
         })
         .cache(cache);
+    if let Some(dir) = &settings.journal_dir {
+        pipeline = pipeline.journal(Arc::new(seesea_pipeline::Journal::new(dir.clone())));
+    }
     if let Some(path) = &settings.learn_file {
         let cfg = seesea_pipeline::LearnConfig { explore: settings.explore.clamp(0.0, 1.0), ..Default::default() };
         pipeline = pipeline.learner(Arc::new(seesea_pipeline::Learner::open(cfg, path.clone())));
