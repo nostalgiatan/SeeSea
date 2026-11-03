@@ -696,6 +696,7 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
         search_nodes: search.to_vec(),
         flywheel: fly.map(String::from),
         listen: Some("127.0.0.1:0".parse().unwrap()),
+        state_dir: Some(std::env::temp_dir().join(format!("seesea-e2e-{}-{me}", std::process::id()))),
         mesh: Some(mesh(me, peers)),
     };
 

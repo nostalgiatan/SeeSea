@@ -1011,6 +1011,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             search_nodes: file.search_nodes.clone(),
             flywheel: file.flywheel.clone(),
             listen: file.cluster_listen.as_deref().map(|l| l.parse().map_err(|e| Error::Config(format!("cluster_listen '{l}': {e}")))).transpose()?,
+            state_dir: Some(userconfig::data_dir()),
             mesh: load_mesh(&file).map_err(Error::Config)?,
         };
         c.check().map_err(Error::Config)?;

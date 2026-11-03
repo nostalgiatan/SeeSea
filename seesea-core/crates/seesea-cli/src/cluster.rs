@@ -70,6 +70,8 @@ pub struct Cluster {
     pub flywheel: Option<String>,
     /// Search and flywheel nodes: the UDP address to listen on for the other nodes.
     pub listen: Option<SocketAddr>,
+    /// Where a flywheel node remembers which events it has applied (so a restart does not apply a resent batch twice).
+    pub state_dir: Option<PathBuf>,
     /// This node's key pair and the peers it trusts.
     pub mesh: Option<Mesh>,
 }
@@ -141,6 +143,8 @@ struct Queued {
     id: (u64, u64),
     event: Value,
     size: usize,
+    /// Read back from a spool file, which stays on disk until every event of it is acknowledged.
+    spooled: bool,
 }
 
 /// Events that did not fit in memory, in files of about 8 MB, oldest first.
@@ -191,16 +195,21 @@ impl Spool {
         }
         let mut dropped = 0;
         while self.bytes > SPOOL_LIMIT && self.head < self.tail {
-            dropped += self.take_head().0.len() as u64;
+            let (lost, path) = self.take_head();
+            dropped += lost.len() as u64;
+            if let Some(p) = path {
+                let _ = std::fs::remove_file(p);
+            }
         }
         dropped
     }
 
-    /// The oldest file, removed from disk.
-    fn take_head(&mut self) -> (Vec<Queued>, u64) {
+    /// The oldest file's events; the file itself is left for the caller to remove (`forget`) once they are
+    /// no longer needed.
+    fn take_head(&mut self) -> (Vec<Queued>, Option<PathBuf>) {
         if self.head == self.tail {
             if self.tail_bytes == 0 {
-                return (Vec::new(), 0);
+                return (Vec::new(), None);
             }
             self.tail += 1;
             self.tail_bytes = 0;
@@ -208,7 +217,6 @@ impl Spool {
         let path = self.path(self.head);
         self.head += 1;
         let text = std::fs::read_to_string(&path).unwrap_or_default();
-        let _ = std::fs::remove_file(&path);
         self.bytes = self.bytes.saturating_sub(text.len() as u64);
         self.events = self.events.saturating_sub(text.lines().count());
         let events = text
@@ -216,10 +224,10 @@ impl Spool {
             .filter_map(|l| {
                 let v: Value = serde_json::from_str(l).ok()?;
                 let id = (v["id"][0].as_u64()?, v["id"][1].as_u64()?);
-                Some(Queued { id, size: l.len(), event: v["e"].clone() })
+                Some(Queued { id, size: l.len(), event: v["e"].clone(), spooled: true })
             })
             .collect();
-        (events, text.len() as u64)
+        (events, Some(path))
     }
 }
 
@@ -228,6 +236,8 @@ struct Queue {
     bytes: usize,
     seq: u64,
     spool: Option<Spool>,
+    /// The spool file whose events are in memory, and how many of them are still unacknowledged.
+    loaded: Option<(PathBuf, usize)>,
 }
 
 /// Events waiting to go to the flywheel node. Memory first; when it is full (or older events are already on
@@ -244,7 +254,7 @@ impl Outbox {
         use std::hash::{BuildHasher, Hasher};
         let mut h = std::collections::hash_map::RandomState::new().build_hasher();
         h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
-        Arc::new(Self { queue: Mutex::new(Queue { events: VecDeque::new(), bytes: 0, seq: 0, spool }), epoch: h.finish(), dropped: 0.into() })
+        Arc::new(Self { queue: Mutex::new(Queue { events: VecDeque::new(), bytes: 0, seq: 0, spool, loaded: None }), epoch: h.finish(), dropped: 0.into() })
     }
 
     /// In memory only.
@@ -261,7 +271,7 @@ impl Outbox {
         let size = e.to_string().len();
         let mut q = self.queue.lock().unwrap();
         q.seq += 1;
-        let item = Queued { id: (self.epoch, q.seq), event: e, size };
+        let item = Queued { id: (self.epoch, q.seq), event: e, size, spooled: false };
         let spooling = q.spool.as_ref().is_some_and(|s| s.events > 0);
         let full = q.events.len() >= QUEUE_LIMIT || (q.bytes + size > QUEUE_BYTES && !q.events.is_empty());
         if spooling || full {
@@ -297,7 +307,14 @@ impl Outbox {
     fn take(&self) -> Vec<Queued> {
         let mut q = self.queue.lock().unwrap();
         if q.events.is_empty() && q.spool.as_ref().is_some_and(|s| s.events > 0) {
-            let (loaded, _) = q.spool.as_mut().map(|s| s.take_head()).unwrap_or_default();
+            let (loaded, path) = q.spool.as_mut().map(|s| s.take_head()).unwrap_or_default();
+            if let Some(path) = path {
+                if loaded.is_empty() {
+                    let _ = std::fs::remove_file(path);
+                } else {
+                    q.loaded = Some((path, loaded.len()));
+                }
+            }
             for item in loaded {
                 q.bytes += item.size;
                 q.events.push_back(item);
@@ -333,6 +350,16 @@ impl Outbox {
             })
             .collect();
         if link.events(&events).await.is_ok() {
+            // A spool file goes only when everything read from it has arrived.
+            let done = batch.iter().filter(|i| i.spooled).count();
+            let mut q = self.queue.lock().unwrap();
+            if let Some((path, left)) = q.loaded.as_mut() {
+                *left = left.saturating_sub(done);
+                if *left == 0 {
+                    let _ = std::fs::remove_file(&*path);
+                    q.loaded = None;
+                }
+            }
             true
         } else {
             self.put_back(batch);
@@ -475,18 +502,27 @@ pub struct NodeHandler {
     permits: tokio::sync::Semaphore,
     /// The highest sequence applied per (sender, epoch), for skipping what arrives twice.
     seen: Mutex<HashMap<(String, u64), u64>>,
+    seen_file: Option<PathBuf>,
 }
 
 /// Start listening for the other nodes.
 pub fn start_wire(state: AppState, max_concurrent: usize, c: &Cluster) -> Result<wire::Server, String> {
     let listen = c.listen.ok_or("no cluster_listen address")?;
     let app = crate::server::router(state.clone(), max_concurrent);
+    let seen_file = c.state_dir.as_ref().filter(|_| c.role == Role::Flywheel).map(|d| d.join("applied.json"));
+    let loaded: HashMap<(String, u64), u64> = seen_file
+        .as_ref()
+        .and_then(|f| std::fs::read(f).ok())
+        .and_then(|b| serde_json::from_slice::<HashMap<String, u64>>(&b).ok())
+        .map(|m| m.into_iter().filter_map(|(k, v)| { let (fp, ep) = k.split_once(':')?; Some(((fp.to_string(), ep.parse().ok()?), v)) }).collect())
+        .unwrap_or_default();
     let handler = Arc::new(NodeHandler {
         flywheel: c.role == Role::Flywheel,
         state,
         app,
         permits: tokio::sync::Semaphore::new(max_concurrent.max(1)),
-        seen: Mutex::new(HashMap::new()),
+        seen: Mutex::new(loaded),
+        seen_file,
     });
     wire::serve(c.mesh()?, listen, handler)
 }
@@ -563,6 +599,16 @@ impl NodeHandler {
         for (epoch, seq) in marks {
             let m = seen.entry((peer.fingerprint.clone(), epoch)).or_insert(0);
             *m = (*m).max(seq);
+        }
+        if let Some(file) = &self.seen_file {
+            let flat: HashMap<String, u64> = seen.iter().map(|((fp, ep), v)| (format!("{fp}:{ep}"), *v)).collect();
+            let tmp = file.with_extension("tmp");
+            if let Some(dir) = file.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            if std::fs::write(&tmp, serde_json::to_vec(&flat).unwrap_or_default()).is_ok() {
+                let _ = std::fs::rename(&tmp, file);
+            }
         }
         Reply::ok(json!({"applied": applied}), Bytes::new())
     }
@@ -1036,7 +1082,7 @@ mod tests {
         std::fs::write(d.path().join("c"), cert).unwrap();
         std::fs::write(d.path().join("k"), key).unwrap();
         let mesh = Mesh { identity: wire::Identity::load(&d.path().join("c"), &d.path().join("k")).unwrap(), peers: wire::Peers::fixed(vec![]) };
-        let base = Cluster { role: Role::Gateway, search_nodes: vec![], flywheel: None, listen: None, mesh: Some(mesh) };
+        let base = Cluster { role: Role::Gateway, search_nodes: vec![], flywheel: None, listen: None, state_dir: None, mesh: Some(mesh) };
         assert!(base.check().unwrap_err().contains("search_nodes"));
         let ok = Cluster { search_nodes: vec!["quic://10.0.0.1:7443".into()], flywheel: Some("quic://10.0.0.2:7443".into()), ..base.clone() };
         assert!(ok.check().is_ok());
@@ -1044,7 +1090,7 @@ mod tests {
         assert!(Cluster { mesh: None, ..ok.clone() }.check().unwrap_err().contains("node_cert"));
         assert!(Cluster { role: Role::Search, ..ok.clone() }.check().unwrap_err().contains("cluster_listen"));
         assert!(Cluster { role: Role::Search, flywheel: None, listen: Some("0.0.0.0:7443".parse().unwrap()), ..ok.clone() }.check().unwrap_err().contains("flywheel"));
-        assert!(Cluster { role: Role::Single, mesh: None, search_nodes: vec![], flywheel: None, listen: None }.check().is_ok());
+        assert!(Cluster { role: Role::Single, mesh: None, search_nodes: vec![], flywheel: None, listen: None, state_dir: None }.check().is_ok());
     }
 
     #[test]
@@ -1057,7 +1103,7 @@ mod tests {
             for i in 0..QUEUE_LIMIT {
                 q.seq += 1;
                 let id = (out.epoch, q.seq);
-                q.events.push_back(Queued { id, event: json!({"k": "x", "n": i}), size: 10 });
+                q.events.push_back(Queued { id, event: json!({"k": "x", "n": i}), size: 10, spooled: false });
                 q.bytes += 10;
             }
         }
@@ -1070,6 +1116,10 @@ mod tests {
         drop(out);
         let again = Outbox::with_spool(dir.path());
         assert_eq!(again.len(), 250);
+        // Reading a spool file back does not delete it: only an acknowledgement does, so a crash before that loses nothing.
+        let first = again.take();
+        assert!(!first.is_empty() && std::fs::read_dir(dir.path()).unwrap().count() > 0);
+        again.put_back(first);
         let mut got = Vec::new();
         loop {
             let b = again.take();
