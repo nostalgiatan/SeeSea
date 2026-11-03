@@ -10,37 +10,47 @@ export CARGO_PROFILE_DEV_DEBUG=0
 cargo build -p seesea-cli >"$OUT/build.txt" 2>&1 || { echo "build failed: $OUT/build.txt"; exit 1; }
 B="$ROOT/seesea-core/target/debug/seesea"
 MODELS=1; [ "${1:-}" = "--no-models" ] && MODELS=0
+. "$ROOT/tools/auto/models.sh"
 if [ $MODELS = 1 ]; then
-  "$B" models download >"$OUT/models.txt" 2>&1 || echo "model download failed (see models.txt); continuing without" 
+  if [ -n "$EMB" ] && [ -n "$RER" ]; then
+    echo "models found: $EMB $RER" | tee "$OUT/models.txt"
+  else
+    echo "models not found locally; downloading (set SEESEA_EMBED_FILE / SEESEA_RERANK_FILE to point at them instead)"
+    b models download >"$OUT/models.txt" 2>&1 && MODEL_FLAGS=() || { echo "download failed (see models.txt); continuing without"; MODELS=0; MODEL_FLAGS=(); }
+  fi
+else
+  MODEL_FLAGS=()
 fi
+B_ORIG="$B"
+b() { "$B_ORIG" ${MODEL_FLAGS[@]+"${MODEL_FLAGS[@]}"} "$@"; }
 
 step() { echo "== $*"; }
 {
 step "sources: which engines work from here"
-"$B" sources --check
+b sources --check
 
 step "searches (standard mode reads pages; good ones are written back to the index)"
 for q in "why does python have a global interpreter lock" "postgres vacuum full vs autovacuum" \
          "红烧肉怎么做才软糯" "difference between tcp and udp" "tokio scheduler work stealing" \
          "rust borrow checker cannot borrow as mutable more than once"; do
   echo "--- $q"
-  "$B" search -m standard -n 5 "$q" 2>&1 | grep -E "^## |^http|^score|^error|returned nothing|failed" | head -15
+  b search -m standard -n 5 "$q" 2>&1 | grep -E "^## |^http|^score|^error|returned nothing|failed" | head -15
 done
 
 step "index after those searches"
-"$B" index
-[ $MODELS = 1 ] && { step "embed the new items"; "$B" index embed; "$B" index; }
+b index
+[ $MODELS = 1 ] && { step "embed the new items"; b index embed; b index; }
 
 step "same topics, reworded, web switched off by a dead proxy: only the index can answer"
 for q in "gil python reason" "vacuum full or autovacuum postgres" "tcp versus udp"; do
   echo "--- $q"
-  "$B" --proxy http://127.0.0.1:9 search -m fast -n 3 "$q" | grep -E "^## |^http|found by|returned|failed" | head -8
+  b --proxy http://127.0.0.1:9 search -m fast -n 3 "$q" | grep -E "^## |^http|found by|returned|failed" | head -8
 done
-[ $MODELS = 1 ] && { step "nearest items by meaning"; "$B" index near "how does python handle threads" -k 5; }
+[ $MODELS = 1 ] && { step "nearest items by meaning"; b index near "how does python handle threads" -k 5; }
 
 step "http: batch and similar"
 PORT=18899
-"$B" serve --addr 127.0.0.1:$PORT --allow-open --poll-every 0s >"$OUT/serve.log" 2>&1 &
+b serve --addr 127.0.0.1:$PORT --allow-open --poll-every 0s >"$OUT/serve.log" 2>&1 &
 SRV=$!
 for _ in $(seq 1 60); do curl -sf "http://127.0.0.1:$PORT/health" >/dev/null && break; sleep 1; done
 curl -s -X POST "http://127.0.0.1:$PORT/v1/search/batch" -H 'content-type: application/json' \
@@ -55,6 +65,6 @@ curl -s "http://127.0.0.1:$PORT/v1/search?q=ai+regulation&mode=fast&topic=news&l
 kill $SRV 2>/dev/null
 } >"$OUT/try.txt" 2>&1
 
-"$B" report --since 1h --out "$OUT/report" >/dev/null 2>&1
+b report --since 1h --out "$OUT/report" >/dev/null 2>&1
 echo "done. Send me: $OUT"
 echo "  try.txt (what happened), report/ (suspects, candidates), serve.log"

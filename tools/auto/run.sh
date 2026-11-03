@@ -28,11 +28,10 @@ fi
 # Offline set: a fake web served locally.
 python3 "$ROOT/tools/search-eval/corpus.py" & CORPUS=$!
 sleep 1
-MODELS="${SEESEA_MODEL_DIR_BASE:-${XDG_DATA_HOME:-$HOME/.local/share}/seesea/models}"
-EMB="$MODELS/bge-m3-Q4_0.gguf"; RER="$MODELS/bge-reranker-v2-m3-Q4_K_M.gguf"
+. "$ROOT/tools/auto/models.sh"
 J="$ROOT/tools/search-eval/judgments.jsonl"
 "$BIN" --searxng http://127.0.0.1:18765 "${EVAL[@]}" eval "$J" -k 5 --mode deep >"$OUT/eval-lexical.txt" 2>&1
-if [ -f "$EMB" ] && [ -f "$RER" ]; then
+if [ -n "$EMB" ] && [ -n "$RER" ]; then
   "$BIN" --searxng http://127.0.0.1:18765 "${EVAL[@]}" --model-dir "$EMB" --rerank-model "$RER" eval "$J" -k 5 --mode deep >"$OUT/eval-models.txt" 2>&1
 fi
 kill $CORPUS 2>/dev/null
