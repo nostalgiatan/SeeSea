@@ -6,7 +6,7 @@ SeeSea is a search service for AI, built as a single pure-Rust program. A query 
 
 You can use it as a command-line tool, as an HTTP server (`/v1/search`, `/v1/extract`) or as an MCP server. When you need more capacity it can be split into gateways, search nodes and data nodes.
 
-The documentation is written in Chinese. This page covers what you need to build and try it.
+The documentation is available in English and Chinese. This page covers what you need to build and try it.
 
 ## Quick start
 
@@ -50,13 +50,13 @@ Optional parts:
 
 ## Documentation
 
-The docs are organised by Diátaxis into tutorials, how-to guides, reference and explanation. The entry point is [docs/README.md](docs/README.md). The command-line options are also available from `seesea --help` and `seesea <command> --help`.
+The docs are organised by Diátaxis into tutorials, how-to guides, reference and explanation. The English entry point is [docs/en/README.md](docs/en/README.md); the Chinese one is [docs/README.md](docs/README.md). The command-line options are also available from `seesea --help` and `seesea <command> --help`.
 
 ## Status
 
 Tests cover the pipeline, the HTTP server, MCP, accounts, the cluster protocol and failover. The multi-node part was checked on one machine with network namespaces (`seesea-core/scripts/netns-cluster.sh`), not on real separate machines.
 
-Search quality has only been looked at on a small 8-query evaluation set and one 4-query comparison with Tavily, which is not enough to say how good it is overall. [Known limits](docs/reference/known-limits.md) lists what it cannot do and what has not been verified.
+Search quality has only been looked at on a small 8-query evaluation set and one 4-query comparison with Tavily, which is not enough to say how good it is overall. [Known limits](docs/en/reference/known-limits.md) lists what it cannot do and what has not been verified.
 
 ## License
 
