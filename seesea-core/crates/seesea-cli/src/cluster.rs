@@ -867,6 +867,8 @@ pub struct Pool {
     next: AtomicUsize,
     /// Always the first healthy node in configuration order (a primary and its standby), never round robin.
     ordered: bool,
+    /// How long one forwarded request may take.
+    limit: Duration,
 }
 
 impl Pool {
@@ -875,13 +877,15 @@ impl Pool {
             .iter()
             .map(|u| Ok(Node { url: u.clone(), client: wire::Client::new(mesh, u, role)?, up: AtomicBool::new(true) }))
             .collect::<Result<Vec<_>, String>>()?;
-        Ok(Arc::new(Self { nodes, next: AtomicUsize::new(0), ordered: false }))
+        Ok(Arc::new(Self { nodes, next: AtomicUsize::new(0), ordered: false, limit: Duration::from_secs(115) }))
     }
 
     /// Nodes that are not interchangeable: a primary and its standby.
     pub fn ordered(mesh: &Mesh, urls: &[String], role: PeerRole) -> Result<Arc<Self>, String> {
         let mut p = Arc::try_unwrap(Self::new(mesh, urls, role)?).ok().expect("just made");
         p.ordered = true;
+        // What a standby pair holds answers quickly; a node that does not is given up on sooner.
+        p.limit = Duration::from_secs(10);
         Ok(Arc::new(p))
     }
 
@@ -930,7 +934,7 @@ impl Pool {
         let head = json!({"method": method.as_str(), "uri": path_and_query, "content_type": content_type, "authorization": authorization});
         for i in self.order().into_iter().take(3) {
             let node = &self.nodes[i];
-            match node.client.call(Op::Http, &head, &body, Duration::from_secs(115)).await {
+            match node.client.call(Op::Http, &head, &body, self.limit).await {
                 Ok(reply) => {
                     node.up.store(true, Ordering::Relaxed);
                     if reply.status != Status::Ok {
@@ -952,6 +956,11 @@ impl Pool {
                     last = m;
                 }
                 Err(CallError::Busy) => busy = true,
+                // Reading never changes anything, so a read that got no answer can be asked of the next node.
+                Err(CallError::Failed(m)) if method == Method::GET => {
+                    node.up.store(false, Ordering::Relaxed);
+                    last = m;
+                }
                 // The node may have run it already; do not run it twice.
                 Err(CallError::Failed(m)) => {
                     return (StatusCode::GATEWAY_TIMEOUT, Json(json!({"code": "upstream_failed", "message": m}))).into_response();
