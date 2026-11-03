@@ -13,3 +13,5 @@ pub mod wire;
 pub mod tls;
 pub mod account;
 pub mod seeds;
+pub mod desk;
+pub mod ui;

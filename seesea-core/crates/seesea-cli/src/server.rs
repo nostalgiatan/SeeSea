@@ -39,6 +39,8 @@ pub struct AppState {
     pub local_only: bool,
     /// On a standby flywheel node: whether it can see its primary and whether it took writes meanwhile.
     pub standby: Option<Arc<crate::cluster::Standby>>,
+    /// In the workbench (`seesea desk`): the settings and running state of the services it starts.
+    pub desk: Option<Arc<crate::desk::Desk>>,
 }
 
 impl AppState {
@@ -59,6 +61,7 @@ impl AppState {
             trust_forwarded: false,
             local_only: false,
             standby: None,
+            desk: None,
         }
     }
 }
@@ -195,7 +198,8 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Reques
         }
     }
     // WebSub hubs cannot send API keys: those requests are checked by challenge and signature instead.
-    if req.uri().path() == "/health" || req.uri().path().starts_with("/v1/websub/") || !state.access.required() {
+    // The workbench page itself is static and holds no data: it has to load before a key can be typed into it.
+    if req.uri().path() == "/health" || crate::ui::is_asset(req.uri().path()) || req.uri().path().starts_with("/v1/websub/") || !state.access.required() {
         return next.run(req).await;
     }
     let mut ip = req
@@ -676,7 +680,38 @@ pub fn meter_mcp(access: &Access, g: &Grant, body: &[u8]) -> Result<(), String> 
     Ok(())
 }
 
-async fn mcp(State(s): State<AppState>, grant: Option<Extension<Grant>>, body: Bytes) -> Response {
+/// The host part of `Host` or of an `Origin` value (scheme and port dropped).
+fn host_of(value: &str) -> String {
+    let rest = value.split_once("://").map_or(value, |(_, r)| r);
+    let rest = rest.split('/').next().unwrap_or("");
+    let name = if let Some(v6) = rest.strip_prefix('[') {
+        v6.split(']').next().unwrap_or("")
+    } else {
+        rest.rsplit_once(':').map_or(rest, |(h, _)| h)
+    };
+    name.trim_end_matches('.').to_ascii_lowercase()
+}
+
+/// Remote MCP clients are programs and send no `Origin`; a browser always does. A page on another site
+/// must not be able to call the tools, so an `Origin` is accepted only when it names the host the request
+/// was addressed to (and a local name, when the server is local only).
+fn origin_ok(headers: &HeaderMap, local_only: bool) -> bool {
+    let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else { return true };
+    let origin_host = host_of(origin);
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(host_of).unwrap_or_default();
+    origin_host == host && (!local_only || host_is_local(&origin_host))
+}
+
+/// `GET` and `DELETE` on `/mcp`: this endpoint answers each POST with one JSON reply, it has no stream
+/// to open and no session to end (the 405 the Streamable HTTP transport allows for both).
+async fn mcp_other() -> Response {
+    (StatusCode::METHOD_NOT_ALLOWED, [(header::ALLOW, "POST")], Json(json!({"code": "method_not_allowed", "message": "send MCP messages with POST"}))).into_response()
+}
+
+async fn mcp(State(s): State<AppState>, headers: HeaderMap, grant: Option<Extension<Grant>>, body: Bytes) -> Response {
+    if !origin_ok(&headers, s.local_only) {
+        return (StatusCode::FORBIDDEN, Json(json!({"code": "forbidden_origin", "message": "this endpoint does not answer web pages from another site"}))).into_response();
+    }
     if let Some(Extension(g)) = &grant
         && let Err(m) = meter_mcp(&s.access, g, &body)
     {
@@ -713,18 +748,141 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
             .route("/v1/ingest", post(ingest))
             .route("/v1/websub/{id}", get(websub_verify).post(websub_deliver))
             .route("/v1/index", get(index_info))
-            .route("/mcp", post(mcp))
+            .route("/mcp", post(mcp).get(mcp_other).delete(mcp_other))
+            .merge(crate::ui::routes())
     };
+    let routes = if state.desk.is_some() { routes.merge(crate::desk::routes()) } else { routes };
+    layered(
+        routes
+            .merge(if state.gateway.is_some() { Router::new() } else { crate::account::routes() })
+            .route("/v1/cluster/status", get(crate::cluster::status))
+            .fallback(crate::cluster::forward),
+        state,
+        max_concurrent,
+    )
+}
+
+/// Only `/health` and `/mcp`: a remote MCP server that does not offer the rest of the API.
+pub fn mcp_router(state: AppState, max_concurrent: usize) -> Router {
+    layered(
+        Router::new().route("/health", get(health)).route("/mcp", post(mcp).get(mcp_other).delete(mcp_other)),
+        state,
+        max_concurrent,
+    )
+}
+
+fn layered(routes: Router<AppState>, state: AppState, max_concurrent: usize) -> Router {
     routes
-        .merge(if state.gateway.is_some() { Router::new() } else { crate::account::routes() })
-        .route("/v1/cluster/status", get(crate::cluster::status))
-        .fallback(crate::cluster::forward)
         .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(ConcurrencyLimitLayer::new(max_concurrent.max(1)))
         .layer(middleware::from_fn_with_state(state.clone(), auth))
         .layer(middleware::from_fn_with_state(state.clone(), local_guard))
         .layer(middleware::from_fn(deadline))
         .with_state(state)
+}
+
+/// How one listener is set up.
+#[derive(Clone, Default)]
+pub struct ListenOpts {
+    pub max_concurrent: usize,
+    /// Listen on a non-loopback address although no API key or user exists.
+    pub allow_open: bool,
+    pub tls: Option<Arc<rustls::ServerConfig>>,
+    /// A proxy in front terminates TLS.
+    pub behind_tls_proxy: bool,
+    /// Answer `/mcp` and `/health` only.
+    pub mcp_only: bool,
+}
+
+/// A listener that can be stopped: the address it is really bound to (a port of 0 picks one) and its task.
+pub struct Running {
+    pub addr: std::net::SocketAddr,
+    pub tls: bool,
+    stop: Option<tokio::sync::oneshot::Sender<()>>,
+    task: tokio::task::JoinHandle<Result<(), Error>>,
+}
+
+impl Running {
+    /// The listener ended by itself (it failed after starting).
+    pub fn finished(&self) -> bool {
+        self.task.is_finished()
+    }
+
+    /// Let requests in flight finish, then close.
+    pub async fn stop(mut self) -> Result<(), Error> {
+        if let Some(tx) = self.stop.take() {
+            let _ = tx.send(());
+        }
+        self.task.await.map_err(|e| Error::Config(format!("listener task: {e}")))?
+    }
+}
+
+/// Check that this address may be served as set up, and bind it.
+async fn bind(addr: std::net::SocketAddr, state: &mut AppState, o: &ListenOpts) -> Result<tokio::net::TcpListener, Error> {
+    // Keys, queries and results must not cross a network in clear text.
+    if !addr.ip().is_loopback() && o.tls.is_none() && !o.behind_tls_proxy {
+        return Err(Error::Config(format!(
+            "refusing to listen on {addr} without TLS: set tls_cert and tls_key, or behind_tls_proxy = true when a proxy in front terminates TLS"
+        )));
+    }
+    if !addr.ip().is_loopback() && !state.access.required() && !o.allow_open {
+        return Err(Error::Config(format!(
+            "refusing to listen on {addr} without any API key: create one (`seesea users add NAME`, `seesea keys create NAME`), pass --api-key, or --allow-open"
+        )));
+    }
+    state.local_only = addr.ip().is_loopback() && !o.behind_tls_proxy && !state.trust_forwarded;
+    tokio::net::TcpListener::bind(addr).await.map_err(|e| Error::Config(format!("cannot listen on {addr}: {e}")))
+}
+
+/// Serve `app` on `listener` until `shutdown` completes, writing usage counters to disk every 30 seconds
+/// and once more at the end.
+async fn run(
+    listener: tokio::net::TcpListener,
+    app: Router,
+    tls: Option<Arc<rustls::ServerConfig>>,
+    access: Arc<Access>,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> Result<(), Error> {
+    let flusher = tokio::spawn({
+        let access = Arc::clone(&access);
+        async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                access.flush();
+            }
+        }
+    });
+    let served = match tls {
+        Some(config) => {
+            let tls_listener = crate::tls::TlsListener::new(listener, config)?;
+            axum::serve(tls_listener, app.into_make_service_with_connect_info::<crate::tls::PeerAddr>())
+                .with_graceful_shutdown(shutdown)
+                .await
+        }
+        None => {
+            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+                .with_graceful_shutdown(shutdown)
+                .await
+        }
+    };
+    flusher.abort();
+    access.flush();
+    served?;
+    Ok(())
+}
+
+/// Start a listener in the background and return the handle that stops it.
+pub async fn listen(addr: std::net::SocketAddr, mut state: AppState, o: ListenOpts) -> Result<Running, Error> {
+    let listener = bind(addr, &mut state, &o).await?;
+    let bound = listener.local_addr()?;
+    let access = Arc::clone(&state.access);
+    let app = if o.mcp_only { mcp_router(state, o.max_concurrent) } else { router(state, o.max_concurrent) };
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let tls = o.tls.clone();
+    let task = tokio::spawn(run(listener, app, o.tls, access, async move {
+        let _ = stopped.await;
+    }));
+    Ok(Running { addr: bound, tls: tls.is_some(), stop: Some(stop), task })
 }
 
 /// Serve until Ctrl-C.
@@ -736,54 +894,15 @@ pub async fn serve(
     tls: Option<Arc<rustls::ServerConfig>>,
     behind_tls_proxy: bool,
 ) -> Result<(), Error> {
-    // Keys, queries and results must not cross a network in clear text.
-    if !addr.ip().is_loopback() && tls.is_none() && !behind_tls_proxy {
-        return Err(Error::Config(format!(
-            "refusing to listen on {addr} without TLS: set tls_cert and tls_key, or behind_tls_proxy = true when a proxy in front terminates TLS"
-        )));
-    }
-    if !addr.ip().is_loopback() && !state.access.required() && !allow_open {
-        return Err(Error::Config(format!(
-            "refusing to listen on {addr} without any API key: create one (`seesea users add NAME`, `seesea keys create NAME`), pass --api-key, or --allow-open"
-        )));
-    }
-    state.local_only = addr.ip().is_loopback() && !behind_tls_proxy && !state.trust_forwarded;
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .map_err(|e| Error::Config(format!("cannot listen on {addr}: {e}")))?;
+    let o = ListenOpts { max_concurrent, allow_open, tls: tls.clone(), behind_tls_proxy, mcp_only: false };
+    let listener = bind(addr, &mut state, &o).await?;
     eprintln!(
         "seesea listening on {}://{}",
         if tls.is_some() { "https" } else { "http" },
         listener.local_addr()?
     );
     let access = Arc::clone(&state.access);
-    let flusher = tokio::spawn({
-        let access = Arc::clone(&access);
-        async move {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-                access.flush();
-            }
-        }
-    });
-    let app = router(state, max_concurrent);
-    let served = match tls {
-        Some(config) => {
-            let tls_listener = crate::tls::TlsListener::new(listener, config)?;
-            axum::serve(tls_listener, app.into_make_service_with_connect_info::<crate::tls::PeerAddr>())
-                .with_graceful_shutdown(shutdown_signal())
-                .await
-        }
-        None => {
-            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-                .with_graceful_shutdown(shutdown_signal())
-                .await
-        }
-    };
-    flusher.abort();
-    access.flush();
-    served?;
-    Ok(())
+    run(listener, router(state, max_concurrent), tls, access, shutdown_signal()).await
 }
 
 /// Ctrl-C, or SIGTERM which is what systemd, Docker and Kubernetes send: either one lets requests finish and

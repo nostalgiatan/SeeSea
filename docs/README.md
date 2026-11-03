@@ -26,6 +26,7 @@
 
 - [运行 HTTP 服务并发放密钥](how-to/run-the-server.md)
 - [接入 MCP 客户端](how-to/connect-an-mcp-client.md)
+- [使用工作台](how-to/use-the-workbench.md)
 
 多节点：
 
@@ -38,6 +39,7 @@
 查一个具体的参数、字段或取值。
 
 - [命令行](reference/cli.md)
+- [工作台](reference/workbench.md)
 - [HTTP 接口](reference/http-api.md)
 - [MCP 工具](reference/mcp.md)
 - [配置文件](reference/config.md)

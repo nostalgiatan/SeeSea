@@ -25,6 +25,7 @@
 | `index` | 本地索引的大小和日期；`prune`、`embed`、`near` |
 | `cluster` | 多节点：`keygen`、`export`、`import`、`push` |
 | `serve` | 运行 HTTP 服务（JSON 接口，MCP 在 `/mcp`） |
+| `desk` | 打开工作台：浏览器里搜索，并能启动 HTTP 接口和远程 MCP，见[工作台](workbench.md) |
 | `mcp` | 通过标准输入输出运行 MCP 服务 |
 
 ## search

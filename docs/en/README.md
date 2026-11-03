@@ -26,6 +26,7 @@ Server and clients:
 
 - [Run the HTTP server and issue keys](how-to/run-the-server.md)
 - [Connect an MCP client](how-to/connect-an-mcp-client.md)
+- [Use the workbench](how-to/use-the-workbench.md)
 
 Multiple nodes:
 
@@ -38,6 +39,7 @@ Multiple nodes:
 Look up a parameter, field or value.
 
 - [Command line](reference/cli.md)
+- [Workbench](reference/workbench.md)
 - [HTTP API](reference/http-api.md)
 - [MCP tools](reference/mcp.md)
 - [Configuration file](reference/config.md)

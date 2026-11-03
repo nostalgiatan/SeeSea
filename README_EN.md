@@ -32,6 +32,12 @@ seesea serve --addr 127.0.0.1:8080
 curl "http://127.0.0.1:8080/v1/search?q=rust+async&mode=fast"
 ```
 
+Use it in a browser:
+
+```bash
+seesea desk        # the workbench: search, read pages, and start the HTTP API and a remote MCP server
+```
+
 It works with no configuration: Bing, DuckDuckGo, Mojeek and Wikipedia are built in. Those sources are often blocked with captchas. For steadier results, point it at your own SearXNG or at Brave Search with `SEESEA_SEARXNG_URL` or `SEESEA_BRAVE_API_KEY`.
 
 Settings come from flags, then `SEESEA_*` environment variables, then `~/.config/seesea/config.toml` (`seesea config --init` writes a commented template), then models found in `~/.local/share/seesea/models`.

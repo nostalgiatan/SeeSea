@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>SeeSea 工作台</title>
+<link rel="icon" href="/ui/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/ui/app.css">
+</head>
+<body>
+<div class="shell">
+  <nav class="rail" aria-label="main">
+    <a class="brand" href="#/search" title="SeeSea"><img src="/ui/mark.svg" alt="" width="28" height="28"><span>SeeSea</span></a>
+    <div class="ticks" id="nav">
+      <a href="#/search" data-view="search"><i>01</i><span data-i="nav.search">搜索</span></a>
+      <a href="#/read" data-view="read"><i>02</i><span data-i="nav.read">阅读</span></a>
+      <a href="#/status" data-view="status"><i>03</i><span data-i="nav.status">状态</span></a>
+      <a href="#/services" data-view="services" class="desk-only"><i>04</i><span data-i="nav.services">服务</span></a>
+      <a href="#/accounts" data-view="accounts" class="desk-only"><i>05</i><span data-i="nav.accounts">账号</span></a>
+    </div>
+    <div class="rail-foot">
+      <div class="chip" id="where"><b></b><span>…</span></div>
+      <div class="tools">
+        <button id="btn-palette" class="ghost" title="Ctrl/⌘ K">⌘K</button>
+        <button id="btn-lang" class="ghost" title="中 / EN">中/EN</button>
+        <button id="btn-theme" class="ghost" title="theme">◐</button>
+        <button id="btn-key" class="ghost" title="API key">⚿</button>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <section id="v-search" class="view">
+      <form id="search-form" class="finder" autocomplete="off">
+        <div class="bar">
+          <input id="q" name="q" type="search" spellcheck="false" data-ip="search.ph" placeholder="搜点什么  ( / )" aria-label="query">
+          <button class="go" type="submit" data-i="search.go">出海</button>
+        </div>
+        <div class="opts">
+          <div class="seg" id="mode" role="radiogroup" aria-label="mode">
+            <button type="button" data-v="fast"><span data-i="mode.fast">快</span><small>1</small></button>
+            <button type="button" data-v="standard" class="on"><span data-i="mode.standard">标准</span><small>2</small></button>
+            <button type="button" data-v="deep"><span data-i="mode.deep">深</span><small>5</small></button>
+          </div>
+          <label><span data-i="opt.time">时间</span>
+            <select id="o-time"><option value="" data-i="opt.any">不限</option><option value="day" data-i="opt.day">一天</option><option value="week" data-i="opt.week">一周</option><option value="month" data-i="opt.month">一月</option><option value="year" data-i="opt.year">一年</option></select></label>
+          <label><span data-i="opt.topic">类型</span>
+            <select id="o-topic"><option value="general" data-i="opt.general">综合</option><option value="news" data-i="opt.news">新闻</option></select></label>
+          <label><span data-i="opt.limit">条数</span><input id="o-limit" type="number" min="1" max="50" value="10"></label>
+          <label class="wide"><span data-i="opt.include">只看</span><input id="o-inc" data-ip="opt.domains" placeholder="docs.rs, github.com"></label>
+          <label class="wide"><span data-i="opt.exclude">排除</span><input id="o-exc" data-ip="opt.domains" placeholder="pinterest.com"></label>
+          <label class="check"><input id="o-full" type="checkbox"><span data-i="opt.full">整页正文</span></label>
+        </div>
+      </form>
+      <div id="search-out"></div>
+    </section>
+
+    <section id="v-read" class="view" hidden>
+      <header class="head"><h1 data-i="read.title">阅读一个网页</h1><p data-i="read.sub">抓取、抽取正文；给出问题时只留下回答它的章节。</p></header>
+      <form id="read-form" class="finder" autocomplete="off">
+        <div class="bar"><input id="r-url" type="url" placeholder="https://" aria-label="url"><button class="go" type="submit" data-i="read.go">读取</button></div>
+        <div class="opts">
+          <label class="wide"><span data-i="read.query">问题</span><input id="r-q" data-ip="read.qph" placeholder="可选：这页怎么回答……"></label>
+          <label><span data-i="read.scope">范围</span><select id="r-scope"><option value="core" data-i="read.core">正文</option><option value="extended" data-i="read.ext">含周边</option></select></label>
+        </div>
+      </form>
+      <div id="read-out"></div>
+    </section>
+
+    <section id="v-status" class="view" hidden>
+      <header class="head"><h1 data-i="status.title">状态</h1><p data-i="status.sub">来源是否在线、缓存命中、本地索引。</p></header>
+      <div class="grid2">
+        <div class="panel"><div class="ph"><h2 data-i="status.sources">来源</h2><button id="btn-check" class="quiet" data-i="status.check">逐个探测</button></div><div id="st-sources"></div></div>
+        <div class="panel"><div class="ph"><h2 data-i="status.cache">缓存</h2></div><div id="st-cache"></div></div>
+        <div class="panel"><div class="ph"><h2 data-i="status.index">本地索引</h2></div><div id="st-index"></div></div>
+      </div>
+    </section>
+
+    <section id="v-services" class="view" hidden>
+      <header class="head"><h1 data-i="svc.title">服务</h1><p data-i="svc.sub">从这个工作台启动 HTTP 接口和远程 MCP；它们和这里共用同一套模型与索引。</p></header>
+      <div id="svc-out" class="stack"></div>
+    </section>
+
+    <section id="v-accounts" class="view" hidden>
+      <header class="head"><h1 data-i="acc.title">账号</h1><p data-i="acc.sub">服务用 “账号” 或 “两者” 认证时，这里的用户和密钥有效。</p></header>
+      <div id="acc-out"></div>
+    </section>
+  </main>
+</div>
+
+<dialog id="dlg-key">
+  <form method="dialog" id="key-form">
+    <h3 data-i="key.title">需要密钥</h3>
+    <p data-i="key.sub">这个服务要求 API 密钥。它只保存在这个标签页里，关掉就没有了。</p>
+    <input id="key-in" type="password" autocomplete="off" spellcheck="false" placeholder="ss_… / root key">
+    <div class="row end"><button value="cancel" class="quiet" data-i="key.cancel">取消</button><button value="ok" class="go" data-i="key.ok">好</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-palette">
+  <div class="pal"><input id="pal-in" placeholder="…" spellcheck="false" autocomplete="off"><ul id="pal-list"></ul></div>
+</dialog>
+
+<div id="toasts" aria-live="polite"></div>
+<script src="/ui/app.js" defer></script>
+</body>
+</html>

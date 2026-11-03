@@ -25,6 +25,7 @@ Usage: `seesea [global options] <command> [options]`.
 | `index` | Size and age of the local index; `prune`, `embed`, `near` |
 | `cluster` | Multi-node: `keygen`, `export`, `import`, `push` |
 | `serve` | Run the HTTP server (JSON API, MCP on `/mcp`) |
+| `desk` | Open the workbench: search in a browser, and start the HTTP API and a remote MCP server from it; see [Workbench](workbench.md) |
 | `mcp` | Run an MCP server over standard input and output |
 
 ## search
