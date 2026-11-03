@@ -9,6 +9,7 @@ pub mod userconfig;
 pub mod keyless;
 pub mod access;
 pub mod cluster;
+pub mod wire;
 pub mod tls;
 pub mod account;
 pub mod seeds;

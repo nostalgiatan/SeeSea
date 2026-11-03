@@ -134,16 +134,17 @@ fn reply_timeout() -> Response {
 }
 
 async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Request, next: Next) -> Response {
-    // WebSub hubs cannot send API keys: those requests are checked by challenge and signature instead.
+    // A request that came over the wire from a gateway was checked there.
+    if req.extensions().get::<crate::cluster::Trusted>().is_some() {
+        return next.run(req).await;
+    }
     if let Some(c) = &state.cluster {
-        if c.trusts(&headers) {
-            return next.run(req).await;
-        }
         // A search node answers its gateway and nobody else.
         if c.role == crate::cluster::Role::Search && req.uri().path() != "/health" {
             return refusal_response(Refusal::Unauthorized("this node only answers the cluster's gateway".into()));
         }
     }
+    // WebSub hubs cannot send API keys: those requests are checked by challenge and signature instead.
     if req.uri().path() == "/health" || req.uri().path().starts_with("/v1/websub/") || !state.access.required() {
         return next.run(req).await;
     }
@@ -466,9 +467,10 @@ struct IngestBody {
 }
 
 /// Push articles into the local index; at most 1000 per call.
-async fn ingest(State(s): State<AppState>, grant: Option<Extension<Grant>>, body: Bytes) -> Result<Json<Value>, Response> {
+async fn ingest(State(s): State<AppState>, grant: Option<Extension<Grant>>, trusted: Option<Extension<crate::cluster::Trusted>>, body: Bytes) -> Result<Json<Value>, Response> {
     // Items go into the index every search reads from: whoever may push them decides what the index says.
-    if s.access.required() && !grant.as_ref().is_some_and(|Extension(g)| g.is_root()) {
+    // (From a gateway, the root key was checked there.)
+    if trusted.is_none() && s.access.required() && !grant.as_ref().is_some_and(|Extension(g)| g.is_root()) {
         return Err((StatusCode::FORBIDDEN, Json(json!({"code": "admin_only", "message": "this needs the server's root key (--api-key)"}))).into_response());
     }
     ingest_items(s, body).await.map_err(|e| e.into_response())
@@ -639,11 +641,6 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
     };
     routes
         .merge(crate::account::routes())
-        .merge(if state.cluster.as_ref().is_some_and(|c| c.role == crate::cluster::Role::Flywheel) {
-            crate::cluster::flywheel_routes()
-        } else {
-            Router::new()
-        })
         .route("/v1/cluster/status", get(crate::cluster::status))
         .fallback(crate::cluster::forward)
         .layer(DefaultBodyLimit::max(1024 * 1024))

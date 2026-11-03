@@ -375,12 +375,20 @@ enum ClusterAction {
     /// gateway: run `import` there.
     Push {
         from: PathBuf,
-        /// The flywheel node, `http://host:port`.
+        /// The flywheel node, `quic://host:port`. This machine's node key must be listed there as `operator`.
         #[arg(long)]
         to: String,
-        /// The cluster key (or SEESEA_CLUSTER_KEY).
-        #[arg(long, env = "SEESEA_CLUSTER_KEY", hide_env_values = true)]
-        key: String,
+    },
+    /// Make a key pair for a node. Prints the line to put in every other node's cluster_peers file.
+    Keygen {
+        /// A name to tell the node apart.
+        name: String,
+        /// The role the other nodes should give it: gateway, search, flywheel or operator.
+        #[arg(long)]
+        role: String,
+        /// Where to write `<name>.pem` and `<name>.key`.
+        #[arg(long, default_value = ".")]
+        out: PathBuf,
     },
 }
 
@@ -479,12 +487,50 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         learn_file: (!net.no_learn).then(userconfig::default_learn_file),
         no_writeback: net.no_writeback,
         cluster_search: None,
+        spool_dir: None,
         journal_dir: (!net.no_journal).then(userconfig::default_journal_dir),
         explore: net.explore.unwrap_or(0.0),
         index_dir: (!net.no_index).then(|| net.index_dir.clone().unwrap_or_else(userconfig::default_index_dir)),
         retention_days: net.retention_days,
         index_quota_mb: net.index_quota_mb,
     }
+}
+
+/// This node's key pair and its list of trusted peers, when configured.
+fn load_mesh(file: &FileConfig) -> Result<Option<seesea_cli::wire::Mesh>, String> {
+    match (&file.node_cert, &file.node_key, &file.cluster_peers) {
+        (Some(c), Some(k), Some(p)) => Ok(Some(seesea_cli::wire::Mesh { identity: seesea_cli::wire::Identity::load(c, k)?, peers: seesea_cli::wire::Peers::from_file(p)? })),
+        (None, None, None) => Ok(None),
+        _ => Err("node_cert, node_key and cluster_peers go together".into()),
+    }
+}
+
+/// `seesea cluster keygen`: write a key pair and say what to tell the other nodes.
+fn keygen(name: &str, role: &str, out: &std::path::Path) -> Result<(), Error> {
+    let role: seesea_cli::wire::PeerRole = role.parse().map_err(Error::Config)?;
+    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.') {
+        return Err(Error::Config("the name may use letters, digits, - _ and . only".into()));
+    }
+    let (cert, key) = seesea_cli::wire::Identity::generate(name).map_err(Error::Config)?;
+    std::fs::create_dir_all(out).map_err(|e| Error::Config(format!("{}: {e}", out.display())))?;
+    let (cert_path, key_path) = (out.join(format!("{name}.pem")), out.join(format!("{name}.key")));
+    for p in [&cert_path, &key_path] {
+        if p.exists() {
+            return Err(Error::Config(format!("{} exists already; not overwriting a node's key", p.display())));
+        }
+    }
+    std::fs::write(&cert_path, cert).map_err(|e| Error::Config(e.to_string()))?;
+    std::fs::write(&key_path, key).map_err(|e| Error::Config(e.to_string()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
+    }
+    let id = seesea_cli::wire::Identity::load(&cert_path, &key_path).map_err(Error::Config)?;
+    println!("wrote {} and {}", cert_path.display(), key_path.display());
+    println!("add this line to cluster_peers on every node that should talk to {name}:");
+    println!("{} {} {name}", id.fingerprint, format!("{role:?}").to_lowercase());
+    Ok(())
 }
 
 /// `90s`, `15m`, `2h`, or a bare number of seconds.
@@ -763,11 +809,6 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         Some("cpu") => seesea_embed::set_accelerator(seesea_embed::Accelerator::Cpu),
         Some(other) => return Err(Error::Config(format!("device must be gpu or cpu, not '{other}'"))),
     }
-    seesea_cli::tls::set_client(seesea_cli::tls::ClientTls {
-        ca: file.cluster_ca.clone(),
-        cert: file.cluster_client_cert.clone(),
-        key: file.cluster_client_key.clone(),
-    });
     if let Some(m) = file.model_idle_minutes {
         seesea_cli::embedding::set_model_idle_secs(m * 60);
     }
@@ -931,12 +972,17 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             journal_dir: userconfig::default_journal_dir(),
             index_dir: cli.net.index_dir.clone().unwrap_or_else(userconfig::default_index_dir),
         };
+        if let ClusterAction::Keygen { name, role, out } = action {
+            return keygen(name, role, out);
+        }
         let counts = match action {
             ClusterAction::Export { out } => seesea_cli::cluster::export(&dirs, out),
             ClusterAction::Import { from } => seesea_cli::cluster::import_local(&dirs, from),
-            ClusterAction::Push { from, to, key } => {
-                seesea_cli::tls::secure_url(to).map_err(Error::Config)?;
-                seesea_cli::cluster::import_remote(from, &seesea_cli::cluster::Link::new(to, key)).await
+            ClusterAction::Keygen { .. } => unreachable!("handled above"),
+            ClusterAction::Push { from, to } => {
+                let mesh = load_mesh(&file).map_err(Error::Config)?.ok_or_else(|| Error::Config("push needs node_cert, node_key and cluster_peers (a key listed as `operator` on the flywheel node)".into()))?;
+                let link = seesea_cli::cluster::Link::new(&mesh, to).map_err(Error::Config)?;
+                seesea_cli::cluster::import_remote(from, &link).await
             }
         }
         .map_err(Error::Config)?;
@@ -962,9 +1008,10 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         let role = std::env::var("SEESEA_ROLE").ok().or_else(|| file.role.clone()).unwrap_or_default();
         let c = seesea_cli::cluster::Cluster {
             role: role.parse().map_err(Error::Config)?,
-            key: std::env::var("SEESEA_CLUSTER_KEY").ok().or_else(|| file.cluster_key.clone()).unwrap_or_default(),
             search_nodes: file.search_nodes.clone(),
             flywheel: file.flywheel.clone(),
+            listen: file.cluster_listen.as_deref().map(|l| l.parse().map_err(|e| Error::Config(format!("cluster_listen '{l}': {e}")))).transpose()?,
+            mesh: load_mesh(&file).map_err(Error::Config)?,
         };
         c.check().map_err(Error::Config)?;
         Some(c).filter(|c| c.role != seesea_cli::cluster::Role::Single)
@@ -974,6 +1021,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
     match cluster.as_ref().map(|c| c.role) {
         Some(seesea_cli::cluster::Role::Search) => {
             pipeline_settings.cluster_search = cluster.clone();
+            pipeline_settings.spool_dir = Some(userconfig::default_spool_dir());
             pipeline_settings.index_dir = None;
         }
         Some(seesea_cli::cluster::Role::Gateway) => {
@@ -1253,7 +1301,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             if let Some(c) = &cluster {
                 eprintln!("seesea node: role {:?}", c.role);
                 if c.role == seesea_cli::cluster::Role::Gateway {
-                    state.gateway = Some(seesea_cli::cluster::Gateway::new(c));
+                    state.gateway = Some(seesea_cli::cluster::Gateway::new(c).map_err(Error::Config)?);
                 }
             }
             state.cluster = cluster.clone();
@@ -1268,6 +1316,10 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                 (None, None) => None,
                 _ => return Err(Error::Config("tls_cert and tls_key go together".into())),
             };
+            if let Some(c) = cluster.as_ref().filter(|c| matches!(c.role, seesea_cli::cluster::Role::Search | seesea_cli::cluster::Role::Flywheel)) {
+                let wire = seesea_cli::cluster::start_wire(state.clone(), max_concurrent, c).map_err(Error::Config)?;
+                eprintln!("seesea-wire listening on quic udp {}", wire.addr);
+            }
             server::serve(addr, state, max_concurrent, allow_open, tls, file.behind_tls_proxy == Some(true)).await
         }
         Command::Config { .. }
