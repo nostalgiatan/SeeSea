@@ -12,4 +12,11 @@ seesea --searxng http://127.0.0.1:18765 --no-native --no-cache --allow-private \
   [--model-dir bge-m3-q4_0.gguf] [--rerank-model bge-reranker-v2-m3-q4_k_m.gguf] eval tools/search-eval/judgments.jsonl -k 5 --mode deep   # fast mode never fetches or reranks
 ```
 
-Mean nDCG@5 on this set (`--mode deep`): lexical only 0.828; bge-m3 (Q4_0) 0.952; bge-reranker-v2-m3 alone 0.945; both 0.970 (cross weight 0.35 to 0.5 tie; 0.65 and up drops to 0.945). Before the anti-stuffing factor these were 0.645, 0.874 and 0.867. Pages are short, so the number of passages scored changes nothing here.
+Thirty-seven queries now: the original eight plus 29 in `topics_extra.py`, each with an answer (grade 2), a partial page (grade 1)
+and a hard distractor that shares the query's words but answers something else (grade 0), e.g. "TCP and UDP: a band review".
+I wrote and graded them by hand; the live web was not reachable from the build machine, so this stays synthetic.
+
+Mean nDCG@5 (`--mode deep`, 37 queries): lexical only 0.701; bge-m3 0.812; reranker alone 0.781; both with the old final
+weights (0.4 snippet-level, 0.5 relevance, 0.1 body quality) 0.832, both with 0.2/0.7/0.1 0.859 and recall 1.0. The snippet-level
+score is what bait and distractor titles game, so it now counts less once the page has been read. Giving body quality more weight
+scored higher still (0.89), but the distractors here are short by construction, so that gain mostly rewards page length and was not taken.

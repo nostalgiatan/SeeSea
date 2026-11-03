@@ -635,7 +635,7 @@ impl Pipeline {
                         needs_render: l.result.needs_render,
                         truncated,
                     });
-                    0.4 * s1n + 0.5 * rs.relevance + 0.1 * rs.body_quality
+                    0.2 * s1n + 0.7 * rs.relevance + 0.1 * rs.body_quality
                 }
                 None => {
                     match &loaded[i] {
@@ -646,7 +646,7 @@ impl Pipeline {
                         None => {}
                     }
                     // Without page content the best evidence is the snippet-level score.
-                    0.4 * s1n + 0.5 * f64::min(0.6, 0.6 * s1n)
+                    0.2 * s1n + 0.7 * f64::min(0.6, 0.6 * s1n)
                 }
             };
             if let Some(l) = &self.learner {

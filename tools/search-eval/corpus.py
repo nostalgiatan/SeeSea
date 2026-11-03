@@ -54,12 +54,15 @@ T = [
   B=("Routine car maintenance schedule", ["Change the engine oil and filter at the interval in the owner's manual, rotate the tyres and check the brake pads at every service.",
      "Keeping a log of maintenance makes it easier to spot problems early and helps when selling the vehicle."])),
 ]
+from topics_extra import X
+T += X
 def pages():
     P = {}
     for i, t in enumerate(T):
         a, b = t["A"], t["B"]
         P[f"/a{i}"] = a
         P[f"/b{i}"] = b
+        if "H" in t: P[f"/h{i}"] = t["H"]
         P[f"/bait{i}"] = (t["q"].title() + " - Best Guide 2025!", SPAM)
         words = t["q"]
         P[f"/stuff{i}"] = ("Notes", [(words + ". ") * 12, "More about " + words + " here, " + words + " there, " + words + " everywhere."])
@@ -67,14 +70,18 @@ def pages():
 def results(i, base):
     t = T[i]; n = len(T)
     d1, d2 = (i + 1) % n, (i + 3) % n
-    order = [f"/bait{i}", f"/stuff{i}", f"/a{d1}", f"/b{i}", f"/a{d2}", f"/a{i}"]
+    order = [f"/bait{i}", f"/stuff{i}"] + ([f"/h{i}"] if "H" in t else []) + [f"/a{d1}", f"/b{i}", f"/a{d2}", f"/a{i}"]
     titles = pages()
     out = []
     for k, path in enumerate(order):
         out.append({"url": base + path, "title": titles[path][0], "content": titles[path][1][0][:120],
                     "engines": ["bing"] if "bait" in path or "stuff" in path else ["google", "brave"], "positions": [k + 1], "category": "general"})
     return out
-if __name__ == "__main__":
+if __name__ == "__main__" and "--judgments" in sys.argv:
+    base = f"http://127.0.0.1:{PORT}"
+    for i, t in enumerate(T):
+        print(json.dumps({"query": t["q"], "relevant": [{"url": f"{base}/a{i}", "grade": 2}, {"url": f"{base}/b{i}", "grade": 1}]}))
+elif __name__ == "__main__":
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from urllib.parse import urlparse, parse_qs
     base = f"http://127.0.0.1:{PORT}"; P = pages()
