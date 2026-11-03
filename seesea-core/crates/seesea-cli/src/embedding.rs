@@ -104,6 +104,20 @@ impl<T: Send + Sync + 'static> Resident<T> {
         this
     }
 
+    /// Start a load in the background when the model is out and nobody is loading it. Never blocks.
+    fn wake(self: &Arc<Self>) {
+        {
+            let g = self.slot.lock().unwrap_or_else(|e| e.into_inner());
+            if g.model.is_some() || g.loading || g.failed.as_ref().is_some_and(|(_, at)| at.elapsed() < RETRY_AFTER) {
+                return;
+            }
+        }
+        let this = Arc::clone(self);
+        std::thread::spawn(move || {
+            let _ = this.acquire();
+        });
+    }
+
     fn acquire(&self) -> std::result::Result<Arc<T>, String> {
         let mut g = self.slot.lock().unwrap_or_else(|e| e.into_inner());
         loop {
@@ -196,6 +210,10 @@ impl TextEmbedder for EmbedderAdapter {
         self.model
             .with(|e| e.embed(texts, Kind::Passage).map_err(|e| e.to_string()))
     }
+
+    fn wake(&self) {
+        self.model.wake();
+    }
 }
 
 /// The cross-encoder, loaded in the background the same way.
@@ -226,6 +244,10 @@ impl CrossAdapter {
 impl PairScorer for CrossAdapter {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn wake(&self) {
+        self.model.wake();
     }
 
     fn score(&self, query: &str, passages: &[&str]) -> std::result::Result<Vec<f32>, String> {

@@ -15,6 +15,9 @@ pub trait TextEmbedder: Send + Sync {
     fn name(&self) -> &str;
     fn embed_query(&self, text: &str) -> Result<Vec<f32>, String>;
     fn embed_passages(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, String>;
+    /// A search has started: begin loading the model now if it was unloaded, so the load overlaps the
+    /// network work. Never blocks.
+    fn wake(&self) {}
 }
 
 #[derive(Debug, Clone)]
@@ -181,6 +184,10 @@ impl SemanticReranker {
 impl Reranker for SemanticReranker {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn wake(&self) {
+        self.embedder.wake();
     }
 
     fn rerank(&self, query: &str, docs: &[DocView<'_>]) -> Vec<RerankScore> {
