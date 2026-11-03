@@ -95,9 +95,10 @@ dialog .go, .row .go { border-radius: 8px; padding: 8px 18px; }
 .sum { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; color: var(--mute); font-size: 13px; margin: 4px 0 10px; }
 .sum b { color: var(--ink); font-weight: 600; }
 .sum .tag { font: 11px var(--mono); border: 1px solid var(--line2); border-radius: 5px; padding: 0 6px; color: var(--glass); }
-.voyage { display: flex; height: 26px; border-radius: 7px; overflow: hidden; border: 1px solid var(--line); margin-bottom: 12px; background: var(--panel); }
-.voyage div { position: relative; flex-basis: 0; min-width: 3px; display: flex; align-items: center; padding: 0 7px; font: 11px var(--mono); color: var(--ink); overflow: hidden; white-space: nowrap; background: color-mix(in srgb, var(--c) 28%, var(--panel)); border-right: 1px solid var(--bg); }
-.voyage div::after { content: ""; position: absolute; inset: auto 0 0 0; height: 2px; background: var(--c); }
+.voyage { display: flex; height: 10px; border-radius: 6px; overflow: hidden; gap: 2px; margin-bottom: 6px; }
+.voyage div { flex-basis: 0; min-width: 4px; background: var(--c); border-radius: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 11.5px var(--mono); color: var(--mute); margin-bottom: 12px; }
+.legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--c); margin-right: 6px; }
 .notes { display: grid; gap: 4px; margin-bottom: 12px; }
 .note { font-size: 12.5px; color: var(--sand); border-left: 2px solid var(--sand); padding: 1px 0 1px 9px; }
 .note.err { color: var(--bad); border-color: var(--bad); }
@@ -231,3 +232,35 @@ dialog input { width: 100%; margin-bottom: 12px; }
   .hit { grid-template-columns: 1fr; } .gauge { display: none; } .detail { grid-column: 1; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* review */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.tile { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); padding: 10px 14px; }
+.tile b { display: block; font: 600 22px/1.2 var(--serif); white-space: nowrap; }
+.tile span { font-size: 12px; color: var(--mute); }
+label.inline { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--mute); }
+label.inline select { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; color: var(--ink); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip2 { font: 11.5px var(--mono); border: 1px solid var(--line2); border-radius: 5px; padding: 0 6px; color: var(--sand); }
+.sus { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 9px 0; border-bottom: 1px dashed var(--line); }
+.sus:last-child { border: 0; } .sus q { font: 600 15px var(--serif); quotes: none; }
+.sus .chips { grid-column: 1 / -1; }
+.group { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); margin-bottom: 12px; overflow: hidden; }
+.group > h3 { margin: 0; padding: 10px 14px; font: 600 16px var(--serif); border-bottom: 1px solid var(--line); background: var(--bg2); display: flex; justify-content: space-between; gap: 10px; }
+.group > h3 small { font: 12px var(--mono); color: var(--mute); font-weight: 400; align-self: center; }
+.gr { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 14px; border-bottom: 1px dashed var(--line); }
+.gr:last-child { border: 0; }
+.gr .n { font: 12px var(--mono); color: var(--mute); }
+.gr .ti { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gr .ti a { text-decoration: none; } .gr .ti a:hover { color: var(--buoy); }
+.gr .ti small { display: block; font: 11.5px var(--mono); color: var(--glass); }
+.grades { display: inline-flex; border: 1px solid var(--line2); border-radius: 8px; overflow: hidden; }
+.grades button { background: none; border: 0; width: 30px; padding: 4px 0; cursor: pointer; color: var(--mute); font: 600 13px var(--mono); }
+.grades button + button { border-left: 1px solid var(--line2); }
+.grades button:hover { color: var(--ink); background: color-mix(in srgb, var(--line) 60%, transparent); }
+.grades button.on { color: var(--buoy-ink); background: var(--c); }
+.grades button[data-g="0"] { --c: var(--bad); } .grades button[data-g="1"] { --c: var(--sand); } .grades button[data-g="2"] { --c: var(--glass); } .grades button[data-g="3"] { --c: var(--buoy); }
+.stand { display: grid; grid-template-columns: minmax(0, 1fr) 90px 44px; gap: 8px; align-items: center; font: 12.5px var(--mono); padding: 3px 0; }
+.stand .t { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; } .stand .t i { display: block; height: 100%; background: var(--glass); }
+.stand.bad .t i { background: var(--bad); }
+.sub { margin: 10px 0 4px; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--mute); }

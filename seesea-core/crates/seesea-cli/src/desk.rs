@@ -9,7 +9,7 @@
 use crate::access::Access;
 use crate::server::{AppState, ListenOpts, Running};
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -17,7 +17,7 @@ use axum::{Json, Router};
 use seesea_auth::{AuthError, Plan, Store};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -112,7 +112,12 @@ pub struct Desk {
     problems: Mutex<HashMap<String, String>>,
     /// The workbench's own state, which every service shares the pipeline, index and models of.
     template: OnceLock<AppState>,
+    /// Serializes changes to the grades.
+    grading: Mutex<()>,
 }
+
+/// Query, then URL, then grade: what was judged about which result.
+type Grades = BTreeMap<String, BTreeMap<String, u8>>;
 
 impl Desk {
     pub fn new(file: PathBuf, auth_db: PathBuf, plans: HashMap<String, Plan>) -> Arc<Self> {
@@ -131,6 +136,7 @@ impl Desk {
             live: Mutex::default(),
             problems: Mutex::default(),
             template: OnceLock::new(),
+            grading: Mutex::new(()),
         })
     }
 
@@ -314,6 +320,56 @@ impl Desk {
         }
     }
 
+    fn grades_path(&self) -> PathBuf {
+        self.file.with_file_name("grades.json")
+    }
+
+    /// The file `seesea eval` reads: every query with its results graded above 0.
+    fn judgments_path(&self) -> PathBuf {
+        self.file.with_file_name("judgments.jsonl")
+    }
+
+    fn grades(&self) -> Grades {
+        std::fs::read(self.grades_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    }
+
+    /// Record (or with `None` clear) the grade of one result, and rewrite both files.
+    fn grade(&self, query: &str, url: &str, grade: Option<u8>) -> Result<(), String> {
+        let _one_at_a_time = self.grading.lock().unwrap_or_else(|e| e.into_inner());
+        let mut all = self.grades();
+        match grade {
+            Some(g) => {
+                all.entry(query.to_string()).or_default().insert(url.to_string(), g);
+            }
+            None => {
+                if let Some(m) = all.get_mut(query) {
+                    m.remove(url);
+                    if m.is_empty() {
+                        all.remove(query);
+                    }
+                }
+            }
+        }
+        let write = |path: PathBuf, bytes: Vec<u8>| -> Result<(), String> {
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            }
+            let tmp = path.with_extension("tmp");
+            std::fs::write(&tmp, bytes).map_err(|e| format!("{}: {e}", tmp.display()))?;
+            std::fs::rename(&tmp, &path).map_err(|e| format!("{}: {e}", path.display()))
+        };
+        write(self.grades_path(), serde_json::to_vec_pretty(&all).map_err(|e| e.to_string())?)?;
+        let mut lines = String::new();
+        for (q, m) in &all {
+            let relevant: Vec<Value> = m.iter().filter(|(_, g)| **g > 0).map(|(u, g)| json!({"url": u, "grade": g})).collect();
+            if !relevant.is_empty() {
+                lines.push_str(&json!({"query": q, "relevant": relevant}).to_string());
+                lines.push('\n');
+            }
+        }
+        write(self.judgments_path(), lines.into_bytes())
+    }
+
     fn store(&self) -> Result<Store, Response> {
         Store::open(&self.auth_db).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", format!("{}: {e}", self.auth_db.display())))
     }
@@ -339,6 +395,82 @@ pub fn routes() -> Router<AppState> {
         .route("/desk/api/users/{name}/keys", post(key_new))
         .route("/desk/api/users/{name}/disabled", post(user_disabled))
         .route("/desk/api/keys/{id}/revoke", post(key_revoke))
+        .route("/desk/api/review", get(review))
+        .route("/desk/api/grade", post(grade))
+}
+
+#[derive(Deserialize)]
+struct ReviewQuery {
+    since: Option<String>,
+}
+
+/// `7d`, `36h`: how far back to look.
+fn parse_since(s: &str) -> Option<i64> {
+    let (n, unit) = s.split_at(s.len().checked_sub(1)?);
+    let n: i64 = n.parse().ok()?;
+    match unit {
+        "h" => Some(n * 3600),
+        "d" => Some(n * 86400),
+        _ => None,
+    }
+    .filter(|secs| (3600..=366 * 86400).contains(secs))
+}
+
+/// What the journal says about recent searches, the results waiting to be graded (with the grades so far)
+/// and what the first ranking layer has learned.
+async fn review(State(s): State<AppState>, Query(q): Query<ReviewQuery>) -> Response {
+    let run = || -> Result<Value, Response> {
+        let d = desk_of(&s)?;
+        let since = q.since.as_deref().unwrap_or("7d");
+        let secs = parse_since(since).ok_or_else(|| fail(StatusCode::BAD_REQUEST, "invalid_request", "since is a number of hours or days, like 36h or 7d (1 hour to 366 days)"))?;
+        let events = seesea_pipeline::Journal::read(&crate::userconfig::default_journal_dir(), chrono::Utc::now().timestamp() - secs);
+        let mut report = serde_json::to_value(seesea_pipeline::report::build(&events)).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", e))?;
+        let grades = d.grades();
+        if let Some(groups) = report["candidates"].as_array_mut() {
+            for g in groups {
+                let known = g["query"].as_str().and_then(|q| grades.get(q)).cloned().unwrap_or_default();
+                if let Some(list) = g["candidates"].as_array_mut() {
+                    for c in list {
+                        c["grade"] = c["url"].as_str().and_then(|u| known.get(u)).map_or(Value::Null, |g| json!(g));
+                    }
+                }
+            }
+        }
+        let learn = seesea_pipeline::Learner::open(Default::default(), crate::userconfig::default_learn_file()).report(10);
+        Ok(json!({
+            "since": since,
+            "report": report,
+            "learn": learn,
+            "judgments": {
+                "file": d.judgments_path(),
+                "queries": grades.values().filter(|m| m.values().any(|g| *g > 0)).count(),
+                "graded": grades.values().map(|m| m.len()).sum::<usize>(),
+            },
+        }))
+    };
+    run().map_or_else(|r| r, |v| Json(v).into_response())
+}
+
+#[derive(Deserialize)]
+struct Grade {
+    query: String,
+    url: String,
+    /// 0 not relevant, 1 related, 2 answers it, 3 exactly what was wanted; null takes the grade back.
+    grade: Option<u8>,
+}
+
+async fn grade(State(s): State<AppState>, body: Bytes) -> Response {
+    let run = || -> Result<Value, Response> {
+        let d = desk_of(&s)?;
+        let g: Grade = serde_json::from_slice(&body).map_err(|e| fail(StatusCode::BAD_REQUEST, "invalid_request", format!("invalid JSON body: {e}")))?;
+        if g.query.is_empty() || g.query.len() > 1000 || g.url.is_empty() || g.url.len() > 4000 || g.grade.is_some_and(|n| n > 3) {
+            return Err(fail(StatusCode::BAD_REQUEST, "invalid_request", "a query, a URL, and a grade from 0 to 3 (or null)"));
+        }
+        d.grade(&g.query, &g.url, g.grade).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, "io_error", e))?;
+        let grades = d.grades();
+        Ok(json!({"graded": grades.values().map(|m| m.len()).sum::<usize>(), "queries": grades.values().filter(|m| m.values().any(|g| *g > 0)).count()}))
+    };
+    run().map_or_else(|r| r, |v| Json(v).into_response())
 }
 
 fn desk_of(s: &AppState) -> Result<Arc<Desk>, Response> {

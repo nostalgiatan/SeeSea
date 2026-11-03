@@ -33,6 +33,10 @@
 
 监听规则同 `serve`：非回环地址需要 TLS 或 `behind_tls_proxy`，也需要密钥或 `allow_open`。`accounts` 在没有用户时拒绝启动。设置存在数据目录的 `desk.json`，权限 `0600`。
 
+## 标注文件
+
+打分记在数据目录的 `grades.json`（查询、网址、0 到 3）。同时重写 `judgments.jsonl`，格式是 `seesea eval` 读的那种：每行一个查询和它的相关结果，只含大于 0 的等级。
+
 ## 内部接口
 
 只在工作台进程里存在，不属于 [HTTP 接口](http-api.md)。
@@ -50,5 +54,8 @@
 | `POST /desk/api/users/{name}/keys` | 建密钥，体 `{"name", "expires_days"}`，返回 201 和只出现这一次的 `key` |
 | `POST /desk/api/users/{name}/disabled` | 体 `{"disabled": true}` |
 | `POST /desk/api/keys/{id}/revoke` | 吊销密钥，返回 204 |
+
+| `GET /desk/api/review?since=7d` | 日志汇总（`report`：搜索数、缓存、耗时、来源、读不到的主机、可疑搜索、待打分的结果，结果里带已有的 `grade`）、第一层学到的主机评分（`learn`）和标注文件情况（`judgments`）。`since` 是 `1h` 到 `366d` 的小时或天数 |
+| `POST /desk/api/grade` | 体 `{"query", "url", "grade"}`，`grade` 为 0 到 3，`null` 取消；返回 `{"graded", "queries"}` |
 
 `{id}` 是 `api` 或 `mcp`。无法应用的设置返回 400，错误码 `cannot_apply`。

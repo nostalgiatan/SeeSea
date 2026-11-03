@@ -33,6 +33,10 @@ Two services: `api` (the whole JSON API, `/mcp` included) and `mcp` (only `/heal
 
 The listening rules are those of `serve`: a non-loopback address needs TLS or `behind_tls_proxy`, and a key or `allow_open`. `accounts` refuses to start while there are no users. Settings are stored in `desk.json` in the data directory with mode `0600`.
 
+## Judgments
+
+Grades are kept in `grades.json` in the data directory (query, URL, 0 to 3). `judgments.jsonl` is rewritten with each change in the form `seesea eval` reads: one line per query with its relevant results, only grades above 0.
+
 ## Internal endpoints
 
 These exist only in the workbench process and are not part of the [HTTP API](http-api.md).
@@ -50,5 +54,8 @@ These exist only in the workbench process and are not part of the [HTTP API](htt
 | `POST /desk/api/users/{name}/keys` | Create a key; body `{"name", "expires_days"}`; returns 201 and a `key` that appears only once |
 | `POST /desk/api/users/{name}/disabled` | Body `{"disabled": true}` |
 | `POST /desk/api/keys/{id}/revoke` | Revoke a key; returns 204 |
+
+| `GET /desk/api/review?since=7d` | The journal summary (`report`: searches, cache, timings, sources, hosts that could not be read, suspicious searches, results waiting for a grade, each with its `grade` so far), the host standings the first layer has learned (`learn`) and the state of the judgments file (`judgments`). `since` is hours or days from `1h` to `366d` |
+| `POST /desk/api/grade` | Body `{"query", "url", "grade"}`; `grade` is 0 to 3, `null` takes it back; returns `{"graded", "queries"}` |
 
 `{id}` is `api` or `mcp`. Settings that cannot be applied return 400 with the code `cannot_apply`.
