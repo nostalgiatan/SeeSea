@@ -13,7 +13,7 @@ use crate::text::{jaccard, normalize_query, token_set};
 use chrono::Utc;
 use seesea_extract::{Extractor, Meta, Scope};
 use serde::Serialize;
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -116,6 +116,21 @@ pub struct SourceProbe {
 }
 
 /// Host of a result URL, without a leading `www.`; empty when it does not parse.
+/// One site must not fill the page: from the third result of a host on, the score falls by an eighth per result.
+/// The order is then rebuilt, so a site with many good pages still keeps its best two near the top.
+fn diversify(mut hits: Vec<Hit>) -> Vec<Hit> {
+    let mut seen: HashMap<String, i32> = HashMap::new();
+    for h in &mut hits {
+        let n = seen.entry(host_of(&h.url)).or_insert(0);
+        *n += 1;
+        if *n > 2 {
+            h.score *= 0.88f64.powi(*n - 2);
+        }
+    }
+    hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    hits
+}
+
 pub fn host_of(url: &str) -> String {
     url::Url::parse(url)
         .ok()
@@ -463,6 +478,16 @@ impl Pipeline {
         if results.is_empty() || only_empty_auxiliary {
             return Err(Error::AllSourcesFailed(failures));
         }
+        // A general engine that answers with nothing while the others found something has most likely been blocked.
+        let silent: Vec<&str> = results
+            .iter()
+            .filter(|r| r.hits.is_empty() && !auxiliary.contains(&r.source.as_str()))
+            .map(|r| r.source.as_str())
+            .filter(|n| sources.iter().any(|s| s.name() == *n && !s.recency_only()))
+            .collect();
+        if !silent.is_empty() && results.iter().any(|r| !r.hits.is_empty()) {
+            degraded.push(format!("returned nothing: {}", silent.join(", ")));
+        }
         if !failures.is_empty() {
             degraded.push(format!(
                 "{} of {} sources failed",
@@ -697,7 +722,7 @@ impl Pipeline {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         let hits = crate::cluster::group_events(hits);
-        let mut hits = hits;
+        let mut hits = diversify(hits);
         hits.truncate(req.limit);
         stages.push(StageTiming {
             stage: "assemble".into(),
@@ -826,5 +851,38 @@ impl Pipeline {
             rendered: loaded.rendered,
             truncated,
         }
+    }
+}
+
+#[cfg(test)]
+mod diversity_tests {
+    use super::*;
+
+    #[test]
+    fn one_host_cannot_fill_the_page() {
+        let mk = |u: &str, score: f64| Hit {
+            url: u.into(),
+            title: String::new(),
+            snippet: String::new(),
+            published: None,
+            score,
+            score_parts: Default::default(),
+            found_by: vec![],
+            content: None,
+            content_error: None,
+            related: vec![],
+        };
+        let hits = vec![
+            mk("https://w.org/1", 0.97),
+            mk("https://w.org/2", 0.96),
+            mk("https://w.org/3", 0.95),
+            mk("https://w.org/4", 0.94),
+            mk("https://w.org/5", 0.93),
+            mk("https://other.example/a", 0.80),
+        ];
+        let out = diversify(hits);
+        let pos = out.iter().position(|h| h.url.contains("other")).unwrap();
+        assert!(pos <= 3, "other site at {pos}");
+        assert!(out[0].url.ends_with("/1") && out[1].url.ends_with("/2"));
     }
 }
