@@ -550,6 +550,11 @@ pub fn start_wire(state: AppState, max_concurrent: usize, c: &Cluster) -> Result
 #[async_trait::async_trait]
 impl wire::Handler for NodeHandler {
     async fn handle(&self, peer: &PeerInfo, req: Request) -> Reply {
+        if let Some(st) = &self.state.standby
+            && (matches!(req.op, Op::Events | Op::Admit | Op::Charge | Op::Refund) || (req.op == Op::Http && req.head["method"] != "GET"))
+        {
+            st.served.fetch_add(1, Ordering::Relaxed);
+        }
         match req.op {
             Op::Ping => Reply::ok(Value::Null, Bytes::new()),
             Op::Http => self.http(req).await,
@@ -804,6 +809,39 @@ pub async fn apply_events(s: &AppState, events: Vec<Value>) -> usize {
 // Standby flywheel: follow the primary.
 // ---------------------------------------------------------------------------------------------
 
+/// What a standby knows about its primary.
+pub struct Standby {
+    /// The last replication round reached the primary.
+    pub primary_up: AtomicBool,
+    /// Writes (events, credits, ingests) this node took since it last copied from the primary.
+    pub served: std::sync::atomic::AtomicU64,
+    /// The primary is back but this node took writes while it was away: the two now differ and an operator has to
+    /// choose which to keep (usually: make the old primary follow this one).
+    pub diverged: AtomicBool,
+}
+
+impl Standby {
+    /// Record how a replication round went.
+    pub fn note_round(&self, reached: bool, misses: &mut u32) {
+        if reached {
+            *misses = 0;
+            self.primary_up.store(true, Ordering::Relaxed);
+            if self.served.swap(0, Ordering::Relaxed) > 0 && !self.diverged.swap(true, Ordering::Relaxed) {
+                eprintln!("seesea: the primary flywheel is reachable again, but this standby took writes while it was away: the two differ now. Decide which one to keep (see the README, \"failover\").");
+            }
+        } else {
+            *misses += 1;
+            if *misses >= 3 {
+                self.primary_up.store(false, Ordering::Relaxed);
+            }
+        }
+    }
+
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self { primary_up: AtomicBool::new(true), served: 0.into(), diverged: AtomicBool::new(false) })
+    }
+}
+
 /// Pull the primary's accounts and learner picture, and (with `index`) its index items. Idempotent: run it as
 /// often as you like. Returns what was copied: (accounts, learner, index items).
 pub async fn replicate_once(state: &AppState, primary: &Link, accounts: bool, learner: bool, index: bool) -> Result<(bool, bool, usize), String> {
@@ -843,8 +881,12 @@ pub fn run_standby(state: AppState, primary: Link) {
     let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
     rt.spawn(async move {
         let mut tick = 0u32;
+        let mut misses = 0u32;
         loop {
-            let _ = replicate_once(&state, &primary, true, tick % 12 == 0, tick % 120 == 0).await;
+            let round = replicate_once(&state, &primary, true, tick % 12 == 0, tick % 120 == 0).await;
+            if let Some(st) = &state.standby {
+                st.note_round(round.is_ok(), &mut misses);
+            }
             tick = tick.wrapping_add(1);
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
@@ -920,7 +962,7 @@ impl Pool {
     /// cluster whose health checks have not run yet (or all failed) is still tried.
     fn order(&self) -> Vec<usize> {
         let n = self.nodes.len();
-        let start = if self.ordered { 0 } else { self.next.fetch_add(1, Ordering::Relaxed) % n.max(1) };
+        let start = if self.ordered { self.next.load(Ordering::Relaxed) % n.max(1) } else { self.next.fetch_add(1, Ordering::Relaxed) % n.max(1) };
         let all: Vec<usize> = (0..n).map(|i| (start + i) % n).collect();
         let (up, down): (Vec<usize>, Vec<usize>) = all.into_iter().partition(|&i| self.nodes[i].up.load(Ordering::Relaxed));
         up.into_iter().chain(down).collect()
@@ -937,6 +979,10 @@ impl Pool {
             match node.client.call(Op::Http, &head, &body, self.limit).await {
                 Ok(reply) => {
                     node.up.store(true, Ordering::Relaxed);
+                    if self.ordered {
+                        // Stay on the node that answered (see `wire::Failover`).
+                        self.next.store(i, Ordering::Relaxed);
+                    }
                     if reply.status != Status::Ok {
                         let m = reply.head["message"].as_str().unwrap_or("the node failed");
                         return (StatusCode::BAD_GATEWAY, Json(json!({"code": "upstream_failed", "message": format!("{}: {m}", node.url)}))).into_response();
@@ -1112,7 +1158,10 @@ pub async fn status(State(s): State<AppState>) -> Json<Value> {
     let role = s.cluster.as_ref().map(|c| format!("{:?}", c.role).to_lowercase()).unwrap_or_else(|| "single".into());
     match &s.gateway {
         Some(g) => Json(json!({"role": role, "search_nodes": {"total": g.search.nodes.len(), "healthy": g.search.healthy()}, "flywheel": {"healthy": g.flywheel.healthy() > 0}})),
-        None => Json(json!({"role": role})),
+        None => match &s.standby {
+            Some(st) => Json(json!({"role": role, "standby": {"primary_up": st.primary_up.load(Ordering::Relaxed), "diverged": st.diverged.load(Ordering::Relaxed)}})),
+            None => Json(json!({"role": role})),
+        },
     }
 }
 
@@ -1362,6 +1411,21 @@ mod tests {
         assert_eq!(ns, (QUEUE_LIMIT as u64..QUEUE_LIMIT as u64 + 250).collect::<Vec<_>>(), "oldest first, nothing lost");
         assert!(got.windows(2).all(|w| w[0].id.1 < w[1].id.1));
         assert!(again.is_empty());
+    }
+
+    #[test]
+    fn a_standby_notices_when_both_nodes_took_writes() {
+        let st = Standby::new();
+        let mut misses = 0;
+        st.note_round(true, &mut misses);
+        assert!(st.primary_up.load(Ordering::Relaxed) && !st.diverged.load(Ordering::Relaxed));
+        for _ in 0..3 {
+            st.note_round(false, &mut misses);
+        }
+        assert!(!st.primary_up.load(Ordering::Relaxed), "three misses: the primary is away");
+        st.served.fetch_add(5, Ordering::Relaxed);
+        st.note_round(true, &mut misses);
+        assert!(st.primary_up.load(Ordering::Relaxed) && st.diverged.load(Ordering::Relaxed), "writes in between: they differ now");
     }
 
     #[test]

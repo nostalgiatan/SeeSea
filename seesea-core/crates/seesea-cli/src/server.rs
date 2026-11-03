@@ -34,6 +34,8 @@ pub struct AppState {
     /// Behind a reverse proxy that sets `X-Forwarded-For`: take the client address from its last entry
     /// (the one the proxy itself added). Off by default, since anyone can send that header.
     pub trust_forwarded: bool,
+    /// On a standby flywheel node: whether it can see its primary and whether it took writes meanwhile.
+    pub standby: Option<Arc<crate::cluster::Standby>>,
 }
 
 impl AppState {
@@ -52,6 +54,7 @@ impl AppState {
             cluster: None,
             gateway: None,
             trust_forwarded: false,
+            standby: None,
         }
     }
 }

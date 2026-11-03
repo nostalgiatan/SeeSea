@@ -1278,6 +1278,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             // A gateway keeps no accounts: they live with the flywheel node, so any number of gateways can run.
             let is_gateway = cluster.as_ref().is_some_and(|c| c.role == seesea_cli::cluster::Role::Gateway);
             let store = if is_gateway { None } else { Some(open_auth(&cli.net)?) };
+            let standby_flag = cluster.as_ref().filter(|c| c.standby_of.is_some()).map(|_| seesea_cli::cluster::Standby::new());
             let mut state_index = None;
             if let Some(dir) = pipeline_settings.index_dir.clone() {
                 let index = seesea_index::Index::open(dir);
@@ -1285,7 +1286,22 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                 let every = parse_interval(&poll_every)?;
                 if !every.is_zero() {
                     let poller = seesea_cli::config::build_poller(&pipeline_settings, Arc::clone(&index))?;
-                    tokio::spawn(async move { poller.run(every).await });
+                    match standby_flag.clone() {
+                        // A standby reads feeds only while its primary is away: the primary's items reach it by copying.
+                        Some(st) => {
+                            tokio::spawn(async move {
+                                loop {
+                                    if !st.primary_up.load(std::sync::atomic::Ordering::Relaxed) {
+                                        poller.poll_once().await;
+                                    }
+                                    tokio::time::sleep(every).await;
+                                }
+                            });
+                        }
+                        None => {
+                            tokio::spawn(async move { poller.run(every).await });
+                        }
+                    }
                     if let Some(public) = public_url.clone() {
                         let hub = seesea_cli::config::ReqwestHub::new(&pipeline_settings)?;
                         let index = Arc::clone(&index);
@@ -1312,6 +1328,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                 }
             }
             state.cluster = cluster.clone();
+            state.standby = standby_flag;
             state.trust_forwarded = file.trust_forwarded_for == Some(true);
             state.index = state_index;
             state.embedder = pipeline_settings.model_dir.as_ref().map(|m| seesea_cli::embedding::shared_embedder(m) as Arc<dyn seesea_pipeline::semantic::TextEmbedder>);

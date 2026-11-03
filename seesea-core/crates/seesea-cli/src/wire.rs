@@ -676,6 +676,9 @@ impl Client {
 pub struct Failover {
     clients: Vec<Arc<Client>>,
     down: Mutex<Vec<Option<Instant>>>,
+    /// The node that answered last. Calls start there: after a switch to the standby, a primary that comes
+    /// back (and missed what the standby took in the meantime) is not returned to by itself.
+    current: std::sync::atomic::AtomicUsize,
 }
 
 impl Failover {
@@ -684,20 +687,23 @@ impl Failover {
         if clients.is_empty() {
             return Err("no node to talk to".into());
         }
-        Ok(Arc::new(Self { down: Mutex::new(vec![None; clients.len()]), clients }))
+        Ok(Arc::new(Self { down: Mutex::new(vec![None; clients.len()]), clients, current: 0.into() }))
     }
 
     pub async fn call(&self, op: Op, head: &Value, body: &[u8], limit: Duration) -> Result<Reply, CallError> {
         let n = self.clients.len();
         let mut last = None;
-        for i in 0..n {
-            let skip = i + 1 < n && self.down.lock().unwrap()[i].is_some_and(|t| t.elapsed() < Duration::from_secs(10));
+        let first = self.current.load(std::sync::atomic::Ordering::Relaxed) % n;
+        for k in 0..n {
+            let i = (first + k) % n;
+            let skip = k + 1 < n && self.down.lock().unwrap()[i].is_some_and(|t| t.elapsed() < Duration::from_secs(10));
             if skip {
                 continue;
             }
             match self.clients[i].call(op, head, body, limit).await {
                 Ok(r) => {
                     self.down.lock().unwrap()[i] = None;
+                    self.current.store(i, std::sync::atomic::Ordering::Relaxed);
                     return Ok(r);
                 }
                 Err(e @ CallError::Refused(_)) => return Err(e),
