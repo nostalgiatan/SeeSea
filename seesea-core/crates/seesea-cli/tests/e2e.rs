@@ -940,3 +940,36 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     }
     assert_eq!(last, 429, "guessing keys through the account endpoints is throttled");
 }
+
+#[tokio::test]
+async fn a_server_on_this_machine_ignores_web_pages() {
+    let base = spawn_site().await;
+    let pipeline = Arc::new(build_pipeline(&settings(&base)).unwrap());
+    let mut state = AppState::new(pipeline, None);
+    state.local_only = true;
+    let app = router(state, 8);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let http = reqwest::Client::new();
+    let body = r#"{"items":[]}"#;
+
+    // A page can only send a "simple" POST: text, a form, or nothing declared.
+    for ct in ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x"] {
+        let r = http.post(format!("{api}/v1/ingest")).header("content-type", ct).body(body).send().await.unwrap();
+        assert_eq!(r.status(), 415, "{ct}");
+    }
+    let r = http.post(format!("{api}/v1/ingest")).body(body).send().await.unwrap();
+    assert_eq!(r.status(), 415);
+    let r = http.post(format!("{api}/v1/ingest")).header("content-type", "application/json").body(body).send().await.unwrap();
+    assert_ne!(r.status(), 415);
+    assert_ne!(r.status(), 403);
+
+    // A name that was rebound to 127.0.0.1 arrives with its own Host.
+    let r = http.get(format!("{api}/v1/stats")).header("host", "evil.example").send().await.unwrap();
+    assert_eq!(r.status(), 403);
+    let r = http.get(format!("{api}/v1/stats")).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let r = http.get(format!("{api}/health")).header("host", "evil.example").send().await.unwrap();
+    assert_eq!(r.status(), 403);
+}

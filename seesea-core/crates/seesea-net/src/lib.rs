@@ -82,6 +82,9 @@
 /// HTTP/HTTPS 客户端模块，支持多种隐私保护特性
 pub mod client;
 
+/// 页面抓取不得连接的地址
+pub mod guard;
+
 /// 请求外观与节奏：一致的浏览器画像、按主机限速、统一的请求头构建
 pub mod privacy;
 
@@ -98,6 +101,7 @@ pub mod retry;
 pub mod metrics;
 
 // 重新导出错误处理模块
+pub use reqwest;
 pub use seesea_errors;
 
 // 导出核心配置类型

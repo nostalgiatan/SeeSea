@@ -27,7 +27,7 @@ This page lists what seesea cannot do yet or has not verified. Each entry descri
 
 ## Security
 
-- The SSRF guard resolves the host name before fetching and refuses it if any address is private (loopback, RFC 1918, link-local including 169.254.169.254, ULA). The check is deliberately lenient: `198.18.0.0/15` (the fake-IP range of TUN-style proxies) counts as public; a failed or timed-out resolution does not block; with `--proxy` the proxy resolves, so there is no check. The check happens before connecting and does not pin the result, so a domain that changes its answer in between gets through.
+- SSRF guard: the client that fetches pages connects only to public addresses. Its resolver drops private addresses from every answer (loopback, RFC 1918, 100.64.0.0/10, link-local including 169.254.169.254, ULA, and IPv4-mapped, NAT64 and 6to4 forms that embed them), so a name that changes its answer at connection time is caught too. Redirects are checked against the target before the request is sent. `198.18.0.0/15` (the fake-IP range of TUN-style proxies) counts as public. With `--proxy` the proxy resolves, so only the addresses written in the URL and in redirects can be checked.
 - WebSub was checked only with unit tests and local HTTP tests, not against a real hub.
 
 ## Multiple nodes

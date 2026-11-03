@@ -400,7 +400,7 @@ fn render_md(block: NodeRef<Node>, body: &str) -> String {
 }
 
 pub fn segment(html: &str) -> Vec<Block> {
-    segment_doc(&Html::parse_document(html))
+    segment_doc(&crate::parse_document(html))
 }
 
 /// Same as `segment` for an already parsed document (parse once, reuse for metadata).

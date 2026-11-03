@@ -27,7 +27,8 @@ pub async fn subscribe_due(index: &Arc<Index>, client: &dyn HubClient, public_ur
     let public = public_url.trim_end_matches('/');
     let mut accepted = 0;
     for sub in index.registry.subs_to_request(crate::now(), RENEW_MARGIN).unwrap_or_default() {
-        // A hub address from a feed is untrusted: refuse non-http(s) and loopback or private literals.
+        // A hub address from a feed is untrusted: refuse anything but https and loopback or private literals. (The client also refuses private
+        // addresses that a name resolves to.)
         if seesea_fetch_ok(&sub.hub).is_err() {
             continue;
         }
@@ -50,8 +51,9 @@ pub async fn subscribe_due(index: &Arc<Index>, client: &dyn HubClient, public_ur
 
 fn seesea_fetch_ok(url: &str) -> Result<(), String> {
     let u = url::Url::parse(url).map_err(|e| e.to_string())?;
-    if !matches!(u.scheme(), "http" | "https") {
-        return Err("not http".into());
+    // The subscription carries a secret, so the hub must be reached over TLS.
+    if u.scheme() != "https" {
+        return Err("not https".into());
     }
     match u.host() {
         Some(url::Host::Domain(d)) if d.eq_ignore_ascii_case("localhost") || d.ends_with(".local") || d.ends_with(".internal") => Err("local".into()),
@@ -139,9 +141,10 @@ mod tests {
         let index = Index::open(dir.path());
         index.registry.set_hub("https://news.example/feed", "https://hub.example/").unwrap();
         index.registry.set_hub("https://evil.example/feed", "http://127.0.0.1:9/hub").unwrap();
+        index.registry.set_hub("https://plain.example/feed", "http://hub.example/").unwrap();
         let rec = Recorder(Mutex::new(vec![]));
 
-        assert_eq!(subscribe_due(&index, &rec, "https://seesea.example/").await, 1, "the loopback hub is refused");
+        assert_eq!(subscribe_due(&index, &rec, "https://seesea.example/").await, 1, "loopback and plain-http hubs are refused");
         let (hub, form) = rec.0.lock().unwrap()[0].clone();
         assert_eq!(hub, "https://hub.example/");
         let get = |k: &str| form.iter().find(|(a, _)| a == k).unwrap().1.clone();

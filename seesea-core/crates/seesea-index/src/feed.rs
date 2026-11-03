@@ -176,7 +176,7 @@ fn parse_json(body: &str, feed_url: &str, source: &str) -> Result<Parsed, String
 
 /// Feed URLs a page advertises with `<link rel="alternate" type="application/rss+xml" …>`.
 pub fn advertised(html: &str, page_url: &str) -> Vec<String> {
-    let doc = scraper::Html::parse_document(html);
+    let doc = seesea_extract::parse_document(html);
     let sel = scraper::Selector::parse("link[rel~=alternate][href]").unwrap();
     let mut out: Vec<String> = Vec::new();
     for l in doc.select(&sel) {

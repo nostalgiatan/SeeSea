@@ -21,17 +21,20 @@ use tokio::sync::Semaphore;
 /// `SEESEA_LIGHTPANDA` names the binary; otherwise `lightpanda` is looked up on `PATH`.
 pub const BINARY_ENV: &str = "SEESEA_LIGHTPANDA";
 
-const PRIVATE_RANGES: [&str; 10] = [
+const PRIVATE_RANGES: [&str; 13] = [
     "0.0.0.0/8",
     "10.0.0.0/8",
     "100.64.0.0/10",
     "127.0.0.0/8",
     "169.254.0.0/16",
+    "192.0.0.0/24",
     "172.16.0.0/12",
     "192.168.0.0/16",
     "::1/128",
     "fc00::/7",
     "fe80::/10",
+    "64:ff9b::/96",
+    "2002::/16",
 ];
 
 #[derive(Debug, Clone)]

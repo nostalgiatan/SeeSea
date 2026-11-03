@@ -7,7 +7,7 @@
 - 请求体最多 1 MiB。
 - 单个请求最长 120 秒，超时返回 504，错误码 `timeout`。
 - `--max-concurrent` 限制同时处理的请求数。
-- 请求体和响应都是 JSON，POST 请求不需要特别设置 `Content-Type`。
+- 请求体和响应都是 JSON。服务监听回环地址、又没有设置密钥时，只回应 `Host` 为 `localhost` 或回环地址的请求（否则 403 `forbidden_host`），POST 必须带 `Content-Type: application/json`（否则 415 `unsupported_media_type`），这样网页无法代用户的浏览器操作本机的服务。设了密钥或监听其他地址时，POST 不需要特别设置 `Content-Type`。
 - 网关节点只回答 `/health`、`/v1/cluster/status`，以及（转给 flywheel 的）账号和管理接口；其余请求转发给搜索节点。
 
 ## 认证
