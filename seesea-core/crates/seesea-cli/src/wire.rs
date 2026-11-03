@@ -71,6 +71,8 @@ pub enum Op {
     Replicate = 9,
     /// Ask a voter for the write lease: head `{}`; reply head `{granted: bool}`. Flywheel and witness nodes only.
     Lease = 10,
+    /// The writer tells its partner that accounts changed; the partner copies them now. Flywheel only.
+    Nudge = 11,
 }
 
 impl Op {
@@ -87,6 +89,7 @@ impl Op {
             8 => Op::Refund,
             9 => Op::Replicate,
             10 => Op::Lease,
+            11 => Op::Nudge,
             _ => return None,
         })
     }
@@ -222,7 +225,7 @@ impl PeerRole {
             (_, Op::Ping) => true,
             (Self::Gateway, Op::Http | Op::Admit | Op::Charge | Op::Refund) => true,
             (Self::Search, Op::Events | Op::LearnGet | Op::IndexSearch) => true,
-            (Self::Flywheel, Op::Replicate | Op::Lease) => true,
+            (Self::Flywheel, Op::Replicate | Op::Lease | Op::Nudge) => true,
             (Self::Operator, Op::Events | Op::LearnGet | Op::LearnMerge) => true,
             _ => false,
         }
@@ -714,6 +717,22 @@ impl Failover {
     }
 
     pub async fn call(&self, op: Op, head: &Value, body: &[u8], limit: Duration) -> Result<Reply, CallError> {
+        // "Nobody can take it right now" (an election in progress, a restart) is worth a short wait: nothing
+        // was done, so asking again cannot do it twice.
+        let mut result = self.call_once(op, head, body, limit).await;
+        for _ in 0..5 {
+            if !matches!(result, Err(CallError::NotLeader | CallError::Unreachable(_))) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            // The nodes marked down a moment ago may be back.
+            self.down.lock().unwrap().iter_mut().for_each(|d| *d = None);
+            result = self.call_once(op, head, body, limit).await;
+        }
+        result
+    }
+
+    async fn call_once(&self, op: Op, head: &Value, body: &[u8], limit: Duration) -> Result<Reply, CallError> {
         let n = self.clients.len();
         let mut last = None;
         let first = self.current.load(std::sync::atomic::Ordering::Relaxed) % n;

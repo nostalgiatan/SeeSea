@@ -77,13 +77,16 @@ echo "leader: $L  follower: $F"
 sleep 40   # the follower copies the accounts and the journal
 jl() { cat $W/data-$1/seesea/journal/*.jsonl 2>/dev/null | grep -c '"type":"search"' || true; }
 check "the follower has the leader's journal" "$([ "$(jl $L)" -ge 1 ] && [ "$(jl $L)" = "$(jl $F)" ] && echo same)" same
-kill -9 ${PID[$L]}; sleep 14
-check "leader killed: the follower takes the lease" "$(writer $F)" true
+# a key created through the gateway, and the leader killed at once: the key must survive (accounts are copied before the answer)
+NEW=$(ip netns exec gw curl -s -m 20 -X POST -H "Authorization: Bearer $KEY" http://127.0.0.1:8080/v1/account/keys -H 'content-type: application/json' -d '{"name":"late"}' | grep -o 'ss_[A-Za-z0-9_]*' | awk '{ if (length($0) > length(m)) m = $0 } END { print m }')
+kill -9 ${PID[$L]}; sleep 8
+check "a key created just before the leader died works on the new leader" "$(ip netns exec gw curl -s -m 20 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $NEW" http://127.0.0.1:8080/v1/account)" 200
+check "leader killed: the follower takes the lease within 8 s" "$(writer $F)" true
 check "leader killed: accounts still answer" "$(code /v1/account)" 200
 check "leader killed: searches still answer" "$(code '/v1/search?q=rust&mode=fast&sources=local')" 200
 start $L; sleep 10
 check "old leader back: it follows, it does not take the lease back" "$(writer $L)/$(writer $F)" false/true
-ip link set v_$F down; sleep 14
+ip link set v_$F down; sleep 10
 check "leader cut off from the others but alive: it stops writing" "$(writer $F)" false
 check "the other side took over" "$(writer $L)" true
 check "accounts answer through the new leader" "$(code /v1/account)" 200

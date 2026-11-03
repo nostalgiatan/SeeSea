@@ -1369,7 +1369,12 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                     seesea_cli::cluster::run_standby(state.clone(), link);
                 }
             }
-            server::serve(addr, state, max_concurrent, allow_open, tls, file.behind_tls_proxy == Some(true)).await
+            let served = server::serve(addr, state, max_concurrent, allow_open, tls, file.behind_tls_proxy == Some(true)).await;
+            // A clean stop hands the write lease over at once.
+            if let Some(l) = &lease {
+                l.release().await;
+            }
+            served
         }
         Command::Config { .. }
         | Command::Models { .. }
