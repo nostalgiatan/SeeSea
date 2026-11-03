@@ -368,3 +368,68 @@ mod tests {
         );
     }
 }
+
+/// The Lightpanda release asset for this machine, if it publishes one.
+pub fn renderer_asset() -> Option<String> {
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "x86_64",
+        "aarch64" => "aarch64",
+        _ => return None,
+    };
+    let os = match std::env::consts::OS {
+        "linux" => "linux",
+        "macos" => "macos",
+        _ => return None,
+    };
+    Some(format!("lightpanda-{arch}-{os}"))
+}
+
+/// Download Lightpanda into the folder the renderer is looked for in, and check that it runs.
+pub async fn download_renderer(proxy: Option<&str>) -> Result<PathBuf> {
+    let asset = renderer_asset().ok_or_else(|| {
+        Error::Config("Lightpanda has no build for this system; set `lightpanda` in the config to a binary you have".into())
+    })?;
+    let target = crate::userconfig::managed_renderer();
+    let dir = target.parent().map(Path::to_path_buf).unwrap_or_default();
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| Error::Config(format!("cannot create {}: {e}", dir.display())))?;
+    let part = dir.join("lightpanda.part");
+    let mut builder = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(20));
+    if let Some(p) = proxy {
+        builder = builder.proxy(reqwest::Proxy::all(p).map_err(|e| Error::Config(format!("bad proxy '{p}': {e}")))?);
+    }
+    let client = builder.build().map_err(|e| Error::Config(format!("cannot create the HTTP client: {e}")))?;
+    let url = format!("https://github.com/lightpanda-io/browser/releases/download/nightly/{asset}");
+    eprintln!("downloading renderer from {url}");
+    let got = async {
+        let mut resp = client.get(&url).send().await.and_then(|r| r.error_for_status()).map_err(|e| e.to_string())?;
+        let total = resp.content_length();
+        let mut file = std::fs::File::create(&part).map_err(|e| e.to_string())?;
+        let mut done = 0u64;
+        while let Some(c) = resp.chunk().await.map_err(|e| e.to_string())? {
+            file.write_all(&c).map_err(|e| e.to_string())?;
+            done += c.len() as u64;
+        }
+        if total.is_some_and(|t| t != done) || done < 1 << 20 {
+            return Err(format!("got only {done} bytes"));
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(e) = got {
+        let _ = std::fs::remove_file(&part);
+        return Err(Error::Config(format!("{url}: {e}")));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&part, std::fs::Permissions::from_mode(0o755));
+    }
+    let runs = std::process::Command::new(&part).arg("version").output().is_ok_and(|o| o.status.success());
+    if !runs {
+        let _ = std::fs::remove_file(&part);
+        return Err(Error::Config("the downloaded file does not run on this system".into()));
+    }
+    std::fs::rename(&part, &target).map_err(|e| Error::Config(format!("cannot move into place: {e}")))?;
+    Ok(target)
+}

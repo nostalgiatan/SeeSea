@@ -45,15 +45,15 @@ pub mod testing;
 
 pub type Result<T> = std::result::Result<T, EmbedError>;
 
-/// Where the encoder layers run. The CPU is the default: most machines that run this have no spare GPU
-/// (a laptop's is shared with the desktop and other programs), and the CPU path is only a little slower.
+/// Where the encoder layers run. The GPU is the default (a CPU copy of the weights needs several times the
+/// memory); with no usable adapter, or when it runs out of video memory, the CPU takes over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Accelerator {
     Cpu,
     Gpu,
 }
 
-static ACCELERATOR: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+static ACCELERATOR: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(Accelerator::Gpu as u8);
 
 /// Choose the device for models loaded from now on. `SEESEA_EMBED_DEVICE` (`cpu` or `gpu`) still wins.
 pub fn set_accelerator(a: Accelerator) {

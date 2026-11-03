@@ -4,8 +4,10 @@
 //! batch costs one upload of the embedded tokens and one download of the final hidden states.
 
 use burn::backend::wgpu::WgpuDevice;
-use burn::tensor::activation::{gelu, softmax};
-use burn::tensor::{Device, Tensor, TensorData};
+use burn::tensor::activation::gelu;
+use burn::tensor::module::attention;
+use burn::tensor::ops::AttentionModuleOptions;
+use burn::tensor::{Device, FloatDType, Tensor, TensorData};
 
 struct Linear {
     weight: Tensor<2>,
@@ -14,7 +16,14 @@ struct Linear {
 
 impl Linear {
     fn forward(&self, x: Tensor<2>) -> Tensor<2> {
-        x.matmul(self.weight.clone().transpose()) + self.bias.clone()
+        if self.weight.dtype() == x.dtype() {
+            return x.matmul(self.weight.clone().transpose()) + self.bias.clone();
+        }
+        // 16-bit weights: multiply in 16 bits, keep the activations and the sums in 32.
+        x.cast(FloatDType::F16)
+            .matmul(self.weight.clone().transpose())
+            .cast(FloatDType::F32)
+            + self.bias.clone()
     }
 }
 
@@ -46,6 +55,8 @@ struct Layer {
 
 pub struct GpuLayers {
     device: Device,
+    /// Weights are kept as 16-bit floats (half the video memory and bandwidth) where the device allows it.
+    half: bool,
     layers: Vec<Layer>,
     heads: usize,
     hidden: usize,
@@ -86,8 +97,10 @@ impl GpuLayers {
             t.clone().matmul(t).into_data()
         })
         .ok()?;
+        let half = std::env::var("SEESEA_GPU_F32").is_err() && device.supports_dtype(FloatDType::F16);
         Some(Self {
             device,
+            half,
             layers: Vec::new(),
             heads: 0,
             hidden: 0,
@@ -103,8 +116,12 @@ impl GpuLayers {
 
     pub fn push(&mut self, eps: f64, l: LayerData) {
         let dev = &self.device;
+        let half = self.half;
         let lin = |d: LinearData| Linear {
-            weight: Tensor::from_data(TensorData::new(d.weight, [d.outputs, d.inputs]), dev),
+            weight: {
+                let w = Tensor::<2>::from_data(TensorData::new(d.weight, [d.outputs, d.inputs]), dev);
+                if half { w.cast(FloatDType::F16) } else { w }
+            },
             bias: Tensor::from_data(TensorData::new(d.bias, [1, d.outputs]), dev),
         };
         let h = self.hidden;
@@ -125,6 +142,12 @@ impl GpuLayers {
         });
     }
 
+    /// Free the weights and hand the video memory back to the driver.
+    pub fn release(&mut self) {
+        self.layers.clear();
+        self.device.memory_cleanup();
+    }
+
     /// Run the layers over embedded tokens `(batch, seq, hidden)` and a 0/1 mask `(batch, seq)`.
     pub fn forward(&self, embedded: Vec<f32>, mask: &[u32], batch: usize, seq: usize) -> Vec<f32> {
         let dev = &self.device;
@@ -135,8 +158,8 @@ impl GpuLayers {
             .iter()
             .map(|&m| if m == 0 { -1e9 } else { 0.0 })
             .collect();
-        let bias = Tensor::<4>::from_data(TensorData::new(bias, [batch, 1, 1, seq]), dev);
-        let scale = 1.0 / (d as f64).sqrt();
+        let bias = Tensor::<4>::from_data(TensorData::new(bias, [batch, 1, 1, seq]), dev)
+            .expand([batch, heads, seq, seq]);
         let split = |t: Tensor<2>| t.reshape([batch, seq, heads, d]).swap_dims(1, 2);
 
         let mut x = Tensor::<2>::from_data(TensorData::new(embedded, [rows, h]), dev);
@@ -146,9 +169,8 @@ impl GpuLayers {
                 split(l.k.forward(x.clone())),
                 split(l.v.forward(x.clone())),
             );
-            let scores = q.matmul(k.swap_dims(2, 3)) * scale + bias.clone();
-            let ctx = softmax(scores, 3)
-                .matmul(v)
+            // One fused kernel instead of matmul, softmax, matmul with the score matrix in memory.
+            let ctx = attention(q, k, v, None, Some(bias.clone()), AttentionModuleOptions::default())
                 .swap_dims(1, 2)
                 .reshape([rows, h]);
             x = l.attn_norm.forward(l.out.forward(ctx) + x);
@@ -158,6 +180,12 @@ impl GpuLayers {
         x.into_data()
             .try_into_vec::<f32>()
             .expect("hidden states are f32")
+    }
+}
+
+impl Drop for GpuLayers {
+    fn drop(&mut self) {
+        self.release();
     }
 }
 

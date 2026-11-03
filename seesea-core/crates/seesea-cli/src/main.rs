@@ -733,9 +733,9 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
     };
     apply_file(&mut cli.net, &file, use_model);
     match file.device.as_deref() {
-        None | Some("cpu") => {}
-        Some("gpu") => seesea_embed::set_accelerator(seesea_embed::Accelerator::Gpu),
-        Some(other) => return Err(Error::Config(format!("device must be cpu or gpu, not '{other}'"))),
+        None | Some("gpu" | "auto") => {}
+        Some("cpu") => seesea_embed::set_accelerator(seesea_embed::Accelerator::Cpu),
+        Some(other) => return Err(Error::Config(format!("device must be gpu or cpu, not '{other}'"))),
     }
     if let Some(m) = file.model_idle_minutes {
         seesea_cli::embedding::set_model_idle_secs(m * 60);
@@ -770,9 +770,9 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                         return print_json(&st);
                     }
                     println!("models directory: {}", models::models_dir(&file).display());
-                    match seesea_fetch::render::Renderer::discover(cli.net.lightpanda.as_deref()) {
+                    match seesea_fetch::render::Renderer::discover_with(cli.net.lightpanda.as_deref(), Some(&crate::userconfig::managed_renderer())) {
                         Some(r) => println!("renderer   ok       {}  Lightpanda renders pages that need JavaScript", r.binary().display()),
-                        None => println!("renderer   missing  Lightpanda not found: put `lightpanda` on PATH or set `lightpanda` in the config (optional)"),
+                        None => println!("renderer   missing  Lightpanda not found: run `seesea models download renderer`, or put `lightpanda` on PATH (optional)"),
                     }
                     for s in &st {
                         println!(
@@ -790,10 +790,21 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                     return Ok(());
                 }
             };
+            if wanted.iter().any(|n| n == "renderer") {
+                match seesea_fetch::render::Renderer::discover_with(cli.net.lightpanda.as_deref(), Some(&userconfig::managed_renderer())) {
+                    Some(r) => println!("renderer: already at {}", r.binary().display()),
+                    None => println!("renderer: saved {}", models::download_renderer(cli.net.proxy.as_deref()).await?.display()),
+                }
+            }
+            let wanted: Vec<String> = wanted.into_iter().filter(|n| n != "renderer").collect();
+            let only_renderer = wanted.is_empty() && matches!(action, Some(ModelsAction::Download { names }) if !names.is_empty());
+            if only_renderer {
+                return Ok(());
+            }
             for name in &wanted {
                 if !models::CATALOG.iter().any(|s| s.key == name) {
                     return Err(Error::InvalidRequest(format!(
-                        "unknown model '{name}' (embedding, reranker)"
+                        "unknown model '{name}' (embedding, reranker, renderer)"
                     )));
                 }
             }

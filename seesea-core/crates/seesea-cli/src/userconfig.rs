@@ -167,6 +167,11 @@ pub fn data_dir() -> PathBuf {
     dirs().data
 }
 
+/// Where `seesea models download renderer` puts Lightpanda, and the last place it is looked for.
+pub fn managed_renderer() -> PathBuf {
+    data_dir().join("bin").join(if cfg!(windows) { "lightpanda.exe" } else { "lightpanda" })
+}
+
 /// `$SEESEA_CACHE_DIR`, else `<cache dir>/seesea`.
 pub fn default_cache_dir() -> PathBuf {
     env_path("SEESEA_CACHE_DIR").unwrap_or_else(|| dirs().cache)
@@ -258,8 +263,9 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # no_learn = false
 # Every search is recorded under the data folder (journal/) for `seesea report`; turn that off here.
 # no_journal = false
-# The models run on the CPU unless you say gpu; a shared laptop GPU is often short of memory.
-# device = "cpu"
+# The models run on the GPU (Vulkan) when there is one, and on the CPU otherwise or when the GPU runs out
+# of memory. Say cpu to keep them off the GPU (the CPU copy needs about 3.8 GB of RAM).
+# device = "gpu"
 # The models are unloaded after this many idle minutes and loaded again by the next search (0 = keep them).
 # model_idle_minutes = 10
 # Pages that were read and answered a search are kept in the local index, so the next search can find them
