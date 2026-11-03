@@ -264,13 +264,35 @@ pub async fn load_pages(
     concurrency: usize,
     timeout: Duration,
 ) -> Vec<Result<Loaded>> {
-    futures::stream::iter(urls.iter().cloned())
-        .map(|url| {
+    load_pages_then(fetcher, renderer, extractor, urls, scope, concurrency, timeout, None).await
+}
+
+/// Called with a page's position in `urls` and the page, the moment that page is ready (not when all are).
+pub type OnLoaded = Arc<dyn Fn(usize, &Loaded) + Send + Sync>;
+
+#[allow(clippy::too_many_arguments)]
+pub async fn load_pages_then(
+    fetcher: &Arc<dyn PageFetcher>,
+    renderer: Option<&Arc<dyn PageFetcher>>,
+    extractor: &Arc<Extractor>,
+    urls: &[String],
+    scope: Scope,
+    concurrency: usize,
+    timeout: Duration,
+    on_loaded: Option<OnLoaded>,
+) -> Vec<Result<Loaded>> {
+    futures::stream::iter(urls.iter().cloned().enumerate())
+        .map(|(i, url)| {
             let fetcher = Arc::clone(fetcher);
             let renderer = renderer.cloned();
             let extractor = Arc::clone(extractor);
+            let on_loaded = on_loaded.clone();
             async move {
-                load_page(fetcher.as_ref(), renderer.as_deref(), &extractor, &url, scope, timeout).await
+                let out = load_page(fetcher.as_ref(), renderer.as_deref(), &extractor, &url, scope, timeout).await;
+                if let (Ok(l), Some(cb)) = (&out, &on_loaded) {
+                    cb(i, l);
+                }
+                out
             }
         })
         .buffered(concurrency.max(1))

@@ -124,6 +124,10 @@ impl Reranker for CrossReranker {
         self.inner.wake();
     }
 
+    fn prepare(&self, query: &str, doc: &DocView<'_>) {
+        self.inner.prepare(query, doc);
+    }
+
     fn rerank(&self, query: &str, docs: &[DocView<'_>]) -> Vec<RerankScore> {
         self.rerank_noted(query, docs).0
     }
