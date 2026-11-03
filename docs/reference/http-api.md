@@ -2,6 +2,14 @@
 
 `seesea serve` 提供 JSON 接口。命令参数见[命令行参考](cli.md#serve)。
 
+## 请求限制
+
+- 请求体最多 1 MiB。
+- 单个请求最长 120 秒，超时返回 504，错误码 `timeout`。
+- `--max-concurrent` 限制同时处理的请求数。
+- 请求体和响应都是 JSON，POST 请求不需要特别设置 `Content-Type`。
+- 网关节点只回答 `/health`、`/v1/cluster/status`，以及（转给 flywheel 的）账号和管理接口；其余请求转发给搜索节点。
+
 ## 认证
 
 开启认证的服务要求每个请求（`/health` 除外）带密钥，写在 `Authorization: Bearer <密钥>` 或 `X-API-Key` 头里。密钥有两种：
@@ -55,7 +63,16 @@
 
 ### POST /v1/search/batch
 
-请求体同 `POST /v1/search`，但用 `queries`（1 到 10 个字符串）代替 `query`。同时执行 4 条，每条单独计费，互不影响。
+请求体同 `POST /v1/search`，但用 `queries`（1 到 10 个字符串）代替 `query`，其余字段对每条查询都生效。同时执行 4 条，每条单独计费，互不影响。
+
+响应按查询的顺序给出每条的结果：
+
+```json
+{"results": [
+  {"query": "tokio select", "ok": true, "response": {"hits": [], "...": "同搜索响应"}},
+  {"query": "a", "ok": false, "error": {"code": "invalid_request", "message": "..."}}
+]}
+```
 
 ### POST /v1/similar
 
@@ -78,14 +95,16 @@
 | `scope` | `core` | `core` 或 `extended` |
 | `max_chars` | 6000 | 带查询时的字符上限 |
 
+响应字段：`url`、`final_url`（跟随重定向后的地址）、`meta`（标题、描述、canonical 等）、`sections`（带查询时是选出的章节）、`markdown`（不带查询时是整页正文）、`asides`（被排除的评论和相关链接块）、`confidence`、`needs_render`、`rendered`、`truncated`。
+
 ## 来源与统计
 
 | 接口 | 说明 |
 |---|---|
-| `GET /health` | 免认证；返回 `status`、`version` 和来源名列表 |
-| `GET /v1/sources` | 来源列表 |
-| `GET /v1/sources/check` | 逐个来源提问，参数 `q` 可换问题 |
-| `GET /v1/stats` | 各缓存的命中、未命中、写入和命中率 |
+| `GET /health` | 免认证；返回 `{"status": "ok", "version": "...", "sources": [...]}` |
+| `GET /v1/sources` | `{"sources": ["名字", ...]}` |
+| `GET /v1/sources/check` | 逐个来源提问，参数 `q` 可换问题；返回 `{"sources": [{"source", "ok", "hits", "ms", "error"}]}` |
+| `GET /v1/stats` | `{"cache": {名称: {"hits", "misses", "puts", "hit_ratio"}}}` |
 | `GET /v1/index` | 本地索引的统计（`store`）和订阅源数量（`feeds.total`、`feeds.active`） |
 
 ## 反馈与写入
@@ -97,7 +116,7 @@
 | `url` | 结果网址 |
 | `verdict` | `good` 或 `bad` |
 
-效果相当于第一层排序里 5 次观察。
+效果相当于第一层排序里 5 次观察。成功时返回 `{"host": "...", "verdict": "good"}`；学习被关闭或网址没有主机时返回 400。
 
 ### POST /v1/ingest
 
@@ -107,7 +126,7 @@
 {"items": [{"url": "https://example.org/a", "title": "标题", "lead": "开头约 400 字", "published": 1767225600, "source": "my-pusher"}]}
 ```
 
-`lead`、`published`（Unix 秒，缺省按当前时间）和 `source` 可省略。
+`lead`、`published`（Unix 秒，缺省按当前时间）和 `source` 可省略。响应是 `{"added": N, "duplicates": N, "rejected": N}`。
 
 ### GET、POST /v1/websub/{id}
 
@@ -119,8 +138,8 @@ WebSub 回调：GET 回应 hub 的订阅验证，POST 接收推送。不需要�
 
 | 接口 | 说明 |
 |---|---|
-| `GET /v1/account` | 自己的套餐、今日用量、30 天用量和密钥列表 |
-| `POST /v1/account/keys` | 建密钥，体 `{"name": "标签", "expires_days": 90}`，两项都可省略；每人最多 20 把有效密钥 |
+| `GET /v1/account` | `{"user", "plan", "used_today", "usage", "keys"}`：套餐的各项上限、今日已用积分、近 30 天每日用量（`usage` 里每项是 `{day, credits}`）和密钥列表（`id`、`name`、`created`、`expires`、`last_used`、`revoked`） |
+| `POST /v1/account/keys` | 建密钥，体 `{"name": "标签", "expires_days": 90}`，两项都可省略；每人最多 20 把有效密钥。返回 201 和 `{"info": {...}, "key": "ss_..."}`，`key` 只出现这一次 |
 | `DELETE /v1/account/keys/{id}` | 吊销自己的密钥；别人的密钥一律按“不存在”处理 |
 
 ## 管理
@@ -129,10 +148,10 @@ WebSub 回调：GET 回应 hub 的订阅验证，POST 接收推送。不需要�
 
 | 接口 | 说明 |
 |---|---|
-| `GET /v1/admin/users` | 用户列表 |
-| `POST /v1/admin/users` | 建用户，体 `{"name": "ann", "plan": "default"}` |
-| `PATCH /v1/admin/users/{name}` | 改套餐或停用，体 `{"plan": "free", "disabled": false}`，其他字段会被拒绝 |
-| `POST /v1/admin/users/{name}/keys` | 为用户建密钥，体同 `POST /v1/account/keys` |
+| `GET /v1/admin/users` | `{"users": [{"name", "plan", "disabled", "keys", "created", "used_today"}]}` |
+| `POST /v1/admin/users` | 建用户，体 `{"name": "ann", "plan": "default"}`，返回 201 和新用户 |
+| `PATCH /v1/admin/users/{name}` | 改套餐或停用，体 `{"plan": "free", "disabled": false}`，其他字段会被拒绝；返回更新后的用户 |
+| `POST /v1/admin/users/{name}/keys` | 为用户建密钥，体同 `POST /v1/account/keys`，返回 201 |
 | `DELETE /v1/admin/keys/{id}` | 按公开 id 吊销任意密钥 |
 
 ## 集群状态
