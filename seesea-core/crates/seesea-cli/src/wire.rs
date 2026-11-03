@@ -58,8 +58,15 @@ pub enum Op {
     LearnMerge = 3,
     /// A fresh-news / written-back lookup in the index. Flywheel only.
     IndexSearch = 4,
-    /// A user's HTTP request, forwarded by a gateway: head `{method, uri, content_type}`, body as sent.
+    /// A user's HTTP request, forwarded by a gateway: head `{method, uri, content_type, authorization?}`, body as
+    /// sent. With `authorization` the receiving node checks the key itself; without, the gateway already did.
     Http = 5,
+    /// Check a key and spend its first credits. Flywheel only (it holds the accounts).
+    Admit = 6,
+    /// Spend more on a request that turned out dearer. Flywheel only.
+    Charge = 7,
+    /// Give credits back for a request that did not run. Flywheel only.
+    Refund = 8,
 }
 
 impl Op {
@@ -71,6 +78,9 @@ impl Op {
             3 => Op::LearnMerge,
             4 => Op::IndexSearch,
             5 => Op::Http,
+            6 => Op::Admit,
+            7 => Op::Charge,
+            8 => Op::Refund,
             _ => return None,
         })
     }
@@ -180,7 +190,7 @@ impl PeerRole {
     pub fn may(self, op: Op) -> bool {
         match (self, op) {
             (_, Op::Ping) => true,
-            (Self::Gateway, Op::Http) => true,
+            (Self::Gateway, Op::Http | Op::Admit | Op::Charge | Op::Refund) => true,
             (Self::Search, Op::Events | Op::LearnGet | Op::IndexSearch) => true,
             (Self::Operator, Op::Events | Op::LearnGet | Op::LearnMerge) => true,
             _ => false,

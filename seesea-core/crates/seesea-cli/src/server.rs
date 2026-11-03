@@ -80,7 +80,7 @@ fn parse_body<T: serde::de::DeserializeOwned>(body: &Bytes) -> Result<T, Error> 
         .map_err(|e| Error::InvalidRequest(format!("invalid JSON body: {e}")))
 }
 
-fn presented_key(headers: &HeaderMap) -> Option<&str> {
+pub(crate) fn presented_key(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -162,8 +162,17 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Reques
     {
         ip = Some(client);
     }
+    // A gateway hands the account endpoints to the node that holds the accounts, which checks the key itself.
+    if state.gateway.is_some() && crate::cluster::is_accounts_path(req.uri().path()) {
+        return next.run(req).await;
+    }
     let cost = base_cost(req.uri().path());
-    let allowed = match state.access.admit(presented_key(&headers), ip, cost) {
+    let admitted = if state.access.is_remote() {
+        state.access.admit_remote(presented_key(&headers), ip, cost).await
+    } else {
+        state.access.admit(presented_key(&headers), ip, cost)
+    };
+    let allowed = match admitted {
         Ok(a) => a,
         Err(r) => return refusal_response(r),
     };
@@ -640,7 +649,7 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
             .route("/mcp", post(mcp))
     };
     routes
-        .merge(crate::account::routes())
+        .merge(if state.gateway.is_some() { Router::new() } else { crate::account::routes() })
         .route("/v1/cluster/status", get(crate::cluster::status))
         .fallback(crate::cluster::forward)
         .layer(DefaultBodyLimit::max(1024 * 1024))
