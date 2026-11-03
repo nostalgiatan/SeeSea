@@ -34,4 +34,4 @@ pub use rank::Recency;
 pub use journal::Journal;
 pub use learn::{LearnConfig, Learner};
 pub use pipeline::{host_of, ExtractedPage, Pipeline, PipelineConfig, SourceProbe};
-pub use source::{RawHit, Source, SourceQuery};
+pub use source::{RawHit, Remembered, Sink, Source, SourceQuery};

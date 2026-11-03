@@ -752,3 +752,75 @@ async fn an_empty_local_index_does_not_hide_a_web_outage() {
     assert_eq!(r.hits.len(), 1);
     assert!(!r.degraded.is_empty());
 }
+
+#[tokio::test]
+async fn domain_filters_and_news_topic_apply() {
+    let general = FakeSource::ok(
+        "web",
+        vec![
+            hit("https://docs.rs/a", "A on docs", "text"),
+            hit("https://blog.example.com/b", "B on blog", "text"),
+            hit("https://www.other.org/c", "C elsewhere", "text"),
+        ],
+    );
+    let news_inner = FakeSource::ok("news", vec![hit("https://n.example/1", "Rust release", "today")]);
+    let p = standard_pipeline(vec![general, Arc::new(NewsOnly(Arc::clone(&news_inner)))], FakePages::new(&[]));
+    let mut only = SearchRequest::new("rust ownership");
+    only.mode = Mode::Fast;
+    only.include_domains = vec!["docs.rs".into(), "example.com".into()];
+    let urls: Vec<String> = p.search(&only).await.unwrap().hits.into_iter().map(|h| h.url).collect();
+    assert_eq!(urls.len(), 2, "{urls:?}");
+    assert!(urls.iter().all(|u| u.contains("docs.rs") || u.contains("example.com")));
+
+    let mut not = SearchRequest::new("rust ownership");
+    not.mode = Mode::Fast;
+    not.exclude_domains = vec!["other.org".into()];
+    let urls: Vec<String> = p.search(&not).await.unwrap().hits.into_iter().map(|h| h.url).collect();
+    assert!(urls.iter().all(|u| !u.contains("other.org")), "{urls:?}");
+    // A suffix that is not a domain boundary must not match.
+    not.exclude_domains = vec!["ther.org".into()];
+    assert_eq!(p.search(&not).await.unwrap().hits.len(), 3);
+
+    // topic=news asks the news source even for a timeless-looking query.
+    assert_eq!(news_inner.calls.load(Ordering::SeqCst), 0);
+    let mut news = SearchRequest::new("rust ownership");
+    news.mode = Mode::Fast;
+    news.topic = Some("news".into());
+    p.search(&news).await.unwrap();
+    assert_eq!(news_inner.calls.load(Ordering::SeqCst), 1);
+    news.topic = Some("sports".into());
+    assert!(p.search(&news).await.is_err());
+}
+
+struct Collect(Mutex<Vec<seesea_pipeline::Remembered>>);
+impl seesea_pipeline::Sink for Collect {
+    fn remember(&self, pages: Vec<seesea_pipeline::Remembered>) {
+        self.0.lock().unwrap().extend(pages);
+    }
+}
+
+#[tokio::test]
+async fn only_pages_that_answered_are_remembered() {
+    let good = "https://good.example/tokio";
+    let bad = "https://spam.example/tokio";
+    let web = FakeSource::ok(
+        "web",
+        vec![
+            hit(good, "How the Tokio runtime works", "tokio runtime schedules async tasks"),
+            hit(bad, "Tokio runtime - Best Guide 2025!", "tokio runtime"),
+        ],
+    );
+    let pages = FakePages::new(&[
+        (good, page("How the Tokio runtime works", &RUNTIME)),
+        (bad, page("Tokio runtime - Best Guide 2025!", &SPAM)),
+    ]);
+    let sink = Arc::new(Collect(Mutex::new(vec![])));
+    let p = standard_pipeline(vec![web], pages).sink(sink.clone());
+    let mut req = SearchRequest::new("tokio runtime scheduler");
+    req.mode = Mode::Standard;
+    p.search(&req).await.unwrap();
+    let kept = sink.0.lock().unwrap().clone();
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    assert_eq!(kept[0].url, good);
+    assert!(kept[0].lead.contains("Tokio"));
+}

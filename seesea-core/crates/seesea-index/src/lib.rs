@@ -16,7 +16,7 @@ pub mod vectors;
 
 pub use poller::{PollConfig, PollReport, Poller};
 pub use registry::{Feed, Registry, Status, Sub};
-pub use source::IndexSource;
+pub use source::{IndexSink, IndexSource};
 pub use store::{IngestReport, Item, Stats, Store, Stored};
 
 use std::path::PathBuf;

@@ -11,6 +11,28 @@ use std::sync::Arc;
 /// Items farther than this share of the bits from the query are not a semantic match.
 const MAX_DISTANCE_SHARE: f64 = 0.42;
 
+/// `source` of items that came from pages the pipeline read.
+pub const READ: &str = "read";
+
+/// Writes pages the pipeline read and found useful into the index.
+pub struct IndexSink(pub Arc<Index>);
+
+impl seesea_pipeline::Sink for IndexSink {
+    fn remember(&self, pages: Vec<seesea_pipeline::Remembered>) {
+        let items: Vec<crate::Item> = pages
+            .into_iter()
+            .map(|p| crate::Item { url: p.url, title: p.title, lead: p.lead, published: None, source: READ.into() })
+            .collect();
+        let index = self.0.clone();
+        // Called from inside a search: never wait for the disk.
+        if let Ok(h) = tokio::runtime::Handle::try_current() {
+            h.spawn_blocking(move || {
+                let _ = index.store.ingest(&items);
+            });
+        }
+    }
+}
+
 pub struct IndexSource {
     index: Arc<Index>,
     embedder: Option<Arc<dyn TextEmbedder>>,
@@ -81,9 +103,40 @@ impl Source for IndexSource {
                 url: s.url,
                 title: s.title,
                 snippet: s.lead,
-                published: s.published.and_then(|p| chrono::DateTime::from_timestamp(p, 0)),
+                // Pages written back after being read carry the day they were read, not a publication date.
+                published: if s.source == READ { None } else { s.published.and_then(|p| chrono::DateTime::from_timestamp(p, 0)) },
                 upstream: Vec::new(),
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use seesea_pipeline::{Remembered, Sink, Source, SourceQuery};
+
+    #[tokio::test]
+    async fn pages_written_back_do_not_look_fresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = Index::open(dir.path());
+        IndexSink(index.clone()).remember(vec![Remembered {
+            url: "https://docs.example/guide".into(),
+            title: "The scheduler guide".into(),
+            lead: "How the scheduler places tasks on worker threads".into(),
+            published: None,
+        }]);
+        let source = IndexSource::new(index);
+        let q = SourceQuery { query: "scheduler guide".into(), limit: 5, page: 1, time_range: None, language: None };
+        let mut hits = Vec::new();
+        for _ in 0..50 {
+            hits = source.search(&q).await.unwrap();
+            if !hits.is_empty() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].published.is_none());
     }
 }

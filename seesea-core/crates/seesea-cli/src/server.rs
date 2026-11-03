@@ -25,6 +25,8 @@ pub struct AppState {
     pub access: Arc<Access>,
     /// The local fresh-news index, when there is one: receives pushes and learns which sites to look for feeds on.
     pub index: Option<Arc<seesea_index::Index>>,
+    /// Embeds text for `/v1/similar`; none without a model.
+    pub embedder: Option<Arc<dyn seesea_pipeline::semantic::TextEmbedder>>,
 }
 
 impl AppState {
@@ -39,6 +41,7 @@ impl AppState {
             pipeline,
             access: Arc::new(access),
             index: None,
+            embedder: None,
         }
     }
 }
@@ -154,6 +157,10 @@ struct SearchParams {
     sources: Option<String>,
     max_chars_per_result: Option<usize>,
     full_content: Option<bool>,
+    /// Comma-separated hosts or parent domains.
+    include_domains: Option<String>,
+    exclude_domains: Option<String>,
+    topic: Option<String>,
 }
 
 impl SearchParams {
@@ -183,6 +190,12 @@ impl SearchParams {
             .max_chars_per_result
             .unwrap_or(req.max_chars_per_result);
         req.full_content = self.full_content.unwrap_or(false);
+        let list = |s: Option<String>| -> Vec<String> {
+            s.map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default()
+        };
+        req.include_domains = list(self.include_domains);
+        req.exclude_domains = list(self.exclude_domains);
+        req.topic = self.topic;
         Ok(req)
     }
 }
@@ -209,6 +222,112 @@ async fn search_post(
     let resp = s.pipeline.search(&req).await?;
     remember_sites(&s, &resp);
     Ok(Json(resp))
+}
+
+/// Up to ten searches in one call, run four at a time. Body: a normal search body with `queries` (a list)
+/// in place of `query`. Each query is metered like a search of its own, and one failing does not fail the rest.
+async fn search_batch(
+    State(s): State<AppState>,
+    grant: Option<Extension<Grant>>,
+    body: Bytes,
+) -> ApiResult<Value> {
+    let mut template: Value = parse_body(&body)?;
+    let queries: Vec<String> = template
+        .get("queries")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(|q| q.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    if queries.is_empty() || queries.len() > 10 {
+        return Err(Error::InvalidRequest("queries must hold between 1 and 10 strings".into()).into());
+    }
+    if let Some(o) = template.as_object_mut() {
+        o.remove("queries");
+    }
+    let mut reqs = Vec::new();
+    for q in queries {
+        let mut t = template.clone();
+        t["query"] = json!(q);
+        let req: SearchRequest = serde_json::from_value(t).map_err(|e| Error::InvalidRequest(e.to_string()))?;
+        req.validate()?;
+        meter_search(&s, &grant, req.mode)?;
+        reqs.push(req);
+    }
+    let gate = Arc::new(tokio::sync::Semaphore::new(4));
+    let mut set = tokio::task::JoinSet::new();
+    for (i, req) in reqs.into_iter().enumerate() {
+        let (p, gate) = (s.pipeline.clone(), gate.clone());
+        set.spawn(async move {
+            let _g = gate.acquire_owned().await;
+            (i, req.query.clone(), p.search(&req).await)
+        });
+    }
+    let mut out: Vec<(usize, Value)> = Vec::new();
+    while let Some(done) = set.join_next().await {
+        let Ok((i, query, r)) = done else { continue };
+        out.push((i, match r {
+            Ok(resp) => {
+                remember_sites(&s, &resp);
+                json!({"query": query, "ok": true, "response": resp})
+            }
+            Err(e) => json!({"query": query, "ok": false, "error": e.body()}),
+        }));
+    }
+    out.sort_by_key(|(i, _)| *i);
+    Ok(Json(json!({"results": out.into_iter().map(|(_, v)| v).collect::<Vec<_>>()})))
+}
+
+#[derive(Deserialize)]
+struct SimilarBody {
+    /// A page to find neighbours of (its title and opening are embedded) ...
+    #[serde(default)]
+    url: Option<String>,
+    /// ... or any text.
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default = "default_similar")]
+    limit: usize,
+}
+
+fn default_similar() -> usize {
+    10
+}
+
+/// Pages like this one, found by meaning in the local index (what the pipeline has read plus fresh articles).
+async fn similar(State(s): State<AppState>, body: Bytes) -> ApiResult<Value> {
+    let b: SimilarBody = parse_body(&body)?;
+    let (Some(index), Some(embedder)) = (s.index.clone(), s.embedder.clone()) else {
+        return Err(Error::InvalidRequest("similar search needs the local index and an embedding model".into()).into());
+    };
+    let text = match (&b.text, &b.url) {
+        (Some(t), _) if !t.trim().is_empty() => t.clone(),
+        (_, Some(u)) => {
+            let page = s.pipeline.extract(u, Scope::Core, None, 1200).await?;
+            format!(
+                "{}\n{}",
+                page.meta.title.clone().unwrap_or_default(),
+                page.sections.iter().map(|x| x.markdown.as_str()).collect::<Vec<_>>().join("\n")
+            )
+        }
+        _ => return Err(Error::InvalidRequest("give a url or some text".into()).into()),
+    };
+    let own = b.url.clone();
+    let k = b.limit.clamp(1, 50);
+    let found = tokio::task::spawn_blocking(move || {
+        let bits = seesea_index::vectors::query_bits(&index, &*embedder, &text)?;
+        let max = (bits.len() as f64 * 8.0 * 0.42) as u32;
+        index.store.nearest(&bits, None, k + 1, max).ok()
+    })
+    .await
+    .map_err(|e| Error::Config(e.to_string()))?
+    .ok_or_else(|| Error::InvalidRequest("the index has no vectors yet".into()))?;
+    let own = own.as_deref().map(seesea_pipeline::fusion::canonical_url);
+    let results: Vec<Value> = found
+        .into_iter()
+        .filter(|(st, _)| own.as_deref() != Some(seesea_pipeline::fusion::canonical_url(&st.url).as_str()))
+        .take(k)
+        .map(|(st, d)| json!({"url": st.url, "title": st.title, "host": st.host, "lead": st.lead, "published": st.published, "distance": d}))
+        .collect();
+    Ok(Json(json!({"results": results})))
 }
 
 /// Sites of the best results are queued so the poller can look for feeds there.
@@ -422,6 +541,8 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/v1/search", get(search_get).post(search_post))
+        .route("/v1/search/batch", post(search_batch))
+        .route("/v1/similar", post(similar))
         .route("/v1/extract", post(extract_post))
         .route("/v1/sources", get(sources))
         .route("/v1/sources/check", get(sources_check))
@@ -505,6 +626,9 @@ mod tests {
             sources: Some("a, b,,".into()),
             max_chars_per_result: Some(100),
             full_content: Some(true),
+            include_domains: None,
+            exclude_domains: None,
+            topic: None,
         }
         .into_request()
         .unwrap();
@@ -533,6 +657,9 @@ mod tests {
             sources: None,
             max_chars_per_result: None,
             full_content: None,
+            include_domains: None,
+            exclude_domains: None,
+            topic: None,
         };
         assert_eq!(none.into_request().unwrap_err().code(), "invalid_request");
         let bad = SearchParams {
@@ -544,6 +671,9 @@ mod tests {
             sources: None,
             max_chars_per_result: None,
             full_content: None,
+            include_domains: None,
+            exclude_domains: None,
+            topic: None,
         };
         assert_eq!(bad.into_request().unwrap_err().code(), "invalid_request");
     }

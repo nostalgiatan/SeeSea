@@ -28,6 +28,8 @@ pub struct FileConfig {
     pub no_learn: Option<bool>,
     /// Do not keep a record of searches (see `seesea report`).
     pub no_journal: Option<bool>,
+    /// Do not add pages that were read and answered a search to the local index.
+    pub no_writeback: Option<bool>,
     /// Chance per search (0..1) of reading one lower-ranked result to keep the learning unbiased.
     pub explore: Option<f64>,
     /// Do not keep a local index of fresh articles (no `local` source, no feed polling).
@@ -252,6 +254,9 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # no_learn = false
 # Every search is recorded under the data folder (journal/) for `seesea report`; turn that off here.
 # no_journal = false
+# Pages that were read and answered a search are kept in the local index, so the next search can find them
+# even when the web is slow or down. Turn that off here.
+# no_writeback = false
 # explore = 0.05             # now and then read a lower-ranked result too, so ranks are not judged by hearsay
 # fuzzy_cache = 0.8          # reuse cached results for similar queries
 # cache_dir = "~/.cache/seesea"   # default depends on the OS (~/Library/Caches on macOS, %LOCALAPPDATA% on Windows)

@@ -571,3 +571,36 @@ async fn websub_callbacks_need_no_api_key_but_prove_themselves_by_challenge() {
     assert_eq!(r.status(), 204);
     assert_eq!(index.store.stats().items, 0);
 }
+
+#[tokio::test]
+async fn batch_runs_each_query_and_one_bad_query_does_not_sink_the_rest() {
+    let base = spawn_site().await;
+    let api = spawn_server(&base, None).await;
+    let http = reqwest::Client::new();
+    let r = http
+        .post(format!("{api}/v1/search/batch"))
+        .json(&json!({"queries": ["rust async runtime", "   ", "tokio"], "mode": "fast"}))
+        .send()
+        .await
+        .unwrap();
+    // An empty query is refused before anything runs, so the whole call is a 400.
+    assert_eq!(r.status(), 400);
+    let r = http
+        .post(format!("{api}/v1/search/batch"))
+        .json(&json!({"queries": ["rust async runtime", "tokio"], "mode": "fast", "exclude_domains": ["nowhere.example"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let v: Value = r.json().await.unwrap();
+    let results = v["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0]["query"], "rust async runtime");
+    assert!(results.iter().all(|x| x["ok"] == true && !x["response"]["hits"].as_array().unwrap().is_empty()), "{v}");
+    let too_many: Vec<String> = (0..11).map(|i| format!("q{i}")).collect();
+    let r = http.post(format!("{api}/v1/search/batch")).json(&json!({"queries": too_many})).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+    // Similar search needs an index and a model; without them it says so.
+    let r = http.post(format!("{api}/v1/similar")).json(&json!({"text": "anything"})).send().await.unwrap();
+    assert_eq!(r.status(), 400);
+}

@@ -54,3 +54,19 @@ pub trait Source: Send + Sync {
 
     async fn search(&self, query: &SourceQuery) -> Result<Vec<RawHit>, SourceError>;
 }
+
+/// A page that was read for a search and turned out to answer it.
+#[derive(Debug, Clone)]
+pub struct Remembered {
+    pub url: String,
+    pub title: String,
+    pub lead: String,
+    /// None when the page does not say; such pages must not look fresh later.
+    pub published: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Keeps useful pages so the next search can find them without the web: the pipeline grows its own index
+/// from what it reads. Must not block.
+pub trait Sink: Send + Sync {
+    fn remember(&self, pages: Vec<Remembered>);
+}
