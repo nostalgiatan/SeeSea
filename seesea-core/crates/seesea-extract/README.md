@@ -25,7 +25,7 @@ WCXB (keeps adjacent material such as product specs and thread replies).
 
 Cost: about 7 ms per page single-threaded (parse, metadata, blocks, features, model, Markdown); `extract_batch`
 spreads pages over a rayon pool (≈1,000 pages/s on 8 threads in our measurement).
-The bundled model is ~1 MB gzipped; accuracy on held-out domains is in `docs/extraction-design.md` §5.6.4.
+The bundled model is ~1 MB gzipped; accuracy on held-out domains is in `docs/explanation/extraction-research.md` §5.6.4.
 
 ## Not implemented yet
 
