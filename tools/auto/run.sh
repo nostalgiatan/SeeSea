@@ -60,6 +60,11 @@ s = {}
 for k in ("lexical", "models", "live"):
     r = last(f"{out}/eval-{k}.txt")
     if r: s["eval_" + k] = r
+try:
+    gl = open(f"{out}/eval-models.txt", errors="ignore").read()
+    n = len(re.findall(r"Out of Memory|the GPU (?:failed|could not)", gl))
+    if n: s["gpu_problems"] = dict(messages=n, note="the models fell back to CPU or failed; see eval-models.txt")
+except OSError: pass
 t = open(f"{out}/tests.txt").read() if os.path.exists(f"{out}/tests.txt") else ""
 if t:
     s["tests"] = dict(passed=len(re.findall(r"^test .* ok$", t, re.M)), failed=len(re.findall(r"^test .* FAILED$", t, re.M)))

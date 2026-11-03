@@ -12,6 +12,8 @@ use std::sync::Mutex;
 
 /// Files older than this are removed when a journal is opened.
 const KEEP_DAYS: i64 = 60;
+/// The folder may not grow past this; the oldest days go first.
+const KEEP_BYTES: u64 = 200 * 1024 * 1024;
 
 pub struct Journal {
     dir: PathBuf,
@@ -41,6 +43,23 @@ impl Journal {
                 && d.and_hms_opt(0, 0, 0).is_some_and(|t| t.and_utc() < cutoff)
             {
                 let _ = std::fs::remove_file(e.path());
+            }
+        }
+        // Then by size, oldest day first (the names sort by date); today's file always stays.
+        let mut files: Vec<(PathBuf, u64)> = std::fs::read_dir(&self.dir)
+            .map(|rd| {
+                rd.flatten()
+                    .filter(|e| e.file_name().to_string_lossy().starts_with("journal-"))
+                    .filter_map(|e| e.metadata().ok().map(|m| (e.path(), m.len())))
+                    .collect()
+            })
+            .unwrap_or_default();
+        files.sort();
+        let mut total: u64 = files.iter().map(|(_, n)| n).sum();
+        while total > KEEP_BYTES && files.len() > 1 {
+            let (path, n) = files.remove(0);
+            if std::fs::remove_file(path).is_ok() {
+                total -= n;
             }
         }
     }

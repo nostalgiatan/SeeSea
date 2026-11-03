@@ -267,12 +267,16 @@ impl McpServer {
         });
         let mut lines = input.lines();
         let mut tasks = tokio::task::JoinSet::new();
+        // A client that floods requests must not start thousands of searches at once.
+        let gate = Arc::new(tokio::sync::Semaphore::new(8));
         while let Some(line) = lines.next_line().await? {
             if line.trim().is_empty() {
                 continue;
             }
             let (server, tx) = (Arc::clone(&self), tx.clone());
+            let permit = Arc::clone(&gate).acquire_owned().await;
             tasks.spawn(async move {
+                let _permit = permit;
                 if let Some(reply) = server.handle_text(&line).await {
                     let _ = tx.send(reply);
                 }

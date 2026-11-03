@@ -589,14 +589,36 @@ pub async fn serve(
         listener,
         router(state, max_concurrent).into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .with_graceful_shutdown(async {
-        let _ = tokio::signal::ctrl_c().await;
-    })
+    .with_graceful_shutdown(shutdown_signal())
     .await;
     flusher.abort();
     access.flush();
     served?;
     Ok(())
+}
+
+/// Ctrl-C, or SIGTERM which is what systemd, Docker and Kubernetes send: either one lets requests finish and
+/// the usage counters and learned weights be written before the process exits.
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = term.recv() => {}
+                }
+            }
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 #[cfg(test)]
