@@ -13,8 +13,9 @@ use crate::{FetchError, FetchOptions, Page, check_resolved, check_target_with};
 use seesea_net::HttpClient;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
 
 /// `SEESEA_LIGHTPANDA` names the binary; otherwise `lightpanda` is looked up on `PATH`.
@@ -41,6 +42,49 @@ pub struct Renderer {
     /// Hard limit for one render, browser start-up included.
     pub timeout_secs: u64,
     slots: Arc<Semaphore>,
+    health: Arc<Health>,
+}
+
+/// Consecutive failures that open the breaker.
+const BREAK_AFTER: u32 = 3;
+const PROBE_PAGE: &str = "<html><head><title>probe</title></head><body><div id=\"x\">waiting</div><script>document.getElementById('x').textContent='probe-ok-7';</script></body></html>";
+
+/// Whether the browser itself works (not whether a given page loads): a binary that cannot start, hangs, or
+/// crashes makes every render wait out its full timeout, which a search should not pay for.
+#[derive(Debug, Default)]
+struct Health {
+    failures: AtomicU32,
+    open_until: Mutex<Option<Instant>>,
+}
+
+impl Health {
+    fn ok(&self) {
+        self.failures.store(0, Ordering::Relaxed);
+        *self.open_until.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    /// Returns true when this failure opened the breaker.
+    fn fail(&self) -> bool {
+        let n = self.failures.fetch_add(1, Ordering::Relaxed) + 1;
+        if n < BREAK_AFTER {
+            return false;
+        }
+        // 30 s, then doubling up to ten minutes.
+        let wait = Duration::from_secs((30u64 << (n - BREAK_AFTER).min(5)).min(600));
+        *self.open_until.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now() + wait);
+        n == BREAK_AFTER
+    }
+
+    fn blocked_for(&self) -> Option<Duration> {
+        let until = (*self.open_until.lock().unwrap_or_else(|e| e.into_inner()))?;
+        until.checked_duration_since(Instant::now()).filter(|d| !d.is_zero())
+    }
+}
+
+/// Why a browser run failed: the browser is at fault, or the page is.
+enum Failure {
+    Browser(String),
+    Page(String),
 }
 
 impl Renderer {
@@ -50,6 +94,7 @@ impl Renderer {
             wait_ms: 3000,
             timeout_secs: 20,
             slots: Arc::new(Semaphore::new(2)),
+            health: Arc::new(Health::default()),
         }
     }
 
@@ -99,6 +144,91 @@ impl Renderer {
         a
     }
 
+    /// One browser process for one page.
+    async fn run(&self, url: &str, allow_private: bool, proxy: Option<&str>) -> Result<String, Failure> {
+        let _slot = self.slots.acquire().await.map_err(|e| Failure::Browser(e.to_string()))?;
+        let child = tokio::process::Command::new(&self.binary)
+            .args(self.args(url, allow_private, proxy))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| Failure::Browser(format!("cannot start {}: {e}", self.binary.display())))?;
+        let out = tokio::time::timeout(Duration::from_secs(self.timeout_secs.max(1)), child.wait_with_output())
+            .await
+            .map_err(|_| Failure::Browser(format!("rendering took over {} s", self.timeout_secs)))?
+            .map_err(|e| Failure::Browser(e.to_string()))?;
+        let html = String::from_utf8_lossy(&out.stdout).into_owned();
+        let log = String::from_utf8_lossy(&out.stderr);
+        if !out.status.success() {
+            return Err(Failure::Browser("the browser exited with an error".into()));
+        }
+        check_output(true, &html, &log).map_err(Failure::Page)?;
+        Ok(html)
+    }
+
+    /// Render a tiny local page whose text only exists after its script ran: proves the browser starts,
+    /// finishes in time and executes JavaScript. Updates the breaker either way.
+    pub async fn probe(&self) -> Result<(), String> {
+        use tokio::io::AsyncWriteExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.map_err(|e| e.to_string())?;
+        let url = format!("http://{}/", listener.local_addr().map_err(|e| e.to_string())?);
+        let server = tokio::spawn(async move {
+            // The browser may open more than one connection (favicon, retries).
+            while let Ok((mut sock, _)) = listener.accept().await {
+                let body = PROBE_PAGE;
+                let reply = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                let _ = sock.write_all(reply.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            }
+        });
+        let result = self.run(&url, true, None).await;
+        server.abort();
+        match result {
+            Ok(html) if html.contains("probe-ok-7") => {
+                self.health.ok();
+                Ok(())
+            }
+            Ok(_) => {
+                self.health.fail();
+                Err("the browser loaded the probe page but did not run its script".into())
+            }
+            Err(Failure::Browser(m)) | Err(Failure::Page(m)) => {
+                self.health.fail();
+                Err(m)
+            }
+        }
+    }
+
+    /// Whether renders are currently being attempted.
+    pub fn available(&self) -> bool {
+        self.health.blocked_for().is_none()
+    }
+
+    /// Probe now (which also warms the binary into the file cache), then every five minutes while it
+    /// works and every thirty seconds while it does not, so a recovered browser is used again without
+    /// waiting for a search to stumble on it. Needs a running tokio runtime.
+    pub fn watch(&self) {
+        if tokio::runtime::Handle::try_current().is_err() {
+            return;
+        }
+        let me = self.clone();
+        tokio::spawn(async move {
+            let mut was_ok = true;
+            loop {
+                let r = me.probe().await;
+                match (&r, was_ok) {
+                    (Err(e), true) => eprintln!("seesea: the headless browser failed its health check: {e}"),
+                    (Ok(()), false) => eprintln!("seesea: the headless browser works again"),
+                    _ => {}
+                }
+                was_ok = r.is_ok();
+                tokio::time::sleep(Duration::from_secs(if was_ok { 300 } else { 30 })).await;
+            }
+        });
+    }
+
     pub async fn render(&self, raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchError> {
         let url = check_target_with(raw_url, opts.allow_private)?;
         let client = HttpClient::instance()
@@ -118,32 +248,29 @@ impl Renderer {
             }
         };
 
-        let _slot = self
-            .slots
-            .acquire()
-            .await
-            .map_err(|e| FetchError::Network(e.to_string()))?;
-        let child = tokio::process::Command::new(&self.binary)
-            .args(self.args(url.as_str(), opts.allow_private, proxy_url.as_deref()))
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| {
-                FetchError::Network(format!("cannot start {}: {e}", self.binary.display()))
-            })?;
-        let out = tokio::time::timeout(
-            Duration::from_secs(self.timeout_secs.max(1)),
-            child.wait_with_output(),
-        )
-        .await
-        .map_err(|_| FetchError::Network(format!("rendering took over {} s", self.timeout_secs)))?
-        .map_err(|e| FetchError::Read(e.to_string()))?;
-
-        let mut html = String::from_utf8_lossy(&out.stdout).into_owned();
-        let log = String::from_utf8_lossy(&out.stderr);
-        check_output(out.status.success(), &html, &log).map_err(FetchError::Network)?;
+        if let Some(wait) = self.health.blocked_for() {
+            return Err(FetchError::Network(format!(
+                "the headless browser is not working; trying again in {} s",
+                wait.as_secs() + 1
+            )));
+        }
+        let mut html = match self.run(url.as_str(), opts.allow_private, proxy_url.as_deref()).await {
+            Ok(h) => {
+                self.health.ok();
+                h
+            }
+            Err(Failure::Page(m)) => {
+                // The page failed, not the browser.
+                self.health.ok();
+                return Err(FetchError::Network(m));
+            }
+            Err(Failure::Browser(m)) => {
+                if self.health.fail() {
+                    eprintln!("seesea: the headless browser is failing ({m}); rendering is paused and will be probed again");
+                }
+                return Err(FetchError::Network(m));
+            }
+        };
         if html.len() > opts.max_bytes {
             let mut cut = opts.max_bytes;
             while !html.is_char_boundary(cut) {
@@ -223,6 +350,60 @@ mod tests {
         assert!(check_output(true, nav, "").is_err());
         assert!(check_output(false, page, "").is_err());
         assert!(check_output(true, "<html></html>", "").is_err());
+    }
+
+    #[cfg(unix)]
+    fn script(dir: &Path, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let p = dir.join("fake-lightpanda");
+        let tmp = dir.join("fake-lightpanda.new");
+        std::fs::write(&tmp, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::rename(&tmp, &p).unwrap();
+        p
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_failing_browser_opens_the_breaker_and_a_good_probe_closes_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let bad = script(dir.path(), "exit 3");
+        let r = Renderer::new(&bad);
+        assert!(r.available());
+        for _ in 0..BREAK_AFTER {
+            assert!(r.probe().await.is_err());
+        }
+        assert!(!r.available(), "three failures in a row pause rendering");
+        // A render now fails at once instead of starting the browser.
+        let t = Instant::now();
+        let e = r.render("https://example.com/", &FetchOptions::default()).await.unwrap_err();
+        assert!(t.elapsed() < Duration::from_secs(5), "{e}");
+
+        // The binary is fixed (a probe is allowed through the open breaker).
+        script(dir.path(), "echo '<html><body><div id=x>probe-ok-7</div><p>enough text to count as a document</p></body></html>'");
+        r.probe().await.unwrap();
+        assert!(r.available());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_browser_that_does_not_run_scripts_fails_the_probe() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = script(dir.path(), "echo '<html><body><div id=x>waiting</div><p>enough text to count as a document</p></body></html>'");
+        let e = Renderer::new(&p).probe().await.unwrap_err();
+        assert!(e.contains("did not run its script"), "{e}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_page_that_fails_to_load_does_not_count_against_the_browser() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = script(dir.path(), "echo 'msg=\"page failed\" err=CouldntConnect' >&2; echo '<html></html>'");
+        let r = Renderer::new(&p);
+        for _ in 0..5 {
+            let _ = r.run("http://127.0.0.1:1/", true, None).await;
+        }
+        assert!(r.available());
     }
 
     #[test]

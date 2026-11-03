@@ -47,6 +47,8 @@ pub struct Settings {
     pub lightpanda: Option<PathBuf>,
     /// Never render, even when Lightpanda is installed.
     pub no_render: bool,
+    /// A long-running service keeps probing the headless browser; a one-shot command does not.
+    pub watch_renderer: bool,
     /// Where stage 1 keeps what it learned; none means it does not learn.
     pub learn_file: Option<PathBuf>,
     /// Where searches are recorded for `seesea report`; none means they are not.
@@ -184,6 +186,11 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
             local = local.embedder(crate::embedding::shared_embedder(m));
         }
         sources.push(Arc::new(local));
+    }
+    if settings.watch_renderer
+        && let Some(r) = &renderer
+    {
+        r.watch();
     }
     let mut pipeline = Pipeline::with_net_fetcher(sources, fetch.clone())
         .config(PipelineConfig {

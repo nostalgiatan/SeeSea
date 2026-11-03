@@ -450,6 +450,7 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         plain_headers: net.plain_headers,
         lightpanda: net.lightpanda.clone(),
         no_render: net.no_render,
+        watch_renderer: memory_cache,
         learn_file: (!net.no_learn).then(userconfig::default_learn_file),
         no_writeback: net.no_writeback,
         journal_dir: (!net.no_journal).then(userconfig::default_journal_dir),
@@ -731,6 +732,14 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         _ => false,
     };
     apply_file(&mut cli.net, &file, use_model);
+    match file.device.as_deref() {
+        None | Some("cpu") => {}
+        Some("gpu") => seesea_embed::set_accelerator(seesea_embed::Accelerator::Gpu),
+        Some(other) => return Err(Error::Config(format!("device must be cpu or gpu, not '{other}'"))),
+    }
+    if let Some(m) = file.model_idle_minutes {
+        seesea_cli::embedding::set_model_idle_secs(m * 60);
+    }
 
     match &cli.command {
         Command::Config { init } => {

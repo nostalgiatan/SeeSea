@@ -7,10 +7,11 @@ license = "AGPL-3.0-or-later"
 
 [dependencies]
 seesea-net = { path = "../seesea-net" }
-tokio = { version = "1", features = ["time", "net", "process", "sync"] }
+tokio = { version = "1", features = ["time", "net", "process", "sync", "rt", "io-util"] }
 seesea-config = { path = "../seesea-config" }
 url = "2"
 
 [dev-dependencies]
+tempfile = "3.23.0"
 seesea-extract = { path = "../seesea-extract", default-features = false }
 tokio = { version = "1", features = ["full"] }
