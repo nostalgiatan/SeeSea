@@ -709,6 +709,7 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
     let plans2 = std::collections::HashMap::from([("small".to_string(), Plan { per_minute: 600, burst: 100, per_day: 0, max_concurrent: 4, deep: false })]);
     let mut fly2 = AppState::with_access(Arc::new(build_pipeline(&standby_settings).unwrap()), seesea_cli::access::Access::new(Some(store2), plans2, None));
     fly2.index = Some(index2.clone());
+    fly2.standby = Some(seesea_cli::cluster::Standby::new());
     let fly2_cluster = cluster(
         Role::Flywheel,
         "fly2",

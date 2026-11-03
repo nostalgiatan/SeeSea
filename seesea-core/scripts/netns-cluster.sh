@@ -66,6 +66,8 @@ echo "waiting for the standby to copy the accounts"; sleep 7
 kill -9 ${PID[fly]}; sleep 9
 check "primary flywheel killed: accounts still answer (standby)" "$(code /v1/account)" 200
 check "primary flywheel killed: searches still answer" "$(code '/v1/search?q=rust&mode=fast&sources=local')" 200
+start fly; sleep 14
+check "old primary back: the standby reports that both took writes" "$(ip netns exec fly2 curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8080/v1/cluster/status | grep -o '"diverged":[a-z]*')" '"diverged":true'
 kill -9 ${PID[s0]}; sleep 9
 for i in 1 2 3 4; do r=$(code '/v1/search?q=rust&mode=fast&sources=local'); [ "$r" = 200 ] || break; done
 check "a search node killed: the other answers" "$r" 200
