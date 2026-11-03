@@ -74,7 +74,9 @@ w1=$(writer fly); w2=$(writer fly2)
 check "exactly one flywheel node holds the write lease" "$w1/$w2" "$([ "$w1" = true ] && echo true/false || echo false/true)"
 if [ "$w1" = true ]; then L=fly; F=fly2; else L=fly2; F=fly; fi
 echo "leader: $L  follower: $F"
-sleep 6   # the follower copies the accounts
+sleep 40   # the follower copies the accounts and the journal
+jl() { cat $W/data-$1/seesea/journal/*.jsonl 2>/dev/null | grep -c '"type":"search"' || true; }
+check "the follower has the leader's journal" "$([ "$(jl $L)" -ge 1 ] && [ "$(jl $L)" = "$(jl $F)" ] && echo same)" same
 kill -9 ${PID[$L]}; sleep 14
 check "leader killed: the follower takes the lease" "$(writer $F)" true
 check "leader killed: accounts still answer" "$(code /v1/account)" 200
