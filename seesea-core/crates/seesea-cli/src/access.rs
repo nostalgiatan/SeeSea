@@ -49,6 +49,21 @@ impl Grant {
     }
 }
 
+/// A key that was accepted and charged, as the node holding the accounts reports it.
+pub struct Admitted {
+    pub user_id: i64,
+    pub name: String,
+    pub plan: Plan,
+    pub decision: seesea_auth::Decision,
+}
+
+fn denial(d: &Denied) -> (&'static str, String) {
+    match d.reason {
+        Reason::Rate => ("rate_limited", format!("more than {} credits per minute; retry in {} s", d.limit_per_minute, d.retry_after_secs)),
+        Reason::Daily => ("quota_exceeded", "the daily credit budget of this plan is spent".to_string()),
+    }
+}
+
 pub struct Allowed {
     pub grant: Grant,
     pub headers: Vec<(&'static str, String)>,
@@ -69,6 +84,8 @@ pub struct Access {
     /// share them. Concurrency caps and the per-address failure counter stay per process.
     shared: bool,
     root_key: Option<Arc<str>>,
+    /// On a gateway: the flywheel node that holds the accounts and the shared buckets.
+    remote: Option<Arc<crate::wire::Client>>,
     permits: Mutex<HashMap<i64, (u32, Arc<Semaphore>)>>,
     failures: Mutex<HashMap<IpAddr, (f64, u32)>>,
 }
@@ -92,6 +109,7 @@ impl Access {
             limiter: Limiter::new(),
             shared: true,
             root_key: root_key.filter(|k| !k.is_empty()).map(Into::into),
+            remote: None,
             permits: Mutex::default(),
             failures: Mutex::default(),
         }
@@ -101,6 +119,16 @@ impl Access {
     pub fn local_limits(mut self) -> Self {
         self.shared = false;
         self
+    }
+
+    /// Keep no accounts here: ask the node that has them (a gateway, so that any number of them can run).
+    pub fn with_remote(mut self, accounts: Arc<crate::wire::Client>) -> Self {
+        self.remote = Some(accounts);
+        self
+    }
+
+    pub fn is_remote(&self) -> bool {
+        self.remote.is_some()
     }
 
     pub fn open() -> Self {
@@ -113,7 +141,7 @@ impl Access {
 
     /// Whether a key is needed at all.
     pub fn required(&self) -> bool {
-        self.root_key.is_some() || self.store.as_ref().is_some_and(|s| s.users().is_ok_and(|u| !u.is_empty()))
+        self.root_key.is_some() || self.remote.is_some() || self.store.as_ref().is_some_and(|s| s.users().is_ok_and(|u| !u.is_empty()))
     }
 
     pub fn store(&self) -> Option<&Store> {
@@ -222,6 +250,98 @@ impl Access {
         Ok(Allowed { grant: Grant { user_id: Some(user.id), plan, name: user.name }, headers, permit: Some(permit) })
     }
 
+    /// Check a key and spend `cost` from the shared buckets, for a gateway that asks on behalf of a user.
+    pub fn spend_for(&self, key: &str, cost: u32) -> Result<Admitted, Refusal> {
+        let t = now();
+        let internal = |m: String| Refusal::Limited { denied: None, code: "internal_error", message: m, retry_after: 5 };
+        let Some(store) = &self.store else { return Err(Refusal::Unauthorized("wrong API key".into())) };
+        let Principal { user, .. } = match store.authenticate(key) {
+            Ok(p) => p,
+            Err(AuthError::Db(e)) => return Err(internal(format!("auth database: {e}"))),
+            Err(e) => return Err(Refusal::Unauthorized(e.to_string())),
+        };
+        let plan = self.plan_for(&user.plan);
+        let decision = store
+            .spend(user.id, &plan, cost, t)
+            .map_err(|e| internal(e.to_string()))?
+            .map_err(|d| {
+                let (code, message) = denial(&d);
+                Refusal::Limited { retry_after: d.retry_after_secs, denied: Some(d), code, message }
+            })?;
+        Ok(Admitted { user_id: user.id, name: user.name, plan, decision })
+    }
+
+    /// `admit` for a gateway that keeps no accounts: the key is checked and the credits are spent on the
+    /// flywheel node. (The failed-key counter and the concurrency caps stay on this gateway.)
+    pub async fn admit_remote(&self, presented: Option<&str>, ip: Option<IpAddr>, cost: u32) -> Result<Allowed, Refusal> {
+        use crate::wire::{Op, Status};
+        let t = now();
+        if self.turned_away(ip, t) {
+            return Err(Refusal::Limited { denied: None, code: "too_many_failures", message: "too many failed attempts to authenticate; wait a minute".into(), retry_after: 60 });
+        }
+        let Some(key) = presented else {
+            self.note_failure(ip, t);
+            return Err(Refusal::Unauthorized("missing API key (Authorization: Bearer <key>)".into()));
+        };
+        if let Some(root) = &self.root_key
+            && constant_time_eq(key.as_bytes(), root.as_bytes())
+        {
+            return Ok(Allowed { grant: Grant { user_id: None, plan: self.plan_for("unlimited"), name: "root".into() }, headers: Vec::new(), permit: None });
+        }
+        let unavailable = |m: String| Refusal::Limited { denied: None, code: "internal_error", message: format!("accounts unavailable: {m}"), retry_after: 2 };
+        let client = self.remote.as_ref().ok_or_else(|| unavailable("no accounts node".into()))?;
+        let reply = client
+            .call(Op::Admit, &serde_json::json!({"key": key, "cost": cost}), &[], std::time::Duration::from_secs(10))
+            .await
+            .map_err(|e| unavailable(e.to_string()))?;
+        let h = &reply.head;
+        if reply.status != Status::Ok {
+            return Err(unavailable(h["message"].as_str().unwrap_or("error").to_string()));
+        }
+        match h["result"].as_str() {
+            Some("ok") => {}
+            Some("unauthorized") => {
+                self.note_failure(ip, t);
+                return Err(Refusal::Unauthorized(h["message"].as_str().unwrap_or("wrong API key").to_string()));
+            }
+            Some("limited") => {
+                let retry_after = h["retry_after"].as_u64().unwrap_or(1);
+                let denied = h["reason"].as_str().map(|r| Denied {
+                    reason: if r == "daily" { Reason::Daily } else { Reason::Rate },
+                    retry_after_secs: retry_after,
+                    limit_per_minute: h["limit"].as_u64().unwrap_or(0) as u32,
+                });
+                let code = match h["code"].as_str() {
+                    Some("quota_exceeded") => "quota_exceeded",
+                    Some("rate_limited") => "rate_limited",
+                    _ => "internal_error",
+                };
+                return Err(Refusal::Limited { denied, code, message: h["message"].as_str().unwrap_or("limited").to_string(), retry_after });
+            }
+            _ => return Err(unavailable("unreadable answer".into())),
+        }
+        let plan: Plan = serde_json::from_value(h["plan"].clone()).map_err(|e| unavailable(e.to_string()))?;
+        let user_id = h["user_id"].as_i64().ok_or_else(|| unavailable("no user".into()))?;
+        let Some(permit) = self.permit(user_id, plan.max_concurrent) else {
+            let _ = client.call(Op::Refund, &serde_json::json!({"user": user_id, "plan": plan, "cost": cost}), &[], std::time::Duration::from_secs(5)).await;
+            return Err(Refusal::Limited {
+                denied: None,
+                code: "too_many_concurrent",
+                message: format!("{} requests are already running for this account", plan.max_concurrent),
+                retry_after: 1,
+            });
+        };
+        let mut headers = vec![
+            ("x-ratelimit-limit", h["limit"].as_u64().unwrap_or(0).to_string()),
+            ("x-ratelimit-remaining", h["remaining"].as_u64().unwrap_or(0).to_string()),
+            ("x-ratelimit-reset", h["reset"].as_u64().unwrap_or(0).to_string()),
+        ];
+        if let Some(d) = h["daily_remaining"].as_u64() {
+            headers.push(("x-quota-remaining", d.to_string()));
+        }
+        Ok(Allowed { grant: Grant { user_id: Some(user_id), plan, name: h["name"].as_str().unwrap_or("").to_string() }, headers, permit: Some(permit) })
+    }
+
     fn permit(&self, user: i64, max: u32) -> Option<OwnedSemaphorePermit> {
         let sem = {
             let mut p = self.permits.lock().unwrap();
@@ -239,6 +359,15 @@ impl Access {
         if let Some(id) = grant.user_id
             && extra > 0
         {
+            if let Some(client) = self.remote.clone() {
+                let head = serde_json::json!({"user": id, "plan": grant.plan, "extra": extra});
+                if let Ok(rt) = tokio::runtime::Handle::try_current() {
+                    rt.spawn(async move {
+                        let _ = client.call(crate::wire::Op::Charge, &head, &[], std::time::Duration::from_secs(5)).await;
+                    });
+                }
+                return;
+            }
             match (&self.store, self.shared) {
                 (Some(s), true) => {
                     let _ = s.spend_more(id, &grant.plan, extra, now());

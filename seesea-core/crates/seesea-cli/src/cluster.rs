@@ -545,6 +545,8 @@ impl wire::Handler for NodeHandler {
                 None => Reply::error("no learner on this node"),
             },
             Op::IndexSearch => self.index_search(&req.head).await,
+            Op::Admit => self.admit(&req.head),
+            Op::Charge | Op::Refund => self.adjust(req.op, &req.head),
         }
     }
 }
@@ -559,8 +561,15 @@ impl NodeHandler {
             if let Some(ct) = head["content_type"].as_str() {
                 b = b.header(header::CONTENT_TYPE, ct);
             }
+            // A request that carries the user's key is checked here; one that does not was checked by the gateway.
+            let own_check = head["authorization"].as_str();
+            if let Some(a) = own_check {
+                b = b.header(header::AUTHORIZATION, a);
+            }
             let mut r = b.body(axum::body::Body::from(req.body.clone())).map_err(|e| e.to_string())?;
-            r.extensions_mut().insert(Trusted);
+            if own_check.is_none() {
+                r.extensions_mut().insert(Trusted);
+            }
             Ok(r)
         };
         let request = match build() {
@@ -572,6 +581,42 @@ impl NodeHandler {
         let Ok(bytes) = axum::body::to_bytes(body, 64 * 1024 * 1024).await else { return Reply::error("the answer was too large") };
         let h = |n: header::HeaderName| parts.headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
         Reply::ok(json!({"status": parts.status.as_u16(), "content_type": h(header::CONTENT_TYPE), "retry_after": h(header::RETRY_AFTER)}), bytes)
+    }
+
+    /// A gateway asks whether a key may spend `cost` now (the accounts and buckets are here).
+    fn admit(&self, head: &Value) -> Reply {
+        use crate::access::Refusal;
+        use seesea_auth::Reason;
+        let cost = head["cost"].as_u64().unwrap_or(1).min(100) as u32;
+        let answer = match self.state.access.spend_for(head["key"].as_str().unwrap_or(""), cost) {
+            Ok(a) => json!({
+                "result": "ok", "user_id": a.user_id, "name": a.name, "plan": a.plan,
+                "limit": a.decision.limit_per_minute, "remaining": a.decision.remaining, "reset": a.decision.reset_secs,
+                "daily_remaining": a.decision.daily_remaining,
+            }),
+            Err(Refusal::Unauthorized(m)) => json!({"result": "unauthorized", "message": m}),
+            Err(Refusal::Limited { denied, code, message, retry_after }) => json!({
+                "result": "limited", "code": code, "message": message, "retry_after": retry_after,
+                "reason": denied.map(|d| if d.reason == Reason::Daily { "daily" } else { "rate" }),
+                "limit": denied.map(|d| d.limit_per_minute),
+            }),
+        };
+        Reply::ok(answer, Bytes::new())
+    }
+
+    fn adjust(&self, op: Op, head: &Value) -> Reply {
+        let (Some(user), Ok(plan), Some(store)) = (head["user"].as_i64(), serde_json::from_value::<seesea_auth::Plan>(head["plan"].clone()), self.state.access.store()) else {
+            return Reply::error("bad request");
+        };
+        let now = seesea_auth::now_secs() as f64;
+        let done = match op {
+            Op::Charge => store.spend_more(user, &plan, head["extra"].as_u64().unwrap_or(0).min(100) as u32, now),
+            _ => store.give_back(user, &plan, head["cost"].as_u64().unwrap_or(0).min(100) as u32, now),
+        };
+        match done {
+            Ok(()) => Reply::ok(Value::Null, Bytes::new()),
+            Err(e) => Reply::error(e),
+        }
     }
 
     async fn events(&self, peer: &PeerInfo, body: &[u8]) -> Reply {
@@ -741,10 +786,10 @@ impl Pool {
 
     /// Send a request to the first node that takes it. A node that cannot be reached is marked down and the
     /// next one is tried; a node that is full is skipped; any other answer, even an error, is the answer.
-    pub async fn forward(&self, method: Method, path_and_query: &str, content_type: Option<&str>, body: Bytes) -> Response {
+    pub async fn forward(&self, method: Method, path_and_query: &str, content_type: Option<&str>, authorization: Option<&str>, body: Bytes) -> Response {
         let mut last = String::from("no search node is configured");
         let mut busy = false;
-        let head = json!({"method": method.as_str(), "uri": path_and_query, "content_type": content_type});
+        let head = json!({"method": method.as_str(), "uri": path_and_query, "content_type": content_type, "authorization": authorization});
         for i in self.order().into_iter().take(3) {
             let node = &self.nodes[i];
             match node.client.call(Op::Http, &head, &body, Duration::from_secs(115)).await {
@@ -789,13 +834,20 @@ impl Pool {
 pub struct Gateway {
     pub search: Arc<Pool>,
     pub flywheel: Arc<Pool>,
+    /// The connection the accounts are asked over.
+    pub accounts: Arc<wire::Client>,
 }
 
 impl Gateway {
     pub fn new(c: &Cluster) -> Result<Arc<Self>, String> {
         let mesh = c.mesh()?;
         let flywheel: Vec<String> = c.flywheel.iter().cloned().collect();
-        let g = Arc::new(Self { search: Pool::new(mesh, &c.search_nodes, PeerRole::Search)?, flywheel: Pool::new(mesh, &flywheel, PeerRole::Flywheel)? });
+        let url = c.flywheel.as_deref().ok_or("no flywheel node is configured")?;
+        let g = Arc::new(Self {
+            search: Pool::new(mesh, &c.search_nodes, PeerRole::Search)?,
+            flywheel: Pool::new(mesh, &flywheel, PeerRole::Flywheel)?,
+            accounts: wire::Client::new(mesh, url, PeerRole::Flywheel)?,
+        });
         g.search.watch();
         g.flywheel.watch();
         Ok(g)
@@ -811,6 +863,30 @@ enum Target {
     Flywheel,
     /// Only the root key may use it.
     FlywheelAdmin,
+    /// The account and admin endpoints: the flywheel node checks the key itself.
+    Accounts,
+}
+
+/// Whether a path belongs to the account endpoints (which a gateway hands to the node that holds the accounts).
+pub fn is_accounts_path(path: &str) -> bool {
+    let plain = |rest: &str, depth: usize| {
+        let parts: Vec<&str> = rest.split('/').collect();
+        parts.len() == depth && parts.iter().all(|p| !p.is_empty() && p.len() <= 64 && p.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')) && *p != "." && *p != "..")
+    };
+    match path {
+        "/v1/account" | "/v1/account/keys" | "/v1/admin/users" => true,
+        p => {
+            if let Some(r) = p.strip_prefix("/v1/account/keys/") {
+                plain(r, 1)
+            } else if let Some(r) = p.strip_prefix("/v1/admin/users/") {
+                plain(r, 1) || (r.ends_with("/keys") && plain(&r[..r.len() - 5], 1))
+            } else if let Some(r) = p.strip_prefix("/v1/admin/keys/") {
+                plain(r, 1)
+            } else {
+                false
+            }
+        }
+    }
 }
 
 fn target(path: &str) -> Option<Target> {
@@ -818,6 +894,7 @@ fn target(path: &str) -> Option<Target> {
         "/v1/search" | "/v1/search/batch" | "/v1/similar" | "/v1/extract" | "/v1/sources" | "/v1/sources/check" | "/v1/stats" | "/v1/feedback" | "/mcp" => Some(Target::Search),
         "/v1/index" => Some(Target::Flywheel),
         "/v1/ingest" => Some(Target::FlywheelAdmin),
+        p if is_accounts_path(p) => Some(Target::Accounts),
         p => {
             // A WebSub callback: /v1/websub/<id> where the id is what we handed the hub.
             let id = p.strip_prefix("/v1/websub/")?;
@@ -875,7 +952,11 @@ pub async fn forward(State(s): State<AppState>, grant: Option<Extension<Grant>>,
     let pq = uri.path_and_query().map_or(path.to_string(), |p| p.as_str().to_string());
     let ct = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok());
     let pool = if target == Target::Search { &gw.search } else { &gw.flywheel };
-    pool.forward(method, &pq, ct, body).await
+    let authorization = (target == Target::Accounts).then(|| crate::server::presented_key(&headers).map(|k| format!("Bearer {k}"))).flatten();
+    if target == Target::Accounts && authorization.is_none() {
+        return (StatusCode::UNAUTHORIZED, Json(json!({"code": "unauthorized", "message": "missing API key (Authorization: Bearer <key>)"}))).into_response();
+    }
+    pool.forward(method, &pq, ct, authorization.as_deref(), body).await
 }
 
 pub async fn status(State(s): State<AppState>) -> Json<Value> {

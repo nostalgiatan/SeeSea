@@ -1273,7 +1273,9 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             poll_every,
             public_url,
         } => {
-            let store = open_auth(&cli.net)?;
+            // A gateway keeps no accounts: they live with the flywheel node, so any number of gateways can run.
+            let is_gateway = cluster.as_ref().is_some_and(|c| c.role == seesea_cli::cluster::Role::Gateway);
+            let store = if is_gateway { None } else { Some(open_auth(&cli.net)?) };
             let mut state_index = None;
             if let Some(dir) = pipeline_settings.index_dir.clone() {
                 let index = seesea_index::Index::open(dir);
@@ -1294,7 +1296,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                     }
                 }
             }
-            let mut access = seesea_cli::access::Access::new(Some(store), file.plans.clone(), api_key);
+            let mut access = seesea_cli::access::Access::new(store, file.plans.clone(), api_key);
             if file.shared_limits == Some(false) {
                 access = access.local_limits();
             }
@@ -1302,7 +1304,9 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             if let Some(c) = &cluster {
                 eprintln!("seesea node: role {:?}", c.role);
                 if c.role == seesea_cli::cluster::Role::Gateway {
-                    state.gateway = Some(seesea_cli::cluster::Gateway::new(c).map_err(Error::Config)?);
+                    let gw = seesea_cli::cluster::Gateway::new(c).map_err(Error::Config)?;
+                    state.access = Arc::new(Arc::try_unwrap(state.access).ok().expect("access is not shared yet").with_remote(gw.accounts.clone()));
+                    state.gateway = Some(gw);
                 }
             }
             state.cluster = cluster.clone();

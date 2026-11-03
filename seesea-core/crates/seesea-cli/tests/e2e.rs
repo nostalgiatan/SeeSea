@@ -707,7 +707,12 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
         learn_file: Some(dir.path().join("fly-learn.json")),
         ..settings(&base)
     };
-    let mut fly = AppState::new(Arc::new(build_pipeline(&fly_settings).unwrap()), None);
+    // The accounts live here, with the plans; gateways keep none.
+    let store = seesea_auth::Store::in_memory().unwrap();
+    store.create_user("ann", "small").unwrap();
+    let (_, ann) = store.create_key("ann", "k", None).unwrap();
+    let plans = std::collections::HashMap::from([("small".to_string(), Plan { per_minute: 600, burst: 100, per_day: 0, max_concurrent: 4, deep: false })]);
+    let mut fly = AppState::with_access(Arc::new(build_pipeline(&fly_settings).unwrap()), seesea_cli::access::Access::new(Some(store), plans, None));
     fly.index = Some(index.clone());
     let fly_cluster = cluster(
         Role::Flywheel,
@@ -741,21 +746,25 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
         http_urls.push(spawn_node(st).await.0);
     }
 
-    // The gateway: users and limits.
-    let store = Store::in_memory().unwrap();
-    store.create_user("ann", "small").unwrap();
-    let (_, ann) = store.create_key("ann", "k", None).unwrap();
-    let plans = std::collections::HashMap::from([("small".to_string(), Plan { per_minute: 600, burst: 100, per_day: 0, max_concurrent: 4, deep: false })]);
+    // The gateway: checks keys against the flywheel node's accounts. A second one shares them.
     let gw_peers = vec![listed("s0", PeerRole::Search), listed("s1", PeerRole::Search), listed("fly", PeerRole::Flywheel)];
     let gw_cluster = cluster(Role::Gateway, "gw", gw_peers.clone(), &search_urls, Some(&fly_url));
-    let mut gw = AppState::with_access(
-        Arc::new(build_pipeline(&Settings { no_render: true, ..settings(&base) }).unwrap()),
-        seesea_cli::access::Access::new(Some(store), plans, None),
-    );
-    gw.gateway = Some(Gateway::new(&gw_cluster).unwrap());
-    gw.cluster = Some(gw_cluster);
+    let make_gateway = |c: &Cluster| {
+        let g = Gateway::new(c).unwrap();
+        let mut st = AppState::with_access(
+            Arc::new(build_pipeline(&Settings { no_render: true, ..settings(&base) }).unwrap()),
+            seesea_cli::access::Access::new(None, Default::default(), None).with_remote(g.accounts.clone()),
+        );
+        st.gateway = Some(g);
+        st.cluster = Some(c.clone());
+        st
+    };
+    let gw = make_gateway(&gw_cluster);
     let (gw_url, _gw) = spawn_node(gw).await;
+    let (gw2_url, _gw2) = spawn_node(make_gateway(&gw_cluster)).await;
     let http = reqwest::Client::new();
+    let via_second = http.get(format!("{gw2_url}/v1/search?q=rust&mode=fast")).bearer_auth(&ann).send().await.unwrap();
+    assert_eq!(via_second.status(), 200, "the second gateway admits the same user");
     let search = |k: Option<&str>, mode: &str| {
         let mut r = http.get(format!("{gw_url}/v1/search")).query(&[("q", "rust async runtime"), ("mode", mode)]);
         if let Some(k) = k {
@@ -764,6 +773,12 @@ async fn a_gateway_search_nodes_and_a_flywheel_node_do_their_own_jobs() {
         r.send()
     };
 
+    // Accounts are managed on the node that holds them, through any gateway; a wrong key gets nothing.
+    let acct: Value = http.get(format!("{gw2_url}/v1/account")).bearer_auth(&ann).send().await.unwrap().json().await.unwrap();
+    assert_eq!(acct["user"]["name"].as_str().or(acct["name"].as_str()), Some("ann"), "{acct}");
+    assert_eq!(http.get(format!("{gw_url}/v1/account")).bearer_auth("ss_nope_nope").send().await.unwrap().status(), 401);
+    assert_eq!(http.get(format!("{gw_url}/v1/account")).send().await.unwrap().status(), 401);
+    assert_eq!(http.get(format!("{gw_url}/v1/account/../cluster")).bearer_auth(&ann).send().await.unwrap().status(), 404);
     // A search node's HTTP port answers nobody: the old shared-secret header opens nothing.
     assert_eq!(http.get(format!("{}/v1/search?q=rust", http_urls[0])).send().await.unwrap().status(), 401);
     assert_eq!(http.get(format!("{}/v1/search?q=rust&mode=fast", http_urls[0])).header("x-seesea-cluster", "anything-at-all-0123456789").send().await.unwrap().status(), 401);
