@@ -5,6 +5,7 @@ pub mod account;
 pub mod cluster;
 pub mod config;
 pub mod desk;
+pub mod deskx;
 pub mod embedding;
 pub mod keyless;
 pub mod models;

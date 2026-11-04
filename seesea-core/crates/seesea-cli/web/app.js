@@ -157,6 +157,215 @@ const D = {
   },
 };
 
+Object.assign(D.zh, {
+  'grp.manage': '管理',
+  'nav.index': '索引',
+  'nav.settings': '设置',
+  'ix.title': '索引',
+  'ix.sub': '订阅源每隔一段时间被拉取，新文章进入本地索引，搜索时作为 “local” 来源。',
+  'ix.off': '本地索引已关闭（配置里的 no_index）。',
+  'ix.items': '文章',
+  'ix.vec': '带向量',
+  'ix.days': '天',
+  'ix.size': '占用',
+  'ix.range': '日期范围',
+  'ix.poll': '现在拉取',
+  'ix.embed': '补算向量',
+  'ix.prune': '清理旧文章',
+  'ix.seed': '添加起步订阅源',
+  'ix.running': '进行中…',
+  'ix.nopoll': '这个工作台不能拉取订阅源',
+  'ix.pruned': '清理了 {n} 天的旧数据',
+  'ix.seeded': '新增 {n} / {of} 个起步订阅源',
+  'ix.keep': '保留 {d} 天，上限 {q} MB',
+  'ix.feeds': '订阅源',
+  'ix.addph': '订阅地址 https://…',
+  'ix.add': '添加',
+  'ix.added': '已添加',
+  'ix.known': '已经有了',
+  'ix.discph': '站点 example.com，自动找订阅',
+  'ix.disc': '发现',
+  'ix.found': '找到 {n} 个订阅源',
+  'ix.nofeeds': '还没有订阅源。可以添加一个，或加入起步订阅源。',
+  'ix.status': '状态',
+  'ix.feed': '订阅源',
+  'ix.origin': '来源',
+  'ix.last': '上次成功',
+  'ix.fails': '失败',
+  'ix.never': '从未',
+  'ix.remove': '移除',
+  'ix.revive': '重新启用',
+  'ix.removeq': '从索引里移除 {u}？已索引的文章不受影响。',
+  'st.active': '正常',
+  'st.probation': '观察',
+  'st.disabled': '已停用',
+  'set.title': '设置',
+  'set.sub': '这些写进配置文件；多数改动在重新打开工作台后生效。',
+  'set.save': '保存',
+  'set.saved': '已保存，重新打开工作台后生效',
+  'set.nochange': '没有改动',
+  'set.file': '配置文件',
+  'set.secretset': '已设置（留空保持不变）',
+  'set.models': '模型与渲染器',
+  'set.net': '来源与网络',
+  'set.cache': '缓存',
+  'set.rank': '排序',
+  'set.data': '数据与索引',
+  'md.embedding': '嵌入模型',
+  'md.reranker': '重排模型',
+  'md.renderer': '渲染器 Lightpanda',
+  'md.ok': '可用',
+  'md.missing': '缺失',
+  'md.bad': '文件已损坏',
+  'md.dl': '下载',
+  'md.dl.again': '重新下载',
+  'md.dling': '下载中 {n}',
+  'md.done': '下载完成',
+  'md.unsupported': '这个系统没有现成的构建，请在下面填路径',
+  'md.off': '已在配置里关闭',
+  'md.from.config': '配置指定',
+  'md.from.managed': '数据目录',
+  'md.from.path': 'PATH 中',
+  'f.searxng': 'SearXNG 地址',
+  'f.brave_key': 'Brave 密钥',
+  'f.proxy': '代理',
+  'f.no_native': '关闭内置爬取',
+  'f.allow_private': '允许访问内网地址',
+  'f.plain_headers': '使用朴素请求头',
+  'f.cache_dir': '缓存目录',
+  'f.fuzzy_cache': '近似缓存阈值',
+  'f.models.dir': '模型目录',
+  'f.models.embedding': '嵌入模型文件',
+  'f.models.reranker': '重排模型文件',
+  'f.device': '运行设备',
+  'f.model_idle_minutes': '空闲几分钟后卸载模型',
+  'f.lightpanda': 'Lightpanda 路径',
+  'f.no_render': '不渲染脚本页面',
+  'f.lexical_sections': '只用词面选章节',
+  'f.semantic.weight': '语义权重',
+  'f.semantic.passages': '语义段落数',
+  'f.rerank.weight': '重排权重',
+  'f.rerank.passages': '重排段落数',
+  'f.explore': '探索概率',
+  'f.no_learn': '不学习主机评分',
+  'f.no_journal': '不记录搜索',
+  'f.no_writeback': '读过的页面不写回索引',
+  'f.no_index': '关闭本地索引',
+  'f.index_dir': '索引目录',
+  'f.retention_days': '文章保留天数',
+  'f.index_quota_mb': '索引大小上限 (MB)',
+  'f.auth_db': '账号数据库',
+  'h.proxy': 'http://、socks5:// 等，例如 Tor',
+  'h.searxng': '需要开启 json 格式',
+  'h.device': 'cpu 或 gpu',
+  'h.explore': '0 到 1',
+  'h.fuzzy_cache': '0 到 1，留空关闭',
+});
+Object.assign(D.en, {
+  'grp.manage': 'Manage',
+  'nav.index': 'Index',
+  'nav.settings': 'Settings',
+  'ix.title': 'Index',
+  'ix.sub': 'Feeds are fetched from time to time; new articles enter the local index and answer searches as the “local” source.',
+  'ix.off': 'The local index is turned off (no_index in the config).',
+  'ix.items': 'Items',
+  'ix.vec': 'With vectors',
+  'ix.days': 'Days',
+  'ix.size': 'Size',
+  'ix.range': 'Dates',
+  'ix.poll': 'Poll now',
+  'ix.embed': 'Embed pending',
+  'ix.prune': 'Prune old items',
+  'ix.seed': 'Add starter feeds',
+  'ix.running': 'Running…',
+  'ix.nopoll': 'This workbench cannot poll feeds',
+  'ix.pruned': 'Dropped {n} days of old data',
+  'ix.seeded': 'Added {n} of {of} starter feeds',
+  'ix.keep': 'Keeps {d} days, up to {q} MB',
+  'ix.feeds': 'Feeds',
+  'ix.addph': 'Feed address https://…',
+  'ix.add': 'Add',
+  'ix.added': 'Added',
+  'ix.known': 'Already known',
+  'ix.discph': 'Site example.com, finds its feeds',
+  'ix.disc': 'Discover',
+  'ix.found': 'Found {n} feeds',
+  'ix.nofeeds': 'No feeds yet. Add one, or add the starter feeds.',
+  'ix.status': 'Status',
+  'ix.feed': 'Feed',
+  'ix.origin': 'Origin',
+  'ix.last': 'Last ok',
+  'ix.fails': 'Fails',
+  'ix.never': 'never',
+  'ix.remove': 'Remove',
+  'ix.revive': 'Revive',
+  'ix.removeq': 'Remove {u} from the index? Articles already indexed stay.',
+  'st.active': 'active',
+  'st.probation': 'probation',
+  'st.disabled': 'disabled',
+  'set.title': 'Settings',
+  'set.sub': 'These are written to the config file; most changes apply the next time the workbench opens.',
+  'set.save': 'Save',
+  'set.saved': 'Saved; applies when the workbench opens again',
+  'set.nochange': 'Nothing changed',
+  'set.file': 'Config file',
+  'set.secretset': 'Set (leave empty to keep)',
+  'set.models': 'Models and renderer',
+  'set.net': 'Sources and network',
+  'set.cache': 'Cache',
+  'set.rank': 'Ranking',
+  'set.data': 'Data and index',
+  'md.embedding': 'Embedding model',
+  'md.reranker': 'Reranker',
+  'md.renderer': 'Renderer (Lightpanda)',
+  'md.ok': 'ready',
+  'md.missing': 'missing',
+  'md.bad': 'damaged file',
+  'md.dl': 'Download',
+  'md.dl.again': 'Download again',
+  'md.dling': 'Downloading {n}',
+  'md.done': 'Downloaded',
+  'md.unsupported': 'No ready-made build for this system; give a path below',
+  'md.off': 'Turned off in the config',
+  'md.from.config': 'from the config',
+  'md.from.managed': 'in the data folder',
+  'md.from.path': 'on the PATH',
+  'f.searxng': 'SearXNG address',
+  'f.brave_key': 'Brave key',
+  'f.proxy': 'Proxy',
+  'f.no_native': 'Turn off the built-in scrapers',
+  'f.allow_private': 'Allow private addresses',
+  'f.plain_headers': 'Use plain request headers',
+  'f.cache_dir': 'Cache folder',
+  'f.fuzzy_cache': 'Fuzzy cache threshold',
+  'f.models.dir': 'Models folder',
+  'f.models.embedding': 'Embedding model file',
+  'f.models.reranker': 'Reranker file',
+  'f.device': 'Run models on',
+  'f.model_idle_minutes': 'Unload models after idle minutes',
+  'f.lightpanda': 'Lightpanda path',
+  'f.no_render': 'Do not render script pages',
+  'f.lexical_sections': 'Choose sections by words only',
+  'f.semantic.weight': 'Semantic weight',
+  'f.semantic.passages': 'Semantic passages',
+  'f.rerank.weight': 'Rerank weight',
+  'f.rerank.passages': 'Rerank passages',
+  'f.explore': 'Explore chance',
+  'f.no_learn': 'Do not learn host standings',
+  'f.no_journal': 'Keep no record of searches',
+  'f.no_writeback': 'Do not write read pages back to the index',
+  'f.no_index': 'Turn off the local index',
+  'f.index_dir': 'Index folder',
+  'f.retention_days': 'Days an article is kept',
+  'f.index_quota_mb': 'Index size limit (MB)',
+  'f.auth_db': 'Account database',
+  'h.proxy': 'http://, socks5:// and so on, e.g. Tor',
+  'h.searxng': 'With the json format enabled',
+  'h.device': 'cpu or gpu',
+  'h.explore': '0 to 1',
+  'h.fuzzy_cache': '0 to 1, empty turns it off',
+});
+
 const S = { lang: 'zh', desk: false, mode: 'standard', hits: [], sel: -1, marks: {}, health: null };
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -871,11 +1080,141 @@ async function loadReview() {
   try { renderReview(await api('/desk/api/review?since=' + $('#rv-since').value)); } catch (e) { out.replaceChildren(errBox(e, loadReview)); }
 }
 
+
+/* ---------- index and settings (workbench only) ---------- */
+function every(fn, ms) { stopTimer(); S.timer = setInterval(() => { if (!document.hidden) fn(); }, ms); }
+const mb = (n) => (n >= 1e9 ? (n / 1e9).toFixed(2) + ' GB' : (n / 1e6).toFixed(n < 1e7 ? 1 : 0) + ' MB');
+
+async function loadIndex() {
+  const out = $('#ix-out');
+  const draw = async (first) => {
+    let r;
+    try { r = await api('/desk/api/index'); } catch (e) { if (first) out.replaceChildren(errBox(e, loadIndex)); return; }
+    if (!r.enabled) { out.replaceChildren(h('div', { class: 'empty', text: t('ix.off') })); return; }
+    // Typing in a form must not be wiped by the refresh: redraw only the parts that move.
+    if (!first && S.view === 'index' && out.dataset.ready) { paintIndex(r); return; }
+    out.dataset.ready = '1';
+    const add = h('input', { placeholder: t('ix.addph'), type: 'url', required: true });
+    const disc = h('input', { placeholder: t('ix.discph'), required: true });
+    const kids = [
+      h('div', { class: 'tiles', id: 'ix-tiles' }),
+      h('div', { class: 'row bar-row', id: 'ix-acts' }),
+      h('div', { class: 'ph' }, h('h2', {}, h('span', { text: t('ix.feeds') }), h('em', { text: S.lang === 'zh' ? 'FEEDS' : '订阅源' }))),
+      h('div', { class: 'inline-form' },
+        h('form', { class: 'inline-form flat', onsubmit: async (e) => { e.preventDefault(); try { const x = await api('/desk/api/index/add', { method: 'POST', body: { url: add.value } }); toast(t(x.added ? 'ix.added' : 'ix.known')); add.value = ''; loadIndex(); } catch (x) { fail(x); } } }, add, h('button', { class: 'go' }, icon('plus', 'sm'), t('ix.add'))),
+        h('form', { class: 'inline-form flat', onsubmit: async (e) => { e.preventDefault(); try { const x = await api('/desk/api/index/discover', { method: 'POST', body: { site: disc.value } }); toast(t('ix.found', { n: x.added.length })); disc.value = ''; loadIndex(); } catch (x) { fail(x); } } }, disc, h('button', { class: 'quiet', type: 'submit' }, ...withIcon('search', t('ix.disc'))))),
+      h('div', { id: 'ix-feeds' }),
+    ];
+    out.replaceChildren(...kids);
+    paintIndex(r);
+  };
+  await draw(true);
+  every(() => draw(false), 2500);
+}
+const day = (d) => String(d).replace(/^(\d{4})(\d{2})(\d{2})$/, '$2-$3');
+function paintIndex(r) {
+  const st = r.stats, busy = (k) => r[k] && r[k].state === 'running';
+  const tile = (n, label) => h('div', { class: 'tile' }, h('b', { text: n }), h('span', { text: label }));
+  $('#ix-tiles').replaceChildren(
+    tile(st.items.toLocaleString(), t('ix.items')), tile(st.embedded.toLocaleString(), t('ix.vec')), tile(st.shards, t('ix.days')),
+    tile(`${mb(st.bytes)}`, t('ix.size')), tile(st.oldest_day ? `${day(st.oldest_day)} … ${day(st.newest_day)}` : '—', t('ix.range')));
+  const job = (k) => (r[k] && r[k].state !== 'running' && r[k].message ? h('span', { class: 'mut', text: r[k].message }) : null);
+  const run = (label, ico, action, key) => h('button', { class: 'quiet', type: 'button', disabled: busy(key) || !r.can_poll, onclick: async () => { try { await api('/desk/api/index/' + action, { method: 'POST', body: {} }); loadIndex(); } catch (x) { fail(x); } } }, ...withIcon(ico, busy(key) ? t('ix.running') : label));
+  const acts = $('#ix-acts');
+  {
+    acts.replaceChildren(run(t('ix.poll'), 'refresh', 'poll', 'poll'), run(t('ix.embed'), 'play', 'embed', 'embed'),
+      h('button', { class: 'quiet', type: 'button', onclick: async () => { try { const x = await api('/desk/api/index/prune', { method: 'POST', body: {} }); toast(t('ix.pruned', { n: x.dropped_days })); loadIndex(); } catch (e) { fail(e); } } }, ...withIcon('stop', t('ix.prune'))),
+      h('button', { class: 'quiet', type: 'button', onclick: async () => { try { const x = await api('/desk/api/index/seed', { method: 'POST', body: {} }); toast(t('ix.seeded', { n: x.added, of: x.of })); loadIndex(); } catch (e) { fail(e); } } }, ...withIcon('plus', t('ix.seed'))),
+      job('poll'), job('embed'), h('span', { class: 'mut r', text: t('ix.keep', { d: r.retention_days, q: r.quota_mb }) }));
+  }
+  const feeds = r.feeds;
+  const when = (n) => (n ? ago(n) : t('ix.never'));
+  $('#ix-feeds').replaceChildren(feeds.length ? h('div', { class: 'plans' }, h('table', {},
+    h('tr', {}, h('th', { text: t('ix.status') }), h('th', { text: t('ix.feed') }), h('th', { text: t('ix.origin') }), h('th', { class: 'r', text: t('ix.items') }), h('th', { class: 'r', text: t('ix.fails') }), h('th', { text: t('ix.last') }), h('th')),
+    feeds.map((f) => h('tr', {},
+      h('td', {}, h('span', { class: 'pill ' + (f.status === 'active' ? 'ok' : f.status === 'disabled' ? 'off' : 'warn'), text: t('st.' + f.status) })),
+      h('td', { class: 'feedcell' }, h('b', { text: f.title || f.url }), h('div', { class: 'mut l', text: f.url }), f.last_error ? h('div', { class: 'err-line', text: f.last_error }) : null),
+      h('td', { text: f.origin }), h('td', { class: 'r num', text: f.total }), h('td', { class: 'r num', text: f.fails }), h('td', { text: when(f.last_ok) }),
+      h('td', { class: 'r' },
+        f.status !== 'active' ? h('button', { class: 'act', type: 'button', onclick: async () => { try { await api('/desk/api/index/revive', { method: 'POST', body: { url: f.url } }); loadIndex(); } catch (x) { fail(x); } } }, t('ix.revive')) : null,
+        h('button', { class: 'act danger', type: 'button', onclick: async () => { if (!(await confirmBox(t('ix.remove'), t('ix.removeq', { u: f.url }), t('ix.remove')))) return; try { await api('/desk/api/index/remove', { method: 'POST', body: { url: f.url } }); loadIndex(); } catch (x) { fail(x); } } }, t('ix.remove'))))))) : h('div', { class: 'empty', text: t('ix.nofeeds') }));
+}
+
+/* Which setting is edited how. `n` numbers, `b` yes/no, `s` text, `k` secret text, `d` cpu / gpu. */
+const SETTINGS = [
+  ['set.net', [['searxng', 's'], ['brave_key', 'k'], ['proxy', 's'], ['no_native', 'b'], ['allow_private', 'b'], ['plain_headers', 'b']]],
+  ['set.cache', [['cache_dir', 's'], ['fuzzy_cache', 'n']]],
+  ['set.modelcfg', [['models.dir', 's'], ['models.embedding', 's'], ['models.reranker', 's'], ['device', 'd'], ['model_idle_minutes', 'n'], ['lightpanda', 's'], ['no_render', 'b']]],
+  ['set.rank', [['lexical_sections', 'b'], ['semantic.weight', 'n'], ['semantic.passages', 'n'], ['rerank.weight', 'n'], ['rerank.passages', 'n'], ['explore', 'n'], ['no_learn', 'b']]],
+  ['set.data', [['no_journal', 'b'], ['no_writeback', 'b'], ['no_index', 'b'], ['index_dir', 's'], ['retention_days', 'n'], ['index_quota_mb', 'n'], ['auth_db', 's']]],
+];
+const dig = (o, key) => key.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
+
+function modelsPanel(m) {
+  const dl = async (name) => { try { await api(`/desk/api/models/${name}/download`, { method: 'POST', body: {} }); loadSettings(); } catch (e) { fail(e); } };
+  const row = (name, label, state, detail, job, partial, canDl, againLabel) => {
+    const busy = job && job.state === 'running';
+    return h('div', { class: 'mrow' },
+      h('div', { class: 'mn' }, h('b', { text: label }), h('span', { class: 'pill ' + state[0], text: state[1] })),
+      h('div', { class: 'mut l clip', text: detail }),
+      busy ? h('div', { class: 'mut', text: t('md.dling', { n: mb(partial || 0) }) }) : (job && job.state === 'error' ? h('div', { class: 'err-line', text: job.message }) : null),
+      canDl ? h('button', { class: 'quiet', type: 'button', disabled: busy, onclick: () => dl(name) }, ...withIcon('down', againLabel)) : null);
+  };
+  const rows = m.models.map((x) => {
+    const s = x.status, ok = s.present && s.valid;
+    return row(s.model, t('md.' + s.model), ok ? ['ok', t('md.ok')] : s.present ? ['off', t('md.bad')] : ['warn', t('md.missing')],
+      `${s.path || ''}${s.bytes ? '  ·  ' + mb(s.bytes) : ''}`, x.job, x.partial_bytes, !ok, t('md.dl'));
+  });
+  const r = m.renderer;
+  rows.push(row('renderer', t('md.renderer'), r.present ? ['ok', t('md.ok')] : ['warn', t('md.missing')],
+    r.present ? `${r.path}  ·  ${t('md.from.' + r.from)}` : (r.supported ? '' : t('md.unsupported')), r.job, r.partial_bytes, !r.present && r.supported, t('md.dl')));
+  return h('div', { class: 'panel gap' }, h('div', { class: 'ph' }, h('h2', {}, h('span', { text: t('set.models') }), h('em', { text: S.lang === 'zh' ? 'MODELS' : '模型' })), h('span', { class: 'mut l clip', text: m.dir })), rows);
+}
+
+async function loadSettings() {
+  const out = $('#set-out');
+  let r, m;
+  try { [r, m] = await Promise.all([api('/desk/api/settings'), api('/desk/api/models')]); } catch (e) { out.replaceChildren(errBox(e, loadSettings)); return; }
+  const dirty = {}, saveBtn = h('button', { class: 'go', type: 'button', disabled: true, 'data-idle': true, onclick: save }, icon('check', 'sm'), t('set.save'));
+  const mark = (key, v, orig) => { if (v === orig) delete dirty[key]; else dirty[key] = v; saveBtn.disabled = !Object.keys(dirty).length; };
+  async function save() {
+    try { await api('/desk/api/settings', { method: 'PUT', body: dirty }); toast(t('set.saved')); loadSettings(); } catch (e) { fail(e); }
+  }
+  const field = (key, kind) => {
+    const cur = dig(r.values, key), secretSet = kind === 'k' && r.secrets_set.includes(key);
+    let input, label = t('f.' + key), hint = D.zh['h.' + key.split('.').pop()] !== undefined ? t('h.' + key.split('.').pop()) : '';
+    if (kind === 'b') {
+      input = h('input', { type: 'checkbox', checked: cur === true, onchange: (e) => mark(key, e.target.checked, cur === true) });
+      return h('label', { class: 'chk' }, input, h('span', { text: label }));
+    }
+    if (kind === 'd') {
+      input = h('select', { onchange: (e) => mark(key, e.target.value, cur || 'cpu') }, ['cpu', 'gpu'].map((v) => h('option', { value: v, selected: (cur || 'cpu') === v, text: v })));
+    } else if (kind === 'n') {
+      input = h('input', { type: 'number', step: 'any', min: 0, value: cur ?? '', oninput: (e) => mark(key, e.target.value === '' ? null : Number(e.target.value), cur ?? null) });
+    } else {
+      input = h('input', { type: kind === 'k' ? 'password' : 'text', autocomplete: 'off', spellcheck: 'false', value: kind === 'k' ? '' : (cur ?? ''), placeholder: secretSet ? t('set.secretset') : (key === 'models.dir' ? r.defaults.models_dir : key === 'cache_dir' ? r.defaults.cache_dir : key === 'index_dir' ? r.defaults.index_dir : key === 'auth_db' ? r.defaults.auth_db : ''),
+        oninput: (e) => mark(key, kind === 'k' ? (e.target.value || null) : e.target.value, kind === 'k' ? null : (cur ?? '')) });
+    }
+    return h('label', { class: 'fld' }, h('span', { text: label }), input, hint ? h('small', { class: 'mut', text: hint }) : null);
+  };
+  const groups = SETTINGS.map(([g, fields]) => {
+    const body = h('div', { class: 'panel gap' }, h('div', { class: 'ph' }, h('h2', { text: t(g) })), h('div', { class: 'fgrid' }, fields.map(([k, kind]) => field(k, kind))));
+    return g === 'set.modelcfg' ? [modelsPanel(m), body] : body;
+  });
+  out.replaceChildren(
+    h('div', { class: 'row bar-row' }, saveBtn, h('span', { class: 'mut l clip', text: `${t('set.file')}: ${r.path}${r.exists ? '' : ' (new)'}` })),
+    ...groups.flat());
+  // A download in progress moves the numbers; redraw the models panel only, so edits in the forms stay.
+  if (m.models.some((x) => x.job && x.job.state === 'running') || (m.renderer.job && m.renderer.job.state === 'running')) {
+    every(async () => { try { const n = await api('/desk/api/models'); const old = $('#set-out .mrow')?.closest('.panel'); if (old) old.replaceWith(modelsPanel(n)); if (!n.models.some((x) => x.job && x.job.state === 'running') && !(n.renderer.job && n.renderer.job.state === 'running')) { stopTimer(); toast(t('md.done')); } } catch { /* next tick */ } }, 1500);
+  } else stopTimer();
+}
+
 /* ---------- shell ---------- */
-const VIEWS = { search: () => $('#q').focus(), read: () => $('#r-url').focus(), review: loadReview, status: loadStatus, services: loadServices, accounts: loadAccounts };
+const VIEWS = { search: () => $('#q').focus(), read: () => $('#r-url').focus(), review: loadReview, status: loadStatus, services: loadServices, accounts: loadAccounts, index: loadIndex, settings: loadSettings };
 function route() {
   let v = (location.hash.match(/^#\/(\w+)/) || [])[1] || 'search';
-  const deskOnly = v === 'services' || v === 'accounts' || v === 'review';
+  const deskOnly = ['services', 'accounts', 'review', 'index', 'settings'].includes(v);
   if (location.pathname !== '/') return errorPage(404, 'err.nf', t('err.nf.d', { p: location.pathname }));
   if (!VIEWS[v]) return errorPage(404, 'err.nf', t('err.nf.d', { p: location.hash || '#' }));
   if (deskOnly && !S.desk) return errorPage(404, 'err.na', t('err.na.d'));
@@ -917,7 +1256,7 @@ function updateChip() {
 function commands() {
   const go = (v) => () => { location.hash = '#/' + v; };
   const list = [['search', 'nav.search'], ['read', 'nav.read'], ['status', 'nav.status']];
-  if (S.desk) list.push(['review', 'nav.review'], ['services', 'nav.services'], ['accounts', 'nav.accounts']);
+  if (S.desk) list.push(['review', 'nav.review'], ['services', 'nav.services'], ['accounts', 'nav.accounts'], ['index', 'nav.index'], ['settings', 'nav.settings']);
   return [
     ...list.map(([v, k]) => ({ label: `${t('p.go')} · ${t(k)}`, hint: '#/' + v, run: go(v) })),
     { label: t('p.focus'), hint: '/', run: () => { location.hash = '#/search'; $('#q').focus(); } },
@@ -1039,7 +1378,7 @@ document.addEventListener('contextmenu', (e) => {
   if (sel.trim()) { if (items.length) items.push('-'); items.push({ label: t('cx.copysel'), hint: 'Ctrl C', run: () => copy(sel) }); }
   if (items.length) items.push('-');
   const nav = [['search', 'nav.search'], ['read', 'nav.read'], ['status', 'nav.status']];
-  if (S.desk) nav.push(['review', 'nav.review'], ['services', 'nav.services'], ['accounts', 'nav.accounts']);
+  if (S.desk) nav.push(['review', 'nav.review'], ['services', 'nav.services'], ['accounts', 'nav.accounts'], ['index', 'nav.index'], ['settings', 'nav.settings']);
   for (const [v, k] of nav) if (v !== S.view) items.push({ label: `${t('cx.go')} · ${t(k)}`, run: () => { location.hash = '#/' + v; } });
   items.push('-', { label: t('cx.reload'), run: route }, { label: t('p.theme'), run: toggleTheme }, { label: t('p.lang'), run: toggleLang }, { label: t('cx.palette'), hint: 'Ctrl K', run: openPalette });
   ctx.open(e.clientX, e.clientY, items);
@@ -1060,3 +1399,24 @@ document.addEventListener('mousedown', (e) => {
   if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) d.close('cancel');
 });
 boot();
+
+/* ---------- the desktop shell ----------
+   In the desktop app the window has no system title bar: the top bar is the title bar. The shell lets this page
+   move, resize, minimize, maximize and hide its window, and nothing else (desktop/capabilities/workbench.json). */
+(() => {
+  const ipc = window.__TAURI_INTERNALS__;
+  if (!ipc || !ipc.invoke) return;
+  const call = (cmd, args) => ipc.invoke(cmd, args).catch(() => {});
+  document.documentElement.classList.add('app');
+  $('#winctl').hidden = false;
+  for (const b of $$('#winctl button')) b.addEventListener('click', () => call(b.dataset.win));
+  const bar = $('.topbar');
+  const free = (e) => e.button === 0 && !e.target.closest('button, a, input, select, textarea, kbd, .winctl');
+  bar.addEventListener('mousedown', (e) => { if (free(e) && e.detail === 1) call('win_drag'); });
+  bar.addEventListener('dblclick', (e) => { if (free(e)) call('win_toggle_maximize'); });
+  for (const edge of ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']) {
+    const z = h('div', { class: 'rz ' + edge, 'aria-hidden': 'true' });
+    z.addEventListener('mousedown', (e) => { if (e.button === 0) { e.preventDefault(); call('win_resize', { edge }); } });
+    document.body.append(z);
+  }
+})();

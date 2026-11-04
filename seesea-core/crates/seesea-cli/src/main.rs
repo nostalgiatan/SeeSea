@@ -1735,15 +1735,20 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                 .clone()
                 .unwrap_or_else(userconfig::default_auth_db);
             let mut state_index = None;
+            let mut desk_poller = None;
             if let Some(dir) = pipeline_settings.index_dir.clone() {
                 let index = seesea_index::Index::open(dir);
                 state_index = Some(Arc::clone(&index));
                 let every = parse_interval(&poll_every)?;
+                let poller = Arc::new(seesea_cli::config::build_poller(
+                    &pipeline_settings,
+                    Arc::clone(&index),
+                )?);
                 if !every.is_zero() {
-                    let poller =
-                        seesea_cli::config::build_poller(&pipeline_settings, Arc::clone(&index))?;
-                    tokio::spawn(async move { poller.run(every).await });
+                    let background = Arc::clone(&poller);
+                    tokio::spawn(async move { background.run(every).await });
                 }
+                desk_poller = Some(poller);
             }
             // The workbench itself needs no key: it answers this machine only, and the services it starts have their own.
             let mut state = AppState::with_access(
@@ -1764,6 +1769,10 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                     .collect(),
             );
             desk.attach(state.clone());
+            desk.set_config_file(config_path.clone());
+            if let Some(p) = desk_poller {
+                desk.set_poller(p);
+            }
             desk.autostart().await;
             state.desk = Some(Arc::clone(&desk));
             let url = format!("http://{addr}/");

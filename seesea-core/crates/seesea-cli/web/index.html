@@ -32,6 +32,11 @@
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.500 12.500l5 5 10-11"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V6M6 11.500L12 5.500l6 6"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v13M6 12.500l6 6 6-6"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+    <symbol id="i-index" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.500" ry="2.800"/><path d="M4.500 6v6c0 1.500 3.400 2.800 7.500 2.800s7.500-1.300 7.500-2.800V6M4.500 12v6c0 1.500 3.400 2.800 7.500 2.800s7.500-1.300 7.500-2.800v-6"/></symbol>
+    <symbol id="i-min" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+    <symbol id="i-max" viewBox="0 0 24 24"><rect x="6.500" y="6.500" width="11" height="11"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.500 6.500l11 11M17.500 6.500l-11 11"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9.500 16.500h-19z"/><path d="M12 10v4.500M12 17.500h.01"/></symbol>
   </defs>
 </svg>
@@ -53,6 +58,9 @@
       <div class="grp desk-only" data-i="grp.api">接口</div>
       <a href="#/services" data-view="services" class="desk-only"><svg class="ic"><use href="#i-services"/></svg><span data-i="nav.services">服务</span><em data-o="nav.services"></em></a>
       <a href="#/accounts" data-view="accounts" class="desk-only"><svg class="ic"><use href="#i-accounts"/></svg><span data-i="nav.accounts">账号</span><em data-o="nav.accounts"></em></a>
+      <div class="grp desk-only" data-i="grp.manage">管理</div>
+      <a href="#/index" data-view="index" class="desk-only"><svg class="ic"><use href="#i-index"/></svg><span data-i="nav.index">索引</span><em data-o="nav.index"></em></a>
+      <a href="#/settings" data-view="settings" class="desk-only"><svg class="ic"><use href="#i-settings"/></svg><span data-i="nav.settings">设置</span><em data-o="nav.settings"></em></a>
     </div>
     <div class="rail-foot">
       <div class="chip" id="where"><b></b><span>…</span></div>
@@ -68,6 +76,11 @@
         <button id="btn-lang" class="icon" type="button" data-t="tip.lang"><svg class="ic"><use href="#i-lang"/></svg><span class="lbl" id="lang-lbl">EN</span></button>
         <button id="btn-theme" class="icon" type="button" data-t="tip.theme"><svg class="ic"><use href="#i-theme"/></svg></button>
         <button id="btn-key" class="icon" type="button" data-t="tip.key"><svg class="ic"><use href="#i-key"/></svg></button>
+      </div>
+      <div class="winctl" id="winctl" hidden>
+        <button type="button" data-win="win_minimize" aria-label="minimize"><svg class="ic"><use href="#i-min"/></svg></button>
+        <button type="button" data-win="win_toggle_maximize" aria-label="maximize"><svg class="ic"><use href="#i-max"/></svg></button>
+        <button type="button" data-win="win_hide" class="x" aria-label="close"><svg class="ic"><use href="#i-close"/></svg></button>
       </div>
     </header>
 
@@ -141,6 +154,16 @@
       <section id="v-accounts" class="view" hidden>
         <header class="head"><h1><span data-i="acc.title">账号</span><em data-o="acc.title"></em></h1><p data-i="acc.sub">服务用 “账号” 或 “两者” 认证时，这里的用户和密钥有效。</p></header>
         <div id="acc-out"></div>
+      </section>
+
+      <section id="v-index" class="view" hidden>
+        <header class="head"><h1><span data-i="ix.title">索引</span><em data-o="ix.title"></em></h1><p data-i="ix.sub">订阅源每隔一段时间被拉取，新文章进入本地索引，搜索时作为 “local” 来源。</p></header>
+        <div id="ix-out"></div>
+      </section>
+
+      <section id="v-settings" class="view" hidden>
+        <header class="head"><h1><span data-i="set.title">设置</span><em data-o="set.title"></em></h1><p data-i="set.sub">这些写进配置文件；多数改动在重新打开工作台后生效。</p></header>
+        <div id="set-out"></div>
       </section>
 
       <section id="v-error" class="view" hidden>
