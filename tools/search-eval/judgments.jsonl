@@ -1,0 +1,37 @@
+{"query": "how does the tokio scheduler work", "relevant": [{"url": "http://127.0.0.1:18765/a0", "grade": 2}, {"url": "http://127.0.0.1:18765/b0", "grade": 1}]}
+{"query": "why does python have a global interpreter lock", "relevant": [{"url": "http://127.0.0.1:18765/a1", "grade": 2}, {"url": "http://127.0.0.1:18765/b1", "grade": 1}]}
+{"query": "postgres vacuum dead tuples bloat", "relevant": [{"url": "http://127.0.0.1:18765/a2", "grade": 2}, {"url": "http://127.0.0.1:18765/b2", "grade": 1}]}
+{"query": "kubernetes pod eviction memory pressure", "relevant": [{"url": "http://127.0.0.1:18765/a3", "grade": 2}, {"url": "http://127.0.0.1:18765/b3", "grade": 1}]}
+{"query": "\u7ea2\u70e7\u8089\u600e\u4e48\u505a\u624d\u8f6f\u7cef", "relevant": [{"url": "http://127.0.0.1:18765/a4", "grade": 2}, {"url": "http://127.0.0.1:18765/b4", "grade": 1}]}
+{"query": "\u5149\u5408\u4f5c\u7528\u7684\u5149\u53cd\u5e94\u548c\u6697\u53cd\u5e94", "relevant": [{"url": "http://127.0.0.1:18765/a5", "grade": 2}, {"url": "http://127.0.0.1:18765/b5", "grade": 1}]}
+{"query": "how to make braised pork belly", "relevant": [{"url": "http://127.0.0.1:18765/a6", "grade": 2}, {"url": "http://127.0.0.1:18765/b6", "grade": 1}]}
+{"query": "how to fix a car that will not start", "relevant": [{"url": "http://127.0.0.1:18765/a7", "grade": 2}, {"url": "http://127.0.0.1:18765/b7", "grade": 1}]}
+{"query": "postgres vacuum full vs autovacuum difference", "relevant": [{"url": "http://127.0.0.1:18765/a8", "grade": 2}, {"url": "http://127.0.0.1:18765/b8", "grade": 1}]}
+{"query": "rust borrow checker cannot borrow as mutable more than once", "relevant": [{"url": "http://127.0.0.1:18765/a9", "grade": 2}, {"url": "http://127.0.0.1:18765/b9", "grade": 1}]}
+{"query": "docker container exits immediately after start", "relevant": [{"url": "http://127.0.0.1:18765/a10", "grade": 2}, {"url": "http://127.0.0.1:18765/b10", "grade": 1}]}
+{"query": "git undo last commit but keep changes", "relevant": [{"url": "http://127.0.0.1:18765/a11", "grade": 2}, {"url": "http://127.0.0.1:18765/b11", "grade": 1}]}
+{"query": "javascript promise.all vs promise.allSettled", "relevant": [{"url": "http://127.0.0.1:18765/a12", "grade": 2}, {"url": "http://127.0.0.1:18765/b12", "grade": 1}]}
+{"query": "sql left join vs inner join when to use", "relevant": [{"url": "http://127.0.0.1:18765/a13", "grade": 2}, {"url": "http://127.0.0.1:18765/b13", "grade": 1}]}
+{"query": "linux find which process is using a port", "relevant": [{"url": "http://127.0.0.1:18765/a14", "grade": 2}, {"url": "http://127.0.0.1:18765/b14", "grade": 1}]}
+{"query": "nginx 502 bad gateway fix", "relevant": [{"url": "http://127.0.0.1:18765/a15", "grade": 2}, {"url": "http://127.0.0.1:18765/b15", "grade": 1}]}
+{"query": "what causes inflation and how central banks control it", "relevant": [{"url": "http://127.0.0.1:18765/a16", "grade": 2}, {"url": "http://127.0.0.1:18765/b16", "grade": 1}]}
+{"query": "how do vaccines train the immune system", "relevant": [{"url": "http://127.0.0.1:18765/a17", "grade": 2}, {"url": "http://127.0.0.1:18765/b17", "grade": 1}]}
+{"query": "why is the sky blue and sunsets red", "relevant": [{"url": "http://127.0.0.1:18765/a18", "grade": 2}, {"url": "http://127.0.0.1:18765/b18", "grade": 1}]}
+{"query": "how does a transformer neural network attention work", "relevant": [{"url": "http://127.0.0.1:18765/a19", "grade": 2}, {"url": "http://127.0.0.1:18765/b19", "grade": 1}]}
+{"query": "difference between tcp and udp", "relevant": [{"url": "http://127.0.0.1:18765/a20", "grade": 2}, {"url": "http://127.0.0.1:18765/b20", "grade": 1}]}
+{"query": "\u5982\u4f55\u7f13\u89e3\u7126\u8651\u5931\u7720", "relevant": [{"url": "http://127.0.0.1:18765/a21", "grade": 2}, {"url": "http://127.0.0.1:18765/b21", "grade": 1}]}
+{"query": "\u4e2a\u4eba\u6240\u5f97\u7a0e\u4e13\u9879\u9644\u52a0\u6263\u9664\u6709\u54ea\u4e9b", "relevant": [{"url": "http://127.0.0.1:18765/a22", "grade": 2}, {"url": "http://127.0.0.1:18765/b22", "grade": 1}]}
+{"query": "\u65b0\u80fd\u6e90\u6c7d\u8f66\u51ac\u5b63\u7eed\u822a\u4e0b\u964d\u539f\u56e0", "relevant": [{"url": "http://127.0.0.1:18765/a23", "grade": 2}, {"url": "http://127.0.0.1:18765/b23", "grade": 1}]}
+{"query": "Python \u5217\u8868\u63a8\u5bfc\u5f0f\u548c\u751f\u6210\u5668\u8868\u8fbe\u5f0f\u7684\u533a\u522b", "relevant": [{"url": "http://127.0.0.1:18765/a24", "grade": 2}, {"url": "http://127.0.0.1:18765/b24", "grade": 1}]}
+{"query": "\u600e\u4e48\u7ed9\u65b0\u751f\u513f\u62cd\u55dd", "relevant": [{"url": "http://127.0.0.1:18765/a25", "grade": 2}, {"url": "http://127.0.0.1:18765/b25", "grade": 1}]}
+{"query": "\u5317\u4eac\u6545\u5bab\u5f00\u653e\u65f6\u95f4\u548c\u9884\u7ea6", "relevant": [{"url": "http://127.0.0.1:18765/a26", "grade": 2}, {"url": "http://127.0.0.1:18765/b26", "grade": 1}]}
+{"query": "mortgage fixed rate vs adjustable rate pros and cons", "relevant": [{"url": "http://127.0.0.1:18765/a27", "grade": 2}, {"url": "http://127.0.0.1:18765/b27", "grade": 1}]}
+{"query": "how to cook rice without a rice cooker", "relevant": [{"url": "http://127.0.0.1:18765/a28", "grade": 2}, {"url": "http://127.0.0.1:18765/b28", "grade": 1}]}
+{"query": "symptoms of vitamin d deficiency", "relevant": [{"url": "http://127.0.0.1:18765/a29", "grade": 2}, {"url": "http://127.0.0.1:18765/b29", "grade": 1}]}
+{"query": "how to train for a first marathon", "relevant": [{"url": "http://127.0.0.1:18765/a30", "grade": 2}, {"url": "http://127.0.0.1:18765/b30", "grade": 1}]}
+{"query": "solar panel payback period calculation", "relevant": [{"url": "http://127.0.0.1:18765/a31", "grade": 2}, {"url": "http://127.0.0.1:18765/b31", "grade": 1}]}
+{"query": "the difference between weather and climate", "relevant": [{"url": "http://127.0.0.1:18765/a32", "grade": 2}, {"url": "http://127.0.0.1:18765/b32", "grade": 1}]}
+{"query": "gradient descent learning rate too high", "relevant": [{"url": "http://127.0.0.1:18765/a33", "grade": 2}, {"url": "http://127.0.0.1:18765/b33", "grade": 1}]}
+{"query": "\u5149\u5408\u4f5c\u7528 vs \u547c\u5438\u4f5c\u7528 \u533a\u522b", "relevant": [{"url": "http://127.0.0.1:18765/a34", "grade": 2}, {"url": "http://127.0.0.1:18765/b34", "grade": 1}]}
+{"query": "how to get a schengen visa", "relevant": [{"url": "http://127.0.0.1:18765/a35", "grade": 2}, {"url": "http://127.0.0.1:18765/b35", "grade": 1}]}
+{"query": "\u4ec0\u4e48\u662f\u533a\u5757\u94fe\u5171\u8bc6\u673a\u5236", "relevant": [{"url": "http://127.0.0.1:18765/a36", "grade": 2}, {"url": "http://127.0.0.1:18765/b36", "grade": 1}]}

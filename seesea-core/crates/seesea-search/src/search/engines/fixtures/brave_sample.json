@@ -1,0 +1,27 @@
+{
+  "type": "search",
+  "query": {"original": "rust async runtime", "more_results_available": true},
+  "web": {
+    "type": "search",
+    "results": [
+      {
+        "title": "Tokio - An asynchronous Rust runtime",
+        "url": "https://tokio.rs/",
+        "description": "Tokio is an <strong>asynchronous</strong> runtime for the Rust programming language.",
+        "page_age": "2025-02-10T08:00:00",
+        "age": "February 10, 2025",
+        "language": "en",
+        "profile": {"name": "Tokio", "long_name": "tokio.rs"},
+        "meta_url": {"hostname": "tokio.rs"},
+        "thumbnail": {"src": "https://imgs.example/tokio.png"},
+        "extra_snippets": ["Build reliable network applications."]
+      },
+      {
+        "title": "Async Rust in 2025",
+        "url": "https://blog.example.org/async-rust-2025",
+        "description": "A look at the state of async Rust.",
+        "language": "en"
+      }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-win-resize"
+description = "Enables the win_resize command without any pre-configured scope."
+commands.allow = ["win_resize"]
+
+[[permission]]
+identifier = "deny-win-resize"
+description = "Denies the win_resize command without any pre-configured scope."
+commands.deny = ["win_resize"]

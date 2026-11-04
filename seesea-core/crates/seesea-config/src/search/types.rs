@@ -249,7 +249,7 @@ impl Default for SearchConfig {
             precreate_engines: vec![
                 "bing".to_string(),
                 "baidu".to_string(),
-                "yandex".to_string(),
+                "sogou".to_string(),
             ],
             precreate_engine_count: 3,
             engine_cache_max_size: 20,

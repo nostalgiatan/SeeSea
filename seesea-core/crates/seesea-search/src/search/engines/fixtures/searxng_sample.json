@@ -1,0 +1,43 @@
+{
+  "query": "rust async runtime",
+  "number_of_results": 0,
+  "results": [
+    {
+      "url": "https://tokio.rs/",
+      "title": "Tokio - An asynchronous Rust runtime",
+      "content": "Tokio is an asynchronous runtime for the Rust programming language.",
+      "engine": "duckduckgo",
+      "engines": ["duckduckgo", "brave", "google"],
+      "positions": [1, 2, 1],
+      "score": 9.0,
+      "category": "general",
+      "publishedDate": null,
+      "thumbnail": null
+    },
+    {
+      "url": "https://blog.example.org/async-rust-2025",
+      "title": "Async Rust in 2025",
+      "content": "A look at the state of async Rust.",
+      "engine": "brave",
+      "engines": ["brave"],
+      "positions": [4],
+      "score": 1.0,
+      "category": "general",
+      "publishedDate": "2025-03-04T10:15:00",
+      "thumbnail": "https://blog.example.org/img/async.png"
+    },
+    {
+      "url": "https://example.org/no-content",
+      "title": "Page without a snippet",
+      "engine": "google",
+      "engines": ["google"],
+      "positions": [7],
+      "category": "general"
+    }
+  ],
+  "answers": [],
+  "corrections": [],
+  "infoboxes": [],
+  "suggestions": ["tokio vs async-std", "rust futures"],
+  "unresponsive_engines": [["startpage", "timeout"]]
+}

@@ -1,0 +1,22 @@
+
+query kind: title   (4838 documents to choose from)
+method                          R@1   R@10   R@50  R@200     MRR   top10 = f32's
+bm25                          0.834  0.901  0.927  0.942   0.860                
+dense f32                     0.876  0.922  0.950  0.967   0.892                
+binary (centred)              0.852  0.910  0.934  0.960   0.873           0.500
+binary (sign only)            0.848  0.897  0.922  0.955   0.866                
+binary200 -> f32 rescore      0.876  0.922  0.953  0.962   0.892           0.973
+bm25 + dense f32              0.873  0.923  0.954  0.971   0.891                
+bm25 + binary                 0.876  0.917  0.948  0.965   0.892                
+bm25 + binary200->f32         0.873  0.922  0.952  0.970   0.892                
+
+query kind: sentence   (4838 documents to choose from)
+method                          R@1   R@10   R@50  R@200     MRR   top10 = f32's
+bm25                          0.375  0.549  0.651  0.746   0.437                
+dense f32                     0.382  0.584  0.724  0.841   0.452                
+binary (centred)              0.349  0.548  0.698  0.821   0.419           0.498
+binary (sign only)            0.322  0.508  0.656  0.785   0.387                
+binary200 -> f32 rescore      0.382  0.584  0.728  0.824   0.452           0.980
+bm25 + dense f32              0.437  0.638  0.765  0.856   0.508                
+bm25 + binary                 0.423  0.633  0.761  0.851   0.496                
+bm25 + binary200->f32         0.437  0.636  0.773  0.856   0.507                

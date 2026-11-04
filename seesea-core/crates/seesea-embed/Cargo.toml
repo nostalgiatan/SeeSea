@@ -1,0 +1,26 @@
+[package]
+name = "seesea-embed"
+version = "3.0.0"
+edition = "2024"
+description = "Pure-Rust text embeddings: BERT-style sentence encoders on candle"
+license = "AGPL-3.0-or-later"
+
+[features]
+default = []
+# Run the encoder on a GPU through Vulkan (pure Rust, via burn + wgpu).
+gpu = ["dep:burn"]
+
+[dependencies]
+burn = { version = "0.22.1", default-features = false, features = ["wgpu", "std"], optional = true }
+candle-core = "0.11.1"
+candle-nn = "0.11.1"
+candle-transformers = "0.11.1"
+tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
+memmap2 = "0.9"
+rayon = "1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3.23.0"

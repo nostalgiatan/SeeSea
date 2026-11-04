@@ -71,10 +71,13 @@ impl MDParser {
                 let text_str = text.as_str();
                 let url_str = url.as_str();
 
-                // 检查是否是图片语法（以!开头）
-                let full_match = cap.get(0).unwrap().as_str();
-                if full_match.starts_with("!") {
-                    // 这是图片，跳过，因为已经处理过了
+                // 链接正则会匹配图片语法 `![..](..)` 中从 `[` 开始的部分，所以看匹配前一个字节
+                let start = cap.get(0).unwrap().start();
+                if start > 0 && content.as_bytes()[start - 1] == b'!' {
+                    continue;
+                }
+                // 没有地址的链接没有可用信息
+                if url_str.trim().is_empty() {
                     continue;
                 }
 
@@ -136,14 +139,11 @@ mod tests {
 
         parser.parse(&mut block);
 
-        // 实际逻辑：
-        // 1. [链接](https://example.com) -> 添加到links和map
-        // 2. ![图片](https://example.com/image.jpg) -> 添加到images
-        // 3. [空链接]() -> 空文本链接，添加到images
+        // 链接只进 links 和 map；图片只进 images；没有地址的 `[空链接]()` 被忽略
         assert_eq!(block.links.len(), 1);
-        assert_eq!(block.images.len(), 2);
-        assert!(block.links[0].contains("example.com"));
-        assert!(block.images[0].contains("example.com"));
-        assert!(block.images[1].contains("example.com"));
+        assert_eq!(block.map.len(), 1);
+        assert_eq!(block.images.len(), 1);
+        assert_eq!(&*block.images[0], "https://example.com/image.jpg");
+        assert_eq!(&*block.links[0], "https://example.com");
     }
 }
