@@ -913,10 +913,8 @@ function toggleLang() {
   route();
 }
 
-function emptyState() {
-  if ($('#search-out').children.length) return;
-  $('#search-out').replaceChildren(h('div', { class: 'empty' }, h('div', { class: 'big', text: t('empty.big') }), h('div', { text: t('empty.sub') })));
-}
+// Nothing is shown before the first search: the box and its options are the page.
+function emptyState() {}
 
 async function boot() {
   S.lang = store.get('ss_lang') || ((navigator.language || 'en').toLowerCase().startsWith('zh') ? 'zh' : 'en');
