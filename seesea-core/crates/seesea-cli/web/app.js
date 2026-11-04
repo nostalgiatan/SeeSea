@@ -64,6 +64,12 @@ const D = {
     'rv.learned': '{o} 次观察 · {h} 台主机', 'rv.obs': '{n} 次观察', 'st.fail': '失败', 'svc.auto': '— （自动生成）', 'svc.stdio': 'stdio（本机）',
     'stage.search': '检索', 'stage.fuse_rank': '融合排序', 'stage.fetch_extract': '抓取抽取', 'stage.rerank': '重排', 'stage.assemble': '组装',
     'brand.sub': '搜索数据中心', 'rail.help': '键盘', 'search.title': '搜索', 'search.sub': '多个引擎并发，融合、抓取、抽取、重排，一次给出可直接引用的结果。',
+    'err.home': '回到搜索', 'err.retry': '重试', 'err.offline': '连不上服务', 'err.offline.d': '这个页面没能联系到后端。服务可能已停止，或网络断开；恢复后会自动重连。',
+    'err.auth': '需要密钥', 'err.auth.d': '服务拒绝了这次请求。点右下角的钥匙图标输入 API 密钥。', 'err.nf': '页面不存在', 'err.nf.d': '没有 {p} 这个页面。',
+    'err.srv': '服务出错了', 'err.gen': '出错了', 'err.na': '这个页面在当前服务上不可用', 'err.na.d': '服务、账号和复盘只在 seesea desk 里提供。',
+    'cx.open': '在新标签页打开', 'cx.copylink': '复制链接', 'cx.copytitle': '复制标题', 'cx.copysel': '复制所选文字', 'cx.detail': '展开 / 收起详情',
+    'cx.good': '标为好结果', 'cx.bad': '标为差结果', 'cx.reload': '刷新此页', 'cx.go': '前往', 'cx.palette': '命令面板', 'cx.sep': '',
+    'where.up': '已重新连上',
   },
   en: {
     'nav.search': 'Search', 'nav.read': 'Read', 'nav.review': 'Review', 'nav.status': 'Status', 'nav.services': 'Services', 'nav.accounts': 'Accounts',
@@ -108,6 +114,12 @@ const D = {
     'rv.learned': '{o} observations · {h} hosts', 'rv.obs': '{n} observations', 'st.fail': 'failed', 'svc.auto': '— (generated)', 'svc.stdio': 'stdio (local)',
     'stage.search': 'Search', 'stage.fuse_rank': 'Fuse and rank', 'stage.fetch_extract': 'Fetch and extract', 'stage.rerank': 'Rerank', 'stage.assemble': 'Assemble',
     'brand.sub': 'Search data center', 'search.title': 'Search', 'search.sub': 'Many engines at once, then fuse, fetch, extract and rerank into results you can cite.',
+    'err.home': 'Back to search', 'err.retry': 'Retry', 'err.offline': 'Cannot reach the server', 'err.offline.d': 'The page could not talk to its back end. The service may have stopped or the network dropped; it reconnects on its own.',
+    'err.auth': 'A key is needed', 'err.auth.d': 'The server refused this request. Use the key icon at the bottom of the rail to enter an API key.', 'err.nf': 'Page not found', 'err.nf.d': 'There is no page at {p}.',
+    'err.srv': 'The server failed', 'err.gen': 'Something went wrong', 'err.na': 'This page is not available on this server', 'err.na.d': 'Services, accounts and review exist only in seesea desk.',
+    'cx.open': 'Open in a new tab', 'cx.copylink': 'Copy link', 'cx.copytitle': 'Copy title', 'cx.copysel': 'Copy selected text', 'cx.detail': 'Expand / collapse details',
+    'cx.good': 'Mark as good', 'cx.bad': 'Mark as bad', 'cx.reload': 'Reload this page', 'cx.go': 'Go to', 'cx.palette': 'Command palette', 'cx.sep': '',
+    'where.up': 'Reconnected',
   },
 };
 
@@ -154,6 +166,23 @@ function toast(msg, bad) {
   $('#toasts').append(el);
   setTimeout(() => el.remove(), bad ? 6000 : 2600);
 }
+function errBox(e, retry) {
+  const st = e.status || 0;
+  const [title, desc] = e.offline ? [t('err.offline'), t('err.offline.d')]
+    : st === 401 || st === 403 ? [t('err.auth'), t('err.auth.d')]
+    : st === 404 ? [t('err.nf'), e.message]
+    : st >= 500 ? [t('err.srv'), e.message] : [t('err.gen'), e.message];
+  return h('div', { class: 'errbox' }, h('b', { class: 'code', text: e.offline ? '···' : st || '!' }),
+    h('div', {}, h('strong', { text: title }), h('p', { text: desc }), retry ? h('button', { class: 'quiet', type: 'button', text: t('err.retry'), onclick: retry }) : null));
+}
+let offline = false;
+function markOffline(v) {
+  if (v === offline) return;
+  offline = v;
+  if (v) S.health = null; else api('/health', { noAuth: true }).then((x) => { S.health = x; updateChip(); if (S.recovered) toast(t('where.up')); }, () => {});
+  if (v) S.recovered = true;
+  updateChip();
+}
 const fail = (e) => toast(e && e.message ? e.message : t('err'), true);
 
 function askKey() {
@@ -174,7 +203,11 @@ async function api(path, { method = 'GET', body, noAuth } = {}) {
   const key = session.get('ss_key');
   if (key) headers.Authorization = 'Bearer ' + key;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  let res;
+  try { res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); } catch {
+    const e = new Error(t('err.offline')); e.offline = true; markOffline(true); throw e;
+  }
+  markOffline(false);
   if (res.status === 401 && !noAuth) {
     const k = await askKey();
     if (k) { session.set('ss_key', k); return api(path, { method, body, noAuth: true }); }
@@ -280,7 +313,7 @@ async function doSearch() {
     const r = await api('/v1/search', { method: 'POST', body });
     renderSearch(r, performance.now() - t0);
   } catch (e) {
-    out.replaceChildren(h('div', { class: 'notes' }, h('div', { class: 'note err', text: e.message }), ...((e.data && e.data.failures) || []).map((f) => h('div', { class: 'note err', text: `${f.source}: ${f.kind} ${f.message}` }))));
+    out.replaceChildren(errBox(e, doSearch), h('div', { class: 'notes' }, ...((e.data && e.data.failures) || []).map((f) => h('div', { class: 'note err', text: `${f.source}: ${f.kind} ${f.message}` }))));
   } finally { go.disabled = false; }
 }
 
@@ -383,7 +416,7 @@ async function doRead() {
   try {
     renderRead(await api('/v1/extract', { method: 'POST', body }));
   } catch (e) {
-    out.replaceChildren(h('div', { class: 'notes' }, h('div', { class: 'note err', text: e.message })));
+    out.replaceChildren(errBox(e, doRead));
   } finally { go.disabled = false; }
 }
 
@@ -406,14 +439,14 @@ async function loadStatus() {
   try {
     const s = await api('/v1/sources');
     srcBox.replaceChildren(...(s.sources || []).map((n) => h('div', { class: 'lat' }, h('span', { class: 'lamp' }), h('span', { text: n }), h('span'), h('span'))));
-  } catch (e) { srcBox.replaceChildren(h('div', { class: 'note err', text: e.message })); }
+  } catch (e) { srcBox.replaceChildren(errBox(e, loadStatus)); }
   try {
     const c = (await api('/v1/stats')).cache || {};
     const rows = Object.entries(c);
     cacheBox.replaceChildren(rows.length ? h('table', {}, h('tr', {}, h('th', { text: '' }), h('th', { class: 'r', text: t('st.hit') }), h('th', { class: 'r', text: t('st.miss') }), h('th', { class: 'r', text: t('st.ratio') })),
       rows.map(([n, v]) => h('tr', {}, h('td', { text: n }), h('td', { class: 'r', text: v.hits }), h('td', { class: 'r', text: v.misses }), h('td', { class: 'r', text: (v.hit_ratio * 100).toFixed(0) + '%' })))) : h('div', { class: 'mut', text: t('st.none') }));
-  } catch (e) { cacheBox.replaceChildren(h('div', { class: 'note err', text: e.message })); }
-  try { idxBox.replaceChildren(kvs(await api('/v1/index'))); } catch (e) { idxBox.replaceChildren(h('div', { class: 'note', text: e.message })); }
+  } catch (e) { cacheBox.replaceChildren(e.offline ? h('div', { class: 'mut', text: t('st.none') }) : errBox(e, loadStatus)); }
+  try { idxBox.replaceChildren(kvs(await api('/v1/index'))); } catch (e) { idxBox.replaceChildren(e.offline ? h('div', { class: 'mut', text: t('st.none') }) : errBox(e, loadStatus)); }
 }
 async function probe() {
   const box = $('#st-sources');
@@ -423,7 +456,7 @@ async function probe() {
     const max = Math.max(...r.map((x) => x.ms || 0), 1);
     box.replaceChildren(...r.map((x) => h('div', { class: 'lat', title: x.error || '' },
       h('span', { class: 'lamp ' + (x.ok ? 'ok' : 'no') }), h('span', { text: x.source }), h('div', { class: 't' }, h('i', { style: `width:${((x.ms || 0) / max) * 100}%` })), h('code', { text: x.ok ? `${x.ms} ms` : t('st.fail') }))));
-  } catch (e) { box.replaceChildren(h('div', { class: 'note err', text: e.message })); }
+  } catch (e) { box.replaceChildren(errBox(e, probe)); }
 }
 
 /* ---------- services (workbench only) ---------- */
@@ -452,7 +485,7 @@ function howTo(s) {
 
 async function loadServices() {
   const out = $('#svc-out');
-  try { renderServices((await api('/desk/api/state')).services); } catch (e) { out.replaceChildren(h('div', { class: 'note err', text: e.message })); }
+  try { renderServices((await api('/desk/api/state')).services); } catch (e) { out.replaceChildren(errBox(e, loadServices)); }
 }
 function renderServices(list) { $('#svc-out').replaceChildren(...list.map(svcCard)); }
 
@@ -528,7 +561,7 @@ async function loadAccounts() {
     if (secretBanner) { const k = secretBanner; secretBanner = null; kids.push(h('div', { class: 'panel secret' }, h('div', { class: 'warn-msg', text: t('acc.secret') }), h('div', { class: 'keybox', style: 'margin-top:6px' }, h('code', { text: k }), h('button', { class: 'act', type: 'button', text: t('key.copy'), onclick: () => copy(k) })))); }
     kids.push(add, rows.length ? h('div', { class: 'panel' }, h('table', {}, h('tr', {}, h('th', { text: t('acc.name') }), h('th', { text: t('acc.plan') }), h('th', { class: 'r', text: t('acc.today') }), h('th')), rows)) : h('div', { class: 'empty', text: t('acc.none') }));
     out.replaceChildren(...kids);
-  } catch (e) { out.replaceChildren(h('div', { class: 'note err', text: e.message })); }
+  } catch (e) { out.replaceChildren(errBox(e, loadAccounts)); }
 }
 
 /* ---------- review (workbench only) ---------- */
@@ -578,18 +611,33 @@ function renderReview(r) {
 }
 async function loadReview() {
   const out = $('#rv-out');
-  try { renderReview(await api('/desk/api/review?since=' + $('#rv-since').value)); } catch (e) { out.replaceChildren(h('div', { class: 'note err', text: e.message })); }
+  try { renderReview(await api('/desk/api/review?since=' + $('#rv-since').value)); } catch (e) { out.replaceChildren(errBox(e, loadReview)); }
 }
 
 /* ---------- shell ---------- */
 const VIEWS = { search: () => $('#q').focus(), read: () => $('#r-url').focus(), review: loadReview, status: loadStatus, services: loadServices, accounts: loadAccounts };
 function route() {
   let v = (location.hash.match(/^#\/(\w+)/) || [])[1] || 'search';
-  if (!VIEWS[v] || ((v === 'services' || v === 'accounts' || v === 'review') && !S.desk)) v = 'search';
+  const deskOnly = v === 'services' || v === 'accounts' || v === 'review';
+  if (location.pathname !== '/') return errorPage(404, 'err.nf', t('err.nf.d', { p: location.pathname }));
+  if (!VIEWS[v]) return errorPage(404, 'err.nf', t('err.nf.d', { p: location.hash || '#' }));
+  if (deskOnly && !S.desk) return errorPage(404, 'err.na', t('err.na.d'));
   for (const el of $$('.view')) el.hidden = el.id !== 'v-' + v;
   for (const a of $$('#nav a')) a.classList.toggle('on', a.dataset.view === v);
   S.view = v;
   VIEWS[v]();
+}
+function errorPage(code, titleKey, msg) {
+  for (const el of $$('.view')) el.hidden = el.id !== 'v-error';
+  for (const a of $$('#nav a')) a.classList.remove('on');
+  S.view = 'error';
+  $('#err-code').textContent = code;
+  $('#err-title').textContent = t(titleKey);
+  $('#err-msg').textContent = msg;
+  // Off the root path a bare #/x link would stay on the missing page.
+  for (const a of $$('#nav a, .brand')) a.setAttribute('href', '/' + a.getAttribute('href').replace(/^\/?/, ''));
+  $('#err-home').href = '/#/search';
+  $('#err-retry').onclick = () => location.reload();
 }
 function updateChip() {
   const chip = $('#where');
@@ -653,6 +701,10 @@ async function boot() {
   $$('#mode button').forEach((b) => b.classList.toggle('on', b.dataset.v === S.mode));
   emptyState();
   route();
+  setInterval(async () => {
+    try { S.health = await api('/health', { noAuth: true }); } catch { S.health = null; }
+    updateChip();
+  }, 15000);
 }
 
 $('#search-form').addEventListener('submit', (e) => {
@@ -686,5 +738,53 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'g' && S.sel >= 0) judge(S.sel, 'good');
   else if (e.key === 'b' && S.sel >= 0) judge(S.sel, 'bad');
   else if (e.key === 'o' && S.sel >= 0) { const u = safeHref(S.hits[S.sel].url); if (u) window.open(u, '_blank', 'noopener,noreferrer'); }
+});
+
+/* ---------- context menu: replaces the browser's own, except where text is being edited ---------- */
+const ctx = {
+  el: null,
+  close() { const m = $('#ctx'); m.hidden = true; m.replaceChildren(); },
+  open(x, y, items) {
+    const m = $('#ctx');
+    m.replaceChildren(...items.map((it) => it === '-' ? h('li', { class: 'sep', role: 'separator' }) : h('li', { role: 'menuitem', tabindex: -1, onclick: () => { ctx.close(); it.run(); } }, it.label, it.hint ? h('small', { text: it.hint }) : null)));
+    m.hidden = false;
+    const r = m.getBoundingClientRect();
+    m.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + 'px';
+    m.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 4)) + 'px';
+    const first = $('li[role=menuitem]', m); if (first) first.focus();
+  },
+};
+document.addEventListener('contextmenu', (e) => {
+  const el = e.target;
+  if (el.closest && el.closest('input, textarea, select, dialog, #ctx')) return;
+  e.preventDefault();
+  const items = [];
+  const card = el.closest && el.closest('.hit');
+  const link = el.closest && el.closest('a[href]');
+  const sel = String(getSelection());
+  if (card) {
+    const i = +card.dataset.n, x = S.hits[i], href = safeHref(x.url);
+    select(i);
+    if (href) items.push({ label: t('cx.open'), hint: 'O', run: () => window.open(href, '_blank', 'noopener,noreferrer') }, { label: t('cx.copylink'), run: () => copy(href) });
+    items.push({ label: t('cx.copytitle'), run: () => copy(x.title || x.url) }, { label: t('cx.detail'), hint: 'D', run: () => toggleDetail(i) }, { label: t('cx.good'), hint: 'G', run: () => judge(i, 'good') }, { label: t('cx.bad'), hint: 'B', run: () => judge(i, 'bad') });
+  } else if (link && safeHref(link.href)) {
+    items.push({ label: t('cx.open'), run: () => window.open(link.href, '_blank', 'noopener,noreferrer') }, { label: t('cx.copylink'), run: () => copy(link.href) });
+  }
+  if (sel.trim()) { if (items.length) items.push('-'); items.push({ label: t('cx.copysel'), hint: 'Ctrl C', run: () => copy(sel) }); }
+  if (items.length) items.push('-');
+  const nav = [['search', 'nav.search'], ['read', 'nav.read'], ['status', 'nav.status']];
+  if (S.desk) nav.push(['review', 'nav.review'], ['services', 'nav.services'], ['accounts', 'nav.accounts']);
+  for (const [v, k] of nav) if (v !== S.view) items.push({ label: `${t('cx.go')} · ${t(k)}`, run: () => { location.hash = '#/' + v; } });
+  items.push('-', { label: t('cx.reload'), run: route }, { label: t('p.theme'), run: toggleTheme }, { label: t('p.lang'), run: toggleLang }, { label: t('cx.palette'), hint: 'Ctrl K', run: openPalette });
+  ctx.open(e.clientX, e.clientY, items);
+});
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#ctx')) ctx.close(); });
+addEventListener('blur', ctx.close); addEventListener('resize', ctx.close); document.addEventListener('scroll', ctx.close, true);
+$('#ctx').addEventListener('keydown', (e) => {
+  const li = $$('#ctx li[role=menuitem]'), i = li.indexOf(document.activeElement);
+  if (e.key === 'Escape') { ctx.close(); e.preventDefault(); }
+  else if (e.key === 'ArrowDown') { li[(i + 1) % li.length].focus(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { li[(i - 1 + li.length) % li.length].focus(); e.preventDefault(); }
+  else if (e.key === 'Enter' && i >= 0) { li[i].click(); e.preventDefault(); }
 });
 boot();

@@ -423,3 +423,30 @@ td.r, th.r { white-space: nowrap; }
   .ticks a.on::before { left: 9px; width: 18px; }
   .ticks { gap: 0; }
 }
+
+/* ---- scrollbars: hairline, square, brass on hover ---- */
+* { scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line2); border: 2px solid transparent; background-clip: padding-box; border-radius: 0; min-height: 36px; }
+::-webkit-scrollbar-thumb:hover { background: var(--buoy); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ---- context menu ---- */
+#ctx { position: fixed; z-index: 90; margin: 0; padding: 4px 0; list-style: none; min-width: 220px; max-width: 320px; background: var(--panel); border: 1px solid var(--ink); box-shadow: 6px 6px 0 color-mix(in srgb, var(--ink) 14%, transparent); font-size: 13px; }
+#ctx li[role=menuitem] { display: flex; gap: 24px; justify-content: space-between; align-items: baseline; padding: 7px 14px; cursor: pointer; outline: 0; letter-spacing: .02em; }
+#ctx li[role=menuitem] small { font: 10.5px var(--mono); color: var(--faint); letter-spacing: .08em; }
+#ctx li[role=menuitem]:hover, #ctx li[role=menuitem]:focus { background: var(--ink); color: var(--bg); }
+#ctx li[role=menuitem]:hover small, #ctx li[role=menuitem]:focus small { color: var(--faint); }
+#ctx .sep { height: 1px; margin: 4px 0; background: var(--line); }
+
+/* ---- errors ---- */
+.errbox { display: flex; gap: 18px; align-items: flex-start; padding: 16px 18px; border: 1px solid var(--bad); border-left-width: 3px; background: var(--panel); margin: 6px 0; }
+.errbox .code { font: 300 34px/1 var(--sans); letter-spacing: -1px; color: var(--bad); min-width: 56px; }
+.errbox strong { font: 700 13px var(--sans); letter-spacing: .1em; text-transform: uppercase; }
+.errbox p { margin: 4px 0 10px; color: var(--mute); font-size: 13px; overflow-wrap: anywhere; }
+.errpage { padding: 12vh 0 0; max-width: 560px; border-top: 1px solid var(--ink); margin-top: 6px; }
+.errpage .code { font: 200 clamp(84px, 16vw, 168px)/1 var(--sans); letter-spacing: -6px; font-variant-numeric: tabular-nums; }
+.errpage h1 { margin: 10px 0 6px; font: 800 24px var(--sans); letter-spacing: .08em; text-transform: uppercase; }
+.errpage p { margin: 0 0 22px; color: var(--mute); overflow-wrap: anywhere; }
+a.linkgo { display: inline-flex; align-items: center; text-decoration: none; padding: 9px 22px; }

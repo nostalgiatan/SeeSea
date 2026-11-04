@@ -199,7 +199,7 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Reques
     }
     // WebSub hubs cannot send API keys: those requests are checked by challenge and signature instead.
     // The workbench page itself is static and holds no data: it has to load before a key can be typed into it.
-    if req.uri().path() == "/health" || crate::ui::is_asset(req.uri().path()) || req.uri().path().starts_with("/v1/websub/") || !state.access.required() {
+    if req.uri().path() == "/health" || crate::ui::is_asset(req.uri().path()) || crate::ui::is_navigation(&req) || req.uri().path().starts_with("/v1/websub/") || !state.access.required() {
         return next.run(req).await;
     }
     let mut ip = req
@@ -765,7 +765,9 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
 /// Only `/health` and `/mcp`: a remote MCP server that does not offer the rest of the API.
 pub fn mcp_router(state: AppState, max_concurrent: usize) -> Router {
     layered(
-        Router::new().route("/health", get(health)).route("/mcp", post(mcp).get(mcp_other).delete(mcp_other)),
+        Router::new().route("/health", get(health)).route("/mcp", post(mcp).get(mcp_other).delete(mcp_other)).fallback(|| async {
+            (StatusCode::NOT_FOUND, Json(json!({"code": "not_found", "message": "this server only offers /mcp and /health"})))
+        }),
         state,
         max_concurrent,
     )
