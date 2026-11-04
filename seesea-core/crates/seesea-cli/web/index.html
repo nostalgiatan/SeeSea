@@ -96,6 +96,12 @@
       <header class="head"><h1><span data-i="acc.title">账号</span><em data-o="acc.title"></em></h1><p data-i="acc.sub">服务用 “账号” 或 “两者” 认证时，这里的用户和密钥有效。</p></header>
       <div id="acc-out"></div>
     </section>
+    <section id="v-error" class="view" hidden>
+      <div class="errpage"><div class="code" id="err-code">404</div>
+        <h1 id="err-title"></h1><p id="err-msg"></p>
+        <div class="row"><a class="go linkgo" href="#/search" id="err-home" data-i="err.home">回到搜索</a><button class="quiet" id="err-retry" type="button" data-i="err.retry">重试</button></div>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -112,6 +118,7 @@
   <div class="pal"><input id="pal-in" placeholder="…" spellcheck="false" autocomplete="off"><ul id="pal-list"></ul></div>
 </dialog>
 
+<ul id="ctx" role="menu" hidden></ul>
 <div id="toasts" aria-live="polite"></div>
 <script src="/ui/app.js" defer></script>
 </body>

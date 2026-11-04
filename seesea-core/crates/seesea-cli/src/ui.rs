@@ -20,6 +20,21 @@ pub fn is_asset(path: &str) -> bool {
     path == "/" || path.starts_with("/ui/")
 }
 
+/// A browser asking for a page that does not exist (as opposed to a client calling the API): it gets the
+/// workbench, which draws its own "not found" page from the URL, with the 404 status.
+pub fn is_navigation(req: &axum::extract::Request) -> bool {
+    let p = req.uri().path();
+    req.method() == axum::http::Method::GET
+        && !(p.starts_with("/v1/") || p.starts_with("/desk/") || p == "/mcp" || p == "/health")
+        && req.headers().get(header::ACCEPT).and_then(|v| v.to_str().ok()).is_some_and(|a| a.starts_with("text/html"))
+}
+
+pub fn not_found_page() -> Response {
+    let mut r = asset("text/html; charset=utf-8", INDEX);
+    *r.status_mut() = axum::http::StatusCode::NOT_FOUND;
+    r
+}
+
 fn asset(content_type: &'static str, body: &'static str) -> Response {
     let mut r = body.into_response();
     let h = r.headers_mut();

@@ -1026,6 +1026,15 @@ async fn the_workbench_page_needs_no_key_but_the_data_behind_it_does() {
     assert_eq!(http.get(format!("{api}/desk/api/state")).send().await.unwrap().status(), 401);
     let r = http.get(format!("{api}/v1/sources")).bearer_auth("sekret-sekret-sekret").send().await.unwrap();
     assert_eq!(r.status(), 200);
+
+    // A browser that asks for a page that is not there gets the workbench's own "not found" page, with no key;
+    // a client that wants JSON gets JSON, and never the page.
+    let r = http.get(format!("{api}/nowhere")).header("accept", "text/html,application/xhtml+xml").send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    assert!(r.headers()["content-type"].to_str().unwrap().starts_with("text/html"));
+    assert!(r.text().await.unwrap().contains("v-error"));
+    assert_eq!(http.get(format!("{api}/nowhere")).header("accept", "application/json").send().await.unwrap().status(), 401);
+    assert_eq!(http.get(format!("{api}/v1/nowhere")).header("accept", "text/html").send().await.unwrap().status(), 401);
 }
 
 #[tokio::test]

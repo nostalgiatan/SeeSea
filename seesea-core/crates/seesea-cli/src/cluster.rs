@@ -1380,7 +1380,10 @@ fn meter(method: &Method, path: &str, query: Option<&str>, body: &[u8], grant: &
 
 /// The gateway's fallback: forward the few paths that belong to a node, refuse everything else.
 pub async fn forward(State(s): State<AppState>, grant: Option<Extension<Grant>>, method: Method, uri: axum::http::Uri, headers: HeaderMap, body: Bytes) -> Response {
-    let not_found = || (StatusCode::NOT_FOUND, Json(json!({"code": "not_found", "message": "no such endpoint"}))).into_response();
+    let wants_page = method == Method::GET
+        && !(uri.path().starts_with("/v1/") || uri.path().starts_with("/desk/"))
+        && headers.get(header::ACCEPT).and_then(|v| v.to_str().ok()).is_some_and(|a| a.starts_with("text/html"));
+    let not_found = || if wants_page { crate::ui::not_found_page() } else { (StatusCode::NOT_FOUND, Json(json!({"code": "not_found", "message": "no such endpoint"}))).into_response() };
     let Some(gw) = s.gateway.clone() else { return not_found() };
     let path = uri.path();
     let Some(target) = target(path) else { return not_found() };
