@@ -3,106 +3,153 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark light">
+<meta name="color-scheme" content="light dark">
 <title>SeeSea 工作台</title>
 <link rel="icon" href="/ui/mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/ui/app.css">
 </head>
 <body>
+<svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></symbol>
+    <symbol id="i-read" viewBox="0 0 24 24"><path d="M6 3.5h8.5L19 8v12.5H6z"/><path d="M14 3.5V8.5h5M9 12.5h7M9 16h7"/></symbol>
+    <symbol id="i-review" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/><path d="M14 6.5l2 2 4-4.5"/></symbol>
+    <symbol id="i-status" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></symbol>
+    <symbol id="i-services" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="6.5"/><rect x="3.5" y="13.5" width="17" height="6.5"/><path d="M7 7.25h.01M7 16.75h.01M11 7.25h6M11 16.75h6"/></symbol>
+    <symbol id="i-accounts" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16.5 5.2a3.4 3.4 0 010 6.6M18.5 14.8c1.7.7 2.7 2.3 3 4.7"/></symbol>
+    <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 9V6.5A2.5 2.5 0 106.5 9H9zm0 0h6m-6 0v6m6-6V6.5A2.5 2.5 0 1117.5 9H15zm0 0v6m0 0h2.5a2.5 2.5 0 11-2.5 2.5V15zm0 0H9m0 0H6.5A2.5 2.5 0 109 17.5V15z"/></symbol>
+    <symbol id="i-lang" viewBox="0 0 24 24"><path d="M3.5 6h10M8.5 4v2M5 6c.8 3 3.2 5.600 6.500 7M12 6c-.8 3-3.500 6-8 7.500"/><path d="M12.500 20l4-9 4 9M13.800 17h5.400"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 010 16z" class="fill"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l8.500-8.500M16 7l2.500 2.500M14 9l2 2"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.500" y="8.500" width="11" height="11"/><path d="M15.500 8.500v-4h-11v11h4"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.500 12a7.500 7.500 0 11-2.300-5.400M19.500 4v4.500H15"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.500v15l12-7.500z"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.500 12S6 5.500 12 5.500 21.500 12 21.500 12 18 18.500 12 18.500 2.500 12 2.500 12z"/><circle cx="12" cy="12" r="2.800"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M3.500 11.500l17-7.500-6.500 16-2.500-6.500z"/><path d="M11.500 13.500L20.500 4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.500 12.500l5 5 10-11"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V6M6 11.500L12 5.500l6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v13M6 12.500l6 6 6-6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9.500 16.500h-19z"/><path d="M12 10v4.500M12 17.500h.01"/></symbol>
+  </defs>
+</svg>
+
 <div class="shell">
   <nav class="rail" aria-label="main">
-    <a class="brand" href="#/search" title="SeeSea"><img src="/ui/mark.svg" alt="" width="34" height="34"><span><b>SEESEA</b><small data-i="brand.sub">搜索数据中心</small></span></a>
-    <div class="ticks" id="nav">
-      <a href="#/search" data-view="search"><i>01</i><span data-i="nav.search">搜索</span><em data-o="nav.search"></em></a>
-      <a href="#/read" data-view="read"><i>02</i><span data-i="nav.read">阅读</span><em data-o="nav.read"></em></a>
-      <a href="#/review" data-view="review" class="desk-only"><i>03</i><span data-i="nav.review">复盘</span><em data-o="nav.review"></em></a>
-      <a href="#/status" data-view="status"><i>04</i><span data-i="nav.status">状态</span><em data-o="nav.status"></em></a>
-      <a href="#/services" data-view="services" class="desk-only"><i>05</i><span data-i="nav.services">服务</span><em data-o="nav.services"></em></a>
-      <a href="#/accounts" data-view="accounts" class="desk-only"><i>06</i><span data-i="nav.accounts">账号</span><em data-o="nav.accounts"></em></a>
+    <a class="brand" href="#/search" title="SeeSea">
+      <svg class="mark" viewBox="0 0 100 100" aria-hidden="true"><path d="M8 50Q50 12 92 50Q50 88 8 50Z" class="m-eye"/><circle cx="50" cy="50" r="16" class="m-iris"/><path d="M36.500 50q3.500-6.500 7 0t7 0 7 0 7 0" class="m-wave"/></svg>
+      <span><b>SEESEA</b><small data-i="brand.sub">搜索数据中心</small></span>
+    </a>
+    <div class="nav" id="nav">
+      <div class="grp" data-i="grp.work">工作</div>
+      <a href="#/search" data-view="search"><svg class="ic"><use href="#i-search"/></svg><span data-i="nav.search">搜索</span><em data-o="nav.search"></em></a>
+      <a href="#/read" data-view="read"><svg class="ic"><use href="#i-read"/></svg><span data-i="nav.read">阅读</span><em data-o="nav.read"></em></a>
+      <div class="grp" data-i="grp.watch">观察</div>
+      <a href="#/status" data-view="status"><svg class="ic"><use href="#i-status"/></svg><span data-i="nav.status">状态</span><em data-o="nav.status"></em></a>
+      <a href="#/review" data-view="review" class="desk-only"><svg class="ic"><use href="#i-review"/></svg><span data-i="nav.review">复盘</span><em data-o="nav.review"></em></a>
+      <div class="grp desk-only" data-i="grp.api">接口</div>
+      <a href="#/services" data-view="services" class="desk-only"><svg class="ic"><use href="#i-services"/></svg><span data-i="nav.services">服务</span><em data-o="nav.services"></em></a>
+      <a href="#/accounts" data-view="accounts" class="desk-only"><svg class="ic"><use href="#i-accounts"/></svg><span data-i="nav.accounts">账号</span><em data-o="nav.accounts"></em></a>
     </div>
     <div class="rail-foot">
       <div class="chip" id="where"><b></b><span>…</span></div>
-      <div class="tools">
-        <button id="btn-palette" class="ghost" data-t="tip.palette">⌘K</button>
-        <button id="btn-lang" class="ghost" data-t="tip.lang">中/EN</button>
-        <button id="btn-theme" class="ghost" data-t="tip.theme">◐</button>
-        <button id="btn-key" class="ghost" data-t="tip.key">⚿</button>
-      </div>
+      <div class="ver" id="ver"></div>
     </div>
   </nav>
 
-  <main>
-    <section id="v-search" class="view">
-      <header class="head"><h1><span data-i="search.title">搜索</span><em data-o="search.title"></em></h1><p data-i="search.sub">多个引擎并发，融合、抓取、抽取、重排，一次给出可直接引用的结果。</p></header>
-      <form id="search-form" class="finder" autocomplete="off">
-        <div class="bar">
-          <input id="q" name="q" type="search" spellcheck="false" data-ip="search.ph" placeholder="搜点什么  ( / )" aria-label="query">
-          <button class="go" type="submit" data-i="search.go">出海</button>
-        </div>
-        <div class="opts">
-          <div class="seg" id="mode" role="radiogroup" aria-label="mode">
-            <button type="button" data-v="fast"><span data-i="mode.fast">快</span><small>1</small></button>
-            <button type="button" data-v="standard" class="on"><span data-i="mode.standard">标准</span><small>2</small></button>
-            <button type="button" data-v="deep"><span data-i="mode.deep">深</span><small>5</small></button>
+  <div class="stage">
+    <header class="topbar">
+      <div class="crumbs"><span data-i="crumb.root">工作台</span><i>/</i><b id="crumb"></b></div>
+      <button id="btn-palette" class="cmdk" type="button" data-t="tip.palette"><svg class="ic"><use href="#i-search"/></svg><span data-i="p.ph">输入命令或页面名…</span><kbd>Ctrl K</kbd></button>
+      <div class="tools">
+        <button id="btn-lang" class="icon" type="button" data-t="tip.lang"><svg class="ic"><use href="#i-lang"/></svg><span class="lbl" id="lang-lbl">EN</span></button>
+        <button id="btn-theme" class="icon" type="button" data-t="tip.theme"><svg class="ic"><use href="#i-theme"/></svg></button>
+        <button id="btn-key" class="icon" type="button" data-t="tip.key"><svg class="ic"><use href="#i-key"/></svg></button>
+      </div>
+    </header>
+
+    <main>
+      <section id="v-search" class="view">
+        <header class="head"><h1><span data-i="search.title">搜索</span><em data-o="search.title"></em></h1><p data-i="search.sub">多个引擎并发，融合、抓取、抽取、重排，一次给出可直接引用的结果。</p></header>
+        <div class="cols">
+          <div class="left">
+            <form id="search-form" class="finder card" autocomplete="off">
+              <div class="bar">
+                <svg class="ic lead"><use href="#i-search"/></svg>
+                <input id="q" name="q" type="search" spellcheck="false" data-ip="search.ph" placeholder="搜点什么  ( / )" aria-label="query">
+                <button class="go" type="submit" data-i="search.go">搜索</button>
+              </div>
+              <div class="opts">
+                <div class="seg" id="mode" role="radiogroup" aria-label="mode">
+                  <button type="button" data-v="fast"><span data-i="mode.fast">快</span><small>1</small></button>
+                  <button type="button" data-v="standard" class="on"><span data-i="mode.standard">标准</span><small>2</small></button>
+                  <button type="button" data-v="deep"><span data-i="mode.deep">深</span><small>5</small></button>
+                </div>
+                <label><span data-i="opt.time">时间</span>
+                  <select id="o-time"><option value="" data-i="opt.any">不限</option><option value="day" data-i="opt.day">一天</option><option value="week" data-i="opt.week">一周</option><option value="month" data-i="opt.month">一月</option><option value="year" data-i="opt.year">一年</option></select></label>
+                <label><span data-i="opt.topic">类型</span>
+                  <select id="o-topic"><option value="general" data-i="opt.general">综合</option><option value="news" data-i="opt.news">新闻</option></select></label>
+                <label><span data-i="opt.limit">条数</span><input id="o-limit" type="number" min="1" max="50" value="10"></label>
+                <label class="wide"><span data-i="opt.include">只看</span><input id="o-inc" data-ip="opt.domains" placeholder="docs.rs, github.com"></label>
+                <label class="wide"><span data-i="opt.exclude">排除</span><input id="o-exc" data-ip="opt.domains" placeholder="pinterest.com"></label>
+                <label class="check"><input id="o-full" type="checkbox"><span data-i="opt.full">整页正文</span></label>
+              </div>
+            </form>
+            <div id="search-out"></div>
           </div>
-          <label><span data-i="opt.time">时间</span>
-            <select id="o-time"><option value="" data-i="opt.any">不限</option><option value="day" data-i="opt.day">一天</option><option value="week" data-i="opt.week">一周</option><option value="month" data-i="opt.month">一月</option><option value="year" data-i="opt.year">一年</option></select></label>
-          <label><span data-i="opt.topic">类型</span>
-            <select id="o-topic"><option value="general" data-i="opt.general">综合</option><option value="news" data-i="opt.news">新闻</option></select></label>
-          <label><span data-i="opt.limit">条数</span><input id="o-limit" type="number" min="1" max="50" value="10"></label>
-          <label class="wide"><span data-i="opt.include">只看</span><input id="o-inc" data-ip="opt.domains" placeholder="docs.rs, github.com"></label>
-          <label class="wide"><span data-i="opt.exclude">排除</span><input id="o-exc" data-ip="opt.domains" placeholder="pinterest.com"></label>
-          <label class="check"><input id="o-full" type="checkbox"><span data-i="opt.full">整页正文</span></label>
+          <aside id="inspector" class="inspector" aria-label="inspector"></aside>
         </div>
-      </form>
-      <div id="search-out"></div>
-    </section>
+      </section>
 
-    <section id="v-read" class="view" hidden>
-      <header class="head"><h1><span data-i="read.title">阅读一个网页</span><em data-o="read.title"></em></h1><p data-i="read.sub">抓取、抽取正文；给出问题时只留下回答它的章节。</p></header>
-      <form id="read-form" class="finder" autocomplete="off">
-        <div class="bar"><input id="r-url" type="url" placeholder="https://" aria-label="url"><button class="go" type="submit" data-i="read.go">读取</button></div>
-        <div class="opts">
-          <label class="wide"><span data-i="read.query">问题</span><input id="r-q" data-ip="read.qph" placeholder="可选：这页怎么回答……"></label>
-          <label><span data-i="read.scope">范围</span><select id="r-scope"><option value="core" data-i="read.core">正文</option><option value="extended" data-i="read.ext">含周边</option></select></label>
+      <section id="v-read" class="view" hidden>
+        <header class="head"><h1><span data-i="read.title">阅读一个网页</span><em data-o="read.title"></em></h1><p data-i="read.sub">抓取、抽取正文；给出问题时只留下回答它的章节。</p></header>
+        <form id="read-form" class="finder card" autocomplete="off">
+          <div class="bar"><svg class="ic lead"><use href="#i-read"/></svg><input id="r-url" type="url" placeholder="https://" aria-label="url"><button class="go" type="submit" data-i="read.go">读取</button></div>
+          <div class="opts">
+            <label class="wide"><span data-i="read.query">问题</span><input id="r-q" data-ip="read.qph" placeholder="可选：这页怎么回答……"></label>
+            <label><span data-i="read.scope">范围</span><select id="r-scope"><option value="core" data-i="read.core">正文</option><option value="extended" data-i="read.ext">含周边</option></select></label>
+          </div>
+        </form>
+        <div id="read-out"></div>
+      </section>
+
+      <section id="v-review" class="view" hidden>
+        <header class="head"><h1><span data-i="rv.title">复盘</span><em data-o="rv.title"></em></h1><p data-i="rv.sub">看最近的搜索哪里不对，给结果打分，攒成评估用的标注。</p></header>
+        <div class="row bar-row"><label class="inline"><span data-i="rv.since">范围</span>
+          <select id="rv-since"><option value="24h" data-i="rv.24h">最近 24 小时</option><option value="7d" selected data-i="rv.7d">最近 7 天</option><option value="30d" data-i="rv.30d">最近 30 天</option></select></label>
+          <button id="rv-reload" class="quiet" type="button"><svg class="ic"><use href="#i-refresh"/></svg><span data-i="rv.reload">刷新</span></button></div>
+        <div id="rv-out"></div>
+      </section>
+
+      <section id="v-status" class="view" hidden>
+        <header class="head"><h1><span data-i="status.title">状态</span><em data-o="status.title"></em></h1><p data-i="status.sub">来源是否在线、缓存命中、本地索引。</p></header>
+        <div class="grid2">
+          <div class="panel"><div class="ph"><h2><span data-i="status.sources">来源</span><em data-o="status.sources"></em></h2><button id="btn-check" class="quiet" type="button"><svg class="ic"><use href="#i-refresh"/></svg><span data-i="status.check">逐个探测</span></button></div><div id="st-sources"></div></div>
+          <div class="panel"><div class="ph"><h2><span data-i="status.cache">缓存</span><em data-o="status.cache"></em></h2></div><div id="st-cache"></div></div>
+          <div class="panel"><div class="ph"><h2><span data-i="status.index">本地索引</span><em data-o="status.index"></em></h2></div><div id="st-index"></div></div>
         </div>
-      </form>
-      <div id="read-out"></div>
-    </section>
+      </section>
 
-    <section id="v-review" class="view" hidden>
-      <header class="head"><h1><span data-i="rv.title">复盘</span><em data-o="rv.title"></em></h1><p data-i="rv.sub">看最近的搜索哪里不对，给结果打分，攒成评估用的标注。</p></header>
-      <div class="row bar-row"><label class="inline"><span data-i="rv.since">范围</span>
-        <select id="rv-since"><option value="24h" data-i="rv.24h">最近 24 小时</option><option value="7d" selected data-i="rv.7d">最近 7 天</option><option value="30d" data-i="rv.30d">最近 30 天</option></select></label>
-        <button id="rv-reload" class="quiet" data-i="rv.reload">刷新</button></div>
-      <div id="rv-out"></div>
-    </section>
+      <section id="v-services" class="view" hidden>
+        <header class="head"><h1><span data-i="svc.title">服务</span><em data-o="svc.title"></em></h1><p data-i="svc.sub">从这个工作台启动 HTTP 接口和远程 MCP；它们和这里共用同一套模型与索引。</p></header>
+        <div id="svc-out" class="stack"></div>
+      </section>
 
-    <section id="v-status" class="view" hidden>
-      <header class="head"><h1><span data-i="status.title">状态</span><em data-o="status.title"></em></h1><p data-i="status.sub">来源是否在线、缓存命中、本地索引。</p></header>
-      <div class="grid2">
-        <div class="panel"><div class="ph"><h2><span data-i="status.sources">来源</span><em data-o="status.sources"></em></h2><button id="btn-check" class="quiet" data-i="status.check">逐个探测</button></div><div id="st-sources"></div></div>
-        <div class="panel"><div class="ph"><h2><span data-i="status.cache">缓存</span><em data-o="status.cache"></em></h2></div><div id="st-cache"></div></div>
-        <div class="panel"><div class="ph"><h2><span data-i="status.index">本地索引</span><em data-o="status.index"></em></h2></div><div id="st-index"></div></div>
-      </div>
-    </section>
+      <section id="v-accounts" class="view" hidden>
+        <header class="head"><h1><span data-i="acc.title">账号</span><em data-o="acc.title"></em></h1><p data-i="acc.sub">服务用 “账号” 或 “两者” 认证时，这里的用户和密钥有效。</p></header>
+        <div id="acc-out"></div>
+      </section>
 
-    <section id="v-services" class="view" hidden>
-      <header class="head"><h1><span data-i="svc.title">服务</span><em data-o="svc.title"></em></h1><p data-i="svc.sub">从这个工作台启动 HTTP 接口和远程 MCP；它们和这里共用同一套模型与索引。</p></header>
-      <div id="svc-out" class="stack"></div>
-    </section>
-
-    <section id="v-accounts" class="view" hidden>
-      <header class="head"><h1><span data-i="acc.title">账号</span><em data-o="acc.title"></em></h1><p data-i="acc.sub">服务用 “账号” 或 “两者” 认证时，这里的用户和密钥有效。</p></header>
-      <div id="acc-out"></div>
-    </section>
-    <section id="v-error" class="view" hidden>
-      <div class="errpage"><div class="code" id="err-code">404</div>
-        <h1 id="err-title"></h1><p id="err-msg"></p>
-        <div class="row"><a class="go linkgo" href="#/search" id="err-home" data-i="err.home">回到搜索</a><button class="quiet" id="err-retry" type="button" data-i="err.retry">重试</button></div>
-      </div>
-    </section>
-  </main>
+      <section id="v-error" class="view" hidden>
+        <div class="errpage"><div class="code" id="err-code">404</div>
+          <h1 id="err-title"></h1><p id="err-msg"></p>
+          <div class="row"><a class="go linkgo" href="#/search" id="err-home" data-i="err.home">回到搜索</a><button class="quiet" id="err-retry" type="button" data-i="err.retry">重试</button></div>
+        </div>
+      </section>
+    </main>
+  </div>
 </div>
 
 <dialog id="dlg-key">
@@ -111,6 +158,25 @@
     <p data-i="key.sub">这个服务要求 API 密钥。它只保存在这个标签页里，关掉就没有了。</p>
     <input id="key-in" type="password" autocomplete="off" spellcheck="false" placeholder="ss_… / root key">
     <div class="row end"><button value="cancel" class="quiet" data-i="key.cancel">取消</button><button value="ok" class="go" data-i="key.ok">好</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-newkey">
+  <form method="dialog" id="newkey-form">
+    <h3 data-i="nk.title">新建密钥</h3>
+    <p id="nk-user"></p>
+    <label class="fld"><span data-i="nk.name">用途</span><input id="nk-name" maxlength="64" autocomplete="off" spellcheck="false"></label>
+    <label class="fld"><span data-i="nk.exp">有效期</span>
+      <select id="nk-exp"><option value="" data-i="nk.never">不过期</option><option value="7" data-i="nk.7">7 天</option><option value="30" data-i="nk.30">30 天</option><option value="90" data-i="nk.90">90 天</option><option value="365" data-i="nk.365">1 年</option></select></label>
+    <div class="row end"><button value="cancel" class="quiet" data-i="key.cancel">取消</button><button value="ok" class="go" data-i="nk.make">生成</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-confirm">
+  <form method="dialog">
+    <h3 id="cf-title"></h3>
+    <p id="cf-msg"></p>
+    <div class="row end"><button value="cancel" class="quiet" data-i="key.cancel">取消</button><button value="ok" class="go danger-go" id="cf-ok"></button></div>
   </form>
 </dialog>
 

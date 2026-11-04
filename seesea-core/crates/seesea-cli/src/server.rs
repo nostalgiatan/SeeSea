@@ -41,6 +41,8 @@ pub struct AppState {
     pub standby: Option<Arc<crate::cluster::Standby>>,
     /// In the workbench (`seesea desk`): the settings and running state of the services it starts.
     pub desk: Option<Arc<crate::desk::Desk>>,
+    /// A service started by the workbench keeps a short log of what it answered.
+    pub reqlog: Option<Arc<crate::reqlog::ReqLog>>,
 }
 
 impl AppState {
@@ -62,6 +64,7 @@ impl AppState {
             local_only: false,
             standby: None,
             desk: None,
+            reqlog: None,
         }
     }
 }
@@ -246,6 +249,7 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Reques
         }
     }
     drop(allowed.permit);
+    response.extensions_mut().insert(crate::reqlog::Who(allowed.grant.name.clone()));
     response
 }
 
@@ -773,6 +777,20 @@ pub fn mcp_router(state: AppState, max_concurrent: usize) -> Router {
     )
 }
 
+/// Count what this listener answers, when it keeps a log (only the workbench's services do).
+async fn record(State(state): State<AppState>, req: Request, next: Next) -> Response {
+    let Some(log) = state.reqlog.clone() else { return next.run(req).await };
+    let (method, path) = (req.method().to_string(), req.uri().path().to_string());
+    if crate::ui::is_asset(&path) || path == "/health" {
+        return next.run(req).await;
+    }
+    let t0 = std::time::Instant::now();
+    let response = next.run(req).await;
+    let who = response.extensions().get::<crate::reqlog::Who>().map(|w| w.0.clone());
+    log.push(&method, &path, response.status().as_u16(), t0.elapsed().as_millis().min(u32::MAX as u128) as u32, who);
+    response
+}
+
 fn layered(routes: Router<AppState>, state: AppState, max_concurrent: usize) -> Router {
     routes
         .layer(DefaultBodyLimit::max(1024 * 1024))
@@ -780,6 +798,7 @@ fn layered(routes: Router<AppState>, state: AppState, max_concurrent: usize) -> 
         .layer(middleware::from_fn_with_state(state.clone(), auth))
         .layer(middleware::from_fn_with_state(state.clone(), local_guard))
         .layer(middleware::from_fn(deadline))
+        .layer(middleware::from_fn_with_state(state.clone(), record))
         .with_state(state)
 }
 

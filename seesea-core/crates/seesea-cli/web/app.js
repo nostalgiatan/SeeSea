@@ -70,6 +70,15 @@ const D = {
     'cx.open': '在新标签页打开', 'cx.copylink': '复制链接', 'cx.copytitle': '复制标题', 'cx.copysel': '复制所选文字', 'cx.detail': '展开 / 收起详情',
     'cx.good': '标为好结果', 'cx.bad': '标为差结果', 'cx.reload': '刷新此页', 'cx.go': '前往', 'cx.palette': '命令面板', 'cx.sep': '',
     'where.up': '已重新连上',
+    'grp.work': '工作', 'grp.watch': '观察', 'grp.api': '接口', 'crumb.root': '工作台',
+    'sv.req': '请求', 'sv.ok': '成功', 'sv.err': '出错', 'sv.up': '运行时长', 'sv.overview': '设置', 'sv.console': '控制台', 'sv.log': '请求日志',
+    'cs.send': '发送', 'cs.auth': '用哪个密钥', 'cs.none': '不带密钥', 'cs.shared': '这个服务的共享密钥', 'cs.custom': '我输入的密钥',
+    'lg.time': '时间', 'lg.req': '请求', 'lg.status': '状态', 'lg.who': '账号', 'lg.none': '还没有请求。去控制台发一个，或用上面的命令调用。', 'lg.auto': '每 3 秒刷新；只记录方法、路径、状态和账号，不记录搜索词和密钥',
+    'pl.title': '套餐', 'pl.min': '每分钟', 'pl.burst': '突发', 'pl.day': '每日额度', 'pl.conc': '并发', 'pl.deep': '深度搜索', 'pl.users': '用户数',
+    'us.title': '用户', 'us.keys': '个密钥',
+    'nk.title': '新建密钥', 'nk.name': '用途', 'nk.exp': '有效期', 'nk.never': '不过期', 'nk.7': '7 天', 'nk.30': '30 天', 'nk.90': '90 天', 'nk.365': '1 年', 'nk.make': '生成',
+    'key.rotate.q': '换新后，旧的共享密钥立刻失效，用它的客户端需要更新。', 'acc.disable.q': '停用 {n} 之后，TA 的所有密钥都会被拒绝。可以随时启用。', 'acc.revoke.q': '吊销 {id}_… 后它立刻失效，不能恢复。', 'acc.revoked': '已吊销',
+    'ins.empty': '选一条结果，在这里看分数构成、读到的章节和相关报道。',
   },
   en: {
     'nav.search': 'Search', 'nav.read': 'Read', 'nav.review': 'Review', 'nav.status': 'Status', 'nav.services': 'Services', 'nav.accounts': 'Accounts',
@@ -120,6 +129,15 @@ const D = {
     'cx.open': 'Open in a new tab', 'cx.copylink': 'Copy link', 'cx.copytitle': 'Copy title', 'cx.copysel': 'Copy selected text', 'cx.detail': 'Expand / collapse details',
     'cx.good': 'Mark as good', 'cx.bad': 'Mark as bad', 'cx.reload': 'Reload this page', 'cx.go': 'Go to', 'cx.palette': 'Command palette', 'cx.sep': '',
     'where.up': 'Reconnected',
+    'grp.work': 'Work', 'grp.watch': 'Watch', 'grp.api': 'API', 'crumb.root': 'Workbench',
+    'sv.req': 'Requests', 'sv.ok': 'Succeeded', 'sv.err': 'Errors', 'sv.up': 'Uptime', 'sv.overview': 'Settings', 'sv.console': 'Console', 'sv.log': 'Request log',
+    'cs.send': 'Send', 'cs.auth': 'Which key', 'cs.none': 'No key', 'cs.shared': 'This service’s shared key', 'cs.custom': 'A key I type',
+    'lg.time': 'Time', 'lg.req': 'Request', 'lg.status': 'Status', 'lg.who': 'Account', 'lg.none': 'No requests yet. Send one from the console, or call it with a command above.', 'lg.auto': 'Refreshes every 3 s; only method, path, status and account are kept, never the query or the key',
+    'pl.title': 'Plans', 'pl.min': 'Per minute', 'pl.burst': 'Burst', 'pl.day': 'Daily credits', 'pl.conc': 'Concurrent', 'pl.deep': 'Deep search', 'pl.users': 'Users',
+    'us.title': 'Users', 'us.keys': 'keys',
+    'nk.title': 'New key', 'nk.name': 'Used for', 'nk.exp': 'Expires', 'nk.never': 'Never', 'nk.7': '7 days', 'nk.30': '30 days', 'nk.90': '90 days', 'nk.365': '1 year', 'nk.make': 'Create',
+    'key.rotate.q': 'Once replaced, the old shared key stops working at once; clients using it need the new one.', 'acc.disable.q': 'After disabling {n}, every key of theirs is refused. You can enable them again.', 'acc.revoke.q': '{id}_… stops working at once and cannot be restored.', 'acc.revoked': 'Revoked',
+    'ins.empty': 'Select a result to see its score parts, the sections read and related reports here.',
   },
 };
 
@@ -147,6 +165,7 @@ function applyLang() {
   for (const e of $$('[data-t]')) e.title = t(e.dataset.t);
   document.title = S.lang === 'zh' ? 'SeeSea 工作台' : 'SeeSea Workbench';
   updateChip();
+  if (S.view && $('#crumb') && S.view !== 'error') $('#crumb').textContent = t('nav.' + S.view);
 }
 function applyTheme(next) {
   const root = document.documentElement;
@@ -322,6 +341,7 @@ function renderSearch(r, wall) {
   S.last = [r, wall];
   S.hits = r.hits || [];
   S.sel = -1;
+  showInspector(-1);
   const kids = [];
   const sum = h('div', { class: 'sum' }, h('span', {}, h('b', { text: t('sum.hits', { n: S.hits.length }) })), h('span', { text: `${r.took_ms ?? Math.round(wall)} ms` }), h('span', { class: 'tag', text: D[S.lang]['mode.' + r.mode] ? t('mode.' + r.mode) : r.mode }));
   if (r.cached) sum.append(h('span', { class: 'tag', text: t('sum.cached') }));
@@ -359,19 +379,17 @@ function hitCard(x, i, max) {
       h('div', { class: 'row' },
         (x.found_by || []).map((f) => h('span', { class: 'src' }, f.source, h('b', { text: '#' + f.rank }))),
         h('span', { class: 'sp' }),
-        h('button', { class: 'act good', type: 'button', text: '▲ ' + t('hit.good'), onclick: () => judge(i, 'good') }),
-        h('button', { class: 'act bad', type: 'button', text: '▼ ' + t('hit.bad'), onclick: () => judge(i, 'bad') }),
+        h('button', { class: 'act good', type: 'button', onclick: () => judge(i, 'good') }, ...withIcon('up', t('hit.good'))),
+        h('button', { class: 'act bad', type: 'button', onclick: () => judge(i, 'bad') }, ...withIcon('down', t('hit.bad'))),
         h('button', { class: 'act', type: 'button', text: t('hit.detail'), onclick: () => toggleDetail(i) }))),
   );
   card.addEventListener('click', (e) => { if (!e.target.closest('a,button')) select(i); });
   return card;
 }
 
-function toggleDetail(i) {
-  const card = $(`.hit[data-n="${i}"]`);
-  if (!card) return;
-  const old = $('.detail', card);
-  if (old) { old.remove(); return; }
+const wide = () => matchMedia('(min-width: 1240px)').matches;
+
+function buildDetail(i) {
   const x = S.hits[i], p = x.score_parts || {};
   const row = (k, layer2) => h('div', { class: 'part' + (layer2 ? ' l2' : '') }, h('span', { text: k }), h('div', { class: 't' }, h('i', { style: `width:${Math.min(100, Math.max(0, (p[k] || 0) * 100))}%` })), h('span', { text: (p[k] ?? 0).toFixed(3) }));
   const l1 = ['fusion', 'snippet_overlap', 'title', 'freshness', 'learned', 'stage1'].filter((k) => k in p);
@@ -382,7 +400,30 @@ function toggleDetail(i) {
   if (secs.length) d.append(h('div', {}, h('h4', { text: t('d.sections') }), secs.map((s) => h('div', { class: 'sec' }, h('div', { class: 'path', text: `${(s.path || []).join(' › ')}  ·  ${(s.score ?? 0).toFixed(2)}` }), renderMd(s.markdown)))));
   if (x.content && x.content.markdown) d.append(h('div', {}, renderMd(x.content.markdown)));
   if ((x.related || []).length) d.append(h('div', { class: 'rel' }, h('h4', { text: t('d.related') }), x.related.map((r) => h('a', { href: safeHref(r.url) || '#', target: '_blank', rel: 'noopener noreferrer', text: `${r.host || hostOf(r.url)} — ${r.title}` }))));
-  $('.body', card).after(d);
+  return d;
+}
+
+function showInspector(i) {
+  const box = $('#inspector');
+  const x = S.hits[i];
+  if (!x) { box.replaceChildren(h('div', { class: 'ins-empty' }, icon('search'), h('div', { text: t('ins.empty') }))); return; }
+  const href = safeHref(x.url);
+  box.replaceChildren(
+    h('div', { class: 'ins-h' }, h('h3', { text: x.title || x.url }), h('div', { class: 'where', text: hostOf(x.url) + (x.published ? '  ·  ' + ago(x.published) : '') }),
+      h('div', { class: 'ins-act' },
+        href ? h('a', { class: 'act', href, target: '_blank', rel: 'noopener noreferrer' }, ...withIcon('external', t('hit.open'))) : null,
+        h('button', { class: 'act good', type: 'button', onclick: () => judge(i, 'good') }, ...withIcon('up', t('hit.good'))),
+        h('button', { class: 'act bad', type: 'button', onclick: () => judge(i, 'bad') }, ...withIcon('down', t('hit.bad'))))),
+    h('div', { class: 'ins-b' }, buildDetail(i)));
+}
+
+function toggleDetail(i) {
+  if (wide()) { select(i); return; }
+  const card = $(`.hit[data-n="${i}"]`);
+  if (!card) return;
+  const old = $('.detail', card);
+  if (old) { old.remove(); return; }
+  $('.body', card).after(buildDetail(i));
 }
 
 function select(i) {
@@ -391,15 +432,18 @@ function select(i) {
   S.sel = Math.max(0, Math.min(cards.length - 1, i));
   cards.forEach((c, n) => c.classList.toggle('sel', n === S.sel));
   cards[S.sel].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  if (wide()) showInspector(S.sel);
 }
 
 async function judge(i, verdict) {
   const x = S.hits[i];
   try {
     const r = await api('/v1/feedback', { method: 'POST', body: { url: x.url, verdict } });
-    const card = $(`.hit[data-n="${i}"]`);
-    $('.good', card).classList.toggle('on', verdict === 'good');
-    $('.bad', card).classList.toggle('on', verdict === 'bad');
+    for (const root of [$(`.hit[data-n="${i}"]`), S.sel === i ? $('#inspector') : null]) {
+      if (!root) continue;
+      $('.good', root).classList.toggle('on', verdict === 'good');
+      $('.bad', root).classList.toggle('on', verdict === 'bad');
+    }
     toast(t('fb.ok', { h: r.host, v: verdict }));
   } catch (e) { e.status === 403 ? toast(t('fb.root'), true) : fail(e); }
 }
@@ -460,6 +504,15 @@ async function probe() {
 }
 
 /* ---------- services (workbench only) ---------- */
+const SVGNS = 'http://www.w3.org/2000/svg';
+function icon(name, cls) {
+  const s = document.createElementNS(SVGNS, 'svg'), u = document.createElementNS(SVGNS, 'use');
+  s.setAttribute('class', 'ic' + (cls ? ' ' + cls : '')); s.setAttribute('aria-hidden', 'true');
+  u.setAttribute('href', '#i-' + name); s.append(u);
+  return s;
+}
+const withIcon = (name, label, cls) => [icon(name, cls || 'sm'), label];
+
 function baseUrl(s) {
   let [host, port] = s.addr.replace(/^\[|\]$/g, '').split(/:(?=[^:]*$)/);
   if (s.addr.startsWith('[')) { const m = /^\[(.*)\]:(\d+)$/.exec(s.addr); host = m[1]; port = m[2]; }
@@ -467,7 +520,7 @@ function baseUrl(s) {
   return `${s.tls ? 'https' : 'http'}://${host.includes(':') ? '[' + host + ']' : host}:${port}`;
 }
 function snippet(label, code) {
-  return h('div', { class: 'snip-code' }, h('div', { class: 'mut l', text: label }), h('pre', { text: code }), h('button', { class: 'act', type: 'button', text: t('key.copy'), onclick: () => copy(code) }));
+  return h('div', { class: 'snip-code' }, label ? h('div', { class: 'mut l', text: label }) : null, h('pre', { text: code }), h('button', { class: 'act', type: 'button', onclick: () => copy(code) }, ...withIcon('copy', t('key.copy'))));
 }
 function howTo(s) {
   const base = baseUrl(s), c = s.config;
@@ -483,15 +536,48 @@ function howTo(s) {
   return box;
 }
 
+const SVC_UI = { api: { tab: 'overview', shown: false }, mcp: { tab: 'overview', shown: false } };
+const stopTimer = () => { if (S.timer) { clearInterval(S.timer); S.timer = null; } };
+
 async function loadServices() {
   const out = $('#svc-out');
   try { renderServices((await api('/desk/api/state')).services); } catch (e) { out.replaceChildren(errBox(e, loadServices)); }
+  stopTimer();
+  // Counters and the log move while the page is open; forms do not, so only those parts are redrawn.
+  S.timer = setInterval(async () => {
+    if (S.view !== 'services' || document.hidden) return;
+    try {
+      const st = (await api('/desk/api/state')).services;
+      for (const s of st) { const cur = (S.svcs || []).find((x) => x.id === s.id); if (cur && (cur.running !== s.running || cur.addr !== s.addr)) return renderServices(st); }
+      S.svcs = st; for (const s of st) paintStats(s);
+      const log = $('.logpane'); if (log) refreshLog(log.dataset.id);
+    } catch { /* the error box appears on the next action */ }
+  }, 3000);
 }
-function renderServices(list) { $('#svc-out').replaceChildren(...list.map(svcCard)); }
+function renderServices(list) { S.svcs = list; $('#svc-out').replaceChildren(...list.map(svcCard)); }
+
+const fmtUp = (n) => (n >= 3600 ? `${Math.floor(n / 3600)}h ${Math.floor(n % 3600 / 60)}m` : n >= 60 ? `${Math.floor(n / 60)}m ${n % 60}s` : `${n}s`);
+function statCell(id, key, label, value, cls) { return h('div', { class: 'stat' + (cls ? ' ' + cls : ''), 'data-k': `${id}.${key}` }, h('b', { text: value }), h('span', { text: label })); }
+function statsRow(s) {
+  const st = s.stats || {};
+  return [
+    statCell(s.id, 'total', t('sv.req'), st.total ?? 0),
+    statCell(s.id, 'ok', t('sv.ok'), st.ok ?? 0),
+    statCell(s.id, 'err', t('sv.err'), (st.client_error || 0) + (st.server_error || 0), (st.client_error || 0) + (st.server_error || 0) ? 'bad' : ''),
+    statCell(s.id, 'up', t('sv.up'), fmtUp(st.up_secs || 0)),
+    statCell(s.id, 'auth', t('f.auth'), t('auth.' + s.config.auth).replace(/（.*|\(.*/, ''), 'txt'),
+  ];
+}
+function paintStats(s) {
+  const st = s.stats; if (!st) return;
+  const set = (k, v, bad) => { const c = $(`.stat[data-k="${s.id}.${k}"]`); if (c) { $('b', c).textContent = v; c.classList.toggle('bad', !!bad); } };
+  const e = (st.client_error || 0) + (st.server_error || 0);
+  set('total', st.total); set('ok', st.ok); set('err', e, e); set('up', fmtUp(st.up_secs));
+}
 
 function svcCard(s) {
-  const d = structuredClone(s.config);
-  let shown = false;
+  const ui = SVC_UI[s.id], d = structuredClone(s.config);
+  const redraw = () => card.replaceWith(svcCard({ ...s, config: d }));
   const call = async (action, body, done) => {
     try { const r = await api(`/desk/api/services/${s.id}/${action}`, { method: 'POST', body }); renderServices(r.services); toast(done); } catch (e) { fail(e); }
   };
@@ -499,30 +585,41 @@ function svcCard(s) {
     try { await api(`/desk/api/services/${s.id}/config`, { method: 'POST', body: d }); } catch (e) { return fail(e); }
     call(action, undefined, done);
   };
+  const tabBtn = (id, label, ic, needRun) => h('button', { type: 'button', class: ui.tab === id ? 'on' : '', disabled: needRun && !s.running, onclick: () => { ui.tab = id; redraw(); } }, icon(ic, 'sm'), label);
+  const body = ui.tab === 'console' && s.running ? consolePane(s, d) : ui.tab === 'log' && s.running ? logPane(s) : overviewPane(s, d, redraw, apply);
+  const card = h('section', { class: 'svc' + (s.running ? ' run' : '') },
+    h('div', { class: 'svc-h' },
+      h('span', { class: 'lamp ' + (s.running ? 'ok' : '') }),
+      h('h2', {}, h('span', { text: t('svc.' + s.id) })),
+      s.running ? h('span', { class: 'addr' }, baseUrl(s), h('button', { class: 'act', type: 'button', title: t('key.copy'), onclick: () => copy(baseUrl(s)) }, icon('copy', 'sm'))) : h('span', { class: 'pill', text: t('svc.stopped') }),
+      h('span', { class: 'sp' }),
+      s.running
+        ? [h('button', { class: 'quiet', type: 'button', onclick: () => apply('restart', t('svc.started')) }, ...withIcon('refresh', t('svc.restart'))), h('button', { class: 'quiet danger', type: 'button', onclick: () => call('stop', undefined, t('svc.stopped.t')) }, ...withIcon('stop', t('svc.stop')))]
+        : [h('button', { class: 'go', type: 'button', onclick: () => apply('start', t('svc.started')) }, icon('play', 'sm'), t('svc.start'))],
+      h('p', { text: t('svc.' + s.id + '.d') })),
+    s.problem ? h('div', { class: 'bad-msg', text: s.problem }) : null,
+    s.running ? h('div', { class: 'stats' }, statsRow(s)) : null,
+    h('div', { class: 'tabs' }, tabBtn('overview', t('sv.overview'), 'services'), tabBtn('console', t('sv.console'), 'send', true), tabBtn('log', t('sv.log'), 'status', true)),
+    h('div', { class: 'tabbody' }, body));
+  return card;
+}
+
+function overviewPane(s, d, redraw, apply) {
   const f = (label, input, cls) => h('label', { class: cls || '' }, h('span', { text: label }), input);
   const text = (k, ph) => h('input', { value: d[k] || '', placeholder: ph || '', spellcheck: 'false', oninput: (e) => { d[k] = e.target.value || null; } });
   const check = (k, label) => h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: d[k], onchange: (e) => { d[k] = e.target.checked; } }), label);
-  const authSel = h('select', { onchange: (e) => { d.auth = e.target.value; if ((d.auth === 'key' || d.auth === 'both') === false) d.root_key = null; renderServices_one(); } },
+  const authSel = h('select', { onchange: (e) => { d.auth = e.target.value; if ((d.auth === 'key' || d.auth === 'both') === false) d.root_key = null; redraw(); } },
     ['open', 'key', 'accounts', 'both'].map((v) => h('option', { value: v, selected: d.auth === v, text: t('auth.' + v) })));
-  const renderServices_one = () => { card.replaceWith(svcCard({ ...s, config: d })); };
+  const ui = SVC_UI[s.id];
+  const call = async (action, done) => { try { const r = await api(`/desk/api/services/${s.id}/${action}`, { method: 'POST', body: {} }); renderServices(r.services); toast(done); } catch (e) { fail(e); } };
   const keyRow = (d.auth === 'key' || d.auth === 'both') ? f(t('f.key'), h('div', { class: 'keybox' },
-    h('code', { text: d.root_key ? (shown ? d.root_key : '•'.repeat(24)) : t('svc.auto') }),
-    d.root_key ? h('button', { class: 'act', type: 'button', text: shown ? t('key.hide') : t('key.show'), onclick: () => { shown = !shown; renderServices_one(); } }) : null,
-    d.root_key ? h('button', { class: 'act', type: 'button', text: t('key.copy'), onclick: () => copy(d.root_key) }) : null,
-    s.config.root_key ? h('button', { class: 'act', type: 'button', text: t('key.rotate'), onclick: () => call('rotate', undefined, t('key.rotate')) }) : null), 'full') : null;
+    h('code', { text: d.root_key ? (ui.shown ? d.root_key : '•'.repeat(24)) : t('svc.auto') }),
+    d.root_key ? h('button', { class: 'act', type: 'button', onclick: () => { ui.shown = !ui.shown; redraw(); } }, ...withIcon('eye', ui.shown ? t('key.hide') : t('key.show'))) : null,
+    d.root_key ? h('button', { class: 'act', type: 'button', onclick: () => copy(d.root_key) }, ...withIcon('copy', t('key.copy'))) : null,
+    s.config.root_key ? h('button', { class: 'act', type: 'button', onclick: async () => { if (await confirmBox(t('key.rotate'), t('key.rotate.q'), t('key.rotate'))) call('rotate', t('key.rotate')); } }, ...withIcon('refresh', t('key.rotate'))) : null), 'full') : null;
   const local = /^(127\.|\[::1\]|localhost)/.test((d.addr || '').trim());
   const warn = !local && (d.auth === 'open') ? t('svc.warn.open') : (!local && !d.tls_cert && !d.behind_tls_proxy ? t('svc.warn.net') : null);
-  const card = h('div', { class: 'svc' + (s.running ? ' run' : '') },
-    h('div', { class: 'svc-h' },
-      h('span', { class: 'lamp ' + (s.running ? 'ok' : '') }),
-      h('h2', { text: t('svc.' + s.id) }),
-      s.running ? h('span', { class: 'addr', text: baseUrl(s) }) : h('span', { class: 'pill', text: t('svc.stopped') }),
-      h('span', { class: 'sp' }),
-      s.running
-        ? [h('button', { class: 'quiet', type: 'button', text: t('svc.restart'), onclick: () => apply('restart', t('svc.started')) }), h('button', { class: 'quiet danger', type: 'button', text: t('svc.stop'), onclick: () => call('stop', undefined, t('svc.stopped.t')) })]
-        : [h('button', { class: 'go', type: 'button', text: t('svc.start'), onclick: () => apply('start', t('svc.started')) })],
-      h('p', { text: t('svc.' + s.id + '.d') })),
-    s.problem ? h('div', { class: 'bad-msg', text: s.problem }) : null,
+  return h('div', {},
     h('div', { class: 'form' },
       f(t('f.addr'), text('addr', '127.0.0.1:8080')),
       f(t('f.auth'), authSel),
@@ -532,36 +629,160 @@ function svcCard(s) {
       f(t('f.conc'), h('input', { type: 'number', min: 1, max: 4096, value: d.max_concurrent, oninput: (e) => { d.max_concurrent = +e.target.value || 64; } })),
       check('behind_tls_proxy', t('f.proxy')), check('allow_open', t('f.open')), check('autostart', t('f.auto')),
       warn ? h('div', { class: 'warn-msg full', text: warn }) : null,
-      h('div', { class: 'full row' }, h('button', { class: 'quiet', type: 'button', text: t('svc.save'), onclick: async () => { try { const r = await api(`/desk/api/services/${s.id}/config`, { method: 'POST', body: d }); renderServices(r.services); toast(t('svc.saved')); } catch (e) { fail(e); } } }))),
+      h('div', { class: 'full row' }, h('button', { class: 'quiet', type: 'button', onclick: async () => { try { const r = await api(`/desk/api/services/${s.id}/config`, { method: 'POST', body: d }); renderServices(r.services); toast(t('svc.saved')); } catch (e) { fail(e); } } }, ...withIcon('check', t('svc.save'))))),
     s.running ? howTo(s) : null);
-  return card;
+}
+
+/* the console: send one request to the running service from here */
+const PRESETS = {
+  api: [
+    ['search GET', 'GET', '/v1/search?q=rust+async+runtime&mode=fast', ''],
+    ['search POST', 'POST', '/v1/search', '{\n  "query": "rust async runtime",\n  "mode": "fast",\n  "limit": 5\n}'],
+    ['extract', 'POST', '/v1/extract', '{\n  "url": "https://example.com"\n}'],
+    ['sources', 'GET', '/v1/sources', ''], ['stats', 'GET', '/v1/stats', ''], ['index', 'GET', '/v1/index', ''],
+  ],
+  mcp: [],
+};
+const MCP_PRESETS = [
+  ['mcp tools/list', 'POST', '/mcp', '{\n  "jsonrpc": "2.0",\n  "id": 1,\n  "method": "tools/list"\n}'],
+  ['mcp search', 'POST', '/mcp', '{\n  "jsonrpc": "2.0",\n  "id": 2,\n  "method": "tools/call",\n  "params": { "name": "search", "arguments": { "query": "rust async runtime", "mode": "fast" } }\n}'],
+];
+function consolePane(s, d) {
+  const ui = SVC_UI[s.id];
+  ui.req = ui.req || { auth: s.config.auth === 'open' ? 'none' : s.config.root_key && (s.config.auth === 'key' || s.config.auth === 'both') ? 'shared' : 'key', key: '' };
+  const r = ui.req;
+  const presets = [...PRESETS[s.id], ...MCP_PRESETS, ['health', 'GET', '/health', '']];
+  if (!r.path) Object.assign(r, { method: presets[0][1], path: presets[0][2], body: presets[0][3] });
+  const method = h('select', { onchange: (e) => { r.method = e.target.value; bodyBox.hidden = r.method === 'GET'; } }, ['GET', 'POST'].map((m) => h('option', { value: m, selected: r.method === m, text: m })));
+  const path = h('input', { value: r.path, spellcheck: 'false', oninput: (e) => { r.path = e.target.value; } });
+  const bodyBox = h('textarea', { spellcheck: 'false', hidden: r.method === 'GET', oninput: (e) => { r.body = e.target.value; } });
+  bodyBox.value = r.body;
+  const keyIn = h('input', { type: 'password', placeholder: 'ss_… / root key', value: r.key, autocomplete: 'off', hidden: r.auth !== 'key', oninput: (e) => { r.key = e.target.value; } });
+  const authOpts = [['none', t('cs.none')]];
+  if (s.config.root_key && (s.config.auth === 'key' || s.config.auth === 'both')) authOpts.push(['shared', t('cs.shared')]);
+  authOpts.push(['key', t('cs.custom')]);
+  if (!authOpts.some(([v]) => v === r.auth)) r.auth = 'none';
+  const authSel = h('select', { onchange: (e) => { r.auth = e.target.value; keyIn.hidden = r.auth !== 'key'; } }, authOpts.map(([v, l]) => h('option', { value: v, selected: r.auth === v, text: l })));
+  const out = h('div', {});
+  const send = h('button', { class: 'go', type: 'button' }, icon('send', 'sm'), t('cs.send'));
+  send.addEventListener('click', async () => {
+    send.disabled = true; out.replaceChildren(h('div', { class: 'wait' }, h('div')));
+    try {
+      const x = await api(`/desk/api/services/${s.id}/try`, { method: 'POST', body: { method: r.method, path: r.path, body: r.method === 'POST' ? r.body : undefined, auth: r.auth, key: r.auth === 'key' ? r.key : undefined } });
+      let text = x.body; try { text = JSON.stringify(JSON.parse(x.body), null, 2); } catch { /* not JSON */ }
+      out.replaceChildren(h('div', { class: 'resp' },
+        h('div', { class: 'resp-h' }, h('span', { class: 'st s' + Math.floor(x.status / 100), text: x.status }), h('span', { text: `${x.ms} ms` }), ...(x.headers || []).filter(([k]) => k !== 'content-type').map(([k, v]) => h('span', { class: 'mut', text: `${k}: ${v}` })), h('span', { class: 'sp' }),
+          h('button', { class: 'act', type: 'button', onclick: () => copy(text) }, ...withIcon('copy', t('key.copy')))),
+        h('pre', { text: text + (x.truncated ? '\n…' : '') })));
+    } catch (e) { out.replaceChildren(errBox(e)); } finally { send.disabled = false; }
+  });
+  const chips = presets.map(([label, m, p, b]) => h('button', { class: 'chipbtn' + (r.path === p && r.method === m && r.body === b ? ' on' : ''), type: 'button', text: label, onclick: () => { Object.assign(r, { method: m, path: p, body: b }); method.value = m; path.value = p; bodyBox.value = b; bodyBox.hidden = m === 'GET'; $$('.chipbtn', chips).forEach((c) => c.classList.toggle('on', c.textContent === label)); } }));
+  const chipRow = h('div', { class: 'pre' }, chips);
+  return h('div', { class: 'console' }, chipRow,
+    h('div', { class: 'req' }, method, path),
+    bodyBox,
+    h('div', { class: 'row' }, h('label', { class: 'fld' }, h('span', { text: t('cs.auth') }), authSel), keyIn, h('span', { class: 'sp' }), send),
+    out);
+}
+
+/* the log: what the service answered lately, without the query text or the key */
+function logPane(s) {
+  const box = h('div', { class: 'logpane', 'data-id': s.id }, h('div', { class: 'mut l', text: t('st.probe') }));
+  refreshLog(s.id);
+  return box;
+}
+async function refreshLog(id) {
+  const box = $('.logpane'); if (!box || box.dataset.id !== id) return;
+  try {
+    const r = await api(`/desk/api/services/${id}/log`);
+    const rows = r.recent || [];
+    const time = (ts) => new Date(ts * 1000).toLocaleTimeString(S.lang === 'zh' ? 'zh-CN' : 'en-GB', { hour12: false });
+    box.replaceChildren(
+      h('div', { class: 'logbar' }, h('span', { text: `${t('sv.req')} ${r.summary.total}` }), h('span', { text: `2xx ${r.summary.ok}` }), h('span', { text: `4xx ${r.summary.client_error}` }), h('span', { text: `5xx ${r.summary.server_error}` }), h('span', { class: 'sp' }), h('span', { text: t('lg.auto') })),
+      rows.length ? h('table', { class: 'logt' }, h('tr', {}, h('th', { text: t('lg.time') }), h('th', { text: t('lg.req') }), h('th', { text: t('lg.status') }), h('th', { class: 'r', text: 'ms' }), h('th', { text: t('lg.who') })),
+        rows.map((e) => h('tr', {}, h('td', { text: time(e.ts) }), h('td', { class: 'clip', text: `${e.method} ${e.path}` }), h('td', {}, h('span', { class: 'st s' + Math.floor(e.status / 100), text: e.status })), h('td', { class: 'r', text: e.ms }), h('td', { class: 'who', text: e.who || '—' })))) : h('div', { class: 'mut l', text: t('lg.none') }));
+  } catch (e) { box.replaceChildren(errBox(e, () => refreshLog(id))); }
 }
 
 /* ---------- accounts (workbench only) ---------- */
 let secretBanner = null;
+const lim = (n) => (!n || n >= 1e8 ? '∞' : n.toLocaleString());
+function spark(usage, today) {
+  const byDay = Object.fromEntries((usage || []).map((u) => [u.day, u.credits]));
+  const vals = Array.from({ length: 7 }, (_, i) => byDay[today - 6 + i] || 0), max = Math.max(...vals, 1);
+  const s = document.createElementNS(SVGNS, 'svg');
+  s.setAttribute('class', 'spark'); s.setAttribute('viewBox', '0 0 84 26'); s.setAttribute('role', 'img'); s.setAttribute('aria-label', vals.join(' '));
+  vals.forEach((v, i) => {
+    const r = document.createElementNS(SVGNS, 'rect'), hgt = Math.max(2, (v / max) * 24);
+    r.setAttribute('x', i * 12 + 1); r.setAttribute('width', 10); r.setAttribute('y', 25 - hgt); r.setAttribute('height', hgt);
+    if (i === 6) r.setAttribute('class', 'today');
+    const tt = document.createElementNS(SVGNS, 'title'); tt.textContent = String(v); r.append(tt); s.append(r);
+  });
+  return s;
+}
+
 async function loadAccounts() {
   const out = $('#acc-out');
   try {
     const r = await api('/desk/api/users');
+    const table = r.plan_table || {};
     const name = h('input', { placeholder: t('acc.name'), maxlength: 64 });
     const plan = h('select', {}, (r.plans || []).sort().map((p) => h('option', { value: p, selected: p === 'default', text: p })));
     const add = h('form', { class: 'inline-form', onsubmit: async (e) => { e.preventDefault(); try { await api('/desk/api/users', { method: 'POST', body: { name: name.value, plan: plan.value } }); loadAccounts(); } catch (x) { fail(x); } } },
-      name, plan, h('button', { class: 'go', text: t('acc.add') }));
+      name, plan, h('button', { class: 'go' }, icon('plus', 'sm'), t('acc.add')));
     const when = (n) => (n ? ago(n) : t('acc.never'));
-    const rows = (r.users || []).map((u) => h('tr', {},
-      h('td', {}, h('b', { text: u.name }), ' ', u.disabled ? h('span', { class: 'pill off', text: t('acc.off') }) : null,
-        h('div', { class: 'keys' }, u.keys.length ? u.keys.map((k) => h('div', { class: k.revoked ? 'gone' : '' },
-          h("span", { text: `${k.id}_…` }), h('span', { text: k.name }), h('span', { text: `${t('acc.used')} ${when(k.last_used)}` }), k.expires ? h('span', { text: `${t('acc.expires')} ${ago(k.expires)}` }) : null,
-          k.revoked ? null : h('button', { class: 'act', type: 'button', text: t('acc.revoke'), onclick: async () => { try { await api(`/desk/api/keys/${k.id}/revoke`, { method: 'POST', body: {} }); loadAccounts(); } catch (x) { fail(x); } } }))) : h('div', { text: t('acc.nokeys') }))),
-      h('td', { text: u.plan }), h('td', { class: 'r', text: u.used_today }),
-      h('td', { class: 'r' }, h('div', { class: 'row end' },
-        h('button', { class: 'act', type: 'button', text: t('acc.newkey'), onclick: async () => { try { const k = await api(`/desk/api/users/${encodeURIComponent(u.name)}/keys`, { method: 'POST', body: { name: 'workbench' } }); secretBanner = k.key; loadAccounts(); } catch (x) { fail(x); } } }),
-        h('button', { class: 'act', type: 'button', text: u.disabled ? t('acc.enable') : t('acc.disable'), onclick: async () => { try { await api(`/desk/api/users/${encodeURIComponent(u.name)}/disabled`, { method: 'POST', body: { disabled: !u.disabled } }); loadAccounts(); } catch (x) { fail(x); } } })))));
     const kids = [];
-    if (secretBanner) { const k = secretBanner; secretBanner = null; kids.push(h('div', { class: 'panel secret' }, h('div', { class: 'warn-msg', text: t('acc.secret') }), h('div', { class: 'keybox', style: 'margin-top:6px' }, h('code', { text: k }), h('button', { class: 'act', type: 'button', text: t('key.copy'), onclick: () => copy(k) })))); }
-    kids.push(add, rows.length ? h('div', { class: 'panel' }, h('table', {}, h('tr', {}, h('th', { text: t('acc.name') }), h('th', { text: t('acc.plan') }), h('th', { class: 'r', text: t('acc.today') }), h('th')), rows)) : h('div', { class: 'empty', text: t('acc.none') }));
+    if (secretBanner) { const k = secretBanner; secretBanner = null; kids.push(h('div', { class: 'panel secret' }, h('div', { class: 'warn-msg', text: t('acc.secret') }), h('div', { class: 'keybox', style: 'margin-top:8px' }, h('code', { text: k }), h('button', { class: 'act', type: 'button', onclick: () => copy(k) }, ...withIcon('copy', t('key.copy')))))); }
+    kids.push(add);
+
+    const uses = {}; for (const u of r.users || []) uses[u.plan] = (uses[u.plan] || 0) + 1;
+    kids.push(h('div', { class: 'plans' }, h('div', { class: 'ph' }, h('h2', {}, h('span', { text: t('pl.title') }), h('em', { text: S.lang === 'zh' ? 'PLANS' : '套餐' }))),
+      h('table', {}, h('tr', {}, h('th', { text: t('acc.plan') }), h('th', { class: 'r', text: t('pl.min') }), h('th', { class: 'r', text: t('pl.burst') }), h('th', { class: 'r', text: t('pl.day') }), h('th', { class: 'r', text: t('pl.conc') }), h('th', { text: t('pl.deep') }), h('th', { class: 'r', text: t('pl.users') })),
+        Object.entries(table).sort().map(([n, p]) => h('tr', {}, h('td', {}, h('b', { text: n })), h('td', { class: 'r num', text: lim(p.per_minute) }), h('td', { class: 'r num', text: lim(p.burst) }), h('td', { class: 'r num', text: lim(p.per_day) }), h('td', { class: 'r num', text: lim(p.max_concurrent) }), h('td', {}, p.deep ? icon('check', 'sm') : '—'), h('td', { class: 'r num', text: uses[n] || 0 }))))));
+
+    kids.push(h('div', { class: 'ph' }, h('h2', {}, h('span', { text: t('us.title') }), h('em', { text: S.lang === 'zh' ? 'USERS' : '用户' }))));
+    const users = (r.users || []).map((u) => {
+      const p = table[u.plan] || {}, cap = p.per_day, hot = cap && u.used_today / cap > 0.85;
+      const planSel = h('select', { onchange: async (e) => { try { await api(`/desk/api/users/${encodeURIComponent(u.name)}/plan`, { method: 'POST', body: { plan: e.target.value } }); toast(t('svc.saved')); loadAccounts(); } catch (x) { fail(x); } } },
+        (r.plans || []).sort().map((n) => h('option', { value: n, selected: n === u.plan, text: n })));
+      const live = u.keys.filter((k) => !k.revoked).length;
+      return h('div', { class: 'user' + (u.disabled ? ' off' : '') },
+        h('div', { class: 'user-h' },
+          h('div', { class: 'nm' }, u.name, u.disabled ? h('span', { class: 'pill off', text: t('acc.off') }) : h('span', { class: 'pill ok', text: `${live} ${t('us.keys')}` }), planSel),
+          h('div', { class: 'quota' }, h('div', { text: `${t('acc.today')}  ${u.used_today.toLocaleString()} / ${lim(cap)}` }), h('div', { class: 't' }, h('i', { class: hot ? 'hot' : '', style: `width:${cap ? Math.min(100, (u.used_today / cap) * 100) : 0}%` }))),
+          spark(u.usage, u.today),
+          h('div', { class: 'row end' },
+            h('button', { class: 'quiet', type: 'button', onclick: async () => { const o = await askNewKey(u.name); if (!o) return; try { const k = await api(`/desk/api/users/${encodeURIComponent(u.name)}/keys`, { method: 'POST', body: o }); secretBanner = k.key; loadAccounts(); } catch (x) { fail(x); } } }, ...withIcon('plus', t('acc.newkey'))),
+            h('button', { class: 'quiet' + (u.disabled ? '' : ' danger'), type: 'button', onclick: async () => {
+              if (!u.disabled && !(await confirmBox(t('acc.disable'), t('acc.disable.q', { n: u.name }), t('acc.disable')))) return;
+              try { await api(`/desk/api/users/${encodeURIComponent(u.name)}/disabled`, { method: 'POST', body: { disabled: !u.disabled } }); loadAccounts(); } catch (x) { fail(x); } } }, u.disabled ? t('acc.enable') : t('acc.disable')))),
+        u.keys.length ? h('div', { class: 'keys' }, h('table', {}, h('tr', {}, h('th', { text: 'ID' }), h('th', { text: t('nk.name') }), h('th', { text: t('acc.used') }), h('th', { text: t('acc.expires') }), h('th')),
+          u.keys.map((k) => h('tr', { class: k.revoked ? 'gone' : '' }, h('td', { class: 'id', text: `${k.id}_…` }), h('td', { text: k.name }), h('td', { text: when(k.last_used) }), h('td', { text: k.expires ? ago(k.expires) : t('nk.never') }),
+            h('td', { class: 'r' }, k.revoked ? h('span', { class: 'pill off', text: t('acc.revoked') }) : h('button', { class: 'act danger', type: 'button', onclick: async () => {
+              if (!(await confirmBox(t('acc.revoke'), t('acc.revoke.q', { id: k.id }), t('acc.revoke')))) return;
+              try { await api(`/desk/api/keys/${k.id}/revoke`, { method: 'POST', body: {} }); loadAccounts(); } catch (x) { fail(x); } } }, t('acc.revoke'))))))) : h('div', { class: 'keys' }, h('div', { class: 'mut l', text: t('acc.nokeys') })));
+    });
+    kids.push(users.length ? h('div', { class: 'users' }, users) : h('div', { class: 'empty', text: t('acc.none') }));
     out.replaceChildren(...kids);
   } catch (e) { out.replaceChildren(errBox(e, loadAccounts)); }
+}
+
+/* small dialogs */
+function askNewKey(user) {
+  const dlg = $('#dlg-newkey');
+  $('#nk-user').textContent = user; $('#nk-name').value = ''; $('#nk-exp').value = '';
+  return new Promise((resolve) => {
+    dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok' ? { name: $('#nk-name').value.trim() || 'key', expires_days: $('#nk-exp').value ? +$('#nk-exp').value : undefined } : null), { once: true });
+    dlg.returnValue = ''; dlg.showModal(); $('#nk-name').focus();
+  });
+}
+function confirmBox(title, msg, okLabel) {
+  const dlg = $('#dlg-confirm');
+  $('#cf-title').textContent = title; $('#cf-msg').textContent = msg; $('#cf-ok').textContent = okLabel;
+  return new Promise((resolve) => {
+    dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok'), { once: true });
+    dlg.returnValue = ''; dlg.showModal();
+  });
 }
 
 /* ---------- review (workbench only) ---------- */
@@ -625,12 +846,16 @@ function route() {
   for (const el of $$('.view')) el.hidden = el.id !== 'v-' + v;
   for (const a of $$('#nav a')) a.classList.toggle('on', a.dataset.view === v);
   S.view = v;
+  stopTimer();
+  $('#crumb').textContent = t('nav.' + v);
   VIEWS[v]();
 }
 function errorPage(code, titleKey, msg) {
   for (const el of $$('.view')) el.hidden = el.id !== 'v-error';
   for (const a of $$('#nav a')) a.classList.remove('on');
   S.view = 'error';
+  stopTimer();
+  $('#crumb').textContent = code;
   $('#err-code').textContent = code;
   $('#err-title').textContent = t(titleKey);
   $('#err-msg').textContent = msg;
@@ -641,9 +866,11 @@ function errorPage(code, titleKey, msg) {
 }
 function updateChip() {
   const chip = $('#where');
+  $('#ver').textContent = S.health ? `v${S.health.version}` : '';
+  $('#lang-lbl').textContent = S.lang === 'zh' ? 'EN' : '中';
   if (!S.health) { chip.className = 'chip down'; $('span', chip).textContent = t('where.down'); return; }
   chip.className = 'chip up';
-  $('span', chip).textContent = S.desk ? t('where.desk') : `${location.host} · v${S.health.version}`;
+  $('span', chip).textContent = S.desk ? t('where.desk') : location.host;
 }
 
 /* palette */

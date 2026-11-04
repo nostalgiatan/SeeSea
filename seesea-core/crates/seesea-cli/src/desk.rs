@@ -114,6 +114,8 @@ pub struct Desk {
     template: OnceLock<AppState>,
     /// Serializes changes to the grades.
     grading: Mutex<()>,
+    /// What each running service has answered lately.
+    logs: Mutex<HashMap<String, Arc<crate::reqlog::ReqLog>>>,
 }
 
 /// Query, then URL, then grade: what was judged about which result.
@@ -137,6 +139,7 @@ impl Desk {
             problems: Mutex::default(),
             template: OnceLock::new(),
             grading: Mutex::new(()),
+            logs: Mutex::new(HashMap::new()),
         })
     }
 
@@ -184,6 +187,7 @@ impl Desk {
             self.problem(&id, Some("the listener stopped by itself; see the terminal for the reason".into()));
         }
         let problems = self.problems.lock().unwrap_or_else(|e| e.into_inner());
+        let logs = self.logs.lock().unwrap_or_else(|e| e.into_inner());
         let services: Vec<Value> = SERVICES
             .iter()
             .map(|id| {
@@ -195,6 +199,7 @@ impl Desk {
                     "addr": r.map(|r| r.addr.to_string()),
                     "tls": r.is_some_and(|r| r.tls),
                     "problem": problems.get(*id),
+                    "stats": r.and_then(|_| logs.get(*id)).map(|l| l.summary()),
                 })
             })
             .collect();
@@ -203,6 +208,18 @@ impl Desk {
             "data_dir": crate::userconfig::data_dir(),
             "services": services,
             "plans": self.plans.keys().collect::<Vec<_>>(),
+        })
+    }
+
+    /// Where a running service can be reached from this machine, and whether over TLS.
+    fn reach(&self, id: &str) -> Option<(SocketAddr, bool)> {
+        let live = self.live.lock().unwrap_or_else(|e| e.into_inner());
+        live.get(id).filter(|r| !r.finished()).map(|r| {
+            let mut a = r.addr;
+            if a.ip().is_unspecified() {
+                a.set_ip(if a.is_ipv4() { std::net::Ipv4Addr::LOCALHOST.into() } else { std::net::Ipv6Addr::LOCALHOST.into() });
+            }
+            (a, r.tls)
         })
     }
 
@@ -286,11 +303,14 @@ impl Desk {
             _ => None,
         };
         let mut state = template.clone();
+        let log = Arc::new(crate::reqlog::ReqLog::new());
+        state.reqlog = Some(Arc::clone(&log));
         state.access = Arc::new(Access::new(store, self.plans.clone(), root));
         let opts = ListenOpts { max_concurrent: c.max_concurrent, allow_open: c.allow_open, tls, behind_tls_proxy: c.behind_tls_proxy, mcp_only: id == "mcp" };
         let running = crate::server::listen(addr, state, opts).await.map_err(|e| e.to_string())?;
         eprintln!("seesea {id} service on {}://{}", if running.tls { "https" } else { "http" }, running.addr);
         self.live.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_string(), running);
+        self.logs.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_string(), log);
         Ok(())
     }
 
@@ -391,6 +411,9 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/desk/api/state", get(desk_state))
         .route("/desk/api/services/{id}/{action}", post(service_action))
+        .route("/desk/api/services/{id}/log", get(service_log))
+        .route("/desk/api/services/{id}/try", post(service_try))
+        .route("/desk/api/users/{name}/plan", post(user_plan))
         .route("/desk/api/users", get(users).post(user_new))
         .route("/desk/api/users/{name}/keys", post(key_new))
         .route("/desk/api/users/{name}/disabled", post(user_disabled))
@@ -511,6 +534,8 @@ fn user_json(st: &Store, u: &seesea_auth::User) -> Value {
     json!({
         "name": u.name, "plan": u.plan, "disabled": u.disabled, "created": u.created,
         "used_today": st.usage_today(u.id, today),
+        "usage": st.usage_history(&u.name, 7).unwrap_or_default().iter().map(|(d, c)| json!({"day": d, "credits": c})).collect::<Vec<_>>(),
+        "today": today,
         "keys": st.keys(&u.name).unwrap_or_default().iter()
             .map(|k| json!({"id": k.public_id, "name": k.name, "created": k.created, "expires": k.expires, "revoked": k.revoked, "last_used": k.last_used}))
             .collect::<Vec<_>>(),
@@ -522,7 +547,7 @@ async fn users(State(s): State<AppState>) -> Response {
         let d = desk_of(&s)?;
         let st = d.store()?;
         let users = st.users().map_err(auth_fail)?;
-        Ok(json!({"users": users.iter().map(|u| user_json(&st, u)).collect::<Vec<_>>(), "plans": d.plans.keys().collect::<Vec<_>>()}))
+        Ok(json!({"users": users.iter().map(|u| user_json(&st, u)).collect::<Vec<_>>(), "plans": d.plans.keys().collect::<Vec<_>>(), "plan_table": d.plans}))
     };
     run().map_or_else(|r| r, |v| Json(v).into_response())
 }
@@ -612,4 +637,106 @@ pub fn open_browser(url: &str) {
         c
     };
     let _ = cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+}
+
+async fn service_log(State(s): State<AppState>, Path(id): Path<String>) -> Response {
+    let d = match desk_of(&s) {
+        Ok(d) => d,
+        Err(r) => return r,
+    };
+    let log = d.logs.lock().unwrap_or_else(|e| e.into_inner()).get(&id).cloned();
+    match (log, d.reach(&id)) {
+        (Some(l), Some(_)) => Json(json!({"summary": l.summary(), "recent": l.recent(100)})).into_response(),
+        _ => fail(StatusCode::NOT_FOUND, "not_running", format!("'{id}' is not running")),
+    }
+}
+
+#[derive(Deserialize)]
+struct SetPlan {
+    plan: String,
+}
+
+async fn user_plan(State(s): State<AppState>, Path(name): Path<String>, body: Bytes) -> Response {
+    let run = || -> Result<Value, Response> {
+        let d = desk_of(&s)?;
+        let req: SetPlan = serde_json::from_slice(&body).map_err(|e| fail(StatusCode::BAD_REQUEST, "invalid_request", format!("invalid JSON body: {e}")))?;
+        if !d.plans.contains_key(&req.plan) {
+            return Err(fail(StatusCode::BAD_REQUEST, "invalid_request", format!("no plan named '{}'", req.plan)));
+        }
+        let st = d.store()?;
+        st.set_plan(&name, &req.plan).map_err(auth_fail)?;
+        Ok(user_json(&st, &st.user(&name).map_err(auth_fail)?))
+    };
+    run().map_or_else(|r| r, |v| Json(v).into_response())
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct Try {
+    method: String,
+    path: String,
+    body: Option<String>,
+    /// `none`, `shared` (the service's own shared key) or `key` (the one in `key`).
+    auth: String,
+    key: Option<String>,
+}
+
+/// Send one request to a running service from here and report what came back: the way to try an endpoint
+/// or a key without leaving the workbench (the page itself may only talk to its own server).
+async fn service_try(State(s): State<AppState>, Path(id): Path<String>, body: Bytes) -> Response {
+    let d = match desk_of(&s) {
+        Ok(d) => d,
+        Err(r) => return r,
+    };
+    let req: Try = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return fail(StatusCode::BAD_REQUEST, "invalid_request", format!("invalid JSON body: {e}")),
+    };
+    let Some((addr, tls)) = d.reach(&id) else { return fail(StatusCode::NOT_FOUND, "not_running", format!("'{id}' is not running")) };
+    let method = match req.method.to_ascii_uppercase().as_str() {
+        "GET" => reqwest::Method::GET,
+        "POST" => reqwest::Method::POST,
+        _ => return fail(StatusCode::BAD_REQUEST, "invalid_request", "method is GET or POST"),
+    };
+    let ok_path = req.path.len() < 1024 && !req.path.chars().any(|c| c.is_control() || c.is_whitespace()) && (req.path.starts_with("/v1/") || req.path == "/mcp" || req.path == "/health");
+    if !ok_path {
+        return fail(StatusCode::BAD_REQUEST, "invalid_request", "the path starts with /v1/, or is /mcp or /health");
+    }
+    let key = match req.auth.as_str() {
+        "shared" => d.config().get(&id).root_key.clone(),
+        "key" => req.key.clone().filter(|k| !k.is_empty()),
+        _ => None,
+    };
+    let host = if addr.is_ipv6() { format!("[{}]:{}", addr.ip(), addr.port()) } else { addr.to_string() };
+    let url = format!("{}://{host}{}", if tls { "https" } else { "http" }, req.path);
+    let client = match reqwest::Client::builder().danger_accept_invalid_certs(tls).timeout(std::time::Duration::from_secs(60)).redirect(reqwest::redirect::Policy::none()).build() {
+        Ok(c) => c,
+        Err(e) => return fail(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string()),
+    };
+    let mut rb = client.request(method.clone(), url);
+    if let Some(k) = key {
+        rb = rb.bearer_auth(k);
+    }
+    if method == reqwest::Method::POST {
+        let b = req.body.unwrap_or_default();
+        if b.len() > 64 * 1024 {
+            return fail(StatusCode::BAD_REQUEST, "invalid_request", "the body is at most 64 KB");
+        }
+        rb = rb.header("content-type", "application/json").body(b);
+    }
+    let t0 = std::time::Instant::now();
+    match rb.send().await {
+        Ok(r) => {
+            let status = r.status().as_u16();
+            let headers: Vec<(String, String)> = r.headers().iter()
+                .filter(|(k, _)| k.as_str() == "content-type" || k.as_str() == "retry-after" || k.as_str().starts_with("x-"))
+                .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.to_string(), v.to_string())))
+                .collect();
+            let bytes = r.bytes().await.unwrap_or_default();
+            let cut = bytes.len() > 64 * 1024;
+            let text = String::from_utf8_lossy(&bytes[..bytes.len().min(64 * 1024)]).into_owned();
+            Json(json!({"status": status, "ms": t0.elapsed().as_millis() as u64, "headers": headers, "body": text, "truncated": cut})).into_response()
+        }
+        Err(e) => fail(StatusCode::BAD_GATEWAY, "unreachable", e.to_string()),
+    }
 }
