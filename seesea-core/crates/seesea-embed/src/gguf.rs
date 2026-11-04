@@ -345,8 +345,8 @@ impl GgufBert {
         let device = Device::Cpu;
         // Opening the adapter takes about half a second; do it while the file's metadata is parsed.
         #[cfg(feature = "gpu")]
-        let gpu_opening = crate::gpu_wanted()
-            .then(|| std::thread::spawn(crate::gpu::GpuLayers::open));
+        let gpu_opening =
+            crate::gpu_wanted().then(|| std::thread::spawn(crate::gpu::GpuLayers::open));
         let io = |source| EmbedError::Io {
             path: path.display().to_string(),
             source,
@@ -411,19 +411,22 @@ impl GgufBert {
             use rayon::prelude::*;
             const BATCH_LAYERS: usize = 4;
             let g_owned = gpu.take().expect("checked above");
-            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<crate::gpu::GpuLayers> {
-                let mut g = g_owned;
-                for start in (0..n_layers).step_by(BATCH_LAYERS) {
-                    let raw: Vec<RawLayer> = (start..(start + BATCH_LAYERS).min(n_layers))
-                        .map(|i| r.raw_layer(i))
-                        .collect::<Result<_>>()?;
-                    let decoded: Vec<Result<crate::gpu::LayerData>> = raw.into_par_iter().map(RawLayer::decode).collect();
-                    for d in decoded {
-                        g.push(eps, d?);
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                || -> Result<crate::gpu::GpuLayers> {
+                    let mut g = g_owned;
+                    for start in (0..n_layers).step_by(BATCH_LAYERS) {
+                        let raw: Vec<RawLayer> = (start..(start + BATCH_LAYERS).min(n_layers))
+                            .map(|i| r.raw_layer(i))
+                            .collect::<Result<_>>()?;
+                        let decoded: Vec<Result<crate::gpu::LayerData>> =
+                            raw.into_par_iter().map(RawLayer::decode).collect();
+                        for d in decoded {
+                            g.push(eps, d?);
+                        }
                     }
-                }
-                Ok(g)
-            }));
+                    Ok(g)
+                },
+            ));
             match outcome {
                 Ok(Ok(g)) => gpu = Some(g),
                 Ok(Err(e)) => return Err(e),
@@ -524,7 +527,10 @@ impl GgufBert {
         if let Some(l) = self.layers.get() {
             return Ok(l);
         }
-        let io = |source| EmbedError::Io { path: self.path.display().to_string(), source };
+        let io = |source| EmbedError::Io {
+            path: self.path.display().to_string(),
+            source,
+        };
         let mut file = std::fs::File::open(&self.path).map_err(io)?;
         let c = Content::read(&mut file).map_err(bad)?;
         let device = Device::Cpu;
@@ -599,8 +605,13 @@ impl GgufBert {
             })) {
                 Ok(out) => return Ok(Tensor::from_vec(out, (batch, seq, self.hidden), dev)?),
                 Err(_) => {
-                    if !self.gpu_lost.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                        eprintln!("seesea: the GPU failed (out of memory?); this model now runs on the CPU. Set SEESEA_EMBED_DEVICE=cpu to skip the GPU.");
+                    if !self
+                        .gpu_lost
+                        .swap(true, std::sync::atomic::Ordering::Relaxed)
+                    {
+                        eprintln!(
+                            "seesea: the GPU failed (out of memory?); this model now runs on the CPU. Set SEESEA_EMBED_DEVICE=cpu to skip the GPU."
+                        );
                     }
                 }
             }

@@ -203,7 +203,9 @@ mod tests {
     fn classify_recognises_common_failures() {
         // A URL with `format=json` in it is still a failed request, not a parse error.
         assert_eq!(
-            classify("GET request failed: error sending request for url (https://x.org/?format=json)"),
+            classify(
+                "GET request failed: error sending request for url (https://x.org/?format=json)"
+            ),
             FailureKind::Http
         );
         assert_eq!(classify("operation timed out"), FailureKind::Timeout);

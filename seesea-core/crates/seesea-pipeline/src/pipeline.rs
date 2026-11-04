@@ -131,14 +131,21 @@ fn diversify(mut hits: Vec<Hit>) -> Vec<Hit> {
             h.score *= 0.88f64.powi(*n - 2);
         }
     }
-    hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    hits.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     hits
 }
 
 pub fn host_of(url: &str) -> String {
     url::Url::parse(url)
         .ok()
-        .and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_lowercase()))
+        .and_then(|u| {
+            u.host_str()
+                .map(|h| h.trim_start_matches("www.").to_lowercase())
+        })
         .unwrap_or_default()
 }
 
@@ -329,17 +336,28 @@ impl Pipeline {
         self.extractor.get_or_init(|| Arc::new(Extractor::new()))
     }
 
-    fn select_sources(&self, wanted: &[String], recency: rank::Recency) -> Result<Vec<Arc<dyn Source>>> {
+    fn select_sources(
+        &self,
+        wanted: &[String],
+        recency: rank::Recency,
+    ) -> Result<Vec<Arc<dyn Source>>> {
         if self.sources.is_empty() {
             return Err(Error::NoSources);
         }
         if wanted.is_empty() {
-            let general: Vec<_> = self.sources
+            let general: Vec<_> = self
+                .sources
                 .iter()
-                .filter(|s| s.on_by_default() && (!s.recency_only() || recency > rank::Recency::Evergreen))
+                .filter(|s| {
+                    s.on_by_default() && (!s.recency_only() || recency > rank::Recency::Evergreen)
+                })
                 .cloned()
                 .collect();
-            return Ok(if general.is_empty() { self.sources.clone() } else { general });
+            return Ok(if general.is_empty() {
+                self.sources.clone()
+            } else {
+                general
+            });
         }
         let known = self.source_names();
         if let Some(bad) = wanted
@@ -468,11 +486,24 @@ impl Pipeline {
                 .iter()
                 .cloned()
                 .partition(|s| paused.get(s.name()).is_some_and(|(until, _)| *until > now));
-            if active.is_empty() { (skipped, Vec::new()) } else { (active, skipped) }
+            if active.is_empty() {
+                (skipped, Vec::new())
+            } else {
+                (active, skipped)
+            }
         };
         for s in &skipped {
-            let wait = self.paused.lock().unwrap().get(s.name()).map(|(u, _)| u.saturating_duration_since(now).as_secs() / 60 + 1);
-            degraded.push(format!("{} skipped: it blocked us recently (asked again in about {} min)", s.name(), wait.unwrap_or(1)));
+            let wait = self
+                .paused
+                .lock()
+                .unwrap()
+                .get(s.name())
+                .map(|(u, _)| u.saturating_duration_since(now).as_secs() / 60 + 1);
+            degraded.push(format!(
+                "{} skipped: it blocked us recently (asked again in about {} min)",
+                s.name(),
+                wait.unwrap_or(1)
+            ));
         }
         let outcomes = futures::future::join_all(active.iter().map(|s| {
             let sq = sq.clone();
@@ -500,7 +531,10 @@ impl Pipeline {
                     Err(e) if e.kind == FailureKind::Blocked => {
                         let strikes = paused.get(&name).map_or(0, |(_, n)| *n) + 1;
                         let minutes = (5u64 << (strikes - 1).min(4)).min(60);
-                        paused.insert(name.clone(), (Instant::now() + Duration::from_secs(minutes * 60), strikes));
+                        paused.insert(
+                            name.clone(),
+                            (Instant::now() + Duration::from_secs(minutes * 60), strikes),
+                        );
                     }
                     Ok(_) => {
                         paused.remove(&name);
@@ -525,9 +559,15 @@ impl Pipeline {
             stage: "search".into(),
             ms: ms(t),
         });
-        let auxiliary: Vec<&str> = sources.iter().filter(|s| s.auxiliary()).map(|s| s.name()).collect();
+        let auxiliary: Vec<&str> = sources
+            .iter()
+            .filter(|s| s.auxiliary())
+            .map(|s| s.name())
+            .collect();
         let only_empty_auxiliary = !failures.is_empty()
-            && results.iter().all(|r| auxiliary.contains(&r.source.as_str()) && r.hits.is_empty());
+            && results
+                .iter()
+                .all(|r| auxiliary.contains(&r.source.as_str()) && r.hits.is_empty());
         if results.is_empty() || only_empty_auxiliary {
             return Err(Error::AllSourcesFailed(failures));
         }
@@ -561,7 +601,8 @@ impl Pipeline {
             };
             candidates.retain(|c| {
                 let host = host_of(&c.url);
-                (req.include_domains.is_empty() || on(&host, &req.include_domains)) && !on(&host, &req.exclude_domains)
+                (req.include_domains.is_empty() || on(&host, &req.include_domains))
+                    && !on(&host, &req.exclude_domains)
             });
         }
         let mut q = QueryInfo::new(&req.query);
@@ -620,7 +661,8 @@ impl Pipeline {
             (0..scored.len()).map(|_| None).collect();
         let (mut fetched, mut timed_out, mut failed_total) = (0usize, 0usize, 0usize);
         if fetch_k > 0 {
-            let titles: Arc<Vec<String>> = Arc::new(scored.iter().map(|(c, _)| c.title.clone()).collect());
+            let titles: Arc<Vec<String>> =
+                Arc::new(scored.iter().map(|(c, _)| c.title.clone()).collect());
             let readable = |loaded: &[Option<std::result::Result<Loaded, String>>]| {
                 loaded
                     .iter()
@@ -629,25 +671,37 @@ impl Pipeline {
             };
             let (mut from, mut to) = (0usize, fetch_k);
             for round in 0..2 {
-                let urls: Vec<String> = scored[from..to].iter().map(|(c, _)| c.url.clone()).collect();
+                let urls: Vec<String> = scored[from..to]
+                    .iter()
+                    .map(|(c, _)| c.url.clone())
+                    .collect();
                 // Pages are handed to the reranker's `prepare` as they arrive, so the encoder works while
                 // the slower downloads are still going; it never waits for that work.
-                let on_loaded: Option<content::OnLoaded> = tokio::runtime::Handle::try_current().ok().map(|rt| {
-                    let reranker = Arc::clone(&self.reranker);
-                    let query = req.query.clone();
-                    let titles = Arc::clone(&titles);
-                    Arc::new(move |i: usize, l: &content::Loaded| {
-                        if l.result.core.trim().is_empty() {
-                            return;
-                        }
-                        let (reranker, query, titles) = (Arc::clone(&reranker), query.clone(), Arc::clone(&titles));
-                        let (body, confidence) = (l.result.core.clone(), l.result.confidence);
-                        let at = from + i;
-                        rt.spawn_blocking(move || {
-                            reranker.prepare(&query, &DocView { title: &titles[at], body: &body, confidence });
-                        });
-                    }) as content::OnLoaded
-                });
+                let on_loaded: Option<content::OnLoaded> =
+                    tokio::runtime::Handle::try_current().ok().map(|rt| {
+                        let reranker = Arc::clone(&self.reranker);
+                        let query = req.query.clone();
+                        let titles = Arc::clone(&titles);
+                        Arc::new(move |i: usize, l: &content::Loaded| {
+                            if l.result.core.trim().is_empty() {
+                                return;
+                            }
+                            let (reranker, query, titles) =
+                                (Arc::clone(&reranker), query.clone(), Arc::clone(&titles));
+                            let (body, confidence) = (l.result.core.clone(), l.result.confidence);
+                            let at = from + i;
+                            rt.spawn_blocking(move || {
+                                reranker.prepare(
+                                    &query,
+                                    &DocView {
+                                        title: &titles[at],
+                                        body: &body,
+                                        confidence,
+                                    },
+                                );
+                            });
+                        }) as content::OnLoaded
+                    });
                 let outs = content::load_pages_then(
                     &self.fetcher,
                     self.renderer.as_ref(),
@@ -694,7 +748,10 @@ impl Pipeline {
                 ("extract_all_pages", extract_sum),
                 ("render_slowest_page", render_max),
             ] {
-                stages.push(StageTiming { stage: stage.into(), ms: v });
+                stages.push(StageTiming {
+                    stage: stage.into(),
+                    ms: v,
+                });
             }
         }
         stages.push(StageTiming {
@@ -799,7 +856,10 @@ impl Pipeline {
                         needs_render: l.result.needs_render,
                         truncated,
                     });
-                    let official = if rs.relevance >= 0.3 && rs.body_quality >= 0.5 && names_site(&req.query, &cand.url) {
+                    let official = if rs.relevance >= 0.3
+                        && rs.body_quality >= 0.5
+                        && names_site(&req.query, &cand.url)
+                    {
                         0.08
                     } else {
                         0.0
@@ -823,7 +883,12 @@ impl Pipeline {
                 let host = host_of(&cand.url);
                 let sources: Vec<&str> = cand.found_by.iter().map(|a| a.source.as_str()).collect();
                 match (&content, loaded[i].is_some()) {
-                    (Some(_), _) => l.observe(&host, &sources, 0.7 * parts.relevance + 0.3 * parts.body_quality, 1.0),
+                    (Some(_), _) => l.observe(
+                        &host,
+                        &sources,
+                        0.7 * parts.relevance + 0.3 * parts.body_quality,
+                        1.0,
+                    ),
                     (None, true) => l.failed(&host, &sources),
                     (None, false) => {}
                 }
@@ -855,7 +920,15 @@ impl Pipeline {
                 .iter()
                 .filter(|h| h.score_parts.relevance >= 0.5 && h.score_parts.body_quality >= 0.4)
                 .filter_map(|h| {
-                    let lead: String = h.content.as_ref()?.sections.first()?.markdown.chars().take(400).collect();
+                    let lead: String = h
+                        .content
+                        .as_ref()?
+                        .sections
+                        .first()?
+                        .markdown
+                        .chars()
+                        .take(400)
+                        .collect();
                     Some(crate::source::Remembered {
                         url: h.url.clone(),
                         title: h.title.clone(),
@@ -1032,16 +1105,30 @@ mod diversity_tests {
     }
 }
 
-
 /// The query names the site: a word of it is the whole host label (`tokio` for tokio.rs, `postgresql`
 /// for postgresql.org) or the first path segment of a docs host (docs.rs/tokio/...). Such a site is the
 /// project's own, which a good answer to a question about the project usually leans on.
 fn names_site(query: &str, url: &str) -> bool {
     const COMMON: [&str; 12] = [
-        "what", "latest", "stable", "version", "difference", "with", "from", "that", "this", "best", "model", "docs",
+        "what",
+        "latest",
+        "stable",
+        "version",
+        "difference",
+        "with",
+        "from",
+        "that",
+        "this",
+        "best",
+        "model",
+        "docs",
     ];
-    let Ok(u) = url::Url::parse(url) else { return false };
-    let Some(host) = u.host_str() else { return false };
+    let Ok(u) = url::Url::parse(url) else {
+        return false;
+    };
+    let Some(host) = u.host_str() else {
+        return false;
+    };
     let q = query.to_lowercase();
     let words: Vec<&str> = q
         .split(|c: char| !c.is_ascii_alphanumeric())
@@ -1053,8 +1140,13 @@ fn names_site(query: &str, url: &str) -> bool {
         .iter()
         .flat_map(|l| l.split('-'))
         .any(|l| words.contains(&l));
-    let first_path = u.path_segments().and_then(|mut p| p.next()).unwrap_or("").to_lowercase();
-    on_host || (labels.first().is_some_and(|l| *l == "docs") && words.contains(&first_path.as_str()))
+    let first_path = u
+        .path_segments()
+        .and_then(|mut p| p.next())
+        .unwrap_or("")
+        .to_lowercase();
+    on_host
+        || (labels.first().is_some_and(|l| *l == "docs") && words.contains(&first_path.as_str()))
 }
 
 #[cfg(test)]
@@ -1063,11 +1155,29 @@ mod site_tests {
 
     #[test]
     fn a_site_named_by_the_query_is_recognised() {
-        assert!(names_site("rust tokio select", "https://tokio.rs/tokio/tutorial/select"));
-        assert!(names_site("rust tokio select", "https://docs.rs/tokio/latest/tokio/macro.select.html"));
-        assert!(names_site("latest stable version of PostgreSQL", "https://www.postgresql.org/docs/release/"));
-        assert!(!names_site("latest stable version of PostgreSQL", "https://versionlog.com/postgresql/17/"));
-        assert!(!names_site("rust tokio select", "https://docs.rs/serde/latest/serde/"));
-        assert!(!names_site("rust tokio select", "https://blog.csdn.net/x/article/details/1"));
+        assert!(names_site(
+            "rust tokio select",
+            "https://tokio.rs/tokio/tutorial/select"
+        ));
+        assert!(names_site(
+            "rust tokio select",
+            "https://docs.rs/tokio/latest/tokio/macro.select.html"
+        ));
+        assert!(names_site(
+            "latest stable version of PostgreSQL",
+            "https://www.postgresql.org/docs/release/"
+        ));
+        assert!(!names_site(
+            "latest stable version of PostgreSQL",
+            "https://versionlog.com/postgresql/17/"
+        ));
+        assert!(!names_site(
+            "rust tokio select",
+            "https://docs.rs/serde/latest/serde/"
+        ));
+        assert!(!names_site(
+            "rust tokio select",
+            "https://blog.csdn.net/x/article/details/1"
+        ));
     }
 }

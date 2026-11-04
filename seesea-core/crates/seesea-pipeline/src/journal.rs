@@ -4,8 +4,8 @@
 //! sources keep failing, which hosts cannot be read. [`crate::report`] turns it into a summary.
 
 use crate::error::{Error, Result};
-use crate::pipeline::host_of;
 use crate::model::{SearchRequest, SearchResponse};
+use crate::pipeline::host_of;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -29,7 +29,12 @@ impl Journal {
     pub fn new(dir: impl Into<PathBuf>) -> Self {
         let dir = dir.into();
         let _ = std::fs::create_dir_all(&dir);
-        let j = Self { dir, write: Mutex::new(()), tap: Mutex::new(None), since_trim: 0.into() };
+        let j = Self {
+            dir,
+            write: Mutex::new(()),
+            tap: Mutex::new(None),
+            since_trim: 0.into(),
+        };
         j.expire();
         j
     }
@@ -40,10 +45,14 @@ impl Journal {
 
     fn expire(&self) {
         let cutoff = chrono::Utc::now() - chrono::Duration::days(KEEP_DAYS);
-        let Ok(rd) = std::fs::read_dir(&self.dir) else { return };
+        let Ok(rd) = std::fs::read_dir(&self.dir) else {
+            return;
+        };
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            let day = name.strip_prefix("journal-").and_then(|n| n.strip_suffix(".jsonl"));
+            let day = name
+                .strip_prefix("journal-")
+                .and_then(|n| n.strip_suffix(".jsonl"));
             if let Some(d) = day.and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y%m%d").ok())
                 && d.and_hms_opt(0, 0, 0).is_some_and(|t| t.and_utc() < cutoff)
             {
@@ -88,16 +97,26 @@ impl Journal {
 
     fn write_line(&self, line: &Value) {
         // A long-running server must keep to the size and age limits too, not only at start.
-        if self.since_trim.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 2000 {
-            self.since_trim.store(0, std::sync::atomic::Ordering::Relaxed);
+        if self
+            .since_trim
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            >= 2000
+        {
+            self.since_trim
+                .store(0, std::sync::atomic::Ordering::Relaxed);
             self.expire();
         }
         use std::io::Write;
         let _g = self.write.lock().unwrap_or_else(|e| e.into_inner());
-        let file = self
-            .dir
-            .join(format!("journal-{}.jsonl", chrono::Utc::now().format("%Y%m%d")));
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(file) {
+        let file = self.dir.join(format!(
+            "journal-{}.jsonl",
+            chrono::Utc::now().format("%Y%m%d")
+        ));
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(file)
+        {
             let _ = writeln!(f, "{line}");
         }
     }
@@ -179,15 +198,25 @@ impl Journal {
         });
         files.sort();
         // A file holds one UTC day: skip the days that end before `since`.
-        let first_day = chrono::DateTime::from_timestamp(since.max(0), 0).map(|t| t.format("%Y%m%d").to_string());
+        let first_day = chrono::DateTime::from_timestamp(since.max(0), 0)
+            .map(|t| t.format("%Y%m%d").to_string());
         if let Some(day) = first_day {
-            files.retain(|p| p.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_prefix("journal-")?.strip_suffix(".jsonl")).is_none_or(|d| d >= day.as_str()));
+            files.retain(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .and_then(|n| n.strip_prefix("journal-")?.strip_suffix(".jsonl"))
+                    .is_none_or(|d| d >= day.as_str())
+            });
         }
         let mut out = Vec::new();
         for f in files {
-            let Ok(text) = std::fs::read_to_string(&f) else { continue };
+            let Ok(text) = std::fs::read_to_string(&f) else {
+                continue;
+            };
             for l in text.lines() {
-                let Ok(v) = serde_json::from_str::<Value>(l) else { continue };
+                let Ok(v) = serde_json::from_str::<Value>(l) else {
+                    continue;
+                };
                 let ts = v["ts"]
                     .as_str()
                     .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())

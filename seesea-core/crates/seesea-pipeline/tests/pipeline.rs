@@ -364,7 +364,10 @@ async fn source_filter_limit_and_empty_results() {
 #[tokio::test]
 async fn specialised_sources_are_used_only_when_named() {
     let general = FakeSource::ok("web", vec![hit("https://x.org/1", "One", "first")]);
-    let niche = FakeSource::ok("papers", vec![hit("https://arxiv.org/abs/1", "Paper", "abstract")]);
+    let niche = FakeSource::ok(
+        "papers",
+        vec![hit("https://arxiv.org/abs/1", "Paper", "abstract")],
+    );
     let niche_probe = niche.clone();
     let p = standard_pipeline(vec![general, Arc::new(OptIn(niche))], FakePages::new(&[]));
 
@@ -641,7 +644,11 @@ async fn stage_one_learns_which_hosts_deliver() {
             "a",
             vec![
                 hit(bait, "Rust async runtime", "Click here"),
-                hit(real, "Tokio overview", "Tokio is an asynchronous runtime for Rust"),
+                hit(
+                    real,
+                    "Tokio overview",
+                    "Tokio is an asynchronous runtime for Rust",
+                ),
             ],
         );
         let pages = FakePages::new(&[
@@ -654,14 +661,40 @@ async fn stage_one_learns_which_hosts_deliver() {
     let (a, pages) = mk();
     let p = standard_pipeline(vec![a], pages).learner(Arc::clone(&learner));
     // Different wordings so the response cache does not answer.
-    let first = p.search(&SearchRequest::new("rust async runtime")).await.unwrap();
-    assert!(first.hits.iter().all(|h| h.score_parts.learned == 0.0), "nothing known yet");
-    for q in ["async runtime rust", "tokio rust runtime", "rust runtime for async code"] {
+    let first = p
+        .search(&SearchRequest::new("rust async runtime"))
+        .await
+        .unwrap();
+    assert!(
+        first.hits.iter().all(|h| h.score_parts.learned == 0.0),
+        "nothing known yet"
+    );
+    for q in [
+        "async runtime rust",
+        "tokio rust runtime",
+        "rust runtime for async code",
+    ] {
         p.search(&SearchRequest::new(q)).await.unwrap();
     }
-    let later = p.search(&SearchRequest::new("what is the rust async runtime")).await.unwrap();
-    let learned = |url: &str| later.hits.iter().find(|h| h.url == url).unwrap().score_parts.learned;
-    assert!(learned(real) > learned(bait), "real {} bait {}", learned(real), learned(bait));
+    let later = p
+        .search(&SearchRequest::new("what is the rust async runtime"))
+        .await
+        .unwrap();
+    let learned = |url: &str| {
+        later
+            .hits
+            .iter()
+            .find(|h| h.url == url)
+            .unwrap()
+            .score_parts
+            .learned
+    };
+    assert!(
+        learned(real) > learned(bait),
+        "real {} bait {}",
+        learned(real),
+        learned(bait)
+    );
     assert!(learned(bait) < 0.0);
     assert_eq!(learner.report(5).hosts, 2);
 }
@@ -676,16 +709,32 @@ impl Source for NewsOnly {
     fn recency_only(&self) -> bool {
         true
     }
-    async fn search(&self, q: &SourceQuery) -> Result<Vec<RawHit>, seesea_pipeline::error::SourceError> {
+    async fn search(
+        &self,
+        q: &SourceQuery,
+    ) -> Result<Vec<RawHit>, seesea_pipeline::error::SourceError> {
         self.0.search(q).await
     }
 }
 
 #[tokio::test]
 async fn news_sources_are_asked_only_about_recent_things() {
-    let general = FakeSource::ok("web", vec![hit("https://w.example/1", "Rust ownership", "explained")]);
-    let news_inner = FakeSource::ok("news", vec![hit("https://n.example/1", "Rust release", "announced today")]);
-    let p = standard_pipeline(vec![general, Arc::new(NewsOnly(Arc::clone(&news_inner)))], FakePages::new(&[]));
+    let general = FakeSource::ok(
+        "web",
+        vec![hit("https://w.example/1", "Rust ownership", "explained")],
+    );
+    let news_inner = FakeSource::ok(
+        "news",
+        vec![hit(
+            "https://n.example/1",
+            "Rust release",
+            "announced today",
+        )],
+    );
+    let p = standard_pipeline(
+        vec![general, Arc::new(NewsOnly(Arc::clone(&news_inner)))],
+        FakePages::new(&[]),
+    );
     let mut timeless = SearchRequest::new("rust ownership");
     timeless.mode = Mode::Fast;
     let r = p.search(&timeless).await.unwrap();
@@ -719,9 +768,15 @@ fn breaking_queries_prefer_hours_old_over_days_old() {
     let gap = |q: &str| {
         let q = QueryInfo::new(q);
         let now = Utc::now();
-        score(&cand(D::hours(2)), &q, &cfg, now).stage1 - score(&cand(D::days(3)), &q, &cfg, now).stage1
+        score(&cand(D::hours(2)), &q, &cfg, now).stage1
+            - score(&cand(D::days(3)), &q, &cfg, now).stage1
     };
-    assert!(gap("breaking earthquake today") > 2.0 * gap("rust ownership"), "{} {}", gap("breaking earthquake today"), gap("rust ownership"));
+    assert!(
+        gap("breaking earthquake today") > 2.0 * gap("rust ownership"),
+        "{} {}",
+        gap("breaking earthquake today"),
+        gap("rust ownership")
+    );
 }
 
 struct Local(Vec<RawHit>);
@@ -734,7 +789,10 @@ impl Source for Local {
     fn auxiliary(&self) -> bool {
         true
     }
-    async fn search(&self, _q: &SourceQuery) -> Result<Vec<RawHit>, seesea_pipeline::error::SourceError> {
+    async fn search(
+        &self,
+        _q: &SourceQuery,
+    ) -> Result<Vec<RawHit>, seesea_pipeline::error::SourceError> {
         Ok(self.0.clone())
     }
 }
@@ -742,12 +800,28 @@ impl Source for Local {
 #[tokio::test]
 async fn an_empty_local_index_does_not_hide_a_web_outage() {
     let down = FakeSource::failing("web", FailureKind::Http);
-    let p = standard_pipeline(vec![down.clone(), Arc::new(Local(vec![]))], FakePages::new(&[]));
+    let p = standard_pipeline(
+        vec![down.clone(), Arc::new(Local(vec![]))],
+        FakePages::new(&[]),
+    );
     let mut req = SearchRequest::new("anything");
     req.mode = Mode::Fast;
-    assert_eq!(p.search(&req).await.unwrap_err().code(), "all_sources_failed");
+    assert_eq!(
+        p.search(&req).await.unwrap_err().code(),
+        "all_sources_failed"
+    );
     // With something in the index the answer is the index's, marked degraded.
-    let p = standard_pipeline(vec![down, Arc::new(Local(vec![hit("https://l.example/1", "Anything local", "x")]))], FakePages::new(&[]));
+    let p = standard_pipeline(
+        vec![
+            down,
+            Arc::new(Local(vec![hit(
+                "https://l.example/1",
+                "Anything local",
+                "x",
+            )])),
+        ],
+        FakePages::new(&[]),
+    );
     let r = p.search(&req).await.unwrap();
     assert_eq!(r.hits.len(), 1);
     assert!(!r.degraded.is_empty());
@@ -763,19 +837,42 @@ async fn domain_filters_and_news_topic_apply() {
             hit("https://www.other.org/c", "C elsewhere", "text"),
         ],
     );
-    let news_inner = FakeSource::ok("news", vec![hit("https://n.example/1", "Rust release", "today")]);
-    let p = standard_pipeline(vec![general, Arc::new(NewsOnly(Arc::clone(&news_inner)))], FakePages::new(&[]));
+    let news_inner = FakeSource::ok(
+        "news",
+        vec![hit("https://n.example/1", "Rust release", "today")],
+    );
+    let p = standard_pipeline(
+        vec![general, Arc::new(NewsOnly(Arc::clone(&news_inner)))],
+        FakePages::new(&[]),
+    );
     let mut only = SearchRequest::new("rust ownership");
     only.mode = Mode::Fast;
     only.include_domains = vec!["docs.rs".into(), "example.com".into()];
-    let urls: Vec<String> = p.search(&only).await.unwrap().hits.into_iter().map(|h| h.url).collect();
+    let urls: Vec<String> = p
+        .search(&only)
+        .await
+        .unwrap()
+        .hits
+        .into_iter()
+        .map(|h| h.url)
+        .collect();
     assert_eq!(urls.len(), 2, "{urls:?}");
-    assert!(urls.iter().all(|u| u.contains("docs.rs") || u.contains("example.com")));
+    assert!(
+        urls.iter()
+            .all(|u| u.contains("docs.rs") || u.contains("example.com"))
+    );
 
     let mut not = SearchRequest::new("rust ownership");
     not.mode = Mode::Fast;
     not.exclude_domains = vec!["other.org".into()];
-    let urls: Vec<String> = p.search(&not).await.unwrap().hits.into_iter().map(|h| h.url).collect();
+    let urls: Vec<String> = p
+        .search(&not)
+        .await
+        .unwrap()
+        .hits
+        .into_iter()
+        .map(|h| h.url)
+        .collect();
     assert!(urls.iter().all(|u| !u.contains("other.org")), "{urls:?}");
     // A suffix that is not a domain boundary must not match.
     not.exclude_domains = vec!["ther.org".into()];
@@ -806,7 +903,11 @@ async fn only_pages_that_answered_are_remembered() {
     let web = FakeSource::ok(
         "web",
         vec![
-            hit(good, "How the Tokio runtime works", "tokio runtime schedules async tasks"),
+            hit(
+                good,
+                "How the Tokio runtime works",
+                "tokio runtime schedules async tasks",
+            ),
             hit(bad, "Tokio runtime - Best Guide 2025!", "tokio runtime"),
         ],
     );
@@ -827,12 +928,26 @@ async fn only_pages_that_answered_are_remembered() {
 
 #[tokio::test]
 async fn a_page_that_cannot_be_read_is_replaced_by_the_next_candidate() {
-    let urls = ["https://one.org/tokio", "https://two.net/tokio", "https://three.io/tokio"];
+    let urls = [
+        "https://one.org/tokio",
+        "https://two.net/tokio",
+        "https://three.io/tokio",
+    ];
     for missing in 0..3 {
         let hits: Vec<RawHit> = urls
             .iter()
             .enumerate()
-            .map(|(i, u)| hit(u, ["Tokio runtime internals explained", "Getting started with async Rust tasks", "Scheduler design notes from the maintainers"][i], &format!("asynchronous runtime for Rust, chapter {i}")))
+            .map(|(i, u)| {
+                hit(
+                    u,
+                    [
+                        "Tokio runtime internals explained",
+                        "Getting started with async Rust tasks",
+                        "Scheduler design notes from the maintainers",
+                    ][i],
+                    &format!("asynchronous runtime for Rust, chapter {i}"),
+                )
+            })
             .collect();
         let pages: Vec<(&str, String)> = urls
             .iter()
@@ -843,18 +958,29 @@ async fn a_page_that_cannot_be_read_is_replaced_by_the_next_candidate() {
                 (*u, page("Tokio runtime overview", &[lead.as_str(), RUNTIME[0], RUNTIME[1], RUNTIME[2]]))
             })
             .collect();
-        let p = Pipeline::new(vec![FakeSource::ok("a", hits)], FakePages::new(&pages)).config(PipelineConfig {
-            fetch_standard: 2,
-            ..Default::default()
-        });
+        let p = Pipeline::new(vec![FakeSource::ok("a", hits)], FakePages::new(&pages)).config(
+            PipelineConfig {
+                fetch_standard: 2,
+                ..Default::default()
+            },
+        );
         let mut req = SearchRequest::new("tokio async runtime");
         req.limit = 2;
         let resp = p.search(&req).await.unwrap();
-        assert_eq!(resp.hits.len(), 2, "missing={missing}: {:?} {:?}", resp.hits.iter().map(|h| &h.url).collect::<Vec<_>>(), resp.degraded);
+        assert_eq!(
+            resp.hits.len(),
+            2,
+            "missing={missing}: {:?} {:?}",
+            resp.hits.iter().map(|h| &h.url).collect::<Vec<_>>(),
+            resp.degraded
+        );
         assert!(
             resp.hits.iter().all(|h| h.content.is_some()),
             "missing={missing}: {:?}",
-            resp.hits.iter().map(|h| (&h.url, h.content.is_some())).collect::<Vec<_>>()
+            resp.hits
+                .iter()
+                .map(|h| (&h.url, h.content.is_some()))
+                .collect::<Vec<_>>()
         );
         assert!(resp.stages.iter().any(|s| s.stage == "fetch_slowest_page"));
     }
@@ -866,13 +992,23 @@ async fn pages_nobody_read_rank_behind_the_ones_that_were_read() {
     let weak = "https://weak.example/b";
     let gone = "https://gone.example/c";
     let hits = vec![
-        hit(gone, "Tokio async runtime guide", "tokio async runtime guide for rust"),
+        hit(
+            gone,
+            "Tokio async runtime guide",
+            "tokio async runtime guide for rust",
+        ),
         hit(good, "Tokio overview", "asynchronous runtime"),
         hit(weak, "Cheap watches", "discount tokio"),
     ];
-    let pages = FakePages::new(&[(good, page("Tokio overview", &RUNTIME)), (weak, page("Cheap watches", &SPAM))]);
+    let pages = FakePages::new(&[
+        (good, page("Tokio overview", &RUNTIME)),
+        (weak, page("Cheap watches", &SPAM)),
+    ]);
     let p = standard_pipeline(vec![FakeSource::ok("a", hits)], pages);
-    let resp = p.search(&SearchRequest::new("tokio async runtime")).await.unwrap();
+    let resp = p
+        .search(&SearchRequest::new("tokio async runtime"))
+        .await
+        .unwrap();
     assert_eq!(resp.hits[0].url, good);
     let gone_at = resp.hits.iter().position(|h| h.url == gone).unwrap();
     assert!(gone_at >= 1 && resp.hits[gone_at].content_error.is_some());
@@ -880,13 +1016,36 @@ async fn pages_nobody_read_rank_behind_the_ones_that_were_read() {
 
 #[tokio::test]
 async fn a_blocked_source_is_left_alone_for_a_while() {
-    let ok = FakeSource::ok("a", vec![hit("https://docs.example/tokio", "Tokio overview", "asynchronous runtime")]);
+    let ok = FakeSource::ok(
+        "a",
+        vec![hit(
+            "https://docs.example/tokio",
+            "Tokio overview",
+            "asynchronous runtime",
+        )],
+    );
     let blocked = FakeSource::failing("b", FailureKind::Blocked);
-    let pages = FakePages::new(&[("https://docs.example/tokio", page("Tokio overview", &RUNTIME))]);
+    let pages = FakePages::new(&[(
+        "https://docs.example/tokio",
+        page("Tokio overview", &RUNTIME),
+    )]);
     let p = standard_pipeline(vec![ok, blocked.clone()], pages);
-    p.search(&SearchRequest::new("tokio async runtime")).await.unwrap();
+    p.search(&SearchRequest::new("tokio async runtime"))
+        .await
+        .unwrap();
     assert_eq!(blocked.calls.load(Ordering::SeqCst), 1);
-    let again = p.search(&SearchRequest::new("tokio runtime scheduler")).await.unwrap();
-    assert_eq!(blocked.calls.load(Ordering::SeqCst), 1, "asked again while paused");
-    assert!(again.degraded.iter().any(|d| d.contains("b skipped")), "{:?}", again.degraded);
+    let again = p
+        .search(&SearchRequest::new("tokio runtime scheduler"))
+        .await
+        .unwrap();
+    assert_eq!(
+        blocked.calls.load(Ordering::SeqCst),
+        1,
+        "asked again while paused"
+    );
+    assert!(
+        again.degraded.iter().any(|d| d.contains("b skipped")),
+        "{:?}",
+        again.degraded
+    );
 }

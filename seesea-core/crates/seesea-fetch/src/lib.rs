@@ -100,14 +100,18 @@ pub fn check_target_with(raw: &str, allow_private: bool) -> Result<Url, FetchErr
         return Err(FetchError::InvalidUrl("url has no host".into()));
     }
     if seesea_net::guard::forbidden_url(&url) {
-        return Err(FetchError::Blocked("private addresses are not allowed".into()));
+        return Err(FetchError::Blocked(
+            "private addresses are not allowed".into(),
+        ));
     }
     Ok(url)
 }
 
 fn check_ip(ip: IpAddr) -> Result<(), FetchError> {
     if seesea_net::guard::forbidden_ip(ip) {
-        Err(FetchError::Blocked("private addresses are not allowed".into()))
+        Err(FetchError::Blocked(
+            "private addresses are not allowed".into(),
+        ))
     } else {
         Ok(())
     }
@@ -172,11 +176,15 @@ pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchErro
     let response = loop {
         let left = budget.saturating_sub(started.elapsed()).as_secs().max(1);
         let response = if opts.allow_private {
-            client.get_page(url.as_str(), left, attempt, !opts.browser_headers).await
+            client
+                .get_page(url.as_str(), left, attempt, !opts.browser_headers)
+                .await
         } else {
-            client.get_public_page(url.as_str(), left, attempt, !opts.browser_headers).await
+            client
+                .get_public_page(url.as_str(), left, attempt, !opts.browser_headers)
+                .await
         }
-            .map_err(|e| FetchError::Network(e.to_string()))?;
+        .map_err(|e| FetchError::Network(e.to_string()))?;
         let status = response.status().as_u16();
         attempt += 1;
         let again = opts.browser_headers
@@ -217,7 +225,6 @@ pub async fn fetch(raw_url: &str, opts: &FetchOptions) -> Result<Page, FetchErro
     })
 }
 
-
 /// The charset named in a `Content-Type` header, if any.
 fn charset_of(content_type: &str) -> Option<&'static encoding_rs::Encoding> {
     content_type
@@ -227,7 +234,10 @@ fn charset_of(content_type: &str) -> Option<&'static encoding_rs::Encoding> {
 }
 
 /// Read the body in pieces, stop at `max` bytes, and decode it (UTF-8 unless the header says otherwise).
-async fn read_capped(mut response: seesea_net::reqwest::Response, max: usize) -> Result<String, FetchError> {
+async fn read_capped(
+    mut response: seesea_net::reqwest::Response,
+    max: usize,
+) -> Result<String, FetchError> {
     let encoding = response
         .headers()
         .get("content-type")
@@ -236,7 +246,11 @@ async fn read_capped(mut response: seesea_net::reqwest::Response, max: usize) ->
         .unwrap_or(encoding_rs::UTF_8);
     let mut bytes: Vec<u8> = Vec::new();
     while bytes.len() < max {
-        match response.chunk().await.map_err(|e| FetchError::Read(e.to_string()))? {
+        match response
+            .chunk()
+            .await
+            .map_err(|e| FetchError::Read(e.to_string()))?
+        {
             Some(chunk) => {
                 let room = max - bytes.len();
                 bytes.extend_from_slice(&chunk[..chunk.len().min(room)]);

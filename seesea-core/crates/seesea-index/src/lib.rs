@@ -11,12 +11,12 @@ pub mod poller;
 pub mod registry;
 pub mod source;
 pub mod store;
-pub mod websub;
 pub mod vectors;
+pub mod websub;
 
-pub use source::READ;
 pub use poller::{PollConfig, PollReport, Poller};
 pub use registry::{Feed, Registry, Status, Sub};
+pub use source::READ;
 pub use source::{IndexSink, IndexSource};
 pub use store::{IngestReport, Item, Stats, Store, Stored};
 
@@ -34,7 +34,11 @@ impl Index {
     /// Opening creates nothing; files appear on the first write.
     pub fn open(dir: impl Into<PathBuf>) -> Arc<Self> {
         let dir = dir.into();
-        Arc::new(Self { store: Store::new(dir.clone()), registry: Registry::new(dir.join("feeds.db")), dir })
+        Arc::new(Self {
+            store: Store::new(dir.clone()),
+            registry: Registry::new(dir.join("feeds.db")),
+            dir,
+        })
     }
 }
 

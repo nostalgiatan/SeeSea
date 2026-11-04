@@ -59,8 +59,17 @@ pub struct Admitted {
 
 fn denial(d: &Denied) -> (&'static str, String) {
     match d.reason {
-        Reason::Rate => ("rate_limited", format!("more than {} credits per minute; retry in {} s", d.limit_per_minute, d.retry_after_secs)),
-        Reason::Daily => ("quota_exceeded", "the daily credit budget of this plan is spent".to_string()),
+        Reason::Rate => (
+            "rate_limited",
+            format!(
+                "more than {} credits per minute; retry in {} s",
+                d.limit_per_minute, d.retry_after_secs
+            ),
+        ),
+        Reason::Daily => (
+            "quota_exceeded",
+            "the daily credit budget of this plan is spent".to_string(),
+        ),
     }
 }
 
@@ -73,7 +82,12 @@ pub struct Allowed {
 #[derive(Debug)]
 pub enum Refusal {
     Unauthorized(String),
-    Limited { denied: Option<Denied>, code: &'static str, message: String, retry_after: u64 },
+    Limited {
+        denied: Option<Denied>,
+        code: &'static str,
+        message: String,
+        retry_after: u64,
+    },
 }
 
 pub struct Access {
@@ -91,7 +105,9 @@ pub struct Access {
 }
 
 fn now() -> f64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64())
 }
 
 /// Equal without the time telling how long the common prefix is, or how long either side is: both are
@@ -99,12 +115,19 @@ fn now() -> f64 {
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     use sha2::{Digest, Sha256};
     let (a, b) = (Sha256::digest(a), Sha256::digest(b));
-    a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    a.iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
 }
 
 impl Access {
     /// Keys and users from `store`, plans by name (falling back to `default`).
-    pub fn new(store: Option<Store>, plans: HashMap<String, Plan>, root_key: Option<String>) -> Self {
+    pub fn new(
+        store: Option<Store>,
+        plans: HashMap<String, Plan>,
+        root_key: Option<String>,
+    ) -> Self {
         let mut all = seesea_auth::default_plans();
         all.extend(plans);
         Access {
@@ -145,7 +168,9 @@ impl Access {
 
     /// Whether a key is needed at all.
     pub fn required(&self) -> bool {
-        self.root_key.is_some() || self.remote.is_some() || self.store.as_ref().is_some_and(|s| s.has_users())
+        self.root_key.is_some()
+            || self.remote.is_some()
+            || self.store.as_ref().is_some_and(|s| s.has_users())
     }
 
     pub fn store(&self) -> Option<&Store> {
@@ -157,7 +182,11 @@ impl Access {
     }
 
     pub fn plan_for(&self, name: &str) -> Plan {
-        self.plans.get(name).or_else(|| self.plans.get("default")).cloned().unwrap_or_default()
+        self.plans
+            .get(name)
+            .or_else(|| self.plans.get("default"))
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Whether this address has failed to authenticate too often lately.
@@ -185,7 +214,12 @@ impl Access {
     }
 
     /// Decide about one request. `cost` is the base cost; handlers add to it later.
-    pub fn admit(&self, presented: Option<&str>, ip: Option<IpAddr>, cost: u32) -> Result<Allowed, Refusal> {
+    pub fn admit(
+        &self,
+        presented: Option<&str>,
+        ip: Option<IpAddr>,
+        cost: u32,
+    ) -> Result<Allowed, Refusal> {
         let t = now();
         if self.turned_away(ip, t) {
             return Err(Refusal::Limited {
@@ -197,13 +231,23 @@ impl Access {
         }
         let Some(key) = presented else {
             self.note_failure(ip, t);
-            return Err(Refusal::Unauthorized("missing API key (Authorization: Bearer <key>)".into()));
+            return Err(Refusal::Unauthorized(
+                "missing API key (Authorization: Bearer <key>)".into(),
+            ));
         };
         if let Some(root) = &self.root_key
             && constant_time_eq(key.as_bytes(), root.as_bytes())
         {
             let plan = self.plan_for("unlimited");
-            return Ok(Allowed { grant: Grant { user_id: None, plan, name: "root".into() }, headers: Vec::new(), permit: None });
+            return Ok(Allowed {
+                grant: Grant {
+                    user_id: None,
+                    plan,
+                    name: "root".into(),
+                },
+                headers: Vec::new(),
+                permit: None,
+            });
         }
         let Some(store) = &self.store else {
             self.note_failure(ip, t);
@@ -212,7 +256,12 @@ impl Access {
         let Principal { user, .. } = match store.authenticate(key) {
             Ok(p) => p,
             Err(AuthError::Db(e)) => {
-                return Err(Refusal::Limited { denied: None, code: "internal_error", message: format!("auth database: {e}"), retry_after: 5 });
+                return Err(Refusal::Limited {
+                    denied: None,
+                    code: "internal_error",
+                    message: format!("auth database: {e}"),
+                    retry_after: 5,
+                });
             }
             Err(e) => {
                 self.note_failure(ip, t);
@@ -224,19 +273,40 @@ impl Access {
             match store.spend(user.id, &plan, cost, t) {
                 Ok(r) => r,
                 Err(e) => {
-                    return Err(Refusal::Limited { denied: None, code: "internal_error", message: e.to_string(), retry_after: 5 });
+                    return Err(Refusal::Limited {
+                        denied: None,
+                        code: "internal_error",
+                        message: e.to_string(),
+                        retry_after: 5,
+                    });
                 }
             }
         } else {
-            self.limiter.check(user.id, &plan, cost, t, || store.usage_today(user.id, day_number(t as i64)))
+            self.limiter.check(user.id, &plan, cost, t, || {
+                store.usage_today(user.id, day_number(t as i64))
+            })
         };
         let decision = spent.map_err(|d| {
-                let (code, message) = match d.reason {
-                    Reason::Rate => ("rate_limited", format!("more than {} credits per minute; retry in {} s", d.limit_per_minute, d.retry_after_secs)),
-                    Reason::Daily => ("quota_exceeded", "the daily credit budget of this plan is spent".to_string()),
-                };
-                Refusal::Limited { retry_after: d.retry_after_secs, denied: Some(d), code, message }
-            })?;
+            let (code, message) = match d.reason {
+                Reason::Rate => (
+                    "rate_limited",
+                    format!(
+                        "more than {} credits per minute; retry in {} s",
+                        d.limit_per_minute, d.retry_after_secs
+                    ),
+                ),
+                Reason::Daily => (
+                    "quota_exceeded",
+                    "the daily credit budget of this plan is spent".to_string(),
+                ),
+            };
+            Refusal::Limited {
+                retry_after: d.retry_after_secs,
+                denied: Some(d),
+                code,
+                message,
+            }
+        })?;
         let permit = self.permit(user.id, plan.max_concurrent).ok_or_else(|| {
             // Nothing ran, so the credits go back.
             match (&self.store, self.shared) {
@@ -248,7 +318,10 @@ impl Access {
             Refusal::Limited {
                 denied: None,
                 code: "too_many_concurrent",
-                message: format!("{} requests are already running for this account", plan.max_concurrent),
+                message: format!(
+                    "{} requests are already running for this account",
+                    plan.max_concurrent
+                ),
                 retry_after: 1,
             }
         })?;
@@ -260,14 +333,29 @@ impl Access {
         if let Some(d) = decision.daily_remaining {
             headers.push(("x-quota-remaining", d.to_string()));
         }
-        Ok(Allowed { grant: Grant { user_id: Some(user.id), plan, name: user.name }, headers, permit: Some(permit) })
+        Ok(Allowed {
+            grant: Grant {
+                user_id: Some(user.id),
+                plan,
+                name: user.name,
+            },
+            headers,
+            permit: Some(permit),
+        })
     }
 
     /// Check a key and spend `cost` from the shared buckets, for a gateway that asks on behalf of a user.
     pub fn spend_for(&self, key: &str, cost: u32) -> Result<Admitted, Refusal> {
         let t = now();
-        let internal = |m: String| Refusal::Limited { denied: None, code: "internal_error", message: m, retry_after: 5 };
-        let Some(store) = &self.store else { return Err(Refusal::Unauthorized("wrong API key".into())) };
+        let internal = |m: String| Refusal::Limited {
+            denied: None,
+            code: "internal_error",
+            message: m,
+            retry_after: 5,
+        };
+        let Some(store) = &self.store else {
+            return Err(Refusal::Unauthorized("wrong API key".into()));
+        };
         let Principal { user, .. } = match store.authenticate(key) {
             Ok(p) => p,
             Err(AuthError::Db(e)) => return Err(internal(format!("auth database: {e}"))),
@@ -279,48 +367,99 @@ impl Access {
             .map_err(|e| internal(e.to_string()))?
             .map_err(|d| {
                 let (code, message) = denial(&d);
-                Refusal::Limited { retry_after: d.retry_after_secs, denied: Some(d), code, message }
+                Refusal::Limited {
+                    retry_after: d.retry_after_secs,
+                    denied: Some(d),
+                    code,
+                    message,
+                }
             })?;
-        Ok(Admitted { user_id: user.id, name: user.name, plan, decision })
+        Ok(Admitted {
+            user_id: user.id,
+            name: user.name,
+            plan,
+            decision,
+        })
     }
 
     /// `admit` for a gateway that keeps no accounts: the key is checked and the credits are spent on the
     /// flywheel node. (The failed-key counter and the concurrency caps stay on this gateway.)
-    pub async fn admit_remote(&self, presented: Option<&str>, ip: Option<IpAddr>, cost: u32) -> Result<Allowed, Refusal> {
+    pub async fn admit_remote(
+        &self,
+        presented: Option<&str>,
+        ip: Option<IpAddr>,
+        cost: u32,
+    ) -> Result<Allowed, Refusal> {
         use crate::wire::{Op, Status};
         let t = now();
         if self.turned_away(ip, t) {
-            return Err(Refusal::Limited { denied: None, code: "too_many_failures", message: "too many failed attempts to authenticate; wait a minute".into(), retry_after: 60 });
+            return Err(Refusal::Limited {
+                denied: None,
+                code: "too_many_failures",
+                message: "too many failed attempts to authenticate; wait a minute".into(),
+                retry_after: 60,
+            });
         }
         let Some(key) = presented else {
             self.note_failure(ip, t);
-            return Err(Refusal::Unauthorized("missing API key (Authorization: Bearer <key>)".into()));
+            return Err(Refusal::Unauthorized(
+                "missing API key (Authorization: Bearer <key>)".into(),
+            ));
         };
         if let Some(root) = &self.root_key
             && constant_time_eq(key.as_bytes(), root.as_bytes())
         {
-            return Ok(Allowed { grant: Grant { user_id: None, plan: self.plan_for("unlimited"), name: "root".into() }, headers: Vec::new(), permit: None });
+            return Ok(Allowed {
+                grant: Grant {
+                    user_id: None,
+                    plan: self.plan_for("unlimited"),
+                    name: "root".into(),
+                },
+                headers: Vec::new(),
+                permit: None,
+            });
         }
-        let unavailable = |m: String| Refusal::Limited { denied: None, code: "internal_error", message: format!("accounts unavailable: {m}"), retry_after: 2 };
-        let client = self.remote.as_ref().ok_or_else(|| unavailable("no accounts node".into()))?;
+        let unavailable = |m: String| Refusal::Limited {
+            denied: None,
+            code: "internal_error",
+            message: format!("accounts unavailable: {m}"),
+            retry_after: 2,
+        };
+        let client = self
+            .remote
+            .as_ref()
+            .ok_or_else(|| unavailable("no accounts node".into()))?;
         let reply = client
-            .call(Op::Admit, &serde_json::json!({"key": key, "cost": cost}), &[], std::time::Duration::from_secs(10))
+            .call(
+                Op::Admit,
+                &serde_json::json!({"key": key, "cost": cost}),
+                &[],
+                std::time::Duration::from_secs(10),
+            )
             .await
             .map_err(|e| unavailable(e.to_string()))?;
         let h = &reply.head;
         if reply.status != Status::Ok {
-            return Err(unavailable(h["message"].as_str().unwrap_or("error").to_string()));
+            return Err(unavailable(
+                h["message"].as_str().unwrap_or("error").to_string(),
+            ));
         }
         match h["result"].as_str() {
             Some("ok") => {}
             Some("unauthorized") => {
                 self.note_failure(ip, t);
-                return Err(Refusal::Unauthorized(h["message"].as_str().unwrap_or("wrong API key").to_string()));
+                return Err(Refusal::Unauthorized(
+                    h["message"].as_str().unwrap_or("wrong API key").to_string(),
+                ));
             }
             Some("limited") => {
                 let retry_after = h["retry_after"].as_u64().unwrap_or(1);
                 let denied = h["reason"].as_str().map(|r| Denied {
-                    reason: if r == "daily" { Reason::Daily } else { Reason::Rate },
+                    reason: if r == "daily" {
+                        Reason::Daily
+                    } else {
+                        Reason::Rate
+                    },
                     retry_after_secs: retry_after,
                     limit_per_minute: h["limit"].as_u64().unwrap_or(0) as u32,
                 });
@@ -329,36 +468,73 @@ impl Access {
                     Some("rate_limited") => "rate_limited",
                     _ => "internal_error",
                 };
-                return Err(Refusal::Limited { denied, code, message: h["message"].as_str().unwrap_or("limited").to_string(), retry_after });
+                return Err(Refusal::Limited {
+                    denied,
+                    code,
+                    message: h["message"].as_str().unwrap_or("limited").to_string(),
+                    retry_after,
+                });
             }
             _ => return Err(unavailable("unreadable answer".into())),
         }
-        let plan: Plan = serde_json::from_value(h["plan"].clone()).map_err(|e| unavailable(e.to_string()))?;
-        let user_id = h["user_id"].as_i64().ok_or_else(|| unavailable("no user".into()))?;
+        let plan: Plan =
+            serde_json::from_value(h["plan"].clone()).map_err(|e| unavailable(e.to_string()))?;
+        let user_id = h["user_id"]
+            .as_i64()
+            .ok_or_else(|| unavailable("no user".into()))?;
         let Some(permit) = self.permit(user_id, plan.max_concurrent) else {
-            let _ = client.call(Op::Refund, &serde_json::json!({"user": h["name"], "plan": plan, "cost": cost}), &[], std::time::Duration::from_secs(5)).await;
+            let _ = client
+                .call(
+                    Op::Refund,
+                    &serde_json::json!({"user": h["name"], "plan": plan, "cost": cost}),
+                    &[],
+                    std::time::Duration::from_secs(5),
+                )
+                .await;
             return Err(Refusal::Limited {
                 denied: None,
                 code: "too_many_concurrent",
-                message: format!("{} requests are already running for this account", plan.max_concurrent),
+                message: format!(
+                    "{} requests are already running for this account",
+                    plan.max_concurrent
+                ),
                 retry_after: 1,
             });
         };
         let mut headers = vec![
-            ("x-ratelimit-limit", h["limit"].as_u64().unwrap_or(0).to_string()),
-            ("x-ratelimit-remaining", h["remaining"].as_u64().unwrap_or(0).to_string()),
-            ("x-ratelimit-reset", h["reset"].as_u64().unwrap_or(0).to_string()),
+            (
+                "x-ratelimit-limit",
+                h["limit"].as_u64().unwrap_or(0).to_string(),
+            ),
+            (
+                "x-ratelimit-remaining",
+                h["remaining"].as_u64().unwrap_or(0).to_string(),
+            ),
+            (
+                "x-ratelimit-reset",
+                h["reset"].as_u64().unwrap_or(0).to_string(),
+            ),
         ];
         if let Some(d) = h["daily_remaining"].as_u64() {
             headers.push(("x-quota-remaining", d.to_string()));
         }
-        Ok(Allowed { grant: Grant { user_id: Some(user_id), plan, name: h["name"].as_str().unwrap_or("").to_string() }, headers, permit: Some(permit) })
+        Ok(Allowed {
+            grant: Grant {
+                user_id: Some(user_id),
+                plan,
+                name: h["name"].as_str().unwrap_or("").to_string(),
+            },
+            headers,
+            permit: Some(permit),
+        })
     }
 
     fn permit(&self, user: i64, max: u32) -> Option<OwnedSemaphorePermit> {
         let sem = {
             let mut p = self.permits.lock().unwrap();
-            let e = p.entry(user).or_insert_with(|| (max, Arc::new(Semaphore::new(max as usize))));
+            let e = p
+                .entry(user)
+                .or_insert_with(|| (max, Arc::new(Semaphore::new(max as usize))));
             if e.0 != max {
                 *e = (max, Arc::new(Semaphore::new(max as usize)));
             }
@@ -373,10 +549,18 @@ impl Access {
             && extra > 0
         {
             if let Some(client) = self.remote.clone() {
-                let head = serde_json::json!({"user": grant.name, "plan": grant.plan, "extra": extra});
+                let head =
+                    serde_json::json!({"user": grant.name, "plan": grant.plan, "extra": extra});
                 if let Ok(rt) = tokio::runtime::Handle::try_current() {
                     rt.spawn(async move {
-                        let _ = client.call(crate::wire::Op::Charge, &head, &[], std::time::Duration::from_secs(5)).await;
+                        let _ = client
+                            .call(
+                                crate::wire::Op::Charge,
+                                &head,
+                                &[],
+                                std::time::Duration::from_secs(5),
+                            )
+                            .await;
                     });
                 }
                 return;
@@ -392,7 +576,9 @@ impl Access {
 
     /// Write the day's totals back so they survive a restart.
     pub fn flush(&self) {
-        let Some(store) = self.store.as_ref().filter(|_| !self.shared) else { return };
+        let Some(store) = self.store.as_ref().filter(|_| !self.shared) else {
+            return;
+        };
         let day = day_number(now() as i64);
         for (user, used) in self.limiter.used_today(day) {
             let _ = store.set_usage(user, day, used);
@@ -412,7 +598,8 @@ mod tests {
         let store = Store::in_memory().unwrap();
         store.create_user("ann", "p").unwrap();
         let (_, key) = store.create_key("ann", "k", None).unwrap();
-        let access = Access::new(Some(store), HashMap::from([("p".to_string(), plan)]), None).local_limits();
+        let access =
+            Access::new(Some(store), HashMap::from([("p".to_string(), plan)]), None).local_limits();
         (access, key)
     }
 
@@ -429,18 +616,34 @@ mod tests {
     fn the_root_key_passes_unlimited_and_others_are_refused() {
         let a = Access::with_root_key(Some("s3cret".into()));
         assert!(a.admit(Some("s3cret"), ip(1), 1).is_ok());
-        assert!(matches!(a.admit(Some("nope"), ip(1), 1), Err(Refusal::Unauthorized(_))));
-        assert!(matches!(a.admit(None, ip(1), 1), Err(Refusal::Unauthorized(_))));
+        assert!(matches!(
+            a.admit(Some("nope"), ip(1), 1),
+            Err(Refusal::Unauthorized(_))
+        ));
+        assert!(matches!(
+            a.admit(None, ip(1), 1),
+            Err(Refusal::Unauthorized(_))
+        ));
     }
 
     #[test]
     fn a_user_is_rate_limited_by_their_plan_and_told_how_long_to_wait() {
-        let (a, key) = with_user(Plan { per_minute: 60, burst: 3, per_day: 0, max_concurrent: 10, deep: true });
+        let (a, key) = with_user(Plan {
+            per_minute: 60,
+            burst: 3,
+            per_day: 0,
+            max_concurrent: 10,
+            deep: true,
+        });
         for _ in 0..3 {
             a.admit(Some(&key), ip(2), 1).unwrap();
         }
         match a.admit(Some(&key), ip(2), 1) {
-            Err(Refusal::Limited { code: "rate_limited", retry_after, .. }) => assert!(retry_after >= 1),
+            Err(Refusal::Limited {
+                code: "rate_limited",
+                retry_after,
+                ..
+            }) => assert!(retry_after >= 1),
             Err(_) => panic!("wrong refusal"),
             Ok(_) => panic!("should have been limited"),
         }
@@ -448,9 +651,21 @@ mod tests {
 
     #[test]
     fn concurrency_is_capped_and_freed_when_a_request_ends() {
-        let (a, key) = with_user(Plan { per_minute: 6000, burst: 1000, per_day: 0, max_concurrent: 1, deep: true });
+        let (a, key) = with_user(Plan {
+            per_minute: 6000,
+            burst: 1000,
+            per_day: 0,
+            max_concurrent: 1,
+            deep: true,
+        });
         let first = a.admit(Some(&key), ip(3), 1).unwrap();
-        assert!(matches!(a.admit(Some(&key), ip(3), 1), Err(Refusal::Limited { code: "too_many_concurrent", .. })));
+        assert!(matches!(
+            a.admit(Some(&key), ip(3), 1),
+            Err(Refusal::Limited {
+                code: "too_many_concurrent",
+                ..
+            })
+        ));
         drop(first);
         assert!(a.admit(Some(&key), ip(3), 1).is_ok());
     }
@@ -459,17 +674,36 @@ mod tests {
     fn many_wrong_keys_from_one_address_lock_it_out_but_not_others() {
         let (a, key) = with_user(Plan::default());
         for _ in 0..FAILURES_PER_MINUTE {
-            let _ = a.admit(Some("ss_00000000_0000000000000000000000000000000000000000"), ip(9), 1);
+            let _ = a.admit(
+                Some("ss_00000000_0000000000000000000000000000000000000000"),
+                ip(9),
+                1,
+            );
         }
-        assert!(matches!(a.admit(Some(&key), ip(9), 1), Err(Refusal::Limited { code: "too_many_failures", .. })));
-        assert!(a.admit(Some(&key), ip(10), 1).is_ok(), "another address is unaffected");
+        assert!(matches!(
+            a.admit(Some(&key), ip(9), 1),
+            Err(Refusal::Limited {
+                code: "too_many_failures",
+                ..
+            })
+        ));
+        assert!(
+            a.admit(Some(&key), ip(10), 1).is_ok(),
+            "another address is unaffected"
+        );
     }
 
     #[test]
     fn two_servers_on_one_database_share_a_users_limits() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth.db");
-        let plan = Plan { per_minute: 60, burst: 3, per_day: 0, max_concurrent: 10, deep: true };
+        let plan = Plan {
+            per_minute: 60,
+            burst: 3,
+            per_day: 0,
+            max_concurrent: 10,
+            deep: true,
+        };
         let plans = HashMap::from([("p".to_string(), plan)]);
         let one = Access::new(Some(Store::open(&path).unwrap()), plans.clone(), None);
         let two = Access::new(Some(Store::open(&path).unwrap()), plans, None);
@@ -480,15 +714,36 @@ mod tests {
         two.admit(Some(&key), ip(5), 1).unwrap();
         one.admit(Some(&key), ip(5), 1).unwrap();
         // The bucket of 3 is empty for whichever server is asked next.
-        assert!(matches!(two.admit(Some(&key), ip(5), 1), Err(Refusal::Limited { code: "rate_limited", .. })));
+        assert!(matches!(
+            two.admit(Some(&key), ip(5), 1),
+            Err(Refusal::Limited {
+                code: "rate_limited",
+                ..
+            })
+        ));
 
         let (_, key2) = store.create_key("ann", "k2", None).unwrap();
-        assert!(matches!(one.admit(Some(&key2), ip(5), 1), Err(Refusal::Limited { code: "rate_limited", .. })), "keys of one user share the bucket");
+        assert!(
+            matches!(
+                one.admit(Some(&key2), ip(5), 1),
+                Err(Refusal::Limited {
+                    code: "rate_limited",
+                    ..
+                })
+            ),
+            "keys of one user share the bucket"
+        );
     }
 
     #[test]
     fn costs_and_totals_are_written_back() {
-        let (a, key) = with_user(Plan { per_minute: 6000, burst: 1000, per_day: 100, max_concurrent: 10, deep: false });
+        let (a, key) = with_user(Plan {
+            per_minute: 6000,
+            burst: 1000,
+            per_day: 100,
+            max_concurrent: 10,
+            deep: false,
+        });
         let ok = a.admit(Some(&key), ip(4), 1).unwrap();
         a.charge(&ok.grant, mode_extra(seesea_pipeline::Mode::Deep));
         assert!(!ok.grant.plan.deep);
@@ -496,6 +751,9 @@ mod tests {
         let store = a.store.as_ref().unwrap();
         let uid = store.user("ann").unwrap().id;
         assert_eq!(store.usage_today(uid, day_number(now() as i64)), 5);
-        assert_eq!(base_cost("/v1/search") + mode_extra(seesea_pipeline::Mode::Standard), 2);
+        assert_eq!(
+            base_cost("/v1/search") + mode_extra(seesea_pipeline::Mode::Standard),
+            2
+        );
     }
 }

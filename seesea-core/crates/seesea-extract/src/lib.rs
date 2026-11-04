@@ -15,7 +15,7 @@ pub mod model;
 pub mod pagefeat;
 pub mod text;
 
-use blocks::{feature_names, Block};
+use blocks::{Block, feature_names};
 use scraper::Html;
 use serde::Serialize;
 
@@ -32,13 +32,19 @@ pub const MAX_ELEMENTS: usize = 100_000;
 const MAX_TAG: usize = 4096;
 
 /// Elements without an end tag.
-const VOID: &[&str] = &["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"];
+const VOID: &[&str] = &[
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
+    "track", "wbr",
+];
 /// Elements whose end tag may be left out: they do not deepen the nesting.
 const OPTIONAL_END: &[&str] = &[
-    "p", "li", "dt", "dd", "tr", "td", "th", "option", "optgroup", "thead", "tbody", "tfoot", "colgroup", "rt", "rp", "html", "head", "body",
+    "p", "li", "dt", "dd", "tr", "td", "th", "option", "optgroup", "thead", "tbody", "tfoot",
+    "colgroup", "rt", "rp", "html", "head", "body",
 ];
 /// Elements whose content is text, not markup (outside svg and math).
-const RAW_TEXT: &[&str] = &["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes"];
+const RAW_TEXT: &[&str] = &[
+    "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes",
+];
 
 /// A page after the checks of [`sanitize`]: the markup to parse and what was found wrong with the page.
 #[derive(Debug, Clone)]
@@ -49,7 +55,10 @@ pub struct Sanitized<'a> {
 }
 
 fn find_from(b: &[u8], from: usize, needle: &[u8]) -> Option<usize> {
-    b.get(from..)?.windows(needle.len()).position(|w| w == needle).map(|p| from + p)
+    b.get(from..)?
+        .windows(needle.len())
+        .position(|w| w == needle)
+        .map(|p| from + p)
 }
 
 /// Where a comment that starts at `from` (after `<!--`) ends: after `-->` or `--!>`; `<!-->` and `<!--->` are empty.
@@ -115,14 +124,18 @@ pub fn sanitize(html: &str) -> Sanitized<'_> {
 
 pub fn sanitize_with(html: &str, max_depth: usize, max_elements: usize) -> Sanitized<'_> {
     let b = html.as_bytes();
-    let (mut i, mut kept, mut elements, mut foreign, mut deepest) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    let (mut i, mut kept, mut elements, mut foreign, mut deepest) =
+        (0usize, 0usize, 0usize, 0usize, 0usize);
     let mut open: Vec<bool> = Vec::new(); // per open element: whether its tags are kept
     let mut drops: Vec<(usize, usize)> = Vec::new();
     let mut cut_at: Option<usize> = None;
     let mut flags: Vec<String> = Vec::new();
     while i < b.len() {
         if b[i] != b'<' {
-            i = b[i..].iter().position(|c| *c == b'<').map_or(b.len(), |p| i + p);
+            i = b[i..]
+                .iter()
+                .position(|c| *c == b'<')
+                .map_or(b.len(), |p| i + p);
             continue;
         }
         if b[i + 1..].starts_with(b"!--") {
@@ -131,7 +144,10 @@ pub fn sanitize_with(html: &str, max_depth: usize, max_elements: usize) -> Sanit
         }
         let closing = b.get(i + 1) == Some(&b'/');
         let name_at = i + 1 + usize::from(closing);
-        let name_len = b[name_at.min(b.len())..].iter().take_while(|c| c.is_ascii_alphanumeric()).count();
+        let name_len = b[name_at.min(b.len())..]
+            .iter()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .count();
         if name_len == 0 {
             i += 1;
             continue;
@@ -172,7 +188,12 @@ pub fn sanitize_with(html: &str, max_depth: usize, max_elements: usize) -> Sanit
             let mut j = end + 1;
             let close = loop {
                 match find_from(b, j, b"</") {
-                    Some(p) if b.get(p + 2..p + 2 + nb.len()).is_some_and(|w| w.eq_ignore_ascii_case(nb)) => break Some(p),
+                    Some(p)
+                        if b.get(p + 2..p + 2 + nb.len())
+                            .is_some_and(|w| w.eq_ignore_ascii_case(nb)) =>
+                    {
+                        break Some(p);
+                    }
                     Some(p) => j = p + 2,
                     None => break None,
                 }
@@ -205,7 +226,10 @@ pub fn sanitize_with(html: &str, max_depth: usize, max_elements: usize) -> Sanit
         flags.insert(0, format!("nesting {deepest} elements deep"));
     }
     if drops.is_empty() && cut_at.is_none() {
-        return Sanitized { html: html.into(), flags };
+        return Sanitized {
+            html: html.into(),
+            flags,
+        };
     }
     let stop = cut_at.unwrap_or(html.len());
     let mut out = String::with_capacity(stop);
@@ -218,7 +242,10 @@ pub fn sanitize_with(html: &str, max_depth: usize, max_elements: usize) -> Sanit
         at = e.min(stop);
     }
     out.push_str(&html[at..stop]);
-    Sanitized { html: out.into(), flags }
+    Sanitized {
+        html: out.into(),
+        flags,
+    }
 }
 
 /// Parse a page the way extraction does: after [`sanitize`].
@@ -276,7 +303,9 @@ impl Diagnostics {
     /// The markup is built to hurt the parser (nesting no page has, a tag that never ends), as opposed to
     /// merely big. What was recovered from such a page is not worth trusting.
     pub fn hostile(&self) -> bool {
-        self.flags.iter().any(|f| f.starts_with("nesting") || f.contains("never ends"))
+        self.flags
+            .iter()
+            .any(|f| f.starts_with("nesting") || f.contains("never ends"))
     }
 }
 
@@ -299,7 +328,9 @@ pub struct Extractor {
 }
 
 impl Default for Extractor {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Extractor {
@@ -307,15 +338,22 @@ impl Extractor {
     pub fn new() -> Self {
         use std::io::Read;
         let mut json = String::new();
-        flate2::read::GzDecoder::new(DEFAULT_MODEL).read_to_string(&mut json).expect("bundled model decompresses");
-        Extractor { model: Model::from_json(&json).expect("bundled model is valid") }
+        flate2::read::GzDecoder::new(DEFAULT_MODEL)
+            .read_to_string(&mut json)
+            .expect("bundled model decompresses");
+        Extractor {
+            model: Model::from_json(&json).expect("bundled model is valid"),
+        }
     }
 
     pub fn with_model(json: &str) -> Result<Self, String> {
         let model = Model::from_json(json)?;
         let want = feature_names().len() + pagefeat::N_PAGE_FEATURES + 1;
         if model.n_features != want {
-            return Err(format!("model expects {} features, this build produces {want}", model.n_features));
+            return Err(format!(
+                "model expects {} features, this build produces {want}",
+                model.n_features
+            ));
         }
         Ok(Extractor { model })
     }
@@ -326,12 +364,19 @@ impl Extractor {
     #[cfg(feature = "parallel")]
     pub fn extract_batch(&self, pages: &[(&str, &str)], opts: &Options) -> Vec<ExtractResult> {
         use rayon::prelude::*;
-        pages.par_iter().map(|(html, url)| self.extract(html, url, opts)).collect()
+        pages
+            .par_iter()
+            .map(|(html, url)| self.extract(html, url, opts))
+            .collect()
     }
 
     /// Decision threshold in effect for these options.
     pub fn threshold(&self, opts: &Options) -> f32 {
-        opts.threshold.unwrap_or(if opts.scope == Scope::Extended { self.model.thr_extended } else { self.model.thr_core })
+        opts.threshold.unwrap_or(if opts.scope == Scope::Extended {
+            self.model.thr_extended
+        } else {
+            self.model.thr_core
+        })
     }
 
     /// Per-block probability of being main content, in `blocks::segment` order (used to pre-label evaluation pages).
@@ -341,7 +386,11 @@ impl Extractor {
     }
 
     fn probabilities(&self, blocks: &[Block], html: &str, url: &str, scope: Scope) -> Vec<f32> {
-        let flag = if scope == Scope::Extended { 1.0f32 } else { 0.0 };
+        let flag = if scope == Scope::Extended {
+            1.0f32
+        } else {
+            0.0
+        };
         let pf = pagefeat::page_features(url, html, blocks);
         let feats: Vec<&[f32]> = blocks.iter().map(|b| b.feats.as_slice()).collect();
         self.model.predict_blocks(&feats, &pf, flag)
@@ -356,7 +405,16 @@ impl Extractor {
                 page_type: None,
                 confidence: 0.0,
                 needs_render: false,
-                diagnostics: Diagnostics { blocks: 0, selected_blocks: 0, selected_chars: 0, visible_chars: 0, threshold: self.threshold(opts), fallback: false, not_text: true, flags: Vec::new() },
+                diagnostics: Diagnostics {
+                    blocks: 0,
+                    selected_blocks: 0,
+                    selected_chars: 0,
+                    visible_chars: 0,
+                    threshold: self.threshold(opts),
+                    fallback: false,
+                    not_text: true,
+                    flags: Vec::new(),
+                },
             };
         }
         let clean = sanitize(html);
@@ -369,13 +427,23 @@ impl Extractor {
 
         let mut keep: Vec<bool> = probs.iter().map(|p| *p >= thr).collect();
         // The classifier keeps some promotional call-outs that sit inside the article.
-        let promo: Vec<usize> = (0..blocks.len()).filter(|i| keep[*i] && is_promo(&blocks[*i].text)).collect();
+        let promo: Vec<usize> = (0..blocks.len())
+            .filter(|i| keep[*i] && is_promo(&blocks[*i].text))
+            .collect();
         if promo.len() < keep.iter().filter(|k| **k).count() {
-            for i in promo { keep[i] = false; }
+            for i in promo {
+                keep[i] = false;
+            }
         }
         let fallback = !keep.iter().any(|k| *k) && !blocks.is_empty();
         if fallback {
-            if let Some((i, _)) = probs.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()) { keep[i] = true; }
+            if let Some((i, _)) = probs
+                .iter()
+                .enumerate()
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            {
+                keep[i] = true;
+            }
         }
         let chars = |b: &Block| b.text.chars().count();
         let selected: Vec<usize> = (0..blocks.len()).filter(|i| keep[*i]).collect();
@@ -385,8 +453,14 @@ impl Extractor {
         let core = blocks::join_blocks(&blocks, &selected);
         let sections = sections(&blocks, &keep);
 
-        let confidence = if selected_chars == 0 { 0.0 } else {
-            let mean: f32 = selected.iter().map(|i| probs[*i] * chars(&blocks[*i]) as f32).sum::<f32>() / selected_chars as f32;
+        let confidence = if selected_chars == 0 {
+            0.0
+        } else {
+            let mean: f32 = selected
+                .iter()
+                .map(|i| probs[*i] * chars(&blocks[*i]) as f32)
+                .sum::<f32>()
+                / selected_chars as f32;
             mean * (selected_chars as f32 / 200.0).min(1.0) * if fallback { 0.5 } else { 1.0 }
         };
         let needs_render = selected_chars < 150 && (visible_chars < 300 || js_app_marker(html));
@@ -398,7 +472,16 @@ impl Extractor {
             page_type: None,
             confidence,
             needs_render,
-            diagnostics: Diagnostics { blocks: blocks.len(), selected_blocks: selected.len(), selected_chars, visible_chars, threshold: thr, fallback, not_text: false, flags: clean.flags.clone() },
+            diagnostics: Diagnostics {
+                blocks: blocks.len(),
+                selected_blocks: selected.len(),
+                selected_chars,
+                visible_chars,
+                threshold: thr,
+                fallback,
+                not_text: false,
+                flags: clean.flags.clone(),
+            },
         }
     }
 }
@@ -407,15 +490,41 @@ impl Extractor {
 fn sections(blocks: &[Block], keep: &[bool]) -> Vec<Section> {
     let names = feature_names();
     let ix = |n: &str| names.iter().position(|x| x == n).unwrap();
-    let (c_self, c_anc, r_anc, nav, footer) = (ix("kw_self_comment"), ix("kw_anc_comment"), ix("kw_anc_related"), ix("kw_anc_nav"), ix("kw_anc_footer"));
+    let (c_self, c_anc, r_anc, nav, footer) = (
+        ix("kw_self_comment"),
+        ix("kw_anc_comment"),
+        ix("kw_anc_related"),
+        ix("kw_anc_nav"),
+        ix("kw_anc_footer"),
+    );
     let mut out = Vec::new();
     for (kind, test) in [
-        (SectionKind::Comments, Box::new(move |b: &Block| b.feats[c_self] > 0.5 || b.feats[c_anc] > 0.5) as Box<dyn Fn(&Block) -> bool>),
-        (SectionKind::Related, Box::new(move |b: &Block| b.feats[r_anc] > 0.5)),
+        (
+            SectionKind::Comments,
+            Box::new(move |b: &Block| b.feats[c_self] > 0.5 || b.feats[c_anc] > 0.5)
+                as Box<dyn Fn(&Block) -> bool>,
+        ),
+        (
+            SectionKind::Related,
+            Box::new(move |b: &Block| b.feats[r_anc] > 0.5),
+        ),
     ] {
-        let md: Vec<&str> = blocks.iter().zip(keep).filter(|(b, k)| !**k && test(b) && b.feats[nav] < 0.5 && b.feats[footer] < 0.5 && b.text.chars().count() >= 20).map(|(b, _)| b.md.as_str()).collect();
+        let md: Vec<&str> = blocks
+            .iter()
+            .zip(keep)
+            .filter(|(b, k)| {
+                !**k && test(b)
+                    && b.feats[nav] < 0.5
+                    && b.feats[footer] < 0.5
+                    && b.text.chars().count() >= 20
+            })
+            .map(|(b, _)| b.md.as_str())
+            .collect();
         if md.iter().map(|m| m.chars().count()).sum::<usize>() >= 60 {
-            out.push(Section { kind, markdown: md.join("\n\n") });
+            out.push(Section {
+                kind,
+                markdown: md.join("\n\n"),
+            });
         }
     }
     out
@@ -424,10 +533,26 @@ fn sections(blocks: &[Block], keep: &[bool]) -> Vec<Section> {
 /// A short block that is a call to action rather than content: event sign-ups, QR codes, "buy now".
 fn is_promo(text: &str) -> bool {
     const PHRASES: &[&str] = &[
-        "点击报名", "立即报名", "扫码报名", "名额有限", "扫描二维码", "长按识别", "关注公众号", "点击关注", "点击阅读原文", "立即购买", "限时优惠",
-        "buy now", "sign up now", "register now", "subscribe now", "limited time offer",
+        "点击报名",
+        "立即报名",
+        "扫码报名",
+        "名额有限",
+        "扫描二维码",
+        "长按识别",
+        "关注公众号",
+        "点击关注",
+        "点击阅读原文",
+        "立即购买",
+        "限时优惠",
+        "buy now",
+        "sign up now",
+        "register now",
+        "subscribe now",
+        "limited time offer",
     ];
-    if text.chars().count() > 300 { return false; }
+    if text.chars().count() > 300 {
+        return false;
+    }
     let lower = text.to_lowercase();
     PHRASES.iter().any(|p| lower.contains(p))
 }
@@ -446,7 +571,18 @@ fn looks_binary(html: &str) -> bool {
 
 fn js_app_marker(html: &str) -> bool {
     let l = html.to_lowercase();
-    ["id=\"root\"", "id=\"__next\"", "id=\"app\"", "id=\"__nuxt\"", "enable javascript", "requires javascript", "需要启用javascript", "请开启javascript"].iter().any(|m| l.contains(m))
+    [
+        "id=\"root\"",
+        "id=\"__next\"",
+        "id=\"app\"",
+        "id=\"__nuxt\"",
+        "enable javascript",
+        "requires javascript",
+        "需要启用javascript",
+        "请开启javascript",
+    ]
+    .iter()
+    .any(|m| l.contains(m))
 }
 
 #[cfg(test)]
@@ -460,13 +596,22 @@ mod sanitize_tests {
 
     #[test]
     fn ordinary_pages_come_back_unchanged() {
-        assert!(borrowed("<html><head><title>A <b>t</b></title><script>if (a<b) { x = '<div><div>'; }</script></head><body><div><p>one<p>two<ul><li>a<li>b</ul><br><img src=x><svg><path/></svg></div><!-- <div><div> --></body></html>"));
+        assert!(borrowed(
+            "<html><head><title>A <b>t</b></title><script>if (a<b) { x = '<div><div>'; }</script></head><body><div><p>one<p>two<ul><li>a<li>b</ul><br><img src=x><svg><path/></svg></div><!-- <div><div> --></body></html>"
+        ));
         assert!(borrowed("<div a=\">\" b='<div><div>'>x</div>"));
     }
 
     #[test]
     fn markup_inside_scripts_comments_and_quotes_does_not_count() {
-        let page = format!("<body><script>{}</script><!--{}--><style>{}</style><textarea>{}</textarea><div title=\"{}\">x</div>", "<div>".repeat(500), "<div>".repeat(500), "<span>".repeat(500), "<b>".repeat(500), "<i>".repeat(500));
+        let page = format!(
+            "<body><script>{}</script><!--{}--><style>{}</style><textarea>{}</textarea><div title=\"{}\">x</div>",
+            "<div>".repeat(500),
+            "<div>".repeat(500),
+            "<span>".repeat(500),
+            "<b>".repeat(500),
+            "<i>".repeat(500)
+        );
         assert!(borrowed(&page));
         // The empty comments of the spec
         assert!(!borrowed(&format!("<!--><div>{}", "<div>".repeat(20))));
@@ -474,7 +619,11 @@ mod sanitize_tests {
 
     #[test]
     fn deep_nesting_is_flattened_and_the_text_stays() {
-        let page = format!("<body>{}text{}", "<div>".repeat(10_000), "</div>".repeat(10_000));
+        let page = format!(
+            "<body>{}text{}",
+            "<div>".repeat(10_000),
+            "</div>".repeat(10_000)
+        );
         let s = sanitize_with(&page, 100, 1_000_000);
         assert_eq!(s.html.matches("<div>").count(), 100);
         assert_eq!(s.html.matches("</div>").count(), 100);
@@ -504,13 +653,21 @@ mod sanitize_tests {
     #[test]
     fn hostile_pages_are_extracted_quickly() {
         let text = "Tokio runs asynchronous tasks on a pool of worker threads. Each task is scheduled cooperatively, which keeps the cost of a task low. ".repeat(5);
-        let page = format!("<html><body>{}<p>{text}</p>{}</body></html>", "<div>".repeat(400_000), "</div>".repeat(400_000));
+        let page = format!(
+            "<html><body>{}<p>{text}</p>{}</body></html>",
+            "<div>".repeat(400_000),
+            "</div>".repeat(400_000)
+        );
         let plain = format!("<html><body><p>{text}</p></body></html>");
         let ex = Extractor::new();
         let t = std::time::Instant::now();
         let r = ex.extract(&page, "https://example.com/", &Options::default());
         assert!(t.elapsed().as_secs() < 10, "{:?}", t.elapsed());
-        assert_eq!(r.core, ex.extract(&plain, "https://example.com/", &Options::default()).core);
+        assert_eq!(
+            r.core,
+            ex.extract(&plain, "https://example.com/", &Options::default())
+                .core
+        );
         assert!(r.core.contains("Tokio"), "{:?}", r.core);
         assert!(r.diagnostics.flags[0].starts_with("nesting"));
     }

@@ -62,7 +62,9 @@ pub struct Store {
 pub type Result<T> = std::result::Result<T, rusqlite::Error>;
 
 fn day_name(day: i64) -> String {
-    chrono::DateTime::from_timestamp(day * 86_400, 0).map(|d| d.format("%Y%m%d").to_string()).unwrap_or_default()
+    chrono::DateTime::from_timestamp(day * 86_400, 0)
+        .map(|d| d.format("%Y%m%d").to_string())
+        .unwrap_or_default()
 }
 
 fn parse_day(name: &str) -> Option<i64> {
@@ -79,15 +81,24 @@ fn hash64(s: &str) -> i64 {
 /// The same article under http/https, with or without `www.`, a fragment, a trailing slash or
 /// tracking parameters, is one key.
 pub fn url_key(url: &str) -> Option<(i64, String)> {
-    let u = url::Url::parse(url).ok().filter(|u| matches!(u.scheme(), "http" | "https"))?;
+    let u = url::Url::parse(url)
+        .ok()
+        .filter(|u| matches!(u.scheme(), "http" | "https"))?;
     let host = u.host_str()?.trim_start_matches("www.").to_lowercase();
     let mut pairs: Vec<(String, String)> = u
         .query_pairs()
-        .filter(|(k, _)| !(k.starts_with("utm_") || matches!(k.as_ref(), "fbclid" | "gclid" | "spm" | "from" | "ref")))
+        .filter(|(k, _)| {
+            !(k.starts_with("utm_")
+                || matches!(k.as_ref(), "fbclid" | "gclid" | "spm" | "from" | "ref"))
+        })
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect();
     pairs.sort();
-    let query: String = pairs.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&");
+    let query: String = pairs
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join("&");
     let canon = format!("{host}{}?{query}", u.path().trim_end_matches('/'));
     Some((hash64(&canon), host))
 }
@@ -112,7 +123,10 @@ pub fn fts_text(s: &str) -> String {
     out
 }
 
-const STOP: &[&str] = &["the", "a", "an", "of", "to", "in", "on", "and", "or", "is", "for", "what", "how", "why", "with"];
+const STOP: &[&str] = &[
+    "the", "a", "an", "of", "to", "in", "on", "and", "or", "is", "for", "what", "how", "why",
+    "with",
+];
 
 /// The searchable terms of a query: words, and for CJK runs pairs of neighbouring characters.
 pub fn fts_terms(q: &str) -> Vec<String> {
@@ -163,7 +177,11 @@ pub fn fts_query(q: &str) -> Option<String> {
 fn normalised(s: &str) -> String {
     let mut out = String::from(" ");
     for c in fts_text(s).chars() {
-        let c = if c.is_alphanumeric() { c.to_lowercase().next().unwrap_or(c) } else { ' ' };
+        let c = if c.is_alphanumeric() {
+            c.to_lowercase().next().unwrap_or(c)
+        } else {
+            ' '
+        };
         if c != ' ' || !out.ends_with(' ') {
             out.push(c);
         }
@@ -176,19 +194,31 @@ fn normalised(s: &str) -> String {
 
 fn clip(s: &str, max: usize) -> String {
     let s = s.split_whitespace().collect::<Vec<_>>().join(" ");
-    if s.chars().count() <= max { s } else { s.chars().take(max - 1).collect::<String>() + "…" }
+    if s.chars().count() <= max {
+        s
+    } else {
+        s.chars().take(max - 1).collect::<String>() + "…"
+    }
 }
 
 impl Store {
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir, open: Mutex::new(HashMap::new()) }
+        Self {
+            dir,
+            open: Mutex::new(HashMap::new()),
+        }
     }
 
     fn path(&self, day: i64) -> PathBuf {
         self.dir.join(format!("items-{}.db", day_name(day)))
     }
 
-    fn with_shard<T>(&self, day: i64, create: bool, f: impl FnOnce(&Connection) -> Result<T>) -> Result<Option<T>> {
+    fn with_shard<T>(
+        &self,
+        day: i64,
+        create: bool,
+        f: impl FnOnce(&Connection) -> Result<T>,
+    ) -> Result<Option<T>> {
         // The map is locked only to find or add the connection; the query runs under that shard's own lock,
         // so searches over different days do not wait for each other.
         let conn = {
@@ -200,7 +230,8 @@ impl Store {
                 if !create && !path.exists() {
                     return Ok(None);
                 }
-                std::fs::create_dir_all(&self.dir).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+                std::fs::create_dir_all(&self.dir)
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
                 let conn = Connection::open(&path)?;
                 conn.busy_timeout(std::time::Duration::from_secs(5))?;
                 conn.execute_batch(
@@ -232,9 +263,16 @@ impl Store {
         let mut n = 0;
         for day in days {
             self.with_shard(day, false, |c| {
-                let mut st = c.prepare("SELECT url, title, lead, published, source FROM items ORDER BY id")?;
+                let mut st =
+                    c.prepare("SELECT url, title, lead, published, source FROM items ORDER BY id")?;
                 let rows = st.query_map([], |r| {
-                    Ok(Item { url: r.get(0)?, title: r.get(1)?, lead: r.get(2)?, published: r.get(3)?, source: r.get(4)? })
+                    Ok(Item {
+                        url: r.get(0)?,
+                        title: r.get(1)?,
+                        lead: r.get(2)?,
+                        published: r.get(3)?,
+                        source: r.get(4)?,
+                    })
                 })?;
                 for row in rows {
                     f(row?);
@@ -260,8 +298,16 @@ impl Store {
             let published = it.published.filter(|p| *p <= now + 86_400);
             let day = published.unwrap_or(now) / 86_400;
             let tkey = hash64(&format!("{host}\u{1}{}", title.to_lowercase()));
-            let item = Item { title, lead: clip(&it.lead, MAX_LEAD), published, ..it.clone() };
-            by_day.entry(day).or_default().push((key, tkey, host, it.url.clone(), item));
+            let item = Item {
+                title,
+                lead: clip(&it.lead, MAX_LEAD),
+                published,
+                ..it.clone()
+            };
+            by_day
+                .entry(day)
+                .or_default()
+                .push((key, tkey, host, it.url.clone(), item));
         }
         for (day, rows) in by_day {
             self.with_shard(day, true, |c| {
@@ -340,8 +386,14 @@ impl Store {
                 found.extend(rows);
             }
         }
-        let idf: Vec<f64> = df.iter().map(|d| (1.0 + (total - d + 0.5) / (d + 0.5)).ln()).collect();
-        let phrases: Vec<String> = terms.iter().map(|t| format!(" {} ", normalised(t.trim_matches('"')).trim())).collect();
+        let idf: Vec<f64> = df
+            .iter()
+            .map(|d| (1.0 + (total - d + 0.5) / (d + 0.5)).ln())
+            .collect();
+        let phrases: Vec<String> = terms
+            .iter()
+            .map(|t| format!(" {} ", normalised(t.trim_matches('"')).trim()))
+            .collect();
         let mut scored: Vec<(f64, Stored)> = found
             .into_iter()
             .map(|s| {
@@ -349,12 +401,19 @@ impl Store {
                 let score: f64 = phrases
                     .iter()
                     .zip(&idf)
-                    .map(|(p, w)| w * (3.0 * f64::from(title.contains(p.as_str())) + f64::from(lead.contains(p.as_str()))))
+                    .map(|(p, w)| {
+                        w * (3.0 * f64::from(title.contains(p.as_str()))
+                            + f64::from(lead.contains(p.as_str())))
+                    })
                     .sum();
                 (score, s)
             })
             .collect();
-        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal).then(b.1.published.cmp(&a.1.published)));
+        scored.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(b.1.published.cmp(&a.1.published))
+        });
         Ok(scored.into_iter().take(limit).map(|(_, s)| s).collect())
     }
 
@@ -395,7 +454,13 @@ impl Store {
     /// The `k` items whose vectors are closest to `query` in Hamming distance (a brute-force scan:
     /// 128 bytes per item, so a month of news is a few million popcounts), with the distance.
     /// Items farther than `max_distance` bits are not returned.
-    pub fn nearest(&self, query: &[u8], since: Option<i64>, k: usize, max_distance: u32) -> Result<Vec<(Stored, u32)>> {
+    pub fn nearest(
+        &self,
+        query: &[u8],
+        since: Option<i64>,
+        k: usize,
+        max_distance: u32,
+    ) -> Result<Vec<(Stored, u32)>> {
         let first_day = since.map(|s| s / 86_400).unwrap_or(i64::MIN);
         let mut best: Vec<(u32, Stored)> = Vec::new();
         for day in self.days().into_iter().filter(|d| *d >= first_day) {
@@ -427,13 +492,20 @@ impl Store {
 
     pub fn stats(&self) -> Stats {
         let days = self.days();
-        let mut s = Stats { shards: days.len(), ..Default::default() };
+        let mut s = Stats {
+            shards: days.len(),
+            ..Default::default()
+        };
         s.oldest_day = days.last().map(|d| day_name(*d));
         s.newest_day = days.first().map(|d| day_name(*d));
         for d in &days {
             s.bytes += shard_bytes(&self.path(*d));
             let (n, e) = self
-                .with_shard(*d, false, |c| c.query_row("SELECT count(*), count(vec) FROM items", [], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))))
+                .with_shard(*d, false, |c| {
+                    c.query_row("SELECT count(*), count(vec) FROM items", [], |r| {
+                        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+                    })
+                })
                 .ok()
                 .flatten()
                 .unwrap_or((0, 0));
@@ -492,21 +564,36 @@ mod tests {
     use super::*;
 
     fn item(url: &str, title: &str, lead: &str, age_days: i64) -> Item {
-        Item { url: url.into(), title: title.into(), lead: lead.into(), published: Some(crate::now() - age_days * 86_400), source: "t".into() }
+        Item {
+            url: url.into(),
+            title: title.into(),
+            lead: lead.into(),
+            published: Some(crate::now() - age_days * 86_400),
+            source: "t".into(),
+        }
     }
 
     #[test]
     fn url_keys_ignore_decoration() {
         let k = |u: &str| url_key(u).unwrap().0;
-        assert_eq!(k("https://www.a.com/x/?utm_source=t&id=2#top"), k("http://a.com/x?id=2"));
+        assert_eq!(
+            k("https://www.a.com/x/?utm_source=t&id=2#top"),
+            k("http://a.com/x?id=2")
+        );
         assert_ne!(k("https://a.com/x?id=2"), k("https://a.com/x?id=3"));
         assert!(url_key("ftp://a.com/x").is_none() && url_key("not a url").is_none());
     }
 
     #[test]
     fn queries_handle_cjk_stopwords_and_nothing() {
-        assert_eq!(fts_query("the Rust release").unwrap(), "\"rust\" OR \"release\"");
-        assert_eq!(fts_query("苹果发布会").unwrap(), "\"苹 果\" OR \"果 发\" OR \"发 布\" OR \"布 会\"");
+        assert_eq!(
+            fts_query("the Rust release").unwrap(),
+            "\"rust\" OR \"release\""
+        );
+        assert_eq!(
+            fts_query("苹果发布会").unwrap(),
+            "\"苹 果\" OR \"果 发\" OR \"发 布\" OR \"布 会\""
+        );
         assert_eq!(fts_query("rust 的").unwrap(), "\"rust\" OR \"的\"");
         assert!(fts_query("a ? !").is_none());
     }
@@ -517,24 +604,62 @@ mod tests {
         let s = Store::new(dir.path().into());
         let r = s
             .ingest(&[
-                item("https://a.com/1", "Rust 1.90 released", "The Rust team announces", 0),
-                item("https://www.a.com/1/?utm_source=x", "Rust 1.90 released", "dup by url", 0),
-                item("https://a.com/other", "rust 1.90 RELEASED", "dup by title", 0),
-                item("https://b.com/2", "Weather today", "Sunny rust-free skies", 1),
-                item("https://c.com/3", "苹果发布新款手机", "今天凌晨苹果公司召开发布会", 0),
+                item(
+                    "https://a.com/1",
+                    "Rust 1.90 released",
+                    "The Rust team announces",
+                    0,
+                ),
+                item(
+                    "https://www.a.com/1/?utm_source=x",
+                    "Rust 1.90 released",
+                    "dup by url",
+                    0,
+                ),
+                item(
+                    "https://a.com/other",
+                    "rust 1.90 RELEASED",
+                    "dup by title",
+                    0,
+                ),
+                item(
+                    "https://b.com/2",
+                    "Weather today",
+                    "Sunny rust-free skies",
+                    1,
+                ),
+                item(
+                    "https://c.com/3",
+                    "苹果发布新款手机",
+                    "今天凌晨苹果公司召开发布会",
+                    0,
+                ),
                 item("ftp://bad", "x", "", 0),
                 item("https://d.com/4", "", "", 0),
             ])
             .unwrap();
-        assert_eq!(r, IngestReport { added: 3, duplicates: 2, rejected: 2 });
+        assert_eq!(
+            r,
+            IngestReport {
+                added: 3,
+                duplicates: 2,
+                rejected: 2
+            }
+        );
         let hits = s.search("rust release", None, 5).unwrap();
         assert_eq!(hits[0].url, "https://a.com/1", "{hits:?}");
         assert_eq!(hits[0].host, "a.com");
-        assert_eq!(s.search("苹果发布会", None, 5).unwrap()[0].url, "https://c.com/3");
+        assert_eq!(
+            s.search("苹果发布会", None, 5).unwrap()[0].url,
+            "https://c.com/3"
+        );
         assert!(s.search("nothing like this", None, 5).unwrap().is_empty());
         // The time window excludes yesterday's item.
         let recent = s.search("rust", Some(crate::now() - 3600), 5).unwrap();
-        assert!(recent.iter().all(|h| h.url != "https://b.com/2"), "{recent:?}");
+        assert!(
+            recent.iter().all(|h| h.url != "https://b.com/2"),
+            "{recent:?}"
+        );
         let st = s.stats();
         assert_eq!((st.shards, st.items), (2, 3));
     }
@@ -545,8 +670,22 @@ mod tests {
         let s = Store::new(dir.path().into());
         // Yesterday's file holds many "tokio" items, so "tokio" is common there but "quasar" is rare;
         // per-file BM25 would over-reward the item alone in today's file.
-        let mut items: Vec<Item> = (0..30).map(|i| item(&format!("https://a.com/t{i}"), &format!("tokio story {i}"), "tokio news", 1)).collect();
-        items.push(item("https://a.com/q", "quasar discovered", "tokio mention", 1));
+        let mut items: Vec<Item> = (0..30)
+            .map(|i| {
+                item(
+                    &format!("https://a.com/t{i}"),
+                    &format!("tokio story {i}"),
+                    "tokio news",
+                    1,
+                )
+            })
+            .collect();
+        items.push(item(
+            "https://a.com/q",
+            "quasar discovered",
+            "tokio mention",
+            1,
+        ));
         items.push(item("https://b.com/t", "tokio runtime tuning", "", 0));
         s.ingest(&items).unwrap();
         let hits = s.search("quasar tokio", None, 3).unwrap();
@@ -561,7 +700,11 @@ mod tests {
         assert!(!dir.path().join("none").exists());
 
         let s = Store::new(dir.path().into());
-        s.ingest(&[item("https://a.com/old", "old rust", "", 40), item("https://a.com/new", "new rust", "", 0)]).unwrap();
+        s.ingest(&[
+            item("https://a.com/old", "old rust", "", 40),
+            item("https://a.com/new", "new rust", "", 0),
+        ])
+        .unwrap();
         assert_eq!(s.stats().shards, 2);
         assert_eq!(s.prune(30, u64::MAX), 1);
         let hits = s.search("rust", None, 5).unwrap();
@@ -575,7 +718,11 @@ mod tests {
     fn future_dates_count_as_now() {
         let dir = tempfile::tempdir().unwrap();
         let s = Store::new(dir.path().into());
-        s.ingest(&[Item { published: Some(crate::now() + 30 * 86_400), ..item("https://a.com/f", "future rust", "", 0) }]).unwrap();
+        s.ingest(&[Item {
+            published: Some(crate::now() + 30 * 86_400),
+            ..item("https://a.com/f", "future rust", "", 0)
+        }])
+        .unwrap();
         assert_eq!(s.search("rust", None, 3).unwrap()[0].published, None);
     }
 }

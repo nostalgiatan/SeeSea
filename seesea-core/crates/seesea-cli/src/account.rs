@@ -28,23 +28,43 @@ pub fn routes() -> Router<AppState> {
 }
 
 fn reply(status: StatusCode, code: &str, message: impl std::fmt::Display) -> Response {
-    (status, Json(json!({"code": code, "message": message.to_string()}))).into_response()
+    (
+        status,
+        Json(json!({"code": code, "message": message.to_string()})),
+    )
+        .into_response()
 }
 
 fn failed(e: AuthError) -> Response {
     match e {
         AuthError::NotFound(w) => reply(StatusCode::NOT_FOUND, "not_found", format!("no such {w}")),
-        AuthError::Exists(w) => reply(StatusCode::CONFLICT, "exists", format!("{w} already exists")),
+        AuthError::Exists(w) => reply(
+            StatusCode::CONFLICT,
+            "exists",
+            format!("{w} already exists"),
+        ),
         other => reply(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", other),
     }
 }
 
 fn body<T: serde::de::DeserializeOwned>(b: &Bytes) -> Result<T, Response> {
-    serde_json::from_slice(b).map_err(|e| reply(StatusCode::BAD_REQUEST, "invalid_request", format!("invalid JSON body: {e}")))
+    serde_json::from_slice(b).map_err(|e| {
+        reply(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            format!("invalid JSON body: {e}"),
+        )
+    })
 }
 
 fn store(s: &AppState) -> Result<&Store, Response> {
-    s.access.store().ok_or_else(|| reply(StatusCode::NOT_FOUND, "no_accounts", "this server has no user database"))
+    s.access.store().ok_or_else(|| {
+        reply(
+            StatusCode::NOT_FOUND,
+            "no_accounts",
+            "this server has no user database",
+        )
+    })
 }
 
 /// The caller as a user with an account (the root key and an open server have none).
@@ -52,13 +72,25 @@ fn user_of(grant: &Option<Extension<Grant>>) -> Result<i64, Response> {
     grant
         .as_ref()
         .and_then(|Extension(g)| g.user_id)
-        .ok_or_else(|| reply(StatusCode::FORBIDDEN, "no_account", "this key does not belong to a user account"))
+        .ok_or_else(|| {
+            reply(
+                StatusCode::FORBIDDEN,
+                "no_account",
+                "this key does not belong to a user account",
+            )
+        })
 }
 
 /// Only the root key, and only when keys are required at all (an open server must not hand out admin).
 fn root_only(s: &AppState, grant: &Option<Extension<Grant>>) -> Result<(), Response> {
     let is_root = s.access.required() && grant.as_ref().is_some_and(|Extension(g)| g.is_root());
-    is_root.then_some(()).ok_or_else(|| reply(StatusCode::FORBIDDEN, "admin_only", "this needs the server's root key (--api-key)"))
+    is_root.then_some(()).ok_or_else(|| {
+        reply(
+            StatusCode::FORBIDDEN,
+            "admin_only",
+            "this needs the server's root key (--api-key)",
+        )
+    })
 }
 
 fn user_json(u: &seesea_auth::User) -> Value {
@@ -80,7 +112,12 @@ async fn account(State(s): State<AppState>, grant: Option<Extension<Grant>>) -> 
     let run = || -> Result<Value, Response> {
         let id = user_of(&grant)?;
         let st = store(&s)?;
-        let user = st.users().map_err(failed)?.into_iter().find(|u| u.id == id).ok_or_else(|| failed(AuthError::NotFound("user".into())))?;
+        let user = st
+            .users()
+            .map_err(failed)?
+            .into_iter()
+            .find(|u| u.id == id)
+            .ok_or_else(|| failed(AuthError::NotFound("user".into())))?;
         let plan = s.access.plan_for(&user.plan);
         let today = day_number(seesea_auth::now_secs());
         Ok(json!({
@@ -96,35 +133,82 @@ async fn account(State(s): State<AppState>, grant: Option<Extension<Grant>>) -> 
     run().map_or_else(|r| r, |v| Json(v).into_response())
 }
 
-async fn own_key_create(State(s): State<AppState>, grant: Option<Extension<Grant>>, b: Bytes) -> Response {
+async fn own_key_create(
+    State(s): State<AppState>,
+    grant: Option<Extension<Grant>>,
+    b: Bytes,
+) -> Response {
     let run = || -> Result<Value, Response> {
         let id = user_of(&grant)?;
         let st = store(&s)?;
-        let req: NewKey = if b.is_empty() { NewKey::default() } else { body(&b)? };
-        let user = st.users().map_err(failed)?.into_iter().find(|u| u.id == id).ok_or_else(|| failed(AuthError::NotFound("user".into())))?;
-        let live = st.keys(&user.name).map_err(failed)?.iter().filter(|k| !k.revoked).count();
+        let req: NewKey = if b.is_empty() {
+            NewKey::default()
+        } else {
+            body(&b)?
+        };
+        let user = st
+            .users()
+            .map_err(failed)?
+            .into_iter()
+            .find(|u| u.id == id)
+            .ok_or_else(|| failed(AuthError::NotFound("user".into())))?;
+        let live = st
+            .keys(&user.name)
+            .map_err(failed)?
+            .iter()
+            .filter(|k| !k.revoked)
+            .count();
         if live >= MAX_KEYS {
-            return Err(reply(StatusCode::CONFLICT, "too_many_keys", format!("an account may hold {MAX_KEYS} live keys; revoke one first")));
+            return Err(reply(
+                StatusCode::CONFLICT,
+                "too_many_keys",
+                format!("an account may hold {MAX_KEYS} live keys; revoke one first"),
+            ));
         }
-        let name = if req.name.is_empty() { "key".to_string() } else { req.name };
-        let (info, key) = st.create_key(&user.name, &name, req.expires_days).map_err(failed)?;
-        Ok(json!({"key": key, "info": key_json(&info), "note": "this is the only time the key is shown"}))
+        let name = if req.name.is_empty() {
+            "key".to_string()
+        } else {
+            req.name
+        };
+        let (info, key) = st
+            .create_key(&user.name, &name, req.expires_days)
+            .map_err(failed)?;
+        Ok(
+            json!({"key": key, "info": key_json(&info), "note": "this is the only time the key is shown"}),
+        )
     };
     run().map_or_else(|r| r, |v| (StatusCode::CREATED, Json(v)).into_response())
 }
 
-async fn own_key_revoke(State(s): State<AppState>, grant: Option<Extension<Grant>>, Path(public_id): Path<String>) -> Response {
+async fn own_key_revoke(
+    State(s): State<AppState>,
+    grant: Option<Extension<Grant>>,
+    Path(public_id): Path<String>,
+) -> Response {
     let run = || -> Result<(), Response> {
         let id = user_of(&grant)?;
         let st = store(&s)?;
-        let user = st.users().map_err(failed)?.into_iter().find(|u| u.id == id).ok_or_else(|| failed(AuthError::NotFound("user".into())))?;
+        let user = st
+            .users()
+            .map_err(failed)?
+            .into_iter()
+            .find(|u| u.id == id)
+            .ok_or_else(|| failed(AuthError::NotFound("user".into())))?;
         // A key that is not theirs looks exactly like one that does not exist.
-        if !st.keys(&user.name).map_err(failed)?.iter().any(|k| k.public_id == public_id) {
+        if !st
+            .keys(&user.name)
+            .map_err(failed)?
+            .iter()
+            .any(|k| k.public_id == public_id)
+        {
             return Err(failed(AuthError::NotFound(format!("key '{public_id}'"))));
         }
         st.revoke_key(&public_id).map_err(failed)
     };
-    run().map_or_else(|r| r, |()| Json(json!({"revoked": public_id})).into_response())
+    run().map_or_else(
+        |r| r,
+        |()| Json(json!({"revoked": public_id})).into_response(),
+    )
 }
 
 async fn admin_users(State(s): State<AppState>, grant: Option<Extension<Grant>>) -> Response {
@@ -150,18 +234,30 @@ struct NewUser {
     plan: Option<String>,
 }
 
-async fn admin_user_create(State(s): State<AppState>, grant: Option<Extension<Grant>>, b: Bytes) -> Response {
+async fn admin_user_create(
+    State(s): State<AppState>,
+    grant: Option<Extension<Grant>>,
+    b: Bytes,
+) -> Response {
     let run = || -> Result<Value, Response> {
         root_only(&s, &grant)?;
         let st = store(&s)?;
         let req: NewUser = body(&b)?;
         let name = req.name.trim();
         if name.is_empty() || name.len() > 64 || name.chars().any(|c| c.is_control()) {
-            return Err(reply(StatusCode::BAD_REQUEST, "invalid_request", "name must be 1 to 64 characters without control characters"));
+            return Err(reply(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "name must be 1 to 64 characters without control characters",
+            ));
         }
         let plan = req.plan.unwrap_or_else(|| "default".into());
         if !s.access.has_plan(&plan) {
-            return Err(reply(StatusCode::BAD_REQUEST, "invalid_request", format!("no plan named '{plan}'")));
+            return Err(reply(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                format!("no plan named '{plan}'"),
+            ));
         }
         Ok(user_json(&st.create_user(name, &plan).map_err(failed)?))
     };
@@ -175,14 +271,23 @@ struct UserPatch {
     disabled: Option<bool>,
 }
 
-async fn admin_user_update(State(s): State<AppState>, grant: Option<Extension<Grant>>, Path(name): Path<String>, b: Bytes) -> Response {
+async fn admin_user_update(
+    State(s): State<AppState>,
+    grant: Option<Extension<Grant>>,
+    Path(name): Path<String>,
+    b: Bytes,
+) -> Response {
     let run = || -> Result<Value, Response> {
         root_only(&s, &grant)?;
         let st = store(&s)?;
         let patch: UserPatch = body(&b)?;
         if let Some(p) = &patch.plan {
             if !s.access.has_plan(p) {
-                return Err(reply(StatusCode::BAD_REQUEST, "invalid_request", format!("no plan named '{p}'")));
+                return Err(reply(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    format!("no plan named '{p}'"),
+                ));
             }
             st.set_plan(&name, p).map_err(failed)?;
         }
@@ -194,22 +299,46 @@ async fn admin_user_update(State(s): State<AppState>, grant: Option<Extension<Gr
     run().map_or_else(|r| r, |v| Json(v).into_response())
 }
 
-async fn admin_key_create(State(s): State<AppState>, grant: Option<Extension<Grant>>, Path(name): Path<String>, b: Bytes) -> Response {
+async fn admin_key_create(
+    State(s): State<AppState>,
+    grant: Option<Extension<Grant>>,
+    Path(name): Path<String>,
+    b: Bytes,
+) -> Response {
     let run = || -> Result<Value, Response> {
         root_only(&s, &grant)?;
         let st = store(&s)?;
-        let req: NewKey = if b.is_empty() { NewKey::default() } else { body(&b)? };
-        let label = if req.name.is_empty() { "key".to_string() } else { req.name };
-        let (info, key) = st.create_key(&name, &label, req.expires_days).map_err(failed)?;
-        Ok(json!({"key": key, "info": key_json(&info), "note": "this is the only time the key is shown"}))
+        let req: NewKey = if b.is_empty() {
+            NewKey::default()
+        } else {
+            body(&b)?
+        };
+        let label = if req.name.is_empty() {
+            "key".to_string()
+        } else {
+            req.name
+        };
+        let (info, key) = st
+            .create_key(&name, &label, req.expires_days)
+            .map_err(failed)?;
+        Ok(
+            json!({"key": key, "info": key_json(&info), "note": "this is the only time the key is shown"}),
+        )
     };
     run().map_or_else(|r| r, |v| (StatusCode::CREATED, Json(v)).into_response())
 }
 
-async fn admin_key_revoke(State(s): State<AppState>, grant: Option<Extension<Grant>>, Path(public_id): Path<String>) -> Response {
+async fn admin_key_revoke(
+    State(s): State<AppState>,
+    grant: Option<Extension<Grant>>,
+    Path(public_id): Path<String>,
+) -> Response {
     let run = || -> Result<(), Response> {
         root_only(&s, &grant)?;
         store(&s)?.revoke_key(&public_id).map_err(failed)
     };
-    run().map_or_else(|r| r, |()| Json(json!({"revoked": public_id})).into_response())
+    run().map_or_else(
+        |r| r,
+        |()| Json(json!({"revoked": public_id})).into_response(),
+    )
 }

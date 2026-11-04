@@ -13,7 +13,9 @@ async fn big_body_server(body_len: usize) -> String {
             tokio::spawn(async move {
                 let mut buf = vec![0u8; 8192];
                 let _ = sock.read(&mut buf).await;
-                let head = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {body_len}\r\nConnection: close\r\n\r\n");
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {body_len}\r\nConnection: close\r\n\r\n"
+                );
                 let _ = sock.write_all(head.as_bytes()).await;
                 let chunk = vec![b'a'; 64 * 1024];
                 let mut left = body_len;
@@ -33,7 +35,12 @@ async fn big_body_server(body_len: usize) -> String {
 #[tokio::test]
 async fn a_body_longer_than_the_cap_is_cut_off() {
     let url = big_body_server(8 * 1024 * 1024).await;
-    let opts = FetchOptions { allow_private: true, max_bytes: 100_000, timeout_secs: 10, browser_headers: false };
+    let opts = FetchOptions {
+        allow_private: true,
+        max_bytes: 100_000,
+        timeout_secs: 10,
+        browser_headers: false,
+    };
     let page = fetch(&url, &opts).await.unwrap();
     assert_eq!(page.html.len(), 100_000);
 }
@@ -41,6 +48,9 @@ async fn a_body_longer_than_the_cap_is_cut_off() {
 #[tokio::test]
 async fn a_local_target_is_refused_unless_allowed() {
     let url = big_body_server(10).await;
-    let opts = FetchOptions { allow_private: false, ..FetchOptions::default() };
+    let opts = FetchOptions {
+        allow_private: false,
+        ..FetchOptions::default()
+    };
     assert!(fetch(&url, &opts).await.is_err());
 }

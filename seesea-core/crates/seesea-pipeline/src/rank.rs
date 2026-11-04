@@ -50,13 +50,39 @@ impl Recency {
         let q = query.to_lowercase();
         let has = |words: &[&str]| words.iter().any(|w| q.contains(w));
         if has(&[
-            "breaking", "just now", "right now", "live", "today", "tonight", "this morning",
-            "刚刚", "突发", "实时", "今天", "今日", "今晚", "现在",
+            "breaking",
+            "just now",
+            "right now",
+            "live",
+            "today",
+            "tonight",
+            "this morning",
+            "刚刚",
+            "突发",
+            "实时",
+            "今天",
+            "今日",
+            "今晚",
+            "现在",
         ]) {
             Recency::Breaking
         } else if has(&[
-            "latest", "news", "recent", "this week", "yesterday", "update", "release", "announce",
-            "最新", "新闻", "近期", "本周", "昨天", "发布", "动态", "快讯",
+            "latest",
+            "news",
+            "recent",
+            "this week",
+            "yesterday",
+            "update",
+            "release",
+            "announce",
+            "最新",
+            "新闻",
+            "近期",
+            "本周",
+            "昨天",
+            "发布",
+            "动态",
+            "快讯",
         ]) || mentions_current_year(&q)
         {
             Recency::Recent
@@ -139,7 +165,11 @@ pub fn score(cand: &Candidate, q: &QueryInfo, cfg: &RankConfig, now: DateTime<Ut
     let snippet_overlap = coverage(&q.tokens, &token_set(&cand.snippet));
     let title_match = coverage(&q.tokens, &token_set(&cand.title));
     let title = title_match * title_trust(&cand.title, &cand.snippet);
-    let fresh = freshness(cand.published, now, q.recency.half_life_days(cfg.half_life_days));
+    let fresh = freshness(
+        cand.published,
+        now,
+        q.recency.half_life_days(cfg.half_life_days),
+    );
     let fresh_weight = cfg.w_freshness * q.recency.weight_factor();
     let h = host(&cand.url);
     let boost: f64 = cfg
@@ -274,11 +304,24 @@ mod tests {
 
     #[test]
     fn time_sensitive_queries_weight_freshness_more() {
-        assert_eq!(QueryInfo::new("latest rust release").recency, Recency::Recent);
+        assert_eq!(
+            QueryInfo::new("latest rust release").recency,
+            Recency::Recent
+        );
         assert_eq!(QueryInfo::new("今天的新闻").recency, Recency::Breaking);
-        assert_eq!(QueryInfo::new("breaking: earthquake").recency, Recency::Breaking);
+        assert_eq!(
+            QueryInfo::new("breaking: earthquake").recency,
+            Recency::Breaking
+        );
         assert_eq!(QueryInfo::new("rust ownership").recency, Recency::Evergreen);
-        assert_eq!(QueryInfo::new(&format!("rust {} roadmap", chrono::Datelike::year(&Utc::now()))).recency, Recency::Recent);
+        assert_eq!(
+            QueryInfo::new(&format!(
+                "rust {} roadmap",
+                chrono::Datelike::year(&Utc::now())
+            ))
+            .recency,
+            Recency::Recent
+        );
         let now = Utc::now();
         let mut c = cand("https://a.org/1", "t", "", 0.5);
         c.published = Some(now);

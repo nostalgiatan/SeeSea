@@ -180,7 +180,10 @@ fn bing_news_url(q: &SourceQuery) -> Option<String> {
         Some(TimeRange::Month) => "&qft=interval%3d%229%22",
         _ => "",
     };
-    Some(format!("https://www.bing.com/news/search?q={}&format=rss{interval}", enc(&q.query)))
+    Some(format!(
+        "https://www.bing.com/news/search?q={}&format=rss{interval}",
+        enc(&q.query)
+    ))
 }
 
 /// Bing News links go through a click-tracking redirect; the article address is in `url=`.
@@ -188,7 +191,11 @@ fn real_news_url(link: &str) -> String {
     url::Url::parse(link)
         .ok()
         .filter(|u| u.path().contains("apiclick"))
-        .and_then(|u| u.query_pairs().find(|(k, _)| k == "url").map(|(_, v)| v.into_owned()))
+        .and_then(|u| {
+            u.query_pairs()
+                .find(|(k, _)| k == "url")
+                .map(|(_, v)| v.into_owned())
+        })
         .unwrap_or_else(|| link.to_string())
 }
 
@@ -619,7 +626,10 @@ mod tests {
             "https://en.wikipedia.org/wiki/Rust_%28programming_language%29"
         );
         assert_eq!(hits[0].snippet, "Rust is a \"general\" language");
-        assert!(hits[0].published.is_none(), "edit time is not a publication date");
+        assert!(
+            hits[0].published.is_none(),
+            "edit time is not a publication date"
+        );
         assert!(parse_wikipedia_in("{}", "en").is_err());
         assert_eq!(wikipedia_language(&q("rust")), "en");
         assert_eq!(wikipedia_language(&q("中国的首都")), "zh");

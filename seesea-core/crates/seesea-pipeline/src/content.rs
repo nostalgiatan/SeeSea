@@ -256,7 +256,11 @@ pub async fn load_page(
         final_url: page.final_url,
         result,
         rendered: false,
-        timing: PageTiming { fetch_ms, extract_ms, render_ms: 0 },
+        timing: PageTiming {
+            fetch_ms,
+            extract_ms,
+            render_ms: 0,
+        },
     };
     if loaded.result.needs_render
         && let Some(renderer) = renderer
@@ -292,7 +296,17 @@ pub async fn load_pages(
     concurrency: usize,
     timeout: Duration,
 ) -> Vec<Result<Loaded>> {
-    load_pages_then(fetcher, renderer, extractor, urls, scope, concurrency, timeout, None).await
+    load_pages_then(
+        fetcher,
+        renderer,
+        extractor,
+        urls,
+        scope,
+        concurrency,
+        timeout,
+        None,
+    )
+    .await
 }
 
 /// Called with a page's position in `urls` and the page, the moment that page is ready (not when all are).
@@ -316,7 +330,15 @@ pub async fn load_pages_then(
             let extractor = Arc::clone(extractor);
             let on_loaded = on_loaded.clone();
             async move {
-                let out = load_page(fetcher.as_ref(), renderer.as_deref(), &extractor, &url, scope, timeout).await;
+                let out = load_page(
+                    fetcher.as_ref(),
+                    renderer.as_deref(),
+                    &extractor,
+                    &url,
+                    scope,
+                    timeout,
+                )
+                .await;
                 if let (Ok(l), Some(cb)) = (&out, &on_loaded) {
                     cb(i, l);
                 }
@@ -442,12 +464,23 @@ mod tests {
 
     #[tokio::test]
     async fn a_page_built_to_hurt_the_parser_is_an_error_and_is_quick() {
-        let page = format!("<html><body>{}text{}</body></html>", "<div>".repeat(300_000), "</div>".repeat(300_000));
+        let page = format!(
+            "<html><body>{}text{}</body></html>",
+            "<div>".repeat(300_000),
+            "</div>".repeat(300_000)
+        );
         let mock = MockFetcher::new(&[("https://a.org/deep", &page)]);
         let t = std::time::Instant::now();
-        let err = load_page(&mock, None, &Arc::new(Extractor::new()), "https://a.org/deep", Scope::Core, Duration::from_secs(5))
-            .await
-            .unwrap_err();
+        let err = load_page(
+            &mock,
+            None,
+            &Arc::new(Extractor::new()),
+            "https://a.org/deep",
+            Scope::Core,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap_err();
         assert_eq!(err.code(), "extract_failed");
         assert!(err.to_string().contains("suspicious markup"), "{err}");
         assert!(t.elapsed() < Duration::from_secs(10), "{:?}", t.elapsed());
@@ -480,11 +513,22 @@ mod tests {
         let plain = MockFetcher::new(&[(url, SHELL)]);
         let browser = MockFetcher::new(&[(url, &article("One", &[P1, P2]))]);
         let extractor = Arc::new(Extractor::new());
-        let loaded = load_page(&plain, Some(&browser), &extractor, url, Scope::Core, Duration::from_secs(5))
-            .await
-            .unwrap();
+        let loaded = load_page(
+            &plain,
+            Some(&browser),
+            &extractor,
+            url,
+            Scope::Core,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
         assert!(loaded.rendered);
-        assert!(loaded.result.core.contains("asynchronous runtime"), "{}", loaded.result.core);
+        assert!(
+            loaded.result.core.contains("asynchronous runtime"),
+            "{}",
+            loaded.result.core
+        );
         assert!(!loaded.result.needs_render);
     }
 
@@ -494,9 +538,16 @@ mod tests {
         let plain = MockFetcher::new(&[(url, &article("One", &[P1, P2]))]);
         let browser = MockFetcher::new(&[]);
         let extractor = Arc::new(Extractor::new());
-        let loaded = load_page(&plain, Some(&browser), &extractor, url, Scope::Core, Duration::from_secs(5))
-            .await
-            .unwrap();
+        let loaded = load_page(
+            &plain,
+            Some(&browser),
+            &extractor,
+            url,
+            Scope::Core,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
         assert!(!loaded.rendered);
         assert!(browser.calls.lock().unwrap().is_empty());
     }
@@ -507,9 +558,16 @@ mod tests {
         let plain = MockFetcher::new(&[(url, SHELL)]);
         let browser = MockFetcher::new(&[]); // fails: unknown URL
         let extractor = Arc::new(Extractor::new());
-        let loaded = load_page(&plain, Some(&browser), &extractor, url, Scope::Core, Duration::from_secs(5))
-            .await
-            .unwrap();
+        let loaded = load_page(
+            &plain,
+            Some(&browser),
+            &extractor,
+            url,
+            Scope::Core,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
         assert!(!loaded.rendered);
         assert!(loaded.result.needs_render);
         assert_eq!(browser.calls.lock().unwrap().len(), 1);

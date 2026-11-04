@@ -36,7 +36,11 @@ pub fn group_events(hits: Vec<Hit>) -> Vec<Hit> {
                         head.score += BONUS_PER_SITE;
                     }
                 }
-                head.related.push(Related { url: h.url, title: h.title, host: hh });
+                head.related.push(Related {
+                    url: h.url,
+                    title: h.title,
+                    host: hh,
+                });
             }
             None => {
                 let hosts = HashSet::from([hh]);
@@ -45,7 +49,11 @@ pub fn group_events(hits: Vec<Hit>) -> Vec<Hit> {
         }
     }
     let mut out: Vec<Hit> = heads.into_iter().map(|(h, _, _)| h).collect();
-    out.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     out
 }
 
@@ -71,28 +79,68 @@ mod tests {
     #[test]
     fn outlets_covering_one_event_become_one_hit_with_the_others_listed() {
         let out = group_events(vec![
-            hit("https://a.com/1", "Magnitude 6.1 earthquake strikes coastal Japan city", 0.8),
+            hit(
+                "https://a.com/1",
+                "Magnitude 6.1 earthquake strikes coastal Japan city",
+                0.8,
+            ),
             hit("https://b.com/x", "Unrelated rust release", 0.7),
-            hit("https://c.com/2", "Earthquake of magnitude 6.1 strikes coastal city in Japan", 0.6),
-            hit("https://d.com/3", "Strong earthquake strikes coastal Japan city, magnitude 6.1", 0.5),
+            hit(
+                "https://c.com/2",
+                "Earthquake of magnitude 6.1 strikes coastal city in Japan",
+                0.6,
+            ),
+            hit(
+                "https://d.com/3",
+                "Strong earthquake strikes coastal Japan city, magnitude 6.1",
+                0.5,
+            ),
         ]);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].url, "https://a.com/1");
-        assert_eq!(out[0].related.iter().map(|r| r.host.as_str()).collect::<Vec<_>>(), ["c.com", "d.com"]);
-        assert!(out[0].score > 0.8 + 0.05, "coverage earns a bonus: {}", out[0].score);
+        assert_eq!(
+            out[0]
+                .related
+                .iter()
+                .map(|r| r.host.as_str())
+                .collect::<Vec<_>>(),
+            ["c.com", "d.com"]
+        );
+        assert!(
+            out[0].score > 0.8 + 0.05,
+            "coverage earns a bonus: {}",
+            out[0].score
+        );
         assert!(out[1].related.is_empty());
     }
 
     #[test]
     fn the_same_site_twice_earns_no_bonus_and_short_or_different_titles_stay_apart() {
         let out = group_events(vec![
-            hit("https://a.com/1", "Rust async runtime guide for beginners", 0.8),
-            hit("https://a.com/2", "Rust async runtime guide for beginners", 0.7),
+            hit(
+                "https://a.com/1",
+                "Rust async runtime guide for beginners",
+                0.8,
+            ),
+            hit(
+                "https://a.com/2",
+                "Rust async runtime guide for beginners",
+                0.7,
+            ),
             hit("https://e.com/3", "Rust", 0.6),
             hit("https://f.com/4", "Rust", 0.5),
-            hit("https://g.com/5", "Python packaging tutorial for large teams", 0.4),
+            hit(
+                "https://g.com/5",
+                "Python packaging tutorial for large teams",
+                0.4,
+            ),
         ]);
-        assert_eq!(out.len(), 4, "{:?}", out.iter().map(|h| &h.url).collect::<Vec<_>>());
+        assert_eq!(
+            out.len(),
+            4,
+            "{:?}",
+            out.iter().map(|h| &h.url).collect::<Vec<_>>()
+        );
         assert!((out[0].score - 0.8).abs() < 1e-9);
         assert_eq!(out[0].related.len(), 1);
     }

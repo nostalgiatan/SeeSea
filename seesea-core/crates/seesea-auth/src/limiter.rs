@@ -40,7 +40,12 @@ pub(crate) struct Account {
 
 impl Account {
     pub fn fresh(plan: &Plan, now: f64, used_today: u64) -> Self {
-        Account { tokens: plan.burst as f64, updated: now, day: day_of(now), used_today }
+        Account {
+            tokens: plan.burst as f64,
+            updated: now,
+            day: day_of(now),
+            used_today,
+        }
     }
 
     /// Spend `cost` credits at `now`; on refusal nothing is spent.
@@ -65,7 +70,11 @@ impl Account {
         let need = (cost as f64).min(plan.burst as f64);
         if self.tokens < need {
             let wait = ((need - self.tokens) / rate).ceil().max(1.0);
-            return Err(Denied { reason: Reason::Rate, retry_after_secs: wait as u64, limit_per_minute: plan.per_minute });
+            return Err(Denied {
+                reason: Reason::Rate,
+                retry_after_secs: wait as u64,
+                limit_per_minute: plan.per_minute,
+            });
         }
         self.tokens -= need;
         self.used_today += cost as u64;
@@ -73,7 +82,8 @@ impl Account {
             limit_per_minute: plan.per_minute,
             remaining: self.tokens as u32,
             reset_secs: ((plan.burst as f64 - self.tokens) / rate).ceil() as u64,
-            daily_remaining: (plan.per_day > 0).then(|| (plan.per_day as u64).saturating_sub(self.used_today) as u32),
+            daily_remaining: (plan.per_day > 0)
+                .then(|| (plan.per_day as u64).saturating_sub(self.used_today) as u32),
         })
     }
 
@@ -117,7 +127,9 @@ impl Limiter {
         used_today: impl FnOnce() -> u64,
     ) -> Result<Decision, Denied> {
         let mut accounts = self.accounts.lock().unwrap();
-        let acct = accounts.entry(user).or_insert_with(|| Account::fresh(plan, now, used_today()));
+        let acct = accounts
+            .entry(user)
+            .or_insert_with(|| Account::fresh(plan, now, used_today()));
         acct.spend(plan, cost, now)
     }
 
@@ -181,21 +193,37 @@ mod tests {
         let d = l.check(1, &p, 3, 0.0, || 0).unwrap();
         assert_eq!(d.remaining, 2);
         assert!(l.check(1, &p, 3, 0.0, || 0).is_err());
-        assert!(l.check(2, &p, 3, 0.0, || 0).is_ok(), "another user has their own bucket");
+        assert!(
+            l.check(2, &p, 3, 0.0, || 0).is_ok(),
+            "another user has their own bucket"
+        );
         // Dearer than the bucket: allowed when the bucket is full, never stuck forever.
-        let no_daily = Plan { per_day: 0, ..p.clone() };
+        let no_daily = Plan {
+            per_day: 0,
+            ..p.clone()
+        };
         assert!(l.check(3, &no_daily, 50, 0.0, || 0).is_ok());
     }
 
     #[test]
     fn the_daily_budget_counts_what_the_store_already_held_and_resets_with_the_day() {
         let l = Limiter::new();
-        let p = Plan { per_minute: 6000, burst: 1000, ..plan() };
+        let p = Plan {
+            per_minute: 6000,
+            burst: 1000,
+            ..plan()
+        };
         // 15 credits were already spent today before this process started.
         l.check(1, &p, 3, 7.0 * 86400.0, || 15).unwrap();
-        let denied = l.check(1, &p, 3, 7.0 * 86400.0 + 5.0, || unreachable!()).unwrap_err();
+        let denied = l
+            .check(1, &p, 3, 7.0 * 86400.0 + 5.0, || unreachable!())
+            .unwrap_err();
         assert_eq!(denied.reason, Reason::Daily);
-        assert!(l.check(1, &p, 3, 8.0 * 86400.0 + 1.0, || unreachable!()).is_ok(), "a new day starts at zero");
+        assert!(
+            l.check(1, &p, 3, 8.0 * 86400.0 + 1.0, || unreachable!())
+                .is_ok(),
+            "a new day starts at zero"
+        );
         assert_eq!(denied.retry_after_secs, 86400 - 5);
         assert_eq!(l.used_today(8), vec![(1, 3)]);
     }
@@ -223,7 +251,12 @@ mod tests {
     #[test]
     fn unlimited_daily_means_zero() {
         let l = Limiter::new();
-        let p = Plan { per_day: 0, per_minute: 6000, burst: 100000, ..plan() };
+        let p = Plan {
+            per_day: 0,
+            per_minute: 6000,
+            burst: 100000,
+            ..plan()
+        };
         for _ in 0..1000 {
             l.check(1, &p, 5, 0.0, || 0).unwrap();
         }

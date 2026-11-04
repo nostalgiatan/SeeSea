@@ -54,7 +54,9 @@ struct Resident<T> {
 const RETRY_AFTER: Duration = Duration::from_secs(60);
 
 impl<T: Send + Sync + 'static> Resident<T> {
-    fn spawn(load: impl Fn() -> std::result::Result<T, String> + Send + Sync + 'static) -> Arc<Self> {
+    fn spawn(
+        load: impl Fn() -> std::result::Result<T, String> + Send + Sync + 'static,
+    ) -> Arc<Self> {
         Self::spawn_with(load, None)
     }
 
@@ -65,7 +67,12 @@ impl<T: Send + Sync + 'static> Resident<T> {
         let this = Arc::new(Self {
             idle,
             load: Box::new(load),
-            slot: Mutex::new(Slot { model: None, loading: false, failed: None, last_used: Instant::now() }),
+            slot: Mutex::new(Slot {
+                model: None,
+                loading: false,
+                failed: None,
+                last_used: Instant::now(),
+            }),
             ready: Condvar::new(),
         });
         let first = Arc::clone(&this);
@@ -108,7 +115,12 @@ impl<T: Send + Sync + 'static> Resident<T> {
     fn wake(self: &Arc<Self>) {
         {
             let g = self.slot.lock().unwrap_or_else(|e| e.into_inner());
-            if g.model.is_some() || g.loading || g.failed.as_ref().is_some_and(|(_, at)| at.elapsed() < RETRY_AFTER) {
+            if g.model.is_some()
+                || g.loading
+                || g.failed
+                    .as_ref()
+                    .is_some_and(|(_, at)| at.elapsed() < RETRY_AFTER)
+            {
                 return;
             }
         }
@@ -151,7 +163,10 @@ impl<T: Send + Sync + 'static> Resident<T> {
         }
     }
 
-    fn with<R>(&self, f: impl FnOnce(&T) -> std::result::Result<R, String>) -> std::result::Result<R, String> {
+    fn with<R>(
+        &self,
+        f: impl FnOnce(&T) -> std::result::Result<R, String>,
+    ) -> std::result::Result<R, String> {
         let m = self.acquire()?;
         let out = f(&m);
         if let Ok(mut g) = self.slot.lock() {
@@ -259,8 +274,12 @@ impl PairScorer for CrossAdapter {
 /// The encoder in `dir`, loaded once per process however many parts (reranker, index vectors)
 /// ask for it: the model takes about 1.5 GB.
 pub fn shared_embedder(dir: &Path) -> Arc<EmbedderAdapter> {
-    static LOADED: std::sync::OnceLock<Mutex<Vec<(std::path::PathBuf, Arc<EmbedderAdapter>)>>> = std::sync::OnceLock::new();
-    let mut all = LOADED.get_or_init(|| Mutex::new(Vec::new())).lock().unwrap_or_else(|e| e.into_inner());
+    static LOADED: std::sync::OnceLock<Mutex<Vec<(std::path::PathBuf, Arc<EmbedderAdapter>)>>> =
+        std::sync::OnceLock::new();
+    let mut all = LOADED
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if let Some((_, e)) = all.iter().find(|(p, _)| p == dir) {
         return Arc::clone(e);
     }
@@ -294,7 +313,10 @@ pub fn semantic_reranker(
         cfg.cos_ceil = ceil;
     }
     // Remember up to 8192 vectors (32 MB): pages that come up again are not encoded again.
-    let embedder: Arc<dyn TextEmbedder> = Arc::new(seesea_pipeline::semantic::CachedEmbedder::new(shared_embedder(dir), 8192));
+    let embedder: Arc<dyn TextEmbedder> = Arc::new(seesea_pipeline::semantic::CachedEmbedder::new(
+        shared_embedder(dir),
+        8192,
+    ));
     Ok(Arc::new(SemanticReranker::new(embedder, cfg)))
 }
 
@@ -398,10 +420,16 @@ mod resident_tests {
 
     #[test]
     fn a_model_in_use_is_never_unloaded_and_a_failed_load_is_not_retried_at_once() {
-        let r = Resident::spawn_with(|| Ok(1u32), Some((Duration::from_millis(50), Duration::from_millis(20))));
+        let r = Resident::spawn_with(
+            || Ok(1u32),
+            Some((Duration::from_millis(50), Duration::from_millis(20))),
+        );
         let held = r.acquire().unwrap();
         std::thread::sleep(Duration::from_millis(300));
-        assert!(r.slot.lock().unwrap().model.is_some(), "a handle is still out");
+        assert!(
+            r.slot.lock().unwrap().model.is_some(),
+            "a handle is still out"
+        );
         drop(held);
 
         let tries = Arc::new(AtomicUsize::new(0));

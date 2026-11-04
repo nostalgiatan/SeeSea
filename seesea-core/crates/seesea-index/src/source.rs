@@ -3,8 +3,8 @@
 use crate::Index;
 use async_trait::async_trait;
 use seesea_pipeline::error::{FailureKind, SourceError};
-use seesea_pipeline::{RawHit, Source, SourceQuery, TimeRange};
 use seesea_pipeline::semantic::TextEmbedder;
+use seesea_pipeline::{RawHit, Source, SourceQuery, TimeRange};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -21,7 +21,13 @@ impl seesea_pipeline::Sink for IndexSink {
     fn remember(&self, pages: Vec<seesea_pipeline::Remembered>) {
         let items: Vec<crate::Item> = pages
             .into_iter()
-            .map(|p| crate::Item { url: p.url, title: p.title, lead: p.lead, published: None, source: READ.into() })
+            .map(|p| crate::Item {
+                url: p.url,
+                title: p.title,
+                lead: p.lead,
+                published: None,
+                source: READ.into(),
+            })
             .collect();
         let index = self.0.clone();
         // Called from inside a search: never wait for the disk.
@@ -46,7 +52,10 @@ impl IndexSource {
     }
 
     pub fn new(index: Arc<Index>) -> Self {
-        Self { index, embedder: None }
+        Self {
+            index,
+            embedder: None,
+        }
     }
 }
 
@@ -78,10 +87,19 @@ impl Source for IndexSource {
         let (index, query, limit) = (Arc::clone(&self.index), q.query.clone(), q.limit.max(1));
         let embedder = self.embedder.clone();
         let rows = tokio::task::spawn_blocking(move || -> Result<Vec<crate::Stored>, String> {
-            let words = index.store.search(&query, since, limit).map_err(|e| e.to_string())?;
-            let Some(bits) = embedder.and_then(|e| crate::vectors::query_bits(&index, &*e, &query)) else { return Ok(words) };
+            let words = index
+                .store
+                .search(&query, since, limit)
+                .map_err(|e| e.to_string())?;
+            let Some(bits) = embedder.and_then(|e| crate::vectors::query_bits(&index, &*e, &query))
+            else {
+                return Ok(words);
+            };
             let max = (bits.len() as f64 * 8.0 * MAX_DISTANCE_SHARE) as u32;
-            let meaning = index.store.nearest(&bits, since, limit, max).map_err(|e| e.to_string())?;
+            let meaning = index
+                .store
+                .nearest(&bits, since, limit, max)
+                .map_err(|e| e.to_string())?;
             // Reciprocal-rank fusion of the two lists.
             let mut score: HashMap<String, (f64, crate::Stored)> = HashMap::new();
             let lists = [words, meaning.into_iter().map(|(s, _)| s).collect()];
@@ -104,7 +122,12 @@ impl Source for IndexSource {
                 title: s.title,
                 snippet: s.lead,
                 // Pages written back after being read carry the day they were read, not a publication date.
-                published: if s.source == READ { None } else { s.published.and_then(|p| chrono::DateTime::from_timestamp(p, 0)) },
+                published: if s.source == READ {
+                    None
+                } else {
+                    s.published
+                        .and_then(|p| chrono::DateTime::from_timestamp(p, 0))
+                },
                 upstream: Vec::new(),
             })
             .collect())
@@ -127,7 +150,13 @@ mod tests {
             published: None,
         }]);
         let source = IndexSource::new(index);
-        let q = SourceQuery { query: "scheduler guide".into(), limit: 5, page: 1, time_range: None, language: None };
+        let q = SourceQuery {
+            query: "scheduler guide".into(),
+            limit: 5,
+            page: 1,
+            time_range: None,
+            language: None,
+        };
         let mut hits = Vec::new();
         for _ in 0..50 {
             hits = source.search(&q).await.unwrap();

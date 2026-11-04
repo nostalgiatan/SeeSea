@@ -113,7 +113,10 @@ fn fetch_options(settings: &Settings) -> seesea_fetch::FetchOptions {
 
 /// Polls feeds into `index` with the same fetching rules (SSRF check, headers, proxy, rendering)
 /// as searches.
-pub fn build_poller(settings: &Settings, index: Arc<seesea_index::Index>) -> Result<seesea_index::Poller> {
+pub fn build_poller(
+    settings: &Settings,
+    index: Arc<seesea_index::Index>,
+) -> Result<seesea_index::Poller> {
     http_client(settings)?;
     let fetch = fetch_options(settings);
     let mut poller = seesea_index::Poller::new(
@@ -128,8 +131,19 @@ pub fn build_poller(settings: &Settings, index: Arc<seesea_index::Index>) -> Res
     if let Some(m) = settings.model_dir.as_deref().filter(|m| m.exists()) {
         poller = poller.embedder(crate::embedding::shared_embedder(m));
     }
-    if let Some(r) = (!settings.no_render).then(|| seesea_fetch::render::Renderer::discover_with(settings.lightpanda.as_deref(), Some(&crate::userconfig::managed_renderer()))).flatten() {
-        poller = poller.renderer(Arc::new(seesea_pipeline::content::RenderFetcher { renderer: r, options: fetch }));
+    if let Some(r) = (!settings.no_render)
+        .then(|| {
+            seesea_fetch::render::Renderer::discover_with(
+                settings.lightpanda.as_deref(),
+                Some(&crate::userconfig::managed_renderer()),
+            )
+        })
+        .flatten()
+    {
+        poller = poller.renderer(Arc::new(seesea_pipeline::content::RenderFetcher {
+            renderer: r,
+            options: fetch,
+        }));
     }
     Ok(poller)
 }
@@ -179,22 +193,39 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
         })
         .transpose()?;
     let renderer = (!settings.no_render)
-        .then(|| seesea_fetch::render::Renderer::discover_with(settings.lightpanda.as_deref(), Some(&crate::userconfig::managed_renderer())))
+        .then(|| {
+            seesea_fetch::render::Renderer::discover_with(
+                settings.lightpanda.as_deref(),
+                Some(&crate::userconfig::managed_renderer()),
+            )
+        })
         .flatten();
     let mut sink = None;
     // A search node keeps no index of its own: it sends what it reads to the flywheel node and asks it for
     // fresh-news results.
-    let outbox = settings.cluster_search.as_ref().map(|_| match &settings.spool_dir {
-        Some(dir) => crate::cluster::Outbox::with_spool(dir),
-        None => crate::cluster::Outbox::new(),
-    });
-    let link = settings.cluster_search.as_ref().map(crate::cluster::Link::of).transpose().map_err(Error::Config)?;
+    let outbox = settings
+        .cluster_search
+        .as_ref()
+        .map(|_| match &settings.spool_dir {
+            Some(dir) => crate::cluster::Outbox::with_spool(dir),
+            None => crate::cluster::Outbox::new(),
+        });
+    let link = settings
+        .cluster_search
+        .as_ref()
+        .map(crate::cluster::Link::of)
+        .transpose()
+        .map_err(Error::Config)?;
     if let (Some(link), Some(outbox)) = (&link, &outbox) {
-        sink = Some(Arc::new(crate::cluster::ClusterSink(outbox.clone())) as Arc<dyn seesea_pipeline::Sink>);
+        sink =
+            Some(Arc::new(crate::cluster::ClusterSink(outbox.clone()))
+                as Arc<dyn seesea_pipeline::Sink>);
         sources.push(Arc::new(crate::cluster::RemoteIndex(link.clone())));
     } else if let Some(dir) = &settings.index_dir {
         let index = seesea_index::Index::open(dir);
-        sink = Some(Arc::new(seesea_index::IndexSink(index.clone())) as Arc<dyn seesea_pipeline::Sink>);
+        sink = Some(
+            Arc::new(seesea_index::IndexSink(index.clone())) as Arc<dyn seesea_pipeline::Sink>
+        );
         let mut local = seesea_index::IndexSource::new(index);
         if let Some(m) = &settings.model_dir {
             local = local.embedder(crate::embedding::shared_embedder(m));
@@ -225,7 +256,10 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
         pipeline = pipeline.journal(journal);
     }
     if let Some(path) = &settings.learn_file {
-        let cfg = seesea_pipeline::LearnConfig { explore: settings.explore.clamp(0.0, 1.0), ..Default::default() };
+        let cfg = seesea_pipeline::LearnConfig {
+            explore: settings.explore.clamp(0.0, 1.0),
+            ..Default::default()
+        };
         let l = Arc::new(seesea_pipeline::Learner::open(cfg, path.clone()));
         if let Some(outbox) = &outbox {
             let o = outbox.clone();
@@ -312,17 +346,29 @@ impl ReqwestHub {
             // The hub address comes from a feed: a name that leads to a private address is not followed.
             b = b.dns_resolver(std::sync::Arc::new(seesea_net::guard::PublicOnly));
         }
-        Ok(Self { client: b.build().map_err(|e| Error::Config(e.to_string()))? })
+        Ok(Self {
+            client: b.build().map_err(|e| Error::Config(e.to_string()))?,
+        })
     }
 }
 
 #[async_trait::async_trait]
 impl seesea_index::websub::HubClient for ReqwestHub {
-    async fn post_form(&self, url: &str, form: &[(&str, &str)]) -> std::result::Result<u16, String> {
+    async fn post_form(
+        &self,
+        url: &str,
+        form: &[(&str, &str)],
+    ) -> std::result::Result<u16, String> {
         let parsed = url::Url::parse(url).map_err(|e| e.to_string())?;
         if seesea_net::guard::forbidden_url(&parsed) {
             return Err("the hub is a local or private address".into());
         }
-        self.client.post(url).form(form).send().await.map(|r| r.status().as_u16()).map_err(|e| e.to_string())
+        self.client
+            .post(url)
+            .form(form)
+            .send()
+            .await
+            .map(|r| r.status().as_u16())
+            .map_err(|e| e.to_string())
     }
 }

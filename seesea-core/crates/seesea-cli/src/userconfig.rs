@@ -174,7 +174,11 @@ pub fn dirs_for(os: Os, env: &dyn Fn(&str) -> Option<PathBuf>) -> Dirs {
         Os::Windows => {
             let local = env("LOCALAPPDATA").unwrap_or_else(|| under_home(&["AppData", "Local"]));
             let roaming = env("APPDATA").unwrap_or_else(|| under_home(&["AppData", "Roaming"]));
-            Dirs { config: app(roaming), data: app(local.clone()), cache: app(local).join("cache") }
+            Dirs {
+                config: app(roaming),
+                data: app(local.clone()),
+                cache: app(local).join("cache"),
+            }
         }
         Os::MacOs => Dirs {
             config: app(env("XDG_CONFIG_HOME").unwrap_or_else(|| under_home(&[".config"]))),
@@ -205,7 +209,11 @@ pub fn data_dir() -> PathBuf {
 
 /// Where `seesea models download renderer` puts Lightpanda, and the last place it is looked for.
 pub fn managed_renderer() -> PathBuf {
-    data_dir().join("bin").join(if cfg!(windows) { "lightpanda.exe" } else { "lightpanda" })
+    data_dir().join("bin").join(if cfg!(windows) {
+        "lightpanda.exe"
+    } else {
+        "lightpanda"
+    })
 }
 
 /// `$SEESEA_CACHE_DIR`, else `<cache dir>/seesea`.
@@ -244,14 +252,16 @@ pub fn default_auth_db() -> PathBuf {
 
 /// `~/x` is `$HOME/x`; a TOML file has no other way to say it.
 fn expand(path: &mut PathBuf) {
-    if let (Ok(rest), Some(home)) = (path.strip_prefix("~"), env_path("HOME").or_else(|| env_path("USERPROFILE"))) {
+    if let (Ok(rest), Some(home)) = (
+        path.strip_prefix("~"),
+        env_path("HOME").or_else(|| env_path("USERPROFILE")),
+    ) {
         *path = home.join(rest);
     }
 }
 
 pub fn parse(text: &str) -> Result<FileConfig> {
-    let mut c: FileConfig =
-        toml::from_str(text).map_err(|e| Error::Config(e.to_string()))?;
+    let mut c: FileConfig = toml::from_str(text).map_err(|e| Error::Config(e.to_string()))?;
     for p in [
         &mut c.models.dir,
         &mut c.models.embedding,
@@ -420,18 +430,60 @@ mod tests {
     fn each_os_gets_its_own_conventional_folders() {
         use std::collections::HashMap;
         let table = |pairs: &[(&str, &str)]| {
-            let m: HashMap<String, PathBuf> = pairs.iter().map(|(k, v)| (k.to_string(), PathBuf::from(v))).collect();
+            let m: HashMap<String, PathBuf> = pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), PathBuf::from(v)))
+                .collect();
             move |k: &str| m.get(k).cloned()
         };
         let p = |s: &str| PathBuf::from(s);
         let linux = dirs_for(Os::Linux, &table(&[("HOME", "/home/a")]));
-        assert_eq!(linux, Dirs { config: p("/home/a/.config/seesea"), data: p("/home/a/.local/share/seesea"), cache: p("/home/a/.cache/seesea") });
-        let xdg = dirs_for(Os::Linux, &table(&[("HOME", "/h"), ("XDG_CONFIG_HOME", "/c"), ("XDG_DATA_HOME", "/d"), ("XDG_CACHE_HOME", "/k")]));
-        assert_eq!(xdg, Dirs { config: p("/c/seesea"), data: p("/d/seesea"), cache: p("/k/seesea") });
+        assert_eq!(
+            linux,
+            Dirs {
+                config: p("/home/a/.config/seesea"),
+                data: p("/home/a/.local/share/seesea"),
+                cache: p("/home/a/.cache/seesea")
+            }
+        );
+        let xdg = dirs_for(
+            Os::Linux,
+            &table(&[
+                ("HOME", "/h"),
+                ("XDG_CONFIG_HOME", "/c"),
+                ("XDG_DATA_HOME", "/d"),
+                ("XDG_CACHE_HOME", "/k"),
+            ]),
+        );
+        assert_eq!(
+            xdg,
+            Dirs {
+                config: p("/c/seesea"),
+                data: p("/d/seesea"),
+                cache: p("/k/seesea")
+            }
+        );
         let mac = dirs_for(Os::MacOs, &table(&[("HOME", "/Users/a")]));
-        assert_eq!(mac, Dirs { config: p("/Users/a/.config/seesea"), data: p("/Users/a/Library/Application Support/seesea"), cache: p("/Users/a/Library/Caches/seesea") });
-        let win = dirs_for(Os::Windows, &table(&[("APPDATA", "C:/R"), ("LOCALAPPDATA", "C:/L")]));
-        assert_eq!(win, Dirs { config: p("C:/R/seesea"), data: p("C:/L/seesea"), cache: p("C:/L/seesea/cache") });
+        assert_eq!(
+            mac,
+            Dirs {
+                config: p("/Users/a/.config/seesea"),
+                data: p("/Users/a/Library/Application Support/seesea"),
+                cache: p("/Users/a/Library/Caches/seesea")
+            }
+        );
+        let win = dirs_for(
+            Os::Windows,
+            &table(&[("APPDATA", "C:/R"), ("LOCALAPPDATA", "C:/L")]),
+        );
+        assert_eq!(
+            win,
+            Dirs {
+                config: p("C:/R/seesea"),
+                data: p("C:/L/seesea"),
+                cache: p("C:/L/seesea/cache")
+            }
+        );
         let bare = dirs_for(Os::Windows, &table(&[("USERPROFILE", "C:/Users/a")]));
         assert_eq!(bare.data, p("C:/Users/a/AppData/Local/seesea"));
     }

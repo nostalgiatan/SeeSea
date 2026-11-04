@@ -67,7 +67,11 @@ pub fn build(events: &[Value]) -> Report {
     for e in events {
         match e["type"].as_str() {
             Some("feedback") => {
-                if e["verdict"] == "good" { r.feedback_good += 1 } else { r.feedback_bad += 1 }
+                if e["verdict"] == "good" {
+                    r.feedback_good += 1
+                } else {
+                    r.feedback_bad += 1
+                }
             }
             Some("search") => {
                 r.searches += 1;
@@ -77,9 +81,14 @@ pub fn build(events: &[Value]) -> Report {
                 let mut why: Vec<String> = Vec::new();
                 if let Some(f) = e["failures"].as_array() {
                     for f in f {
-                        let s = r.sources.entry(f["source"].as_str().unwrap_or("?").into()).or_default();
+                        let s = r
+                            .sources
+                            .entry(f["source"].as_str().unwrap_or("?").into())
+                            .or_default();
                         s.failed += 1;
-                        *s.by_kind.entry(f["kind"].as_str().unwrap_or("?").into()).or_default() += 1;
+                        *s.by_kind
+                            .entry(f["kind"].as_str().unwrap_or("?").into())
+                            .or_default() += 1;
                     }
                 }
                 if e["ok"] != true {
@@ -100,13 +109,21 @@ pub fn build(events: &[Value]) -> Report {
                             stages.entry(n.into()).or_default().push(ms);
                         }
                     }
-                    for d in e["degraded"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                    for d in e["degraded"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                    {
                         *r.degraded.entry(d.chars().take(80).collect()).or_default() += 1;
                     }
                     let hits = e["hits"].as_array().cloned().unwrap_or_default();
                     for h in &hits {
                         for a in h["found_by"].as_array().into_iter().flatten() {
-                            r.sources.entry(a["source"].as_str().unwrap_or("?").into()).or_default().answered += 1;
+                            r.sources
+                                .entry(a["source"].as_str().unwrap_or("?").into())
+                                .or_default()
+                                .answered += 1;
                         }
                     }
                     if hits.is_empty() {
@@ -116,7 +133,10 @@ pub fn build(events: &[Value]) -> Report {
                         if e["mode"] != "fast" && top < 0.35 {
                             why.push(format!("weak top score {top:.2}"));
                         }
-                        let read = hits.iter().filter(|h| h["content_chars"].is_number()).count();
+                        let read = hits
+                            .iter()
+                            .filter(|h| h["content_chars"].is_number())
+                            .count();
                         if e["mode"] != "fast" && read * 2 < hits.len() {
                             why.push(format!("only {read} of {} pages could be read", hits.len()));
                         }
@@ -129,7 +149,12 @@ pub fn build(events: &[Value]) -> Report {
                             }
                         }
                         // The best-scored result being a lone source's guess is the usual shape of a bad search.
-                        if hits.iter().take(3).all(|h| h["found_by"].as_array().is_some_and(|a| a.len() == 1)) && hits.len() >= 3 {
+                        if hits
+                            .iter()
+                            .take(3)
+                            .all(|h| h["found_by"].as_array().is_some_and(|a| a.len() == 1))
+                            && hits.len() >= 3
+                        {
                             why.push("top 3 each found by a single source".into());
                         }
                     }
@@ -166,18 +191,60 @@ pub fn markdown(r: &Report) -> String {
     use std::fmt::Write;
     let mut s = String::new();
     let _ = writeln!(s, "# SeeSea usage report\n");
-    let _ = writeln!(s, "{} searches ({} from cache), {} failed outright", r.searches, r.cached, r.errors.values().sum::<usize>());
+    let _ = writeln!(
+        s,
+        "{} searches ({} from cache), {} failed outright",
+        r.searches,
+        r.cached,
+        r.errors.values().sum::<usize>()
+    );
     if !r.errors.is_empty() {
-        let _ = writeln!(s, "\nErrors: {}", r.errors.iter().map(|(k, v)| format!("{k} x{v}")).collect::<Vec<_>>().join(", "));
+        let _ = writeln!(
+            s,
+            "\nErrors: {}",
+            r.errors
+                .iter()
+                .map(|(k, v)| format!("{k} x{v}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
-    let _ = writeln!(s, "\nModes: {}", r.by_mode.iter().map(|(k, v)| format!("{k} x{v}")).collect::<Vec<_>>().join(", "));
-    let _ = writeln!(s, "Latency (uncached): p50 {} ms, p95 {} ms", r.took_ms_p50, r.took_ms_p95);
+    let _ = writeln!(
+        s,
+        "\nModes: {}",
+        r.by_mode
+            .iter()
+            .map(|(k, v)| format!("{k} x{v}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let _ = writeln!(
+        s,
+        "Latency (uncached): p50 {} ms, p95 {} ms",
+        r.took_ms_p50, r.took_ms_p95
+    );
     if !r.stage_ms_p50.is_empty() {
-        let _ = writeln!(s, "Stage medians: {}", r.stage_ms_p50.iter().map(|(k, v)| format!("{k} {v} ms")).collect::<Vec<_>>().join(", "));
+        let _ = writeln!(
+            s,
+            "Stage medians: {}",
+            r.stage_ms_p50
+                .iter()
+                .map(|(k, v)| format!("{k} {v} ms"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
-    let _ = writeln!(s, "\n## Sources\n\n| source | in results | failures | kinds |\n|---|---|---|---|");
+    let _ = writeln!(
+        s,
+        "\n## Sources\n\n| source | in results | failures | kinds |\n|---|---|---|---|"
+    );
     for (n, st) in &r.sources {
-        let kinds = st.by_kind.iter().map(|(k, v)| format!("{k} x{v}")).collect::<Vec<_>>().join(", ");
+        let kinds = st
+            .by_kind
+            .iter()
+            .map(|(k, v)| format!("{k} x{v}"))
+            .collect::<Vec<_>>()
+            .join(", ");
         let _ = writeln!(s, "| {n} | {} | {} | {kinds} |", st.answered, st.failed);
     }
     if !r.unreadable_hosts.is_empty() {
@@ -192,11 +259,27 @@ pub fn markdown(r: &Report) -> String {
             let _ = writeln!(s, "- x{n}: {d}");
         }
     }
-    let _ = writeln!(s, "\nFeedback: {} good, {} bad", r.feedback_good, r.feedback_bad);
+    let _ = writeln!(
+        s,
+        "\nFeedback: {} good, {} bad",
+        r.feedback_good, r.feedback_bad
+    );
     let _ = writeln!(s, "\n## Searches that look wrong ({})\n", r.suspects.len());
     for x in r.suspects.iter().take(50) {
-        let _ = writeln!(s, "- {} `{}`: {}", x["mode"].as_str().unwrap_or("?"), x["query"].as_str().unwrap_or(""),
-            x["why"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("; ")).unwrap_or_default());
+        let _ = writeln!(
+            s,
+            "- {} `{}`: {}",
+            x["mode"].as_str().unwrap_or("?"),
+            x["query"].as_str().unwrap_or(""),
+            x["why"]
+                .as_array()
+                .map(|a| a
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join("; "))
+                .unwrap_or_default()
+        );
     }
     s
 }
