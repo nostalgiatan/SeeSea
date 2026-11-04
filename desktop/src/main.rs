@@ -285,7 +285,7 @@ fn win_drag(window: tauri::WebviewWindow) {
 /// `edge` is one of n, s, e, w, ne, nw, se, sw.
 #[tauri::command]
 fn win_resize(window: tauri::WebviewWindow, edge: String) {
-    use tauri::ResizeDirection::*;
+    use tauri_runtime::ResizeDirection::*;
     let dir = match edge.as_str() {
         "n" => North,
         "s" => South,
@@ -297,7 +297,7 @@ fn win_resize(window: tauri::WebviewWindow, edge: String) {
         "sw" => SouthWest,
         _ => return,
     };
-    let _ = window.start_resize_dragging(dir);
+    let _ = window.as_ref().window().start_resize_dragging(dir);
 }
 
 fn main() {
