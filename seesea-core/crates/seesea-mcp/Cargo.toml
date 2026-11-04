@@ -1,6 +1,6 @@
 [package]
 name = "seesea-mcp"
-version = "0.1.0"
+version = "3.0.0"
 edition = "2024"
 description = "Model Context Protocol server (JSON-RPC 2.0) exposing the SeeSea search pipeline as tools"
 license = "AGPL-3.0-or-later"

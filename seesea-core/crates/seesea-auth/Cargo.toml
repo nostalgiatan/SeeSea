@@ -1,6 +1,6 @@
 [package]
 name = "seesea-auth"
-version = "0.1.0"
+version = "3.0.0"
 edition = "2024"
 description = "Users, API keys, plans and rate limits for the seesea HTTP server"
 license = "AGPL-3.0-or-later"
