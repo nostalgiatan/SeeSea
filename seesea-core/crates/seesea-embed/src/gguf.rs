@@ -9,7 +9,6 @@ use candle_core::quantized::gguf_file::{Content, Value};
 use candle_core::quantized::{GgmlDType, QMatMul, ggml_file::qtensor_from_ggml};
 use candle_core::{Device, Tensor};
 use candle_nn::{LayerNorm, Module};
-use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::Arc;
 use tokenizers::Tokenizer;
@@ -83,8 +82,10 @@ pub struct GgufBert {
     gpu: Option<crate::gpu::GpuLayers>,
     heads: usize,
     hidden: usize,
-    /// Raw quantized rows of the token embedding table, `row_bytes` per token.
-    tok_raw: Vec<u8>,
+    /// The model file, mapped: the token embedding table is read from it row by row (`row_bytes` per token,
+    /// from `tok_offset`), so only the rows that are looked up occupy memory, and the system can take them back.
+    tok_map: memmap2::Mmap,
+    tok_offset: usize,
     tok_dtype: GgmlDType,
     row_bytes: usize,
     vocab: usize,
@@ -474,10 +475,12 @@ impl GgufBert {
             return Err(bad("token embedding width differs from the hidden size"));
         }
         let row_bytes = width / tok_dtype.block_size() * tok_dtype.type_size();
-        let mut tok_raw = vec![0u8; row_bytes * vocab];
-        file.seek(SeekFrom::Start(c.tensor_data_offset + info.offset))
-            .map_err(io)?;
-        file.read_exact(&mut tok_raw).map_err(io)?;
+        let tok_offset = (c.tensor_data_offset + info.offset) as usize;
+        // SAFETY: the file is only read, and model files are not rewritten while a model is loaded.
+        let tok_map = unsafe { memmap2::Mmap::map(&file) }.map_err(io)?;
+        if tok_offset + row_bytes * vocab > tok_map.len() {
+            return Err(bad("the token embedding table runs past the end of the file"));
+        }
 
         let tokenizer = tokenizer_job
             .join()
@@ -497,7 +500,8 @@ impl GgufBert {
             gpu,
             heads,
             hidden,
-            tok_raw,
+            tok_map,
+            tok_offset,
             tok_dtype,
             row_bytes,
             vocab,
@@ -569,7 +573,8 @@ impl GgufBert {
         let mut raw = Vec::with_capacity(ids.len() * self.row_bytes);
         for &id in ids {
             let id = (id as usize).min(self.vocab - 1);
-            raw.extend_from_slice(&self.tok_raw[id * self.row_bytes..(id + 1) * self.row_bytes]);
+            let at = self.tok_offset + id * self.row_bytes;
+            raw.extend_from_slice(&self.tok_map[at..at + self.row_bytes]);
         }
         let q = qtensor_from_ggml(
             self.tok_dtype,
