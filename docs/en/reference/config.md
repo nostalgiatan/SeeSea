@@ -55,6 +55,17 @@ The cache directory is capped at 256 MB. The local index keeps 30 days by defaul
 | `auth_db` | see above | |
 | `shared_limits` | `true` | Token buckets and daily budgets live in the user database, shared by several `serve` processes; `false` keeps them in memory |
 
+## `[collect]`
+
+Besides news, the local index can collect other kinds of data. Every switch is off by default; turning one on adds its feeds on probation, and a feed that stops answering switches itself off. What was collected stays searchable after the switch is turned off. The environment variable `SEESEA_COLLECT` (comma separated) overrides the file.
+
+| Key | Content |
+|---|---|
+| `dev` | GitHub releases and tags, PyPI updates, security advisories (CISA, Ubuntu, Debian, GitHub Advisory) |
+| `papers` | arXiv daily lists by subject (cs.CL, cs.LG, cs.AI, cs.CV, cs.IR, cs.CR, cs.SE, cs.DC, stat.ML) |
+| `community` | Hacker News, Lobsters, Stack Overflow tags, Reddit, V2EX |
+| `quotes` | Exchange rates, coin prices, weather: asked from public APIs only when a query is about them, not stored, answers kept 30 seconds. Each value has several providers and the first that answers is used |
+
 ## TLS
 
 Listening on a non-loopback address needs a certificate, or a proxy in front that terminates TLS. `--allow-open` does not get around this.

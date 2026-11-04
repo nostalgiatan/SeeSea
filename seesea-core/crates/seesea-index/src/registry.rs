@@ -46,6 +46,8 @@ pub struct Feed {
     pub interval: i64,
     pub total: i64,
     pub last_error: Option<String>,
+    /// What the feed's items are: empty for news, else `release`, `advisory`, `paper` or `post`.
+    pub kind: String,
 }
 
 pub const DEFAULT_INTERVAL: i64 = 1800;
@@ -112,12 +114,17 @@ impl Registry {
                 "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;
                  CREATE TABLE IF NOT EXISTS feeds(url TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', origin TEXT NOT NULL,
                    status TEXT NOT NULL, added INTEGER NOT NULL, last_try INTEGER, last_ok INTEGER, fails INTEGER NOT NULL DEFAULT 0,
-                   next_due INTEGER NOT NULL DEFAULT 0, interval INTEGER NOT NULL, total INTEGER NOT NULL DEFAULT 0, last_error TEXT);
+                   next_due INTEGER NOT NULL DEFAULT 0, interval INTEGER NOT NULL, total INTEGER NOT NULL DEFAULT 0, last_error TEXT, kind TEXT NOT NULL DEFAULT '');
                  CREATE TABLE IF NOT EXISTS subs(id TEXT PRIMARY KEY, topic TEXT NOT NULL UNIQUE, hub TEXT NOT NULL, secret TEXT NOT NULL,
                    status TEXT NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, asked INTEGER NOT NULL DEFAULT 0, received INTEGER NOT NULL DEFAULT 0);
                  CREATE TABLE IF NOT EXISTS leases(name TEXT PRIMARY KEY, holder TEXT NOT NULL, until INTEGER NOT NULL);
                  CREATE TABLE IF NOT EXISTS hosts(host TEXT PRIMARY KEY, queued INTEGER NOT NULL, tried INTEGER, found INTEGER NOT NULL DEFAULT 0);",
             )?;
+            // Registries written before kinds existed lack the column.
+            let _ = c.execute(
+                "ALTER TABLE feeds ADD COLUMN kind TEXT NOT NULL DEFAULT ''",
+                [],
+            );
             *g = Some(c);
         }
         f(g.as_ref().unwrap()).map(Some)
@@ -153,11 +160,16 @@ impl Registry {
 
     /// Register a feed unless it is known. Returns whether it was new.
     pub fn add(&self, url: &str, origin: &str, status: Status) -> Result<bool> {
+        self.add_kind(url, origin, status, "")
+    }
+
+    /// Like [`add`](Self::add), for a feed whose items are not news articles.
+    pub fn add_kind(&self, url: &str, origin: &str, status: Status, kind: &str) -> Result<bool> {
         Ok(self
             .with(true, |c| {
                 Ok(c.execute(
-                    "INSERT OR IGNORE INTO feeds(url,origin,status,added,interval) VALUES(?,?,?,?,?)",
-                    params![url, origin, status.as_str(), crate::now(), DEFAULT_INTERVAL],
+                    "INSERT OR IGNORE INTO feeds(url,origin,status,added,interval,kind) VALUES(?,?,?,?,?,?)",
+                    params![url, origin, status.as_str(), crate::now(), DEFAULT_INTERVAL, kind],
                 )? > 0)
             })?
             .unwrap_or(false))
@@ -174,7 +186,7 @@ impl Registry {
     pub fn list(&self) -> Result<Vec<Feed>> {
         Ok(self
             .with(false, |c| {
-                let mut st = c.prepare("SELECT url,title,origin,status,fails,last_ok,next_due,interval,total,last_error FROM feeds ORDER BY status, url")?;
+                let mut st = c.prepare("SELECT url,title,origin,status,fails,last_ok,next_due,interval,total,last_error,kind FROM feeds ORDER BY status, url")?;
                 let rows = st.query_map([], |r| {
                     Ok(Feed {
                         url: r.get(0)?,
@@ -187,6 +199,7 @@ impl Registry {
                         interval: r.get(7)?,
                         total: r.get(8)?,
                         last_error: r.get(9)?,
+                        kind: r.get(10)?,
                     })
                 })?;
                 rows.collect()
@@ -196,10 +209,20 @@ impl Registry {
 
     /// Feeds whose turn has come, the longest-waiting first.
     pub fn due(&self, now: i64, limit: usize) -> Result<Vec<Feed>> {
+        self.due_where(now, limit, |_| true)
+    }
+
+    /// Like [`due`](Self::due), for the feeds `allow` accepts only (the limit counts those).
+    pub fn due_where(
+        &self,
+        now: i64,
+        limit: usize,
+        allow: impl Fn(&Feed) -> bool,
+    ) -> Result<Vec<Feed>> {
         Ok(self
             .list()?
             .into_iter()
-            .filter(|f| f.status != Status::Disabled && f.next_due <= now)
+            .filter(|f| f.status != Status::Disabled && f.next_due <= now && allow(f))
             .take_while({
                 let mut n = 0;
                 move |_| {

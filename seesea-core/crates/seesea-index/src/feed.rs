@@ -140,6 +140,7 @@ pub fn parse(body: &str, feed_url: &str, source: &str) -> Result<Parsed, String>
             lead,
             published,
             source: source.to_string(),
+            kind: String::new(),
         });
     }
     let hub = root
@@ -177,6 +178,7 @@ fn parse_news_sitemap(root: roxmltree::Node, base: &str, source: &str) -> Parsed
                     .or_else(|| text(n, "lastmod"))
                     .and_then(|d| parse_date(&d)),
                 source: source.to_string(),
+                kind: String::new(),
             })
         })
         .collect();
@@ -256,6 +258,7 @@ fn parse_json(body: &str, feed_url: &str, source: &str) -> Result<Parsed, String
                     ),
                     published: text(i, "date_published").and_then(|d| parse_date(&d)),
                     source: source.to_string(),
+                    kind: String::new(),
                 })
             })
             .collect(),

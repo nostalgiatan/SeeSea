@@ -27,6 +27,7 @@ impl seesea_pipeline::Sink for IndexSink {
                 lead: p.lead,
                 published: None,
                 source: READ.into(),
+                kind: String::new(),
             })
             .collect();
         let index = self.0.clone();

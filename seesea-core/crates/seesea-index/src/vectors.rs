@@ -140,6 +140,7 @@ mod tests {
                 lead: format!("recipe {i}"),
                 published: Some(now),
                 source: "t".into(),
+                kind: String::new(),
             })
             .collect();
         items.push(Item {
@@ -148,6 +149,7 @@ mod tests {
             lead: "seismologists measured magnitude".into(),
             published: Some(now),
             source: "t".into(),
+            kind: String::new(),
         });
         index.store.ingest(&items).unwrap();
         let embedder: Arc<dyn TextEmbedder> = Arc::new(Toy);
@@ -188,6 +190,7 @@ mod tests {
                 lead: String::new(),
                 published: None,
                 source: "t".into(),
+                kind: String::new(),
             }])
             .unwrap();
         assert_eq!(

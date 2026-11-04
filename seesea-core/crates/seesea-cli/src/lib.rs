@@ -3,12 +3,14 @@
 pub mod access;
 pub mod account;
 pub mod cluster;
+pub mod collections;
 pub mod config;
 pub mod desk;
 pub mod deskx;
 pub mod embedding;
 pub mod keyless;
 pub mod models;
+pub mod quotes;
 pub mod reqlog;
 pub mod seeds;
 pub mod server;

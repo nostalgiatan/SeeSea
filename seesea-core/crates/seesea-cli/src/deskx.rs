@@ -150,6 +150,10 @@ const EDITABLE: &[(&str, Kind)] = &[
     ("retention_days", Kind::Int),
     ("index_quota_mb", Kind::Int),
     ("auth_db", Kind::Text),
+    ("collect.dev", Kind::Bool),
+    ("collect.papers", Kind::Bool),
+    ("collect.community", Kind::Bool),
+    ("collect.quotes", Kind::Bool),
     ("models.dir", Kind::Text),
     ("models.embedding", Kind::Text),
     ("models.reranker", Kind::Text),
@@ -171,7 +175,8 @@ fn settings_view(d: &Desk) -> Result<Value, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
-    let mut values: Value = toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut values: Value =
+        toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut secrets = Vec::new();
     if let Some(o) = values.as_object_mut() {
         for k in SECRET {
@@ -292,7 +297,10 @@ fn apply_patch(text: &str, patch: &Map<String, Value>) -> Result<String, String>
     Ok(out)
 }
 
-async fn settings_put(State(s): State<AppState>, Json(patch): Json<Map<String, Value>>) -> Response {
+async fn settings_put(
+    State(s): State<AppState>,
+    Json(patch): Json<Map<String, Value>>,
+) -> Response {
     let d = match desk_of(&s) {
         Ok(d) => d,
         Err(r) => return r,
@@ -497,9 +505,8 @@ async fn index_action(
     };
     let body = body.map(|b| b.0).unwrap_or_default();
     let bad = |m: &str| fail(StatusCode::BAD_REQUEST, "invalid_request", m);
-    let db = |e: &dyn std::fmt::Display| {
-        fail(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", e)
-    };
+    let db =
+        |e: &dyn std::fmt::Display| fail(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", e);
     match action.as_str() {
         "add" => {
             let url = body.url.trim();
@@ -555,11 +562,7 @@ async fn index_action(
                 return bad("polling is not available in this workbench");
             };
             if !d.job_begin(&action) {
-                return fail(
-                    StatusCode::CONFLICT,
-                    "exists",
-                    "this is already running",
-                );
+                return fail(StatusCode::CONFLICT, "exists", "this is already running");
             }
             let dd = Arc::clone(&d);
             tokio::spawn(async move {
@@ -622,11 +625,7 @@ async fn sources_check(State(s): State<AppState>, body: Option<Json<CheckBody>>)
         .filter(|q| !q.trim().is_empty())
         .unwrap_or_else(|| "rust programming language".into());
     if !d.job_begin("check") {
-        return fail(
-            StatusCode::CONFLICT,
-            "exists",
-            "a check is already running",
-        );
+        return fail(StatusCode::CONFLICT, "exists", "a check is already running");
     }
     let pipeline = Arc::clone(&s.pipeline);
     tokio::spawn(async move {

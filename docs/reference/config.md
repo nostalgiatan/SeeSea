@@ -55,6 +55,17 @@
 | `auth_db` | 见上 | |
 | `shared_limits` | `true` | 令牌桶和日额度放在用户库里，多个 `serve` 进程共享；`false` 改回进程内存 |
 
+## `[collect]`
+
+除新闻外，本地索引还能收集几类数据。开关默认全关；打开后对应订阅源以试用状态加入，失效的会自动停用。已收集的内容在开关关闭后仍可检索。环境变量 `SEESEA_COLLECT`（逗号分隔）优先于配置文件。
+
+| 键 | 内容 |
+|---|---|
+| `dev` | GitHub 发布与标签、PyPI 更新、安全公告（CISA、Ubuntu、Debian、GitHub Advisory） |
+| `papers` | arXiv 各学科每日列表（cs.CL、cs.LG、cs.AI、cs.CV、cs.IR、cs.CR、cs.SE、cs.DC、stat.ML） |
+| `community` | Hacker News、Lobsters、Stack Overflow 标签、Reddit、V2EX |
+| `quotes` | 汇率、币价、天气：被问到时才向公开接口查询，不入库，结果缓存 30 秒。每种值有多个备用接口，按顺序取第一个能答的 |
+
 ## TLS
 
 监听非回环地址时，要么配置证书，要么声明前面有终结 TLS 的代理。`--allow-open` 不能绕过这一条。
