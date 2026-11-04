@@ -25,6 +25,9 @@ pub struct Item {
     /// Which feed or pusher reported it.
     #[serde(default)]
     pub source: String,
+    /// What sort of thing it is: empty for a news article, else `release`, `advisory`, `paper` or `post`.
+    #[serde(default)]
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -35,6 +38,7 @@ pub struct Stored {
     pub published: Option<i64>,
     pub source: String,
     pub host: String,
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
@@ -52,6 +56,8 @@ pub struct Stats {
     pub embedded: u64,
     pub oldest_day: Option<String>,
     pub newest_day: Option<String>,
+    /// Items per kind; news articles are counted under `article`.
+    pub kinds: std::collections::BTreeMap<String, u64>,
 }
 
 pub struct Store {
@@ -239,11 +245,15 @@ impl Store {
                      CREATE TABLE IF NOT EXISTS items(
                        id INTEGER PRIMARY KEY, key INTEGER NOT NULL UNIQUE, tkey INTEGER NOT NULL UNIQUE,
                        url TEXT NOT NULL, title TEXT NOT NULL, lead TEXT NOT NULL,
-                       published INTEGER, fetched INTEGER NOT NULL, source TEXT NOT NULL, host TEXT NOT NULL, vec BLOB);
+                       published INTEGER, fetched INTEGER NOT NULL, source TEXT NOT NULL, host TEXT NOT NULL, vec BLOB, kind TEXT NOT NULL DEFAULT '');
                      CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(title, lead, content='', tokenize='unicode61 remove_diacritics 2');",
                 )?;
                 // Shards written before vectors existed lack the column.
                 let _ = conn.execute("ALTER TABLE items ADD COLUMN vec BLOB", []);
+                let _ = conn.execute(
+                    "ALTER TABLE items ADD COLUMN kind TEXT NOT NULL DEFAULT ''",
+                    [],
+                );
                 if open.len() >= OPEN_SHARDS {
                     open.clear();
                 }
@@ -263,8 +273,9 @@ impl Store {
         let mut n = 0;
         for day in days {
             self.with_shard(day, false, |c| {
-                let mut st =
-                    c.prepare("SELECT url, title, lead, published, source FROM items ORDER BY id")?;
+                let mut st = c.prepare(
+                    "SELECT url, title, lead, published, source, kind FROM items ORDER BY id",
+                )?;
                 let rows = st.query_map([], |r| {
                     Ok(Item {
                         url: r.get(0)?,
@@ -272,6 +283,7 @@ impl Store {
                         lead: r.get(2)?,
                         published: r.get(3)?,
                         source: r.get(4)?,
+                        kind: r.get(5)?,
                     })
                 })?;
                 for row in rows {
@@ -314,8 +326,8 @@ impl Store {
                 let tx = c.unchecked_transaction()?;
                 for (key, tkey, host, url, it) in &rows {
                     let n = tx.execute(
-                        "INSERT OR IGNORE INTO items(key,tkey,url,title,lead,published,fetched,source,host) VALUES(?,?,?,?,?,?,?,?,?)",
-                        params![key, tkey, url, it.title, it.lead, it.published, now, it.source, host],
+                        "INSERT OR IGNORE INTO items(key,tkey,url,title,lead,published,fetched,source,host,kind) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        params![key, tkey, url, it.title, it.lead, it.published, now, it.source, host, it.kind],
                     )?;
                     if n == 0 {
                         report.duplicates += 1;
@@ -366,14 +378,14 @@ impl Store {
                     counts.push(c.query_row("SELECT count(*) FROM fts WHERE fts MATCH ?1", [t], |r| r.get::<_, i64>(0))?);
                 }
                 let mut st = c.prepare(
-                    "SELECT items.url, items.title, items.lead, items.published, items.source, items.host FROM fts
+                    "SELECT items.url, items.title, items.lead, items.published, items.source, items.host, items.kind FROM fts
                      JOIN items ON items.id = fts.rowid
                      WHERE fts MATCH ?1 AND (?2 IS NULL OR COALESCE(items.published, items.fetched) >= ?2)
                      ORDER BY bm25(fts,3.0,1.0) LIMIT ?3",
                 )?;
                 let rows = st
                     .query_map(params![q, since, (limit * 3) as i64], |r| {
-                        Ok(Stored { url: r.get(0)?, title: r.get(1)?, lead: r.get(2)?, published: r.get(3)?, source: r.get(4)?, host: r.get(5)? })
+                        Ok(Stored { url: r.get(0)?, title: r.get(1)?, lead: r.get(2)?, published: r.get(3)?, source: r.get(4)?, host: r.get(5)?, kind: r.get(6)? })
                     })?
                     .collect::<Result<Vec<_>>>()?;
                 Ok((n, counts, rows))
@@ -466,7 +478,7 @@ impl Store {
         for day in self.days().into_iter().filter(|d| *d >= first_day) {
             let rows = self.with_shard(day, false, |c| {
                 let mut st = c.prepare(
-                    "SELECT url,title,lead,published,source,host,vec FROM items WHERE vec IS NOT NULL
+                    "SELECT url,title,lead,published,source,host,vec,kind FROM items WHERE vec IS NOT NULL
                      AND (?1 IS NULL OR COALESCE(published, fetched) >= ?1)",
                 )?;
                 let mut rows = st.query([since])?;
@@ -478,7 +490,7 @@ impl Store {
                     }
                     let d: u32 = v.iter().zip(query).map(|(a, b)| (a ^ b).count_ones()).sum();
                     if d <= max_distance {
-                        local.push((d, Stored { url: r.get(0)?, title: r.get(1)?, lead: r.get(2)?, published: r.get(3)?, source: r.get(4)?, host: r.get(5)? }));
+                        local.push((d, Stored { url: r.get(0)?, title: r.get(1)?, lead: r.get(2)?, published: r.get(3)?, source: r.get(4)?, host: r.get(5)?, kind: r.get(7)? }));
                     }
                 }
                 Ok(local)
@@ -511,6 +523,21 @@ impl Store {
                 .unwrap_or((0, 0));
             s.items += n as u64;
             s.embedded += e as u64;
+            let kinds = self
+                .with_shard(*d, false, |c| {
+                    let mut st = c.prepare("SELECT kind, count(*) FROM items GROUP BY kind")?;
+                    let rows =
+                        st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+                    rows.collect::<Result<Vec<_>>>()
+                })
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            for (k, c) in kinds {
+                *s.kinds
+                    .entry(if k.is_empty() { "article".into() } else { k })
+                    .or_default() += c as u64;
+            }
         }
         s
     }
@@ -570,6 +597,7 @@ mod tests {
             lead: lead.into(),
             published: Some(crate::now() - age_days * 86_400),
             source: "t".into(),
+            kind: String::new(),
         }
     }
 

@@ -86,12 +86,55 @@ pub struct FileConfig {
     /// exist unless redefined.
     #[serde(default)]
     pub plans: std::collections::HashMap<String, seesea_auth::Plan>,
+    /// Which kinds of data besides news the local index collects (all off by default).
+    #[serde(default)]
+    pub collect: Collect,
     #[serde(default)]
     pub models: Models,
     #[serde(default)]
     pub semantic: Semantic,
     #[serde(default)]
     pub rerank: Rerank,
+}
+
+/// Switches for the extra kinds of data. A switch only decides whether its feeds are fetched; the
+/// ones already collected stay searchable.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Collect {
+    /// Releases of well-known projects and package updates, security advisories.
+    pub dev: Option<bool>,
+    /// New papers (arXiv).
+    pub papers: Option<bool>,
+    /// Hacker News, Lobsters, Stack Overflow, Reddit.
+    pub community: Option<bool>,
+    /// Current values: exchange rates, crypto prices, weather.
+    pub quotes: Option<bool>,
+}
+
+impl Collect {
+    /// The switches that are on, as `dev`, `papers`, `community`, `quotes`. `SEESEA_COLLECT` (a comma list)
+    /// replaces the file when it is set.
+    pub fn enabled(&self) -> Vec<String> {
+        if let Some(v) = std::env::var_os("SEESEA_COLLECT") {
+            return v
+                .to_string_lossy()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| ["dev", "papers", "community", "quotes"].contains(&s.as_str()))
+                .collect();
+        }
+        [
+            ("dev", self.dev),
+            ("papers", self.papers),
+            ("community", self.community),
+            ("quotes", self.quotes),
+        ]
+        .into_iter()
+        .filter(|(_, on)| *on == Some(true))
+        .map(|(n, _)| n.to_string())
+        .collect()
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -332,6 +375,14 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # index_dir = "~/.local/share/seesea/index"
 # retention_days = 30
 # index_quota_mb = 512
+
+# More kinds of data in the index, each off until you turn it on (they fetch from public sites:
+# GitHub, PyPI, CISA, arXiv, Hacker News, Lobsters, Stack Overflow, Reddit and the like).
+# [collect]
+# dev = true         # releases of well-known projects, package updates, security advisories
+# papers = true      # new arXiv papers
+# community = true   # discussions
+# quotes = true      # exchange rates, crypto prices, weather
 
 # Users and API keys for `seesea serve` live in this SQLite file (see `seesea users`, `seesea keys`).
 # auth_db = "~/.local/share/seesea/auth.db"

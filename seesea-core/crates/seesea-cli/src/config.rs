@@ -64,6 +64,8 @@ pub struct Settings {
     pub index_dir: Option<PathBuf>,
     pub retention_days: Option<i64>,
     pub index_quota_mb: Option<u64>,
+    /// The extra kinds of data to collect: `dev`, `papers`, `community`, `quotes`.
+    pub collect: Vec<String>,
 }
 
 pub use crate::userconfig::default_cache_dir;
@@ -119,12 +121,14 @@ pub fn build_poller(
 ) -> Result<seesea_index::Poller> {
     http_client(settings)?;
     let fetch = fetch_options(settings);
+    crate::collections::sync(&index, &settings.collect);
     let mut poller = seesea_index::Poller::new(
         index,
         Arc::new(seesea_pipeline::content::NetFetcher::new(fetch.clone())),
         seesea_index::PollConfig {
             retention_days: settings.retention_days.unwrap_or(30),
             quota_bytes: settings.index_quota_mb.unwrap_or(512) * 1024 * 1024,
+            kinds: Some(crate::collections::kinds(&settings.collect)),
             ..Default::default()
         },
     );
@@ -231,6 +235,11 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
             local = local.embedder(crate::embedding::shared_embedder(m));
         }
         sources.push(Arc::new(local));
+    }
+    if settings.collect.iter().any(|c| c == "quotes") {
+        sources.push(Arc::new(crate::quotes::QuoteSource::new(
+            settings.proxy.as_deref(),
+        )));
     }
     if settings.watch_renderer
         && let Some(r) = &renderer

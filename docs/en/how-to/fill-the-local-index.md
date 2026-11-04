@@ -97,3 +97,7 @@ seesea serve --public-url https://seesea.example.com
 ```
 
 The server subscribes to the hub, receives pushes at `/v1/websub/{id}` and renews before expiry. Polling stays as the fallback. Only `https` hubs are subscribed to, and a hub at a private address, or a name that resolves to one, is skipped.
+
+## Collect other kinds of data
+
+Turn on `dev`, `papers` or `community` under `[collect]` in the config file, or run `seesea feeds seed` to add the feeds of the switches that are on. The workbench settings page has the same switches; a change applies after a restart. The config reference lists the sources of each kind.

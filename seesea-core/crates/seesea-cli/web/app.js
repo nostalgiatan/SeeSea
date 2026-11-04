@@ -208,6 +208,13 @@ Object.assign(D.zh, {
   'set.secretset': '已设置（留空保持不变）',
   'set.models': '模型与渲染器',
   'set.net': '来源与网络',
+  'set.collect': '收集的数据类型',
+  'f.collect.dev': '开发动态：GitHub 发布与标签、PyPI 更新、安全公告（CISA、Ubuntu、Debian）',
+  'f.collect.papers': '论文：arXiv 各学科每日列表',
+  'f.collect.community': '社区讨论：Hacker News、Lobsters、Stack Overflow、Reddit、V2EX',
+  'f.collect.quotes': '实时数值：汇率、加密货币、天气（开发中）',
+  'ix.kind': '类型',
+  'k.article': '新闻', 'k.release': '发布', 'k.advisory': '公告', 'k.paper': '论文', 'k.post': '讨论',
   'set.cache': '缓存',
   'set.rank': '排序',
   'set.data': '数据与索引',
@@ -312,6 +319,13 @@ Object.assign(D.en, {
   'set.secretset': 'Set (leave empty to keep)',
   'set.models': 'Models and renderer',
   'set.net': 'Sources and network',
+  'set.collect': 'Kinds of data to collect',
+  'f.collect.dev': 'Dev updates: GitHub releases and tags, PyPI updates, security advisories (CISA, Ubuntu, Debian)',
+  'f.collect.papers': 'Papers: arXiv daily lists by subject',
+  'f.collect.community': 'Community: Hacker News, Lobsters, Stack Overflow, Reddit, V2EX',
+  'f.collect.quotes': 'Live values: exchange rates, crypto, weather (in progress)',
+  'ix.kind': 'Kind',
+  'k.article': 'News', 'k.release': 'Releases', 'k.advisory': 'Advisories', 'k.paper': 'Papers', 'k.post': 'Discussions',
   'set.cache': 'Cache',
   'set.rank': 'Ranking',
   'set.data': 'Data and index',
@@ -1117,7 +1131,8 @@ function paintIndex(r) {
   const tile = (n, label) => h('div', { class: 'tile' }, h('b', { text: n }), h('span', { text: label }));
   $('#ix-tiles').replaceChildren(
     tile(st.items.toLocaleString(), t('ix.items')), tile(st.embedded.toLocaleString(), t('ix.vec')), tile(st.shards, t('ix.days')),
-    tile(`${mb(st.bytes)}`, t('ix.size')), tile(st.oldest_day ? `${day(st.oldest_day)} … ${day(st.newest_day)}` : '—', t('ix.range')));
+    tile(`${mb(st.bytes)}`, t('ix.size')), tile(st.oldest_day ? `${day(st.oldest_day)} … ${day(st.newest_day)}` : '—', t('ix.range')),
+    ...Object.entries(st.kinds || {}).filter(([k]) => k !== 'article' || Object.keys(st.kinds).length > 1).map(([k, n]) => tile(n.toLocaleString(), t('k.' + k))));
   const job = (k) => (r[k] && r[k].state !== 'running' && r[k].message ? h('span', { class: 'mut', text: r[k].message }) : null);
   const run = (label, ico, action, key) => h('button', { class: 'quiet', type: 'button', disabled: busy(key) || !r.can_poll, onclick: async () => { try { await api('/desk/api/index/' + action, { method: 'POST', body: {} }); loadIndex(); } catch (x) { fail(x); } } }, ...withIcon(ico, busy(key) ? t('ix.running') : label));
   const acts = $('#ix-acts');
@@ -1130,11 +1145,11 @@ function paintIndex(r) {
   const feeds = r.feeds;
   const when = (n) => (n ? ago(n) : t('ix.never'));
   $('#ix-feeds').replaceChildren(feeds.length ? h('div', { class: 'plans' }, h('table', {},
-    h('tr', {}, h('th', { text: t('ix.status') }), h('th', { text: t('ix.feed') }), h('th', { text: t('ix.origin') }), h('th', { class: 'r', text: t('ix.items') }), h('th', { class: 'r', text: t('ix.fails') }), h('th', { text: t('ix.last') }), h('th')),
+    h('tr', {}, h('th', { text: t('ix.status') }), h('th', { text: t('ix.feed') }), h('th', { text: t('ix.origin') }), h('th', { text: t('ix.kind') }), h('th', { class: 'r', text: t('ix.items') }), h('th', { class: 'r', text: t('ix.fails') }), h('th', { text: t('ix.last') }), h('th')),
     feeds.map((f) => h('tr', {},
       h('td', {}, h('span', { class: 'pill ' + (f.status === 'active' ? 'ok' : f.status === 'disabled' ? 'off' : 'warn'), text: t('st.' + f.status) })),
       h('td', { class: 'feedcell' }, h('b', { text: f.title || f.url }), h('div', { class: 'mut l', text: f.url }), f.last_error ? h('div', { class: 'err-line', text: f.last_error }) : null),
-      h('td', { text: f.origin }), h('td', { class: 'r num', text: f.total }), h('td', { class: 'r num', text: f.fails }), h('td', { text: when(f.last_ok) }),
+      h('td', { text: f.origin }), h('td', { text: t('k.' + (f.kind || 'article')) }), h('td', { class: 'r num', text: f.total }), h('td', { class: 'r num', text: f.fails }), h('td', { text: when(f.last_ok) }),
       h('td', { class: 'r' },
         f.status !== 'active' ? h('button', { class: 'act', type: 'button', onclick: async () => { try { await api('/desk/api/index/revive', { method: 'POST', body: { url: f.url } }); loadIndex(); } catch (x) { fail(x); } } }, t('ix.revive')) : null,
         h('button', { class: 'act danger', type: 'button', onclick: async () => { if (!(await confirmBox(t('ix.remove'), t('ix.removeq', { u: f.url }), t('ix.remove')))) return; try { await api('/desk/api/index/remove', { method: 'POST', body: { url: f.url } }); loadIndex(); } catch (x) { fail(x); } } }, t('ix.remove'))))))) : h('div', { class: 'empty', text: t('ix.nofeeds') }));
@@ -1143,6 +1158,7 @@ function paintIndex(r) {
 /* Which setting is edited how. `n` numbers, `b` yes/no, `s` text, `k` secret text, `d` cpu / gpu. */
 const SETTINGS = [
   ['set.net', [['searxng', 's'], ['brave_key', 'k'], ['proxy', 's'], ['no_native', 'b'], ['allow_private', 'b'], ['plain_headers', 'b']]],
+  ['set.collect', [['collect.dev', 'b'], ['collect.papers', 'b'], ['collect.community', 'b'], ['collect.quotes', 'b']]],
   ['set.cache', [['cache_dir', 's'], ['fuzzy_cache', 'n']]],
   ['set.modelcfg', [['models.dir', 's'], ['models.embedding', 's'], ['models.reranker', 's'], ['device', 'd'], ['model_idle_minutes', 'n'], ['lightpanda', 's'], ['no_render', 'b']]],
   ['set.rank', [['lexical_sections', 'b'], ['semantic.weight', 'n'], ['semantic.passages', 'n'], ['rerank.weight', 'n'], ['rerank.passages', 'n'], ['explore', 'n'], ['no_learn', 'b']]],

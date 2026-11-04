@@ -22,6 +22,8 @@ pub struct PollConfig {
     pub discoveries_per_round: usize,
     pub retention_days: i64,
     pub quota_bytes: u64,
+    /// The kinds of feed to poll (news, with the empty kind, is always polled); none means every kind.
+    pub kinds: Option<Vec<String>>,
 }
 
 impl Default for PollConfig {
@@ -35,6 +37,7 @@ impl Default for PollConfig {
             discoveries_per_round: 3,
             retention_days: 30,
             quota_bytes: 512 * 1024 * 1024,
+            kinds: None,
         }
     }
 }
@@ -93,7 +96,11 @@ impl Poller {
         Ok(page.html)
     }
 
-    async fn poll_feed(&self, url: &str) -> Result<(feed::Parsed, usize, usize), String> {
+    async fn poll_feed(
+        &self,
+        url: &str,
+        kind: &str,
+    ) -> Result<(feed::Parsed, usize, usize), String> {
         let body = self.get(&self.fetcher, url).await?;
         let mut parsed = feed::parse(&body, url, url)?;
         parsed.items.sort_by(|a, b| b.published.cmp(&a.published));
@@ -112,6 +119,7 @@ impl Poller {
             .cloned()
             .map(|i| Item {
                 source: host.clone(),
+                kind: kind.to_string(),
                 ..i
             })
             .collect();
@@ -204,11 +212,13 @@ impl Poller {
         let due = self
             .index
             .registry
-            .due(crate::now(), self.cfg.feeds_per_round)
+            .due_where(crate::now(), self.cfg.feeds_per_round, |f| {
+                f.kind.is_empty() || self.cfg.kinds.as_ref().is_none_or(|k| k.contains(&f.kind))
+            })
             .unwrap_or_default();
         let results: Vec<_> = stream::iter(due)
             .map(|f| async move {
-                let r = self.poll_feed(&f.url).await;
+                let r = self.poll_feed(&f.url, &f.kind).await;
                 (f.url, r)
             })
             .buffer_unordered(self.cfg.concurrency.max(1))

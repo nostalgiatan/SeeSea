@@ -1124,6 +1124,7 @@ pub async fn apply_events(s: &AppState, events: Vec<Value>) -> usize {
                     lead: text("lead"),
                     published: None,
                     source: seesea_index::READ.into(),
+                    kind: String::new(),
                 });
                 n += 1;
             }
@@ -2361,6 +2362,7 @@ mod tests {
                 lead: "about tokio".into(),
                 published: Some(chrono::Utc::now().timestamp()),
                 source: "feed".into(),
+                kind: String::new(),
             }])
             .unwrap();
         let journal = seesea_pipeline::Journal::new(from.journal_dir.clone());

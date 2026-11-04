@@ -97,3 +97,7 @@ seesea serve --public-url https://seesea.example.com
 ```
 
 服务会向 hub 订阅，回调在 `/v1/websub/{id}`，到期前自动续订。轮询仍作为兜底。只订阅 `https` 的 hub，hub 地址是私有地址或解析到私有地址时不订阅。
+
+## 收集其他类型的数据
+
+在配置文件的 `[collect]` 里打开 `dev`、`papers`、`community`，或运行 `seesea feeds seed` 把已打开类型的订阅源加入。工作台的设置页有同样的开关，改后重启生效。各类型的来源见配置参考。

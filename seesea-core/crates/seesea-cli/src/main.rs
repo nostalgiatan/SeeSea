@@ -125,6 +125,8 @@ struct NetArgs {
     retention_days: Option<i64>,
     #[arg(skip)]
     index_quota_mb: Option<u64>,
+    #[arg(skip)]
+    collect: Vec<String>,
     #[arg(long, global = true)]
     no_cache: bool,
     /// Allow fetching loopback and private addresses.
@@ -463,6 +465,7 @@ fn apply_file(net: &mut NetArgs, f: &FileConfig, use_model: bool) {
     fill(&mut net.index_dir, &f.index_dir);
     net.retention_days = f.retention_days;
     net.index_quota_mb = f.index_quota_mb;
+    net.collect = f.collect.enabled();
     fill(&mut net.explore, &f.explore);
     fill(&mut net.cache_dir, &f.cache_dir);
     fill(&mut net.fuzzy_cache, &f.fuzzy_cache);
@@ -526,6 +529,7 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         }),
         retention_days: net.retention_days,
         index_quota_mb: net.index_quota_mb,
+        collect: net.collect.clone(),
     }
 }
 
@@ -650,10 +654,17 @@ async fn run_index_command(cli: &Cli, long_lived: bool, use_model: bool) -> Resu
                             .unwrap_or(false)
                     })
                     .count();
+                let more = seesea_cli::collections::sync(&index, &settings.collect);
                 println!(
                     "added {n} of {} starter feeds (they are polled by `seesea poll`)",
                     seesea_cli::seeds::SEEDS.len()
                 );
+                if !settings.collect.is_empty() {
+                    println!(
+                        "added {more} feeds of the collections on ({})",
+                        settings.collect.join(", ")
+                    );
+                }
             }
             FeedsAction::Discover { site, dry_run } => {
                 let poller = seesea_cli::config::build_poller(&settings, Arc::clone(&index))?;
