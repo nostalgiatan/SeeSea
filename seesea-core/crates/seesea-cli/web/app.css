@@ -109,7 +109,7 @@ main { padding: 30px clamp(16px, 3vw, 40px) 90px; min-width: 0; width: 100%; max
 .panel { padding: 16px 18px; }
 .panel.gap { margin-top: 14px; }
 .panel.secret { border-color: var(--buoy); margin-bottom: 14px; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; align-items: start; }
 .stack { display: grid; gap: 20px; }
 .ph { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
 .ph h2 { display: flex; align-items: baseline; gap: 10px; margin: 0; font: 700 12.5px var(--sans); letter-spacing: .12em; text-transform: uppercase; }
@@ -308,7 +308,11 @@ td.r, th.r { text-align: right; white-space: nowrap; }
 /* accounts */
 .plans { margin-bottom: 20px; }
 .plans .ph { padding: 14px 18px 0; }
-.plans table th, .plans table td { white-space: nowrap; }
+.plans, .keys, .panel, .group, .users, .user, .user-h > * { min-width: 0; }
+.plans, .keys, .panel { overflow-x: auto; }
+td { overflow-wrap: anywhere; }
+.plans table, .keys table { min-width: 520px; }
+.plans table th, .plans table td { white-space: nowrap; padding-left: 14px; padding-right: 14px; }
 .users { display: grid; gap: 14px; }
 .user { background: var(--panel); border: 1px solid var(--line); box-shadow: var(--lift); }
 .user.off { opacity: .7; }
@@ -388,8 +392,8 @@ dialog .fld { margin-bottom: 4px; }
 .errpage p { margin: 0 0 22px; color: var(--mute); overflow-wrap: anywhere; }
 
 @media (max-width: 900px) {
-  .user-h { grid-template-columns: 1fr auto; }
-  .user-h .quota, .user-h .spark { grid-column: 1 / -1; }
+  .user-h { grid-template-columns: minmax(0, 1fr); }
+  .user-h .row.end { justify-content: flex-start; }
 }
 @media (max-width: 760px) {
   .shell { grid-template-columns: 1fr; }
