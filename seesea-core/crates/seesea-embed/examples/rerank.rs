@@ -35,7 +35,8 @@ fn main() {
     // The first run of a new shape compiles GPU kernels; the later ones are what a server sees.
     for run in 0..4 {
         let t = Instant::now();
-        r.score("how does the tokio scheduler work", &batch).unwrap();
+        r.score("how does the tokio scheduler work", &batch)
+            .unwrap();
         println!("\n16 pairs of ~280 tokens, run {run}: {:?}", t.elapsed());
     }
     for n in [1usize, 4, 32] {
@@ -45,6 +46,10 @@ fn main() {
         let first = t.elapsed();
         let t = Instant::now();
         r.score("how does the tokio scheduler work", &b).unwrap();
-        println!("{n:>2} pairs: first {first:?}, again {:?} ({:.1} ms per pair)", t.elapsed(), t.elapsed().as_secs_f64() * 1000.0 / n as f64);
+        println!(
+            "{n:>2} pairs: first {first:?}, again {:?} ({:.1} ms per pair)",
+            t.elapsed(),
+            t.elapsed().as_secs_f64() * 1000.0 / n as f64
+        );
     }
 }

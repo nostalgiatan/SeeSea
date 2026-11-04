@@ -97,7 +97,8 @@ impl GpuLayers {
             t.clone().matmul(t).into_data()
         })
         .ok()?;
-        let half = std::env::var("SEESEA_GPU_F32").is_err() && device.supports_dtype(FloatDType::F16);
+        let half =
+            std::env::var("SEESEA_GPU_F32").is_err() && device.supports_dtype(FloatDType::F16);
         Some(Self {
             device,
             half,
@@ -119,7 +120,8 @@ impl GpuLayers {
         let half = self.half;
         let lin = |d: LinearData| Linear {
             weight: {
-                let w = Tensor::<2>::from_data(TensorData::new(d.weight, [d.outputs, d.inputs]), dev);
+                let w =
+                    Tensor::<2>::from_data(TensorData::new(d.weight, [d.outputs, d.inputs]), dev);
                 if half { w.cast(FloatDType::F16) } else { w }
             },
             bias: Tensor::from_data(TensorData::new(d.bias, [1, d.outputs]), dev),
@@ -170,9 +172,16 @@ impl GpuLayers {
                 split(l.v.forward(x.clone())),
             );
             // One fused kernel instead of matmul, softmax, matmul with the score matrix in memory.
-            let ctx = attention(q, k, v, None, Some(bias.clone()), AttentionModuleOptions::default())
-                .swap_dims(1, 2)
-                .reshape([rows, h]);
+            let ctx = attention(
+                q,
+                k,
+                v,
+                None,
+                Some(bias.clone()),
+                AttentionModuleOptions::default(),
+            )
+            .swap_dims(1, 2)
+            .reshape([rows, h]);
             x = l.attn_norm.forward(l.out.forward(ctx) + x);
             let up = gelu(l.up.forward(x.clone()));
             x = l.out_norm.forward(l.down.forward(up) + x);

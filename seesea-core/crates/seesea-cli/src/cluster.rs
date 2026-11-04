@@ -58,7 +58,9 @@ impl std::str::FromStr for Role {
             "search" => Ok(Role::Search),
             "flywheel" => Ok(Role::Flywheel),
             "witness" => Ok(Role::Witness),
-            other => Err(format!("role must be single, gateway, search, flywheel or witness, not '{other}'")),
+            other => Err(format!(
+                "role must be single, gateway, search, flywheel or witness, not '{other}'"
+            )),
         }
     }
 }
@@ -90,7 +92,12 @@ pub struct Cluster {
 impl std::fmt::Debug for Cluster {
     // Key material is never printed.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Cluster").field("role", &self.role).field("search_nodes", &self.search_nodes).field("flywheel", &self.flywheel).field("listen", &self.listen).finish_non_exhaustive()
+        f.debug_struct("Cluster")
+            .field("role", &self.role)
+            .field("search_nodes", &self.search_nodes)
+            .field("flywheel", &self.flywheel)
+            .field("listen", &self.listen)
+            .finish_non_exhaustive()
     }
 }
 
@@ -115,15 +122,29 @@ impl Cluster {
         if self.standby_of.is_some() && self.role != Role::Flywheel {
             return Err("standby_of belongs on a flywheel node".into());
         }
-        for url in self.search_nodes.iter().chain(self.flywheel.iter()).chain(self.flywheel_standby.iter()).chain(self.standby_of.iter()).chain(self.partner.iter()).chain(self.witness.iter()) {
+        for url in self
+            .search_nodes
+            .iter()
+            .chain(self.flywheel.iter())
+            .chain(self.flywheel_standby.iter())
+            .chain(self.standby_of.iter())
+            .chain(self.partner.iter())
+            .chain(self.witness.iter())
+        {
             wire::parse_url(url)?;
         }
         match self.role {
-            Role::Gateway if self.search_nodes.is_empty() => return Err("a gateway needs search_nodes = [\"quic://host:port\"]".into()),
-            Role::Gateway | Role::Search if self.flywheel.is_none() => return Err("this role needs flywheel = \"quic://host:port\"".into()),
+            Role::Gateway if self.search_nodes.is_empty() => {
+                return Err("a gateway needs search_nodes = [\"quic://host:port\"]".into());
+            }
+            Role::Gateway | Role::Search if self.flywheel.is_none() => {
+                return Err("this role needs flywheel = \"quic://host:port\"".into());
+            }
             _ => {}
         }
-        if matches!(self.role, Role::Search | Role::Flywheel | Role::Witness) && self.listen.is_none() {
+        if matches!(self.role, Role::Search | Role::Flywheel | Role::Witness)
+            && self.listen.is_none()
+        {
             return Err("this role needs cluster_listen = \"0.0.0.0:7443\" (the UDP address the other nodes connect to)".into());
         }
         Ok(())
@@ -131,11 +152,17 @@ impl Cluster {
 
     /// The flywheel node and its standby, in the order to try them.
     fn flywheels(&self) -> Vec<String> {
-        self.flywheel.iter().chain(self.flywheel_standby.iter()).cloned().collect()
+        self.flywheel
+            .iter()
+            .chain(self.flywheel_standby.iter())
+            .cloned()
+            .collect()
     }
 
     fn mesh(&self) -> Result<&Mesh, String> {
-        self.mesh.as_ref().ok_or_else(|| "no node identity".to_string())
+        self.mesh
+            .as_ref()
+            .ok_or_else(|| "no node identity".to_string())
     }
 }
 
@@ -143,7 +170,10 @@ fn reply_ok(r: Result<Reply, CallError>) -> Result<Reply, String> {
     let r = r.map_err(|e| e.to_string())?;
     match r.status {
         Status::Ok => Ok(r),
-        _ => Err(r.head["message"].as_str().unwrap_or("the node refused").to_string()),
+        _ => Err(r.head["message"]
+            .as_str()
+            .unwrap_or("the node refused")
+            .to_string()),
     }
 }
 
@@ -191,10 +221,29 @@ impl Spool {
     fn open(dir: PathBuf) -> Self {
         let _ = std::fs::create_dir_all(&dir);
         let mut found: Vec<u64> = std::fs::read_dir(&dir)
-            .map(|rd| rd.flatten().filter_map(|e| e.file_name().to_str()?.strip_prefix("spool-")?.strip_suffix(".jsonl")?.parse().ok()).collect())
+            .map(|rd| {
+                rd.flatten()
+                    .filter_map(|e| {
+                        e.file_name()
+                            .to_str()?
+                            .strip_prefix("spool-")?
+                            .strip_suffix(".jsonl")?
+                            .parse()
+                            .ok()
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
         found.sort();
-        let mut s = Self { dir, head: found.first().copied().unwrap_or(0), tail: found.last().map_or(0, |n| n + 1), tail_bytes: 0, events: 0, bytes: 0, out: None };
+        let mut s = Self {
+            dir,
+            head: found.first().copied().unwrap_or(0),
+            tail: found.last().map_or(0, |n| n + 1),
+            tail_bytes: 0,
+            events: 0,
+            bytes: 0,
+            out: None,
+        };
         for n in found {
             if let Ok(text) = std::fs::read_to_string(s.path(n)) {
                 s.events += text.lines().count();
@@ -213,7 +262,12 @@ impl Spool {
         use std::io::Write;
         let line = format!("{}\n", json!({"id": [q.id.0, q.id.1], "e": q.event}));
         if self.out.as_ref().is_none_or(|(n, _)| *n != self.tail) {
-            self.out = std::fs::OpenOptions::new().create(true).append(true).open(self.path(self.tail)).ok().map(|f| (self.tail, f));
+            self.out = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(self.path(self.tail))
+                .ok()
+                .map(|f| (self.tail, f));
         }
         if let Some((_, f)) = self.out.as_mut()
             && f.write_all(line.as_bytes()).is_ok()
@@ -257,7 +311,12 @@ impl Spool {
             .filter_map(|l| {
                 let v: Value = serde_json::from_str(l).ok()?;
                 let id = (v["id"][0].as_u64()?, v["id"][1].as_u64()?);
-                Some(Queued { id, size: l.len(), event: v["e"].clone(), spooled: true })
+                Some(Queued {
+                    id,
+                    size: l.len(),
+                    event: v["e"].clone(),
+                    spooled: true,
+                })
             })
             .collect();
         (events, Some(path))
@@ -286,8 +345,22 @@ impl Outbox {
     fn make(spool: Option<Spool>) -> Arc<Self> {
         use std::hash::{BuildHasher, Hasher};
         let mut h = std::collections::hash_map::RandomState::new().build_hasher();
-        h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
-        Arc::new(Self { queue: Mutex::new(Queue { events: VecDeque::new(), bytes: 0, seq: 0, spool, loaded: None }), epoch: h.finish(), dropped: 0.into() })
+        h.write_u128(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos()),
+        );
+        Arc::new(Self {
+            queue: Mutex::new(Queue {
+                events: VecDeque::new(),
+                bytes: 0,
+                seq: 0,
+                spool,
+                loaded: None,
+            }),
+            epoch: h.finish(),
+            dropped: 0.into(),
+        })
     }
 
     /// In memory only.
@@ -304,16 +377,24 @@ impl Outbox {
         let size = e.to_string().len();
         let mut q = self.queue.lock().unwrap();
         q.seq += 1;
-        let item = Queued { id: (self.epoch, q.seq), event: e, size, spooled: false };
+        let item = Queued {
+            id: (self.epoch, q.seq),
+            event: e,
+            size,
+            spooled: false,
+        };
         let spooling = q.spool.as_ref().is_some_and(|s| s.events > 0);
-        let full = q.events.len() >= QUEUE_LIMIT || (q.bytes + size > QUEUE_BYTES && !q.events.is_empty());
+        let full =
+            q.events.len() >= QUEUE_LIMIT || (q.bytes + size > QUEUE_BYTES && !q.events.is_empty());
         if spooling || full {
             if let Some(spool) = q.spool.as_mut() {
                 let lost = spool.append(&item);
                 self.dropped.fetch_add(lost, Ordering::Relaxed);
                 return;
             }
-            while q.events.len() >= QUEUE_LIMIT || (q.bytes + size > QUEUE_BYTES && !q.events.is_empty()) {
+            while q.events.len() >= QUEUE_LIMIT
+                || (q.bytes + size > QUEUE_BYTES && !q.events.is_empty())
+            {
                 if let Some(old) = q.events.pop_front() {
                     q.bytes -= old.size;
                     self.dropped.fetch_add(1, Ordering::Relaxed);
@@ -411,7 +492,9 @@ const SHORT: Duration = Duration::from_secs(20);
 
 impl Link {
     pub fn new(mesh: &Mesh, url: &str) -> Result<Self, String> {
-        Ok(Self { client: wire::Failover::new(mesh, &[url.to_string()], PeerRole::Flywheel)? })
+        Ok(Self {
+            client: wire::Failover::new(mesh, &[url.to_string()], PeerRole::Flywheel)?,
+        })
     }
 
     /// The flywheel node of a cluster configuration (and its standby, when there is one).
@@ -419,25 +502,55 @@ impl Link {
         if c.flywheel.is_none() {
             return Err("no flywheel node is configured".into());
         }
-        Ok(Self { client: wire::Failover::new(c.mesh()?, &c.flywheels(), PeerRole::Flywheel)? })
+        Ok(Self {
+            client: wire::Failover::new(c.mesh()?, &c.flywheels(), PeerRole::Flywheel)?,
+        })
     }
 
     pub async fn events(&self, events: &[Value]) -> Result<usize, String> {
         let body = serde_json::to_vec(&json!({"events": events})).map_err(|e| e.to_string())?;
-        let r = reply_ok(self.client.call(Op::Events, &Value::Null, &body, SHORT).await)?;
+        let r = reply_ok(
+            self.client
+                .call(Op::Events, &Value::Null, &body, SHORT)
+                .await,
+        )?;
         Ok(r.head["applied"].as_u64().unwrap_or(0) as usize)
     }
 
     pub async fn learn_get(&self) -> Result<Bytes, String> {
-        Ok(reply_ok(self.client.call(Op::LearnGet, &Value::Null, &[], SHORT).await)?.body)
+        Ok(reply_ok(
+            self.client
+                .call(Op::LearnGet, &Value::Null, &[], SHORT)
+                .await,
+        )?
+        .body)
     }
 
     pub async fn learn_merge(&self, snapshot: &[u8]) -> Result<(), String> {
-        reply_ok(self.client.call(Op::LearnMerge, &Value::Null, snapshot, SHORT).await).map(|_| ())
+        reply_ok(
+            self.client
+                .call(Op::LearnMerge, &Value::Null, snapshot, SHORT)
+                .await,
+        )
+        .map(|_| ())
     }
 
-    async fn index_search(&self, q: &str, limit: usize, range: Option<String>) -> Result<Vec<RemoteHit>, String> {
-        let r = reply_ok(self.client.call(Op::IndexSearch, &json!({"q": q, "limit": limit, "range": range}), &[], Duration::from_secs(4)).await)?;
+    async fn index_search(
+        &self,
+        q: &str,
+        limit: usize,
+        range: Option<String>,
+    ) -> Result<Vec<RemoteHit>, String> {
+        let r = reply_ok(
+            self.client
+                .call(
+                    Op::IndexSearch,
+                    &json!({"q": q, "limit": limit, "range": range}),
+                    &[],
+                    Duration::from_secs(4),
+                )
+                .await,
+        )?;
         serde_json::from_slice(&r.body).map_err(|e| e.to_string())
     }
 }
@@ -445,7 +558,9 @@ impl Link {
 /// Start the background work of a search node: send events every couple of seconds, fetch the merged
 /// picture of hosts and sources every minute. Needs a Tokio runtime; without one nothing is started.
 pub fn run_search_node(outbox: Arc<Outbox>, link: Link, learner: Option<Arc<Learner>>) {
-    let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
+    let Ok(rt) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
     let l = link.clone();
     rt.spawn(async move {
         let mut wait = Duration::from_secs(2);
@@ -455,7 +570,11 @@ pub fn run_search_node(outbox: Arc<Outbox>, link: Link, learner: Option<Arc<Lear
                 wait = Duration::from_millis(200);
                 continue;
             }
-            wait = if outbox.is_empty() { Duration::from_secs(2) } else { (wait * 2).min(Duration::from_secs(30)) };
+            wait = if outbox.is_empty() {
+                Duration::from_secs(2)
+            } else {
+                (wait * 2).min(Duration::from_secs(30))
+            };
             tokio::time::sleep(wait).await;
         }
     });
@@ -477,7 +596,8 @@ pub struct ClusterSink(pub Arc<Outbox>);
 impl seesea_pipeline::Sink for ClusterSink {
     fn remember(&self, pages: Vec<seesea_pipeline::Remembered>) {
         for p in pages {
-            self.0.push(json!({"k": "remember", "url": p.url, "title": p.title, "lead": p.lead}));
+            self.0
+                .push(json!({"k": "remember", "url": p.url, "title": p.title, "lead": p.lead}));
         }
     }
 }
@@ -499,17 +619,26 @@ impl seesea_pipeline::Source for RemoteIndex {
         true
     }
 
-    async fn search(&self, q: &seesea_pipeline::SourceQuery) -> Result<Vec<seesea_pipeline::RawHit>, seesea_pipeline::SourceError> {
+    async fn search(
+        &self,
+        q: &seesea_pipeline::SourceQuery,
+    ) -> Result<Vec<seesea_pipeline::RawHit>, seesea_pipeline::SourceError> {
         use seesea_pipeline::{FailureKind, SourceError};
         let range = q.time_range.map(|r| format!("{r:?}").to_ascii_lowercase());
-        let rows = self.0.index_search(&q.query, q.limit, range).await.map_err(|e| SourceError::new(FailureKind::Other, e))?;
+        let rows = self
+            .0
+            .index_search(&q.query, q.limit, range)
+            .await
+            .map_err(|e| SourceError::new(FailureKind::Other, e))?;
         Ok(rows
             .into_iter()
             .map(|h| seesea_pipeline::RawHit {
                 url: h.url,
                 title: h.title,
                 snippet: h.snippet,
-                published: h.published.and_then(|p| chrono::DateTime::from_timestamp(p, 0)),
+                published: h
+                    .published
+                    .and_then(|p| chrono::DateTime::from_timestamp(p, 0)),
                 upstream: Vec::new(),
             })
             .collect())
@@ -547,17 +676,36 @@ pub struct NodeHandler {
 }
 
 /// Start listening for the other nodes.
-pub fn start_wire(state: AppState, max_concurrent: usize, c: &Cluster, lease: Option<Arc<Lease>>) -> Result<wire::Server, String> {
+pub fn start_wire(
+    state: AppState,
+    max_concurrent: usize,
+    c: &Cluster,
+    lease: Option<Arc<Lease>>,
+) -> Result<wire::Server, String> {
     let listen = c.listen.ok_or("no cluster_listen address")?;
     let app = crate::server::router(state.clone(), max_concurrent);
-    let seen_file = c.state_dir.as_ref().filter(|_| c.role == Role::Flywheel).map(|d| d.join("applied.json"));
+    let seen_file = c
+        .state_dir
+        .as_ref()
+        .filter(|_| c.role == Role::Flywheel)
+        .map(|d| d.join("applied.json"));
     let loaded: HashMap<(String, u64), u64> = seen_file
         .as_ref()
         .and_then(|f| std::fs::read(f).ok())
         .and_then(|b| serde_json::from_slice::<HashMap<String, u64>>(&b).ok())
-        .map(|m| m.into_iter().filter_map(|(k, v)| { let (fp, ep) = k.split_once(':')?; Some(((fp.to_string(), ep.parse().ok()?), v)) }).collect())
+        .map(|m| {
+            m.into_iter()
+                .filter_map(|(k, v)| {
+                    let (fp, ep) = k.split_once(':')?;
+                    Some(((fp.to_string(), ep.parse().ok()?), v))
+                })
+                .collect()
+        })
         .unwrap_or_default();
-    let partner = match (c.role == Role::Flywheel).then(|| c.partner.as_ref().or(c.standby_of.as_ref())).flatten() {
+    let partner = match (c.role == Role::Flywheel)
+        .then(|| c.partner.as_ref().or(c.standby_of.as_ref()))
+        .flatten()
+    {
         Some(url) => Some(Link::new(c.mesh()?, url)?),
         None => None,
     };
@@ -579,14 +727,17 @@ pub fn start_wire(state: AppState, max_concurrent: usize, c: &Cluster, lease: Op
 impl wire::Handler for NodeHandler {
     async fn handle(&self, peer: &PeerInfo, req: Request) -> Reply {
         if let Some(st) = &self.state.standby
-            && (matches!(req.op, Op::Events | Op::Admit | Op::Charge | Op::Refund) || (req.op == Op::Http && req.head["method"] != "GET"))
+            && (matches!(req.op, Op::Events | Op::Admit | Op::Charge | Op::Refund)
+                || (req.op == Op::Http && req.head["method"] != "GET"))
         {
             st.served.fetch_add(1, Ordering::Relaxed);
         }
         match req.op {
             Op::Ping => return Reply::ok(Value::Null, Bytes::new()),
             Op::Lease => {
-                let Some(l) = &self.lease else { return Reply::error("no vote here") };
+                let Some(l) = &self.lease else {
+                    return Reply::error("no vote here");
+                };
                 if req.head["release"] == true {
                     l.withdraw(&peer.fingerprint);
                     return Reply::ok(json!({"granted": false}), Bytes::new());
@@ -599,16 +750,25 @@ impl wire::Handler for NodeHandler {
         if req.op == Op::Nudge {
             // The writer changed accounts: copy them now instead of at the next round.
             return match (&self.partner, self.flywheel) {
-                (Some(p), true) => match replicate_once(&self.state, p, true, false, false, false).await {
-                    Ok(_) => Reply::ok(Value::Null, Bytes::new()),
-                    Err(e) => Reply::error(e),
-                },
+                (Some(p), true) => {
+                    match replicate_once(&self.state, p, true, false, false, false).await {
+                        Ok(_) => Reply::ok(Value::Null, Bytes::new()),
+                        Err(e) => Reply::error(e),
+                    }
+                }
                 _ => Reply::error("nothing to follow"),
             };
         }
         // Writes and reads of what the flywheel holds go to the holder of the lease only.
-        if self.flywheel && !matches!(req.op, Op::Replicate) && self.lease.as_ref().is_some_and(|l| !l.held()) {
-            return Reply { status: Status::NotLeader, head: Value::Null, body: Bytes::new() };
+        if self.flywheel
+            && !matches!(req.op, Op::Replicate)
+            && self.lease.as_ref().is_some_and(|l| !l.held())
+        {
+            return Reply {
+                status: Status::NotLeader,
+                head: Value::Null,
+                body: Bytes::new(),
+            };
         }
         match req.op {
             Op::Ping | Op::Lease | Op::Nudge => unreachable!("answered above"),
@@ -635,13 +795,19 @@ impl wire::Handler for NodeHandler {
 impl NodeHandler {
     /// A user's request, already checked and metered by the gateway: run it through this node's own routes.
     async fn http(&self, req: Request) -> Reply {
-        let Ok(_permit) = self.permits.try_acquire() else { return Reply::busy() };
+        let Ok(_permit) = self.permits.try_acquire() else {
+            return Reply::busy();
+        };
         let head = &req.head;
         // Even a gateway that has been taken over can only ask for what its role's paths are.
         let allowed = (|| {
             let uri: axum::http::Uri = head["uri"].as_str()?.parse().ok()?;
             let method = head["method"].as_str()?;
-            if uri.scheme().is_some() || uri.authority().is_some() || !uri.path().starts_with('/') || !matches!(method, "GET" | "POST" | "PATCH" | "DELETE") {
+            if uri.scheme().is_some()
+                || uri.authority().is_some()
+                || !uri.path().starts_with('/')
+                || !matches!(method, "GET" | "POST" | "PATCH" | "DELETE")
+            {
                 return None;
             }
             let ok = match target(uri.path())? {
@@ -654,7 +820,9 @@ impl NodeHandler {
             return Reply::error("this node does not serve that request");
         }
         let build = || -> Result<axum::http::Request<axum::body::Body>, String> {
-            let mut b = axum::http::Request::builder().method(head["method"].as_str().unwrap_or("GET")).uri(head["uri"].as_str().ok_or("no uri")?);
+            let mut b = axum::http::Request::builder()
+                .method(head["method"].as_str().unwrap_or("GET"))
+                .uri(head["uri"].as_str().ok_or("no uri")?);
             if let Some(ct) = head["content_type"].as_str() {
                 b = b.header(header::CONTENT_TYPE, ct);
             }
@@ -663,7 +831,9 @@ impl NodeHandler {
             if let Some(a) = own_check {
                 b = b.header(header::AUTHORIZATION, a);
             }
-            let mut r = b.body(axum::body::Body::from(req.body.clone())).map_err(|e| e.to_string())?;
+            let mut r = b
+                .body(axum::body::Body::from(req.body.clone()))
+                .map_err(|e| e.to_string())?;
             if own_check.is_none() {
                 r.extensions_mut().insert(Trusted);
             }
@@ -673,17 +843,38 @@ impl NodeHandler {
             Ok(r) => r,
             Err(e) => return Reply::error(e),
         };
-        let changes_accounts = self.flywheel && head["method"] != "GET" && head["uri"].as_str().is_some_and(|u| is_accounts_path(u.split('?').next().unwrap_or(u)));
+        let changes_accounts = self.flywheel
+            && head["method"] != "GET"
+            && head["uri"]
+                .as_str()
+                .is_some_and(|u| is_accounts_path(u.split('?').next().unwrap_or(u)));
         let Ok(resp) = self.app.clone().oneshot(request).await;
         // A change to accounts is not answered until the partner has them, so that a failover right after it
         // loses nothing. If the partner is away the change stands anyway (it catches up later).
-        if changes_accounts && resp.status().is_success() && let Some(p) = &self.partner {
-            let _ = p.client.call(Op::Nudge, &Value::Null, &[], Duration::from_secs(3)).await;
+        if changes_accounts
+            && resp.status().is_success()
+            && let Some(p) = &self.partner
+        {
+            let _ = p
+                .client
+                .call(Op::Nudge, &Value::Null, &[], Duration::from_secs(3))
+                .await;
         }
         let (parts, body) = resp.into_parts();
-        let Ok(bytes) = axum::body::to_bytes(body, 64 * 1024 * 1024).await else { return Reply::error("the answer was too large") };
-        let h = |n: header::HeaderName| parts.headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
-        Reply::ok(json!({"status": parts.status.as_u16(), "content_type": h(header::CONTENT_TYPE), "retry_after": h(header::RETRY_AFTER)}), bytes)
+        let Ok(bytes) = axum::body::to_bytes(body, 64 * 1024 * 1024).await else {
+            return Reply::error("the answer was too large");
+        };
+        let h = |n: header::HeaderName| {
+            parts
+                .headers
+                .get(n)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string)
+        };
+        Reply::ok(
+            json!({"status": parts.status.as_u16(), "content_type": h(header::CONTENT_TYPE), "retry_after": h(header::RETRY_AFTER)}),
+            bytes,
+        )
     }
 
     /// What a standby pulls: the accounts, the merged learner picture, or a page of index items.
@@ -698,15 +889,23 @@ impl NodeHandler {
                 None => Reply::error("no learner here"),
             },
             Some("journal") => {
-                let Some(j) = self.state.pipeline.journal_handle() else { return Reply::ok(Value::Null, Bytes::from_static(b"[]")) };
+                let Some(j) = self.state.pipeline.journal_handle() else {
+                    return Reply::ok(Value::Null, Bytes::from_static(b"[]"));
+                };
                 let since = head["since"].as_i64().unwrap_or(0);
                 let dir = j.dir().to_path_buf();
-                let mut lines = tokio::task::spawn_blocking(move || seesea_pipeline::Journal::read(&dir, since)).await.unwrap_or_default();
+                let mut lines = tokio::task::spawn_blocking(move || {
+                    seesea_pipeline::Journal::read(&dir, since)
+                })
+                .await
+                .unwrap_or_default();
                 lines.truncate(20_000);
                 Reply::ok(Value::Null, serde_json::to_vec(&lines).unwrap_or_default())
             }
             Some("index") => {
-                let Some(index) = self.state.index.clone() else { return Reply::ok(json!({"next": 0, "done": true}), Bytes::new()) };
+                let Some(index) = self.state.index.clone() else {
+                    return Reply::ok(json!({"next": 0, "done": true}), Bytes::new());
+                };
                 let offset = head["offset"].as_u64().unwrap_or(0) as usize;
                 let page = tokio::task::spawn_blocking(move || {
                     let (mut seen, mut items) = (0usize, Vec::new());
@@ -722,7 +921,10 @@ impl NodeHandler {
                 .unwrap_or_default();
                 let (total, items) = page;
                 let next = offset + items.len();
-                Reply::ok(json!({"next": next, "done": next >= total}), serde_json::to_vec(&items).unwrap_or_default())
+                Reply::ok(
+                    json!({"next": next, "done": next >= total}),
+                    serde_json::to_vec(&items).unwrap_or_default(),
+                )
             }
             _ => Reply::error("unknown replication target"),
         }
@@ -733,14 +935,23 @@ impl NodeHandler {
         use crate::access::Refusal;
         use seesea_auth::Reason;
         let cost = head["cost"].as_u64().unwrap_or(1).min(100) as u32;
-        let answer = match self.state.access.spend_for(head["key"].as_str().unwrap_or(""), cost) {
+        let answer = match self
+            .state
+            .access
+            .spend_for(head["key"].as_str().unwrap_or(""), cost)
+        {
             Ok(a) => json!({
                 "result": "ok", "user_id": a.user_id, "name": a.name, "plan": a.plan,
                 "limit": a.decision.limit_per_minute, "remaining": a.decision.remaining, "reset": a.decision.reset_secs,
                 "daily_remaining": a.decision.daily_remaining,
             }),
             Err(Refusal::Unauthorized(m)) => json!({"result": "unauthorized", "message": m}),
-            Err(Refusal::Limited { denied, code, message, retry_after }) => json!({
+            Err(Refusal::Limited {
+                denied,
+                code,
+                message,
+                retry_after,
+            }) => json!({
                 "result": "limited", "code": code, "message": message, "retry_after": retry_after,
                 "reason": denied.map(|d| if d.reason == Reason::Daily { "daily" } else { "rate" }),
                 "limit": denied.map(|d| d.limit_per_minute),
@@ -750,15 +961,31 @@ impl NodeHandler {
     }
 
     fn adjust(&self, op: Op, head: &Value) -> Reply {
-        let (Some(name), Ok(plan), Some(store)) = (head["user"].as_str(), serde_json::from_value::<seesea_auth::Plan>(head["plan"].clone()), self.state.access.store()) else {
+        let (Some(name), Ok(plan), Some(store)) = (
+            head["user"].as_str(),
+            serde_json::from_value::<seesea_auth::Plan>(head["plan"].clone()),
+            self.state.access.store(),
+        ) else {
             return Reply::error("bad request");
         };
         // Ids differ between a primary and its standby; names do not.
-        let Ok(user) = store.user(name).map(|u| u.id) else { return Reply::error("no such user") };
+        let Ok(user) = store.user(name).map(|u| u.id) else {
+            return Reply::error("no such user");
+        };
         let now = seesea_auth::now_secs() as f64;
         let done = match op {
-            Op::Charge => store.spend_more(user, &plan, head["extra"].as_u64().unwrap_or(0).min(100) as u32, now),
-            _ => store.give_back(user, &plan, head["cost"].as_u64().unwrap_or(0).min(100) as u32, now),
+            Op::Charge => store.spend_more(
+                user,
+                &plan,
+                head["extra"].as_u64().unwrap_or(0).min(100) as u32,
+                now,
+            ),
+            _ => store.give_back(
+                user,
+                &plan,
+                head["cost"].as_u64().unwrap_or(0).min(100) as u32,
+                now,
+            ),
         };
         match done {
             Ok(()) => Reply::ok(Value::Null, Bytes::new()),
@@ -767,14 +994,21 @@ impl NodeHandler {
     }
 
     async fn events(&self, peer: &PeerInfo, body: &[u8]) -> Reply {
-        let Ok(Events { events }) = serde_json::from_slice(body) else { return Reply::error("body must be {\"events\": [...]}") };
+        let Ok(Events { events }) = serde_json::from_slice(body) else {
+            return Reply::error("body must be {\"events\": [...]}");
+        };
         let mut fresh: Vec<Value> = Vec::with_capacity(events.len());
         let mut marks: HashMap<u64, u64> = HashMap::new();
         {
             let seen = self.seen.lock().unwrap();
             for e in events {
                 if let (Some(epoch), Some(seq)) = (e["id"][0].as_u64(), e["id"][1].as_u64()) {
-                    if seq <= seen.get(&(peer.fingerprint.clone(), epoch)).copied().unwrap_or(0) {
+                    if seq
+                        <= seen
+                            .get(&(peer.fingerprint.clone(), epoch))
+                            .copied()
+                            .unwrap_or(0)
+                    {
                         continue;
                     }
                     let m = marks.entry(epoch).or_insert(0);
@@ -786,7 +1020,11 @@ impl NodeHandler {
         // The same search line can arrive at both flywheel nodes (or be copied between them): mark where it
         // came from, so that a copy is recognised.
         for e in fresh.iter_mut() {
-            if let (Some(epoch), Some(seq), true) = (e["id"][0].as_u64(), e["id"][1].as_u64(), e["line"].is_object()) {
+            if let (Some(epoch), Some(seq), true) = (
+                e["id"][0].as_u64(),
+                e["id"][1].as_u64(),
+                e["line"].is_object(),
+            ) {
                 e["line"]["_src"] = json!(format!("{}:{epoch}:{seq}", &peer.fingerprint[..8]));
             }
         }
@@ -800,7 +1038,10 @@ impl NodeHandler {
             *m = (*m).max(seq);
         }
         if let Some(file) = &self.seen_file {
-            let flat: HashMap<String, u64> = seen.iter().map(|((fp, ep), v)| (format!("{fp}:{ep}"), *v)).collect();
+            let flat: HashMap<String, u64> = seen
+                .iter()
+                .map(|((fp, ep), v)| (format!("{fp}:{ep}"), *v))
+                .collect();
             let tmp = file.with_extension("tmp");
             if let Some(dir) = file.parent() {
                 let _ = std::fs::create_dir_all(dir);
@@ -814,8 +1055,12 @@ impl NodeHandler {
 
     async fn index_search(&self, head: &Value) -> Reply {
         use seesea_pipeline::{Source, SourceQuery, TimeRange};
-        let Some(index) = self.state.index.clone() else { return Reply::ok(Value::Null, Bytes::from_static(b"[]")) };
-        let time_range = head["range"].as_str().and_then(|r| r.parse::<TimeRange>().ok());
+        let Some(index) = self.state.index.clone() else {
+            return Reply::ok(Value::Null, Bytes::from_static(b"[]"));
+        };
+        let time_range = head["range"]
+            .as_str()
+            .and_then(|r| r.parse::<TimeRange>().ok());
         let mut source = seesea_index::IndexSource::new(index);
         if let Some(e) = &self.state.embedder {
             source = source.embedder(e.clone());
@@ -829,8 +1074,15 @@ impl NodeHandler {
         };
         match source.search(&query).await {
             Ok(hits) => {
-                let rows: Vec<RemoteHit> =
-                    hits.into_iter().map(|h| RemoteHit { url: h.url, title: h.title, snippet: h.snippet, published: h.published.map(|p| p.timestamp()) }).collect();
+                let rows: Vec<RemoteHit> = hits
+                    .into_iter()
+                    .map(|h| RemoteHit {
+                        url: h.url,
+                        title: h.title,
+                        snippet: h.snippet,
+                        published: h.published.map(|p| p.timestamp()),
+                    })
+                    .collect();
                 Reply::ok(Value::Null, serde_json::to_vec(&rows).unwrap_or_default())
             }
             Err(e) => Reply::error(e),
@@ -856,14 +1108,23 @@ pub async fn apply_events(s: &AppState, events: Vec<Value>) -> usize {
                 }
             }
             "observe" => {
-                if let (Some(l), Ok(o)) = (s.pipeline.learner_handle(), serde_json::from_value::<Observation>(e.clone())) {
+                if let (Some(l), Ok(o)) = (
+                    s.pipeline.learner_handle(),
+                    serde_json::from_value::<Observation>(e.clone()),
+                ) {
                     l.apply(&o);
                     n += 1;
                 }
             }
             "remember" => {
                 let text = |k: &str| e[k].as_str().unwrap_or("").to_string();
-                items.push(seesea_index::Item { url: text("url"), title: text("title"), lead: text("lead"), published: None, source: seesea_index::READ.into() });
+                items.push(seesea_index::Item {
+                    url: text("url"),
+                    title: text("title"),
+                    lead: text("lead"),
+                    published: None,
+                    source: seesea_index::READ.into(),
+                });
                 n += 1;
             }
             "item" => {
@@ -910,11 +1171,20 @@ pub struct Lease {
 impl Lease {
     /// `me` is this node's certificate fingerprint; `voters` are the other two (none on a witness).
     pub fn new(me: String, voters: Vec<Arc<wire::Client>>) -> Arc<Self> {
-        Arc::new(Self { me, voters, vote: Mutex::new(None), held_until: Mutex::new(None), epoch: 0.into() })
+        Arc::new(Self {
+            me,
+            voters,
+            vote: Mutex::new(None),
+            held_until: Mutex::new(None),
+            epoch: 0.into(),
+        })
     }
 
     pub fn held(&self) -> bool {
-        self.held_until.lock().unwrap().is_some_and(|t| std::time::Instant::now() < t)
+        self.held_until
+            .lock()
+            .unwrap()
+            .is_some_and(|t| std::time::Instant::now() < t)
     }
 
     /// How many times this node has become the writer.
@@ -929,7 +1199,10 @@ impl Lease {
         match v.as_ref() {
             Some(cur) if cur.to != node && now < cur.until => false,
             _ => {
-                *v = Some(Vote { to: node.to_string(), until: now + LEASE_PROMISE });
+                *v = Some(Vote {
+                    to: node.to_string(),
+                    until: now + LEASE_PROMISE,
+                });
                 true
             }
         }
@@ -946,7 +1219,16 @@ impl Lease {
             }
         }
         for v in &self.voters {
-            let _ = tokio::time::timeout(Duration::from_secs(1), v.call(Op::Lease, &json!({"release": true}), &[], Duration::from_secs(1))).await;
+            let _ = tokio::time::timeout(
+                Duration::from_secs(1),
+                v.call(
+                    Op::Lease,
+                    &json!({"release": true}),
+                    &[],
+                    Duration::from_secs(1),
+                ),
+            )
+            .await;
         }
     }
 
@@ -966,7 +1248,12 @@ impl Lease {
             let v = v.clone();
             async move {
                 // The whole ask, connecting included, must fit well inside the time the lease is held.
-                tokio::time::timeout(Duration::from_millis(1000), v.call(Op::Lease, &Value::Null, &[], Duration::from_millis(1000))).await.is_ok_and(|r| r.is_ok_and(|r| r.head["granted"] == true))
+                tokio::time::timeout(
+                    Duration::from_millis(1000),
+                    v.call(Op::Lease, &Value::Null, &[], Duration::from_millis(1000)),
+                )
+                .await
+                .is_ok_and(|r| r.is_ok_and(|r| r.head["granted"] == true))
             }
         });
         grants += futures_count(asks).await;
@@ -982,7 +1269,9 @@ impl Lease {
     /// Keep asking, twice a second. The node with the larger fingerprint waits a moment at the start, so that
     /// two nodes starting together do not both lose the first vote.
     pub fn run(self: &Arc<Self>, partner_fingerprint: Option<String>) {
-        let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
+        let Ok(rt) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
         let this = Arc::clone(self);
         rt.spawn(async move {
             if partner_fingerprint.is_some_and(|p| p < this.me) {
@@ -997,7 +1286,9 @@ impl Lease {
 }
 
 /// Run the futures together and count how many came out true.
-async fn futures_count<F: std::future::Future<Output = bool> + Send + 'static>(fs: impl Iterator<Item = F>) -> usize {
+async fn futures_count<F: std::future::Future<Output = bool> + Send + 'static>(
+    fs: impl Iterator<Item = F>,
+) -> usize {
     let mut set = tokio::task::JoinSet::new();
     for f in fs {
         set.spawn(f);
@@ -1042,8 +1333,13 @@ impl Standby {
         if reached {
             *misses = 0;
             self.primary_up.store(true, Ordering::Relaxed);
-            if self.served.swap(0, Ordering::Relaxed) > 0 && self.lease.is_none() && !self.diverged.swap(true, Ordering::Relaxed) {
-                eprintln!("seesea: the primary flywheel is reachable again, but this standby took writes while it was away: the two differ now. Decide which one to keep (see the README, \"failover\").");
+            if self.served.swap(0, Ordering::Relaxed) > 0
+                && self.lease.is_none()
+                && !self.diverged.swap(true, Ordering::Relaxed)
+            {
+                eprintln!(
+                    "seesea: the primary flywheel is reachable again, but this standby took writes while it was away: the two differ now. Decide which one to keep (see the README, \"failover\")."
+                );
             }
         } else {
             *misses += 1;
@@ -1054,21 +1350,41 @@ impl Standby {
     }
 
     pub fn new(lease: Option<Arc<Lease>>) -> Arc<Self> {
-        Arc::new(Self { primary_up: AtomicBool::new(true), served: 0.into(), diverged: AtomicBool::new(false), lease, journal_since: 0.into() })
+        Arc::new(Self {
+            primary_up: AtomicBool::new(true),
+            served: 0.into(),
+            diverged: AtomicBool::new(false),
+            lease,
+            journal_since: 0.into(),
+        })
     }
 }
 
 /// Pull the primary's accounts and learner picture, and (with `index`) its index items. Idempotent: run it as
 /// often as you like. Returns what was copied: (accounts, learner, index items).
-pub async fn replicate_once(state: &AppState, primary: &Link, accounts: bool, learner: bool, index: bool, journal: bool) -> Result<(bool, bool, usize), String> {
+pub async fn replicate_once(
+    state: &AppState,
+    primary: &Link,
+    accounts: bool,
+    learner: bool,
+    index: bool,
+    journal: bool,
+) -> Result<(bool, bool, usize), String> {
     let pull = |what: &str, offset: usize| {
         let head = json!({"what": what, "offset": offset});
         let client = primary.client.clone();
-        async move { reply_ok(client.call(Op::Replicate, &head, &[], Duration::from_secs(60)).await) }
+        async move {
+            reply_ok(
+                client
+                    .call(Op::Replicate, &head, &[], Duration::from_secs(60))
+                    .await,
+            )
+        }
     };
     let mut done = (false, false, 0);
     if let (true, Some(store)) = (accounts, state.access.store()) {
-        let dump: seesea_auth::Dump = serde_json::from_slice(&pull("accounts", 0).await?.body).map_err(|e| e.to_string())?;
+        let dump: seesea_auth::Dump =
+            serde_json::from_slice(&pull("accounts", 0).await?.body).map_err(|e| e.to_string())?;
         store.sync(&dump).map_err(|e| e.to_string())?;
         done.0 = true;
     }
@@ -1077,13 +1393,38 @@ pub async fn replicate_once(state: &AppState, primary: &Link, accounts: bool, le
     }
     if let (true, Some(j)) = (journal, state.pipeline.journal_handle().cloned()) {
         let marker = state.standby.clone();
-        let since = marker.as_ref().map_or(0, |m| m.journal_since.load(Ordering::Relaxed));
-        let r = reply_ok(primary.client.call(Op::Replicate, &json!({"what": "journal", "since": since}), &[], Duration::from_secs(60)).await)?;
+        let since = marker
+            .as_ref()
+            .map_or(0, |m| m.journal_since.load(Ordering::Relaxed));
+        let r = reply_ok(
+            primary
+                .client
+                .call(
+                    Op::Replicate,
+                    &json!({"what": "journal", "since": since}),
+                    &[],
+                    Duration::from_secs(60),
+                )
+                .await,
+        )?;
         let lines: Vec<Value> = serde_json::from_slice(&r.body).map_err(|e| e.to_string())?;
         let newest = tokio::task::spawn_blocking(move || {
-            let key = |l: &Value| l["_src"].as_str().map_or_else(|| l.to_string(), str::to_string);
-            let ts = |l: &Value| l["ts"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()).map_or(0, |t| t.timestamp());
-            let have: std::collections::HashSet<String> = seesea_pipeline::Journal::read(j.dir(), since).iter().map(key).collect();
+            let key = |l: &Value| {
+                l["_src"]
+                    .as_str()
+                    .map_or_else(|| l.to_string(), str::to_string)
+            };
+            let ts = |l: &Value| {
+                l["ts"]
+                    .as_str()
+                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                    .map_or(0, |t| t.timestamp())
+            };
+            let have: std::collections::HashSet<String> =
+                seesea_pipeline::Journal::read(j.dir(), since)
+                    .iter()
+                    .map(key)
+                    .collect();
             let mut newest = since;
             for l in &lines {
                 newest = newest.max(ts(l));
@@ -1097,14 +1438,16 @@ pub async fn replicate_once(state: &AppState, primary: &Link, accounts: bool, le
         .map_err(|e| e.to_string())?;
         // A little overlap, so that a line that was being written when we asked is not missed.
         if let Some(m) = marker {
-            m.journal_since.store((newest - 120).max(0), Ordering::Relaxed);
+            m.journal_since
+                .store((newest - 120).max(0), Ordering::Relaxed);
         }
     }
     if let (true, Some(idx)) = (index, state.index.clone()) {
         let mut offset = 0;
         loop {
             let r = pull("index", offset).await?;
-            let items: Vec<seesea_index::Item> = serde_json::from_slice(&r.body).map_err(|e| e.to_string())?;
+            let items: Vec<seesea_index::Item> =
+                serde_json::from_slice(&r.body).map_err(|e| e.to_string())?;
             done.2 += items.len();
             let idx = idx.clone();
             let _ = tokio::task::spawn_blocking(move || idx.store.ingest(&items)).await;
@@ -1119,15 +1462,29 @@ pub async fn replicate_once(state: &AppState, primary: &Link, accounts: bool, le
 
 /// Keep following: accounts every 5 seconds, the learner picture every minute, the index every 10 minutes.
 pub fn run_standby(state: AppState, primary: Link) {
-    let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
+    let Ok(rt) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
     rt.spawn(async move {
         let mut tick = 0u32;
         let mut misses = 0u32;
         loop {
             // With a lease, only the follower copies, and from whoever writes.
-            let leading = state.standby.as_ref().and_then(|s| s.lease.as_ref()).is_some_and(|l| l.held());
+            let leading = state
+                .standby
+                .as_ref()
+                .and_then(|s| s.lease.as_ref())
+                .is_some_and(|l| l.held());
             if !leading {
-                let round = replicate_once(&state, &primary, true, tick % 12 == 0, tick % 120 == 0, tick % 6 == 0).await;
+                let round = replicate_once(
+                    &state,
+                    &primary,
+                    true,
+                    tick % 12 == 0,
+                    tick % 120 == 0,
+                    tick % 6 == 0,
+                )
+                .await;
                 if let Some(st) = &state.standby {
                     st.note_round(round.is_ok(), &mut misses);
                 }
@@ -1162,14 +1519,27 @@ impl Pool {
     pub fn new(mesh: &Mesh, urls: &[String], role: PeerRole) -> Result<Arc<Self>, String> {
         let nodes = urls
             .iter()
-            .map(|u| Ok(Node { url: u.clone(), client: wire::Client::new(mesh, u, role)?, up: AtomicBool::new(true) }))
+            .map(|u| {
+                Ok(Node {
+                    url: u.clone(),
+                    client: wire::Client::new(mesh, u, role)?,
+                    up: AtomicBool::new(true),
+                })
+            })
             .collect::<Result<Vec<_>, String>>()?;
-        Ok(Arc::new(Self { nodes, next: AtomicUsize::new(0), ordered: false, limit: Duration::from_secs(115) }))
+        Ok(Arc::new(Self {
+            nodes,
+            next: AtomicUsize::new(0),
+            ordered: false,
+            limit: Duration::from_secs(115),
+        }))
     }
 
     /// Nodes that are not interchangeable: a primary and its standby.
     pub fn ordered(mesh: &Mesh, urls: &[String], role: PeerRole) -> Result<Arc<Self>, String> {
-        let mut p = Arc::try_unwrap(Self::new(mesh, urls, role)?).ok().expect("just made");
+        let mut p = Arc::try_unwrap(Self::new(mesh, urls, role)?)
+            .ok()
+            .expect("just made");
         p.ordered = true;
         // What a standby pair holds answers quickly; a node that does not is given up on sooner.
         p.limit = Duration::from_secs(10);
@@ -1189,7 +1559,9 @@ impl Pool {
     }
 
     pub fn watch(self: &Arc<Self>) {
-        let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
+        let Ok(rt) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
         let this = Arc::clone(self);
         rt.spawn(async move {
             loop {
@@ -1200,22 +1572,38 @@ impl Pool {
     }
 
     pub fn healthy(&self) -> usize {
-        self.nodes.iter().filter(|n| n.up.load(Ordering::Relaxed)).count()
+        self.nodes
+            .iter()
+            .filter(|n| n.up.load(Ordering::Relaxed))
+            .count()
     }
 
     /// Healthy nodes first, starting after the one used last; nodes believed down come last, so a
     /// cluster whose health checks have not run yet (or all failed) is still tried.
     fn order(&self) -> Vec<usize> {
         let n = self.nodes.len();
-        let start = if self.ordered { self.next.load(Ordering::Relaxed) % n.max(1) } else { self.next.fetch_add(1, Ordering::Relaxed) % n.max(1) };
+        let start = if self.ordered {
+            self.next.load(Ordering::Relaxed) % n.max(1)
+        } else {
+            self.next.fetch_add(1, Ordering::Relaxed) % n.max(1)
+        };
         let all: Vec<usize> = (0..n).map(|i| (start + i) % n).collect();
-        let (up, down): (Vec<usize>, Vec<usize>) = all.into_iter().partition(|&i| self.nodes[i].up.load(Ordering::Relaxed));
+        let (up, down): (Vec<usize>, Vec<usize>) = all
+            .into_iter()
+            .partition(|&i| self.nodes[i].up.load(Ordering::Relaxed));
         up.into_iter().chain(down).collect()
     }
 
     /// Send a request to the first node that takes it. A node that cannot be reached is marked down and the
     /// next one is tried; a node that is full is skipped; any other answer, even an error, is the answer.
-    pub async fn forward(&self, method: Method, path_and_query: &str, content_type: Option<&str>, authorization: Option<&str>, body: Bytes) -> Response {
+    pub async fn forward(
+        &self,
+        method: Method,
+        path_and_query: &str,
+        content_type: Option<&str>,
+        authorization: Option<&str>,
+        body: Bytes,
+    ) -> Response {
         let mut last = String::from("no search node is configured");
         let mut busy = false;
         let head = json!({"method": method.as_str(), "uri": path_and_query, "content_type": content_type, "authorization": authorization});
@@ -1232,10 +1620,19 @@ impl Pool {
                         let m = reply.head["message"].as_str().unwrap_or("the node failed");
                         return (StatusCode::BAD_GATEWAY, Json(json!({"code": "upstream_failed", "message": format!("{}: {m}", node.url)}))).into_response();
                     }
-                    let status = reply.head["status"].as_u64().and_then(|s| StatusCode::from_u16(s as u16).ok()).unwrap_or(StatusCode::BAD_GATEWAY);
+                    let status = reply.head["status"]
+                        .as_u64()
+                        .and_then(|s| StatusCode::from_u16(s as u16).ok())
+                        .unwrap_or(StatusCode::BAD_GATEWAY);
                     let mut out = (status, reply.body).into_response();
-                    for (name, key) in [(header::CONTENT_TYPE, "content_type"), (header::RETRY_AFTER, "retry_after")] {
-                        if let Some(v) = reply.head[key].as_str().and_then(|v| header::HeaderValue::from_str(v).ok()) {
+                    for (name, key) in [
+                        (header::CONTENT_TYPE, "content_type"),
+                        (header::RETRY_AFTER, "retry_after"),
+                    ] {
+                        if let Some(v) = reply.head[key]
+                            .as_str()
+                            .and_then(|v| header::HeaderValue::from_str(v).ok())
+                        {
                             out.headers_mut().insert(name, v);
                         }
                     }
@@ -1255,17 +1652,26 @@ impl Pool {
                 }
                 // The node may have run it already; do not run it twice.
                 Err(CallError::Failed(m)) => {
-                    return (StatusCode::GATEWAY_TIMEOUT, Json(json!({"code": "upstream_failed", "message": m}))).into_response();
+                    return (
+                        StatusCode::GATEWAY_TIMEOUT,
+                        Json(json!({"code": "upstream_failed", "message": m})),
+                    )
+                        .into_response();
                 }
                 Err(CallError::Refused(m)) => last = m,
             }
         }
         if busy {
             let mut r = (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"code": "busy", "message": "every search node is at its limit; try again shortly", "retry_after": 1}))).into_response();
-            r.headers_mut().insert(header::RETRY_AFTER, header::HeaderValue::from_static("1"));
+            r.headers_mut()
+                .insert(header::RETRY_AFTER, header::HeaderValue::from_static("1"));
             return r;
         }
-        (StatusCode::BAD_GATEWAY, Json(json!({"code": "no_upstream", "message": format!("no node answered ({last})")}))).into_response()
+        (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({"code": "no_upstream", "message": format!("no node answered ({last})")})),
+        )
+            .into_response()
     }
 }
 
@@ -1312,7 +1718,15 @@ enum Target {
 pub fn is_accounts_path(path: &str) -> bool {
     let plain = |rest: &str, depth: usize| {
         let parts: Vec<&str> = rest.split('/').collect();
-        parts.len() == depth && parts.iter().all(|p| !p.is_empty() && p.len() <= 64 && p.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')) && *p != "." && *p != "..")
+        parts.len() == depth
+            && parts.iter().all(|p| {
+                !p.is_empty()
+                    && p.len() <= 64
+                    && p.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+                    && *p != "."
+                    && *p != ".."
+            })
     };
     match path {
         "/v1/account" | "/v1/account/keys" | "/v1/admin/users" => true,
@@ -1332,14 +1746,20 @@ pub fn is_accounts_path(path: &str) -> bool {
 
 fn target(path: &str) -> Option<Target> {
     match path {
-        "/v1/search" | "/v1/search/batch" | "/v1/similar" | "/v1/extract" | "/v1/sources" | "/v1/sources/check" | "/v1/stats" | "/v1/feedback" | "/mcp" => Some(Target::Search),
+        "/v1/search" | "/v1/search/batch" | "/v1/similar" | "/v1/extract" | "/v1/sources"
+        | "/v1/sources/check" | "/v1/stats" | "/v1/feedback" | "/mcp" => Some(Target::Search),
         "/v1/index" => Some(Target::Flywheel),
         "/v1/ingest" => Some(Target::FlywheelAdmin),
         p if is_accounts_path(p) => Some(Target::Accounts),
         p => {
             // A WebSub callback: /v1/websub/<id> where the id is what we handed the hub.
             let id = p.strip_prefix("/v1/websub/")?;
-            (!id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')).then_some(Target::Flywheel)
+            (!id.is_empty()
+                && id.len() <= 64
+                && id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'))
+            .then_some(Target::Flywheel)
         }
     }
 }
@@ -1347,68 +1767,144 @@ fn target(path: &str) -> Option<Target> {
 /// Charge what the request will cost beyond its base cost and refuse what the plan lacks. Runs the same
 /// rules as a single node, reading the request the way the node will: a GET's mode is in its query, a
 /// POST's in its body (reading both would let one say `fast` to the gateway and `deep` to the node).
-fn meter(method: &Method, path: &str, query: Option<&str>, body: &[u8], grant: &Option<Extension<Grant>>, state: &AppState) -> Result<(), Response> {
-    let Some(Extension(g)) = grant else { return Ok(()) };
-    let bad = |m: String| (StatusCode::BAD_REQUEST, Json(json!({"code": "invalid_request", "message": m}))).into_response();
+fn meter(
+    method: &Method,
+    path: &str,
+    query: Option<&str>,
+    body: &[u8],
+    grant: &Option<Extension<Grant>>,
+    state: &AppState,
+) -> Result<(), Response> {
+    let Some(Extension(g)) = grant else {
+        return Ok(());
+    };
+    let bad = |m: String| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"code": "invalid_request", "message": m})),
+        )
+            .into_response()
+    };
     match path {
         "/mcp" => return crate::server::meter_mcp(&state.access, g, body).map_err(|m| bad(m)),
         "/v1/search" | "/v1/search/batch" | "/v1/similar" => {}
         _ => return Ok(()),
     }
-    let parsed: Option<Value> = (method != Method::GET).then(|| serde_json::from_slice(body).ok()).flatten();
+    let parsed: Option<Value> = (method != Method::GET)
+        .then(|| serde_json::from_slice(body).ok())
+        .flatten();
     let raw = if method == Method::GET {
-        query.and_then(|q| url::form_urlencoded::parse(q.as_bytes()).find(|(k, _)| k == "mode").map(|(_, v)| v.into_owned()))
+        query.and_then(|q| {
+            url::form_urlencoded::parse(q.as_bytes())
+                .find(|(k, _)| k == "mode")
+                .map(|(_, v)| v.into_owned())
+        })
     } else {
-        parsed.as_ref().and_then(|b| b["mode"].as_str().map(str::to_string))
+        parsed
+            .as_ref()
+            .and_then(|b| b["mode"].as_str().map(str::to_string))
     };
     let mode = match raw {
         Some(m) => m.parse::<Mode>().map_err(|e| bad(e.to_string()))?,
         None => Mode::default(),
     };
     let times = if path == "/v1/search/batch" {
-        parsed.as_ref().and_then(|b| b["queries"].as_array()).map_or(1, |a| a.len().clamp(1, 10) as u32)
+        parsed
+            .as_ref()
+            .and_then(|b| b["queries"].as_array())
+            .map_or(1, |a| a.len().clamp(1, 10) as u32)
     } else {
         1
     };
     if mode == Mode::Deep && !g.plan.deep {
-        return Err(bad(format!("mode=deep is not part of the plan of '{}'", g.name)));
+        return Err(bad(format!(
+            "mode=deep is not part of the plan of '{}'",
+            g.name
+        )));
     }
     // A batch pays the base cost once (taken by the auth layer) and the extra for each query after it.
-    state.access.charge(g, crate::access::mode_extra(mode) * times + (times - 1));
+    state
+        .access
+        .charge(g, crate::access::mode_extra(mode) * times + (times - 1));
     Ok(())
 }
 
 /// The gateway's fallback: forward the few paths that belong to a node, refuse everything else.
-pub async fn forward(State(s): State<AppState>, grant: Option<Extension<Grant>>, method: Method, uri: axum::http::Uri, headers: HeaderMap, body: Bytes) -> Response {
+pub async fn forward(
+    State(s): State<AppState>,
+    grant: Option<Extension<Grant>>,
+    method: Method,
+    uri: axum::http::Uri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
     let wants_page = method == Method::GET
         && !(uri.path().starts_with("/v1/") || uri.path().starts_with("/desk/"))
-        && headers.get(header::ACCEPT).and_then(|v| v.to_str().ok()).is_some_and(|a| a.starts_with("text/html"));
-    let not_found = || if wants_page { crate::ui::not_found_page() } else { (StatusCode::NOT_FOUND, Json(json!({"code": "not_found", "message": "no such endpoint"}))).into_response() };
-    let Some(gw) = s.gateway.clone() else { return not_found() };
+        && headers
+            .get(header::ACCEPT)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|a| a.starts_with("text/html"));
+    let not_found = || {
+        if wants_page {
+            crate::ui::not_found_page()
+        } else {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({"code": "not_found", "message": "no such endpoint"})),
+            )
+                .into_response()
+        }
+    };
+    let Some(gw) = s.gateway.clone() else {
+        return not_found();
+    };
     let path = uri.path();
-    let Some(target) = target(path) else { return not_found() };
-    if (target == Target::FlywheelAdmin || path == "/v1/feedback") && !(s.access.required() && grant.as_ref().is_some_and(|Extension(g)| g.is_root())) {
+    let Some(target) = target(path) else {
+        return not_found();
+    };
+    if (target == Target::FlywheelAdmin || path == "/v1/feedback")
+        && !(s.access.required() && grant.as_ref().is_some_and(|Extension(g)| g.is_root()))
+    {
         return (StatusCode::FORBIDDEN, Json(json!({"code": "admin_only", "message": "this needs the server's root key (--api-key)"}))).into_response();
     }
     if let Err(r) = meter(&method, path, uri.query(), &body, &grant, &s) {
         return r;
     }
-    let pq = uri.path_and_query().map_or(path.to_string(), |p| p.as_str().to_string());
-    let ct = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok());
-    let pool = if target == Target::Search { &gw.search } else { &gw.flywheel };
-    let authorization = (target == Target::Accounts).then(|| crate::server::presented_key(&headers).map(|k| format!("Bearer {k}"))).flatten();
+    let pq = uri
+        .path_and_query()
+        .map_or(path.to_string(), |p| p.as_str().to_string());
+    let ct = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok());
+    let pool = if target == Target::Search {
+        &gw.search
+    } else {
+        &gw.flywheel
+    };
+    let authorization = (target == Target::Accounts)
+        .then(|| crate::server::presented_key(&headers).map(|k| format!("Bearer {k}")))
+        .flatten();
     if target == Target::Accounts && authorization.is_none() {
         return (StatusCode::UNAUTHORIZED, Json(json!({"code": "unauthorized", "message": "missing API key (Authorization: Bearer <key>)"}))).into_response();
     }
-    pool.forward(method, &pq, ct, authorization.as_deref(), body).await
+    pool.forward(method, &pq, ct, authorization.as_deref(), body)
+        .await
 }
 
 pub async fn status(State(s): State<AppState>) -> Json<Value> {
-    let role = s.cluster.as_ref().map(|c| format!("{:?}", c.role).to_lowercase()).unwrap_or_else(|| "single".into());
+    let role = s
+        .cluster
+        .as_ref()
+        .map(|c| format!("{:?}", c.role).to_lowercase())
+        .unwrap_or_else(|| "single".into());
     match &s.gateway {
-        Some(g) => Json(json!({"role": role, "search_nodes": {"total": g.search.nodes.len(), "healthy": g.search.healthy()}, "flywheel": {"healthy": g.flywheel.healthy() > 0}})),
+        Some(g) => Json(
+            json!({"role": role, "search_nodes": {"total": g.search.nodes.len(), "healthy": g.search.healthy()}, "flywheel": {"healthy": g.flywheel.healthy() > 0}}),
+        ),
         None => match &s.standby {
-            Some(st) => Json(json!({"role": role, "standby": {"primary_up": st.primary_up.load(Ordering::Relaxed), "diverged": st.diverged.load(Ordering::Relaxed)}, "writer": st.lease.as_ref().map(|l| l.held()), "epoch": st.lease.as_ref().map(|l| l.epoch())})),
+            Some(st) => Json(
+                json!({"role": role, "standby": {"primary_up": st.primary_up.load(Ordering::Relaxed), "diverged": st.diverged.load(Ordering::Relaxed)}, "writer": st.lease.as_ref().map(|l| l.held()), "epoch": st.lease.as_ref().map(|l| l.epoch())}),
+            ),
             None => Json(json!({"role": role})),
         },
     }
@@ -1447,10 +1943,17 @@ pub fn export(d: &Dirs, out: &std::path::Path) -> Result<Counts, String> {
     std::fs::create_dir_all(out.join("journal")).map_err(io("cannot create the bundle folder"))?;
     let mut c = Counts::default();
     if d.auth_db.exists() {
-        let dump = seesea_auth::Store::open(&d.auth_db).map_err(io("auth database"))?.dump().map_err(io("auth database"))?;
+        let dump = seesea_auth::Store::open(&d.auth_db)
+            .map_err(io("auth database"))?
+            .dump()
+            .map_err(io("auth database"))?;
         c.users = dump.users.len();
         c.keys = dump.keys.len();
-        std::fs::write(out.join("auth.json"), serde_json::to_vec_pretty(&dump).map_err(io("auth"))?).map_err(io("auth.json"))?;
+        std::fs::write(
+            out.join("auth.json"),
+            serde_json::to_vec_pretty(&dump).map_err(io("auth"))?,
+        )
+        .map_err(io("auth.json"))?;
     }
     if d.learn_file.exists() {
         std::fs::copy(&d.learn_file, out.join("learn.json")).map_err(io("learn.json"))?;
@@ -1458,7 +1961,9 @@ pub fn export(d: &Dirs, out: &std::path::Path) -> Result<Counts, String> {
     }
     if d.index_dir.exists() {
         let index = seesea_index::Index::open(d.index_dir.clone());
-        let mut file = std::io::BufWriter::new(std::fs::File::create(out.join("items.jsonl")).map_err(io("items.jsonl"))?);
+        let mut file = std::io::BufWriter::new(
+            std::fs::File::create(out.join("items.jsonl")).map_err(io("items.jsonl"))?,
+        );
         c.items = index
             .store
             .export(|item| {
@@ -1474,13 +1979,18 @@ pub fn export(d: &Dirs, out: &std::path::Path) -> Result<Counts, String> {
             let name = e.file_name().to_string_lossy().into_owned();
             if name.starts_with("journal-") && name.ends_with(".jsonl") {
                 std::fs::copy(e.path(), out.join("journal").join(&name)).map_err(io("journal"))?;
-                c.journal_lines += std::fs::read_to_string(e.path()).map(|t| t.lines().count()).unwrap_or(0);
+                c.journal_lines += std::fs::read_to_string(e.path())
+                    .map(|t| t.lines().count())
+                    .unwrap_or(0);
             }
         }
     }
     std::fs::write(
         out.join("manifest.json"),
-        serde_json::to_vec_pretty(&json!({"format": 1, "created": chrono::Utc::now().to_rfc3339(), "counts": c})).map_err(io("manifest"))?,
+        serde_json::to_vec_pretty(
+            &json!({"format": 1, "created": chrono::Utc::now().to_rfc3339(), "counts": c}),
+        )
+        .map_err(io("manifest"))?,
     )
     .map_err(io("manifest.json"))?;
     // The bundle holds key hashes and what people searched for: readable by its owner only.
@@ -1491,7 +2001,9 @@ pub fn export(d: &Dirs, out: &std::path::Path) -> Result<Counts, String> {
 #[cfg(unix)]
 fn lock_down(path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;
-    let Ok(meta) = std::fs::metadata(path) else { return };
+    let Ok(meta) = std::fs::metadata(path) else {
+        return;
+    };
     if meta.is_dir() {
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
         for e in std::fs::read_dir(path).into_iter().flatten().flatten() {
@@ -1507,7 +2019,11 @@ fn lock_down(_: &std::path::Path) {}
 
 fn bundle_items(from: &std::path::Path) -> Vec<seesea_index::Item> {
     std::fs::read_to_string(from.join("items.jsonl"))
-        .map(|t| t.lines().filter_map(|l| serde_json::from_str(l).ok()).collect())
+        .map(|t| {
+            t.lines()
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -1516,7 +2032,12 @@ fn bundle_journal(from: &std::path::Path) -> Vec<(String, String)> {
         .into_iter()
         .flatten()
         .flatten()
-        .filter_map(|e| Some((e.file_name().to_string_lossy().into_owned(), std::fs::read_to_string(e.path()).ok()?)))
+        .filter_map(|e| {
+            Some((
+                e.file_name().to_string_lossy().into_owned(),
+                std::fs::read_to_string(e.path()).ok()?,
+            ))
+        })
         .collect();
     files.sort();
     files
@@ -1524,7 +2045,10 @@ fn bundle_journal(from: &std::path::Path) -> Vec<(String, String)> {
 
 fn check_bundle(from: &std::path::Path) -> Result<(), String> {
     if !from.join("manifest.json").exists() {
-        return Err(format!("{} is not a bundle written by `seesea cluster export`", from.display()));
+        return Err(format!(
+            "{} is not a bundle written by `seesea cluster export`",
+            from.display()
+        ));
     }
     Ok(())
 }
@@ -1540,7 +2064,10 @@ pub fn import_local(d: &Dirs, from: &std::path::Path) -> Result<Counts, String> 
         (c.users, c.keys) = store.load(&dump).map_err(io("auth database"))?;
     }
     if let Ok(bytes) = std::fs::read(from.join("learn.json")) {
-        let l = Learner::open(seesea_pipeline::LearnConfig::default(), d.learn_file.clone());
+        let l = Learner::open(
+            seesea_pipeline::LearnConfig::default(),
+            d.learn_file.clone(),
+        );
         c.learner = l.merge(&bytes);
         l.flush();
     }
@@ -1572,21 +2099,31 @@ pub async fn import_remote(from: &std::path::Path, link: &Link) -> Result<Counts
     let mut c = Counts::default();
     let items = bundle_items(from);
     for chunk in items.chunks(200) {
-        let events: Vec<Value> = chunk.iter().map(|i| json!({"k": "item", "item": i})).collect();
+        let events: Vec<Value> = chunk
+            .iter()
+            .map(|i| json!({"k": "item", "item": i}))
+            .collect();
         link.events(&events).await?;
         c.items += chunk.len();
     }
     for (_, text) in bundle_journal(from) {
-        let lines: Vec<Value> = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+        let lines: Vec<Value> = text
+            .lines()
+            .filter_map(|l| serde_json::from_str(l).ok())
+            .collect();
         for chunk in lines.chunks(100) {
-            let events: Vec<Value> = chunk.iter().map(|l| json!({"k": "journal", "line": l})).collect();
+            let events: Vec<Value> = chunk
+                .iter()
+                .map(|l| json!({"k": "journal", "line": l}))
+                .collect();
             link.events(&events).await?;
             c.journal_lines += chunk.len();
         }
     }
     if let Ok(bytes) = std::fs::read(from.join("learn.json")) {
         let v: Value = serde_json::from_slice(&bytes).map_err(io("learn.json"))?;
-        link.learn_merge(&serde_json::to_vec(&v).map_err(io("learn.json"))?).await?;
+        link.learn_merge(&serde_json::to_vec(&v).map_err(io("learn.json"))?)
+            .await?;
         c.learner = true;
     }
     Ok(c)
@@ -1597,7 +2134,12 @@ mod tests {
     use super::*;
 
     fn dirs(root: &std::path::Path) -> Dirs {
-        Dirs { auth_db: root.join("auth.db"), learn_file: root.join("learn.json"), journal_dir: root.join("journal"), index_dir: root.join("index") }
+        Dirs {
+            auth_db: root.join("auth.db"),
+            learn_file: root.join("learn.json"),
+            journal_dir: root.join("journal"),
+            index_dir: root.join("index"),
+        }
     }
 
     #[test]
@@ -1609,16 +2151,83 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         std::fs::write(d.path().join("c"), cert).unwrap();
         std::fs::write(d.path().join("k"), key).unwrap();
-        let mesh = Mesh { identity: wire::Identity::load(&d.path().join("c"), &d.path().join("k")).unwrap(), peers: wire::Peers::fixed(vec![]) };
-        let base = Cluster { role: Role::Gateway, search_nodes: vec![], flywheel: None, flywheel_standby: None, standby_of: None, partner: None, witness: None, listen: None, state_dir: None, mesh: Some(mesh) };
+        let mesh = Mesh {
+            identity: wire::Identity::load(&d.path().join("c"), &d.path().join("k")).unwrap(),
+            peers: wire::Peers::fixed(vec![]),
+        };
+        let base = Cluster {
+            role: Role::Gateway,
+            search_nodes: vec![],
+            flywheel: None,
+            flywheel_standby: None,
+            standby_of: None,
+            partner: None,
+            witness: None,
+            listen: None,
+            state_dir: None,
+            mesh: Some(mesh),
+        };
         assert!(base.check().unwrap_err().contains("search_nodes"));
-        let ok = Cluster { search_nodes: vec!["quic://10.0.0.1:7443".into()], flywheel: Some("quic://10.0.0.2:7443".into()), ..base.clone() };
+        let ok = Cluster {
+            search_nodes: vec!["quic://10.0.0.1:7443".into()],
+            flywheel: Some("quic://10.0.0.2:7443".into()),
+            ..base.clone()
+        };
         assert!(ok.check().is_ok());
-        assert!(Cluster { search_nodes: vec!["https://10.0.0.1".into()], ..ok.clone() }.check().is_err(), "nodes are not addressed over HTTP");
-        assert!(Cluster { mesh: None, ..ok.clone() }.check().unwrap_err().contains("node_cert"));
-        assert!(Cluster { role: Role::Search, ..ok.clone() }.check().unwrap_err().contains("cluster_listen"));
-        assert!(Cluster { role: Role::Search, flywheel: None, listen: Some("0.0.0.0:7443".parse().unwrap()), ..ok.clone() }.check().unwrap_err().contains("flywheel"));
-        assert!(Cluster { role: Role::Single, mesh: None, search_nodes: vec![], flywheel: None, flywheel_standby: None, standby_of: None, partner: None, witness: None, listen: None, state_dir: None }.check().is_ok());
+        assert!(
+            Cluster {
+                search_nodes: vec!["https://10.0.0.1".into()],
+                ..ok.clone()
+            }
+            .check()
+            .is_err(),
+            "nodes are not addressed over HTTP"
+        );
+        assert!(
+            Cluster {
+                mesh: None,
+                ..ok.clone()
+            }
+            .check()
+            .unwrap_err()
+            .contains("node_cert")
+        );
+        assert!(
+            Cluster {
+                role: Role::Search,
+                ..ok.clone()
+            }
+            .check()
+            .unwrap_err()
+            .contains("cluster_listen")
+        );
+        assert!(
+            Cluster {
+                role: Role::Search,
+                flywheel: None,
+                listen: Some("0.0.0.0:7443".parse().unwrap()),
+                ..ok.clone()
+            }
+            .check()
+            .unwrap_err()
+            .contains("flywheel")
+        );
+        assert!(
+            Cluster {
+                role: Role::Single,
+                mesh: None,
+                search_nodes: vec![],
+                flywheel: None,
+                flywheel_standby: None,
+                standby_of: None,
+                partner: None,
+                witness: None,
+                listen: None,
+                state_dir: None
+            }
+            .check()
+            .is_ok()
+        );
     }
 
     #[test]
@@ -1631,7 +2240,12 @@ mod tests {
             for i in 0..QUEUE_LIMIT {
                 q.seq += 1;
                 let id = (out.epoch, q.seq);
-                q.events.push_back(Queued { id, event: json!({"k": "x", "n": i}), size: 10, spooled: false });
+                q.events.push_back(Queued {
+                    id,
+                    event: json!({"k": "x", "n": i}),
+                    size: 10,
+                    spooled: false,
+                });
                 q.bytes += 10;
             }
         }
@@ -1639,7 +2253,10 @@ mod tests {
             out.push(json!({"k": "x", "n": QUEUE_LIMIT + i}));
         }
         assert_eq!(out.len(), QUEUE_LIMIT + 250);
-        assert!(std::fs::read_dir(dir.path()).unwrap().count() > 0, "the overflow is on disk");
+        assert!(
+            std::fs::read_dir(dir.path()).unwrap().count() > 0,
+            "the overflow is on disk"
+        );
         // A new run finds the spooled part; the memory part died with the old process.
         drop(out);
         let again = Outbox::with_spool(dir.path());
@@ -1657,7 +2274,11 @@ mod tests {
             got.extend(b);
         }
         let ns: Vec<u64> = got.iter().map(|q| q.event["n"].as_u64().unwrap()).collect();
-        assert_eq!(ns, (QUEUE_LIMIT as u64..QUEUE_LIMIT as u64 + 250).collect::<Vec<_>>(), "oldest first, nothing lost");
+        assert_eq!(
+            ns,
+            (QUEUE_LIMIT as u64..QUEUE_LIMIT as u64 + 250).collect::<Vec<_>>(),
+            "oldest first, nothing lost"
+        );
         assert!(got.windows(2).all(|w| w[0].id.1 < w[1].id.1));
         assert!(again.is_empty());
     }
@@ -1669,8 +2290,14 @@ mod tests {
         assert!(l.grant("a"), "and keeps it when it asks again");
         assert!(!l.grant("b"), "nobody else while the promise lasts");
         assert!(!l.held(), "voting for someone says nothing about holding");
-        *l.vote.lock().unwrap() = Some(Vote { to: "a".into(), until: std::time::Instant::now() - Duration::from_secs(1) });
-        assert!(l.grant("b"), "once the promise has run out, another may have it");
+        *l.vote.lock().unwrap() = Some(Vote {
+            to: "a".into(),
+            until: std::time::Instant::now() - Duration::from_secs(1),
+        });
+        assert!(
+            l.grant("b"),
+            "once the promise has run out, another may have it"
+        );
     }
 
     #[tokio::test]
@@ -1690,10 +2317,16 @@ mod tests {
         for _ in 0..3 {
             st.note_round(false, &mut misses);
         }
-        assert!(!st.primary_up.load(Ordering::Relaxed), "three misses: the primary is away");
+        assert!(
+            !st.primary_up.load(Ordering::Relaxed),
+            "three misses: the primary is away"
+        );
         st.served.fetch_add(5, Ordering::Relaxed);
         st.note_round(true, &mut misses);
-        assert!(st.primary_up.load(Ordering::Relaxed) && st.diverged.load(Ordering::Relaxed), "writes in between: they differ now");
+        assert!(
+            st.primary_up.load(Ordering::Relaxed) && st.diverged.load(Ordering::Relaxed),
+            "writes in between: they differ now"
+        );
     }
 
     #[test]
@@ -1713,27 +2346,91 @@ mod tests {
         let store = seesea_auth::Store::open(&from.auth_db).unwrap();
         store.create_user("ann", "default").unwrap();
         let (_, key) = store.create_key("ann", "k", None).unwrap();
-        let learner = Learner::open(seesea_pipeline::LearnConfig::default(), from.learn_file.clone());
+        let learner = Learner::open(
+            seesea_pipeline::LearnConfig::default(),
+            from.learn_file.clone(),
+        );
         learner.observe("good.org", &["bing"], 1.0, 1.0);
         learner.flush();
         let index = seesea_index::Index::open(from.index_dir.clone());
-        index.store.ingest(&[seesea_index::Item { url: "https://good.org/1".into(), title: "Tokio news".into(), lead: "about tokio".into(), published: Some(chrono::Utc::now().timestamp()), source: "feed".into() }]).unwrap();
+        index
+            .store
+            .ingest(&[seesea_index::Item {
+                url: "https://good.org/1".into(),
+                title: "Tokio news".into(),
+                lead: "about tokio".into(),
+                published: Some(chrono::Utc::now().timestamp()),
+                source: "feed".into(),
+            }])
+            .unwrap();
         let journal = seesea_pipeline::Journal::new(from.journal_dir.clone());
         journal.feedback("https://good.org/1", true);
 
         let bundle = a.path().join("bundle");
         let out = export(&from, &bundle).unwrap();
-        assert_eq!((out.users, out.keys, out.items, out.journal_lines, out.learner), (1, 1, 1, 1, true));
+        assert_eq!(
+            (
+                out.users,
+                out.keys,
+                out.items,
+                out.journal_lines,
+                out.learner
+            ),
+            (1, 1, 1, 1, true)
+        );
 
         let got = import_local(&to, &bundle).unwrap();
-        assert_eq!((got.users, got.keys, got.items, got.journal_lines, got.learner), (1, 1, 1, 1, true));
-        assert!(seesea_auth::Store::open(&to.auth_db).unwrap().authenticate(&key).is_ok(), "the same key works on the new node");
-        assert_eq!(seesea_index::Index::open(to.index_dir.clone()).store.search("tokio", None, 5).unwrap().len(), 1);
-        assert_eq!(Learner::open(seesea_pipeline::LearnConfig::default(), to.learn_file.clone()).report(3).observations.round(), 1.0);
+        assert_eq!(
+            (
+                got.users,
+                got.keys,
+                got.items,
+                got.journal_lines,
+                got.learner
+            ),
+            (1, 1, 1, 1, true)
+        );
+        assert!(
+            seesea_auth::Store::open(&to.auth_db)
+                .unwrap()
+                .authenticate(&key)
+                .is_ok(),
+            "the same key works on the new node"
+        );
+        assert_eq!(
+            seesea_index::Index::open(to.index_dir.clone())
+                .store
+                .search("tokio", None, 5)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            Learner::open(
+                seesea_pipeline::LearnConfig::default(),
+                to.learn_file.clone()
+            )
+            .report(3)
+            .observations
+            .round(),
+            1.0
+        );
         assert_eq!(seesea_pipeline::Journal::read(&to.journal_dir, 0).len(), 1);
         // Again: nothing is duplicated except the learner's counts, which add up by design.
         let again = import_local(&to, &bundle).unwrap();
-        assert_eq!((again.users, again.keys, again.items, again.journal_files_skipped), (0, 0, 0, 1));
-        assert!(import_local(&to, a.path()).unwrap_err().contains("not a bundle"));
+        assert_eq!(
+            (
+                again.users,
+                again.keys,
+                again.items,
+                again.journal_files_skipped
+            ),
+            (0, 0, 0, 1)
+        );
+        assert!(
+            import_local(&to, a.path())
+                .unwrap_err()
+                .contains("not a bundle")
+        );
     }
 }

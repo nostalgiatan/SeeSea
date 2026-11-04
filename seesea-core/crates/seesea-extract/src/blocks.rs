@@ -21,14 +21,24 @@ use std::hash::{BuildHasherDefault, Hasher};
 struct Fx(u64);
 
 impl Hasher for Fx {
-    fn finish(&self) -> u64 { self.0 }
+    fn finish(&self) -> u64 {
+        self.0
+    }
     fn write(&mut self, bytes: &[u8]) {
         let mut chunks = bytes.chunks_exact(8);
-        for c in &mut chunks { self.write_u64(u64::from_le_bytes(c.try_into().unwrap())); }
-        for b in chunks.remainder() { self.write_u64(*b as u64); }
+        for c in &mut chunks {
+            self.write_u64(u64::from_le_bytes(c.try_into().unwrap()));
+        }
+        for b in chunks.remainder() {
+            self.write_u64(*b as u64);
+        }
     }
-    fn write_u64(&mut self, n: u64) { self.0 = (self.0.rotate_left(5) ^ n).wrapping_mul(0x517c_c1b7_2722_0a95); }
-    fn write_usize(&mut self, n: usize) { self.write_u64(n as u64); }
+    fn write_u64(&mut self, n: u64) {
+        self.0 = (self.0.rotate_left(5) ^ n).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+    fn write_usize(&mut self, n: usize) {
+        self.write_u64(n as u64);
+    }
 }
 
 type HashMap<K, V> = StdHashMap<K, V, BuildHasherDefault<Fx>>;
@@ -66,15 +76,65 @@ fn table_of(node: NodeRef<Node>) -> Option<NodeId> {
     None
 }
 
-const SUP: &[(char, char)] = &[('0','⁰'),('1','¹'),('2','²'),('3','³'),('4','⁴'),('5','⁵'),('6','⁶'),('7','⁷'),('8','⁸'),('9','⁹'),('+','⁺'),('-','⁻'),('−','⁻'),('(','⁽'),(')','⁾'),('n','ⁿ'),('i','ⁱ')];
-const SUB: &[(char, char)] = &[('0','₀'),('1','₁'),('2','₂'),('3','₃'),('4','₄'),('5','₅'),('6','₆'),('7','₇'),('8','₈'),('9','₉'),('+','₊'),('-','₋'),('−','₋'),('(','₍'),(')','₎'),('a','ₐ'),('e','ₑ'),('o','ₒ'),('x','ₓ'),('h','ₕ'),('k','ₖ'),('l','ₗ'),('m','ₘ'),('n','ₙ'),('p','ₚ'),('s','ₛ'),('t','ₜ'),('i','ᵢ')];
+const SUP: &[(char, char)] = &[
+    ('0', '⁰'),
+    ('1', '¹'),
+    ('2', '²'),
+    ('3', '³'),
+    ('4', '⁴'),
+    ('5', '⁵'),
+    ('6', '⁶'),
+    ('7', '⁷'),
+    ('8', '⁸'),
+    ('9', '⁹'),
+    ('+', '⁺'),
+    ('-', '⁻'),
+    ('−', '⁻'),
+    ('(', '⁽'),
+    (')', '⁾'),
+    ('n', 'ⁿ'),
+    ('i', 'ⁱ'),
+];
+const SUB: &[(char, char)] = &[
+    ('0', '₀'),
+    ('1', '₁'),
+    ('2', '₂'),
+    ('3', '₃'),
+    ('4', '₄'),
+    ('5', '₅'),
+    ('6', '₆'),
+    ('7', '₇'),
+    ('8', '₈'),
+    ('9', '₉'),
+    ('+', '₊'),
+    ('-', '₋'),
+    ('−', '₋'),
+    ('(', '₍'),
+    (')', '₎'),
+    ('a', 'ₐ'),
+    ('e', 'ₑ'),
+    ('o', 'ₒ'),
+    ('x', 'ₓ'),
+    ('h', 'ₕ'),
+    ('k', 'ₖ'),
+    ('l', 'ₗ'),
+    ('m', 'ₘ'),
+    ('n', 'ₙ'),
+    ('p', 'ₚ'),
+    ('s', 'ₛ'),
+    ('t', 'ₜ'),
+    ('i', 'ᵢ'),
+];
 
 /// `text` as Unicode super- or subscript characters; falls back to `^(text)` / `_(text)` when a
 /// character has no such form.
 fn script(text: &str, sup: bool) -> String {
     let t = text.split_whitespace().collect::<String>();
     let table = if sup { SUP } else { SUB };
-    let mapped: Option<String> = t.chars().map(|c| table.iter().find(|(f, _)| *f == c).map(|(_, to)| *to)).collect();
+    let mapped: Option<String> = t
+        .chars()
+        .map(|c| table.iter().find(|(f, _)| *f == c).map(|(_, to)| *to))
+        .collect();
     match mapped {
         Some(m) if !t.is_empty() => m,
         _ if t.is_empty() => String::new(),
@@ -89,15 +149,23 @@ fn cell_text(node: NodeRef<Node>) -> String {
             Node::Text(t) => out.push_str(t),
             Node::Element(e) => {
                 let name = e.name();
-                if SKIP.contains(&name) { return; }
+                if SKIP.contains(&name) {
+                    return;
+                }
                 let mut inner = String::new();
-                for c in n.children() { walk(c, &mut inner); }
+                for c in n.children() {
+                    walk(c, &mut inner);
+                }
                 match name {
                     "sup" => out.push_str(&script(&inner, true)),
                     "sub" => out.push_str(&script(&inner, false)),
                     "br" => out.push(' '),
                     _ if is_inline(name) => out.push_str(&inner),
-                    _ => { out.push(' '); out.push_str(&inner); out.push(' '); }
+                    _ => {
+                        out.push(' ');
+                        out.push_str(&inner);
+                        out.push(' ');
+                    }
                 }
             }
             _ => {}
@@ -105,41 +173,65 @@ fn cell_text(node: NodeRef<Node>) -> String {
     }
     let mut s = String::new();
     walk(node, &mut s);
-    s.split_whitespace().collect::<Vec<_>>().join(" ").replace('|', "\\|")
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace('|', "\\|")
 }
 
 fn span(e: &scraper::node::Element, attr: &str) -> usize {
-    e.attr(attr).and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(1).clamp(1, 100)
+    e.attr(attr)
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(1)
+        .clamp(1, 100)
 }
 
 /// A table as Markdown, or `None` for layout tables (a single column, a single row or no text).
 fn render_table(table: NodeRef<Node>) -> Option<String> {
     let rows: Vec<NodeRef<Node>> = table
         .descendants()
-        .filter(|n| elem_name(*n) == Some("tr") && n.ancestors().find(|a| elem_name(*a) == Some("table")).map(|a| a.id()) == Some(table.id()))
+        .filter(|n| {
+            elem_name(*n) == Some("tr")
+                && n.ancestors()
+                    .find(|a| elem_name(*a) == Some("table"))
+                    .map(|a| a.id())
+                    == Some(table.id())
+        })
         .collect();
     let mut grid: Vec<Vec<String>> = vec![Vec::new(); rows.len()];
     let mut taken: StdHashMap<(usize, usize), String> = StdHashMap::new();
     for (r, row) in rows.iter().enumerate() {
         let mut c = 0;
-        let put = |grid: &mut Vec<Vec<String>>, taken: &mut StdHashMap<(usize, usize), String>, r: usize, c: &mut usize| {
+        let put = |grid: &mut Vec<Vec<String>>,
+                   taken: &mut StdHashMap<(usize, usize), String>,
+                   r: usize,
+                   c: &mut usize| {
             while let Some(t) = taken.remove(&(r, *c)) {
-                if grid[r].len() <= *c { grid[r].resize(*c + 1, String::new()); }
+                if grid[r].len() <= *c {
+                    grid[r].resize(*c + 1, String::new());
+                }
                 grid[r][*c] = t;
                 *c += 1;
             }
         };
-        for cell in row.children().filter(|n| matches!(elem_name(*n), Some("td" | "th"))) {
+        for cell in row
+            .children()
+            .filter(|n| matches!(elem_name(*n), Some("td" | "th")))
+        {
             put(&mut grid, &mut taken, r, &mut c);
             let e = cell.value().as_element()?;
             let (cs, rs) = (span(e, "colspan"), span(e, "rowspan"));
             let text = cell_text(cell);
-            if grid[r].len() < c + cs { grid[r].resize(c + cs, String::new()); }
+            if grid[r].len() < c + cs {
+                grid[r].resize(c + cs, String::new());
+            }
             grid[r][c] = text.clone();
             for dr in 1..rs {
                 if r + dr < rows.len() {
                     taken.insert((r + dr, c), text.clone());
-                    for dc in 1..cs { taken.insert((r + dr, c + dc), String::new()); }
+                    for dc in 1..cs {
+                        taken.insert((r + dr, c + dc), String::new());
+                    }
                 }
             }
             c += cs;
@@ -147,8 +239,13 @@ fn render_table(table: NodeRef<Node>) -> Option<String> {
         put(&mut grid, &mut taken, r, &mut c);
     }
     let width = grid.iter().map(Vec::len).max().unwrap_or(0);
-    let grid: Vec<Vec<String>> = grid.into_iter().filter(|r| r.iter().any(|c| !c.is_empty())).collect();
-    if width < 2 || grid.len() < 2 { return None; }
+    let grid: Vec<Vec<String>> = grid
+        .into_iter()
+        .filter(|r| r.iter().any(|c| !c.is_empty()))
+        .collect();
+    if width < 2 || grid.len() < 2 {
+        return None;
+    }
     let line = |cells: &[String]| {
         let mut v: Vec<&str> = cells.iter().map(String::as_str).collect();
         v.resize(width, "");
@@ -171,8 +268,18 @@ pub fn join_blocks(blocks: &[Block], idx: &[usize]) -> String {
         };
         let mut j = i;
         let mut table_md = None;
-        while j < idx.len() && blocks[idx[j]].cell.as_ref().is_some_and(|c| c.table == first.table) {
-            table_md = table_md.or_else(|| blocks[idx[j]].cell.as_ref().and_then(|c| c.markdown.clone()));
+        while j < idx.len()
+            && blocks[idx[j]]
+                .cell
+                .as_ref()
+                .is_some_and(|c| c.table == first.table)
+        {
+            table_md = table_md.or_else(|| {
+                blocks[idx[j]]
+                    .cell
+                    .as_ref()
+                    .and_then(|c| c.markdown.clone())
+            });
             j += 1;
         }
         match table_md {
@@ -184,26 +291,74 @@ pub fn join_blocks(blocks: &[Block], idx: &[usize]) -> String {
     out.join("\n\n")
 }
 
-const SKIP: &[&str] = &["script", "style", "noscript", "head", "template", "svg", "iframe"];
+const SKIP: &[&str] = &[
+    "script", "style", "noscript", "head", "template", "svg", "iframe",
+];
 
 /// Keyword groups matched against class/id attribute text.
 const KEYWORDS: &[(&str, &[&str])] = &[
-    ("nav", &["nav", "menu", "breadcrumb", "crumb", "topbar", "toolbar"]),
+    (
+        "nav",
+        &["nav", "menu", "breadcrumb", "crumb", "topbar", "toolbar"],
+    ),
     ("footer", &["footer", "copyright", "colophon", "legal"]),
     ("side", &["sidebar", "aside", "widget", "rail"]),
-    ("comment", &["comment", "reply", "disqus", "discussion", "respond"]),
-    ("share", &["share", "social", "follow", "subscribe", "newsletter"]),
-    ("related", &["related", "recommend", "more-", "popular", "trending", "also"]),
-    ("ad", &["advert", "banner", "promo", "sponsor", "-ad-", "_ad_", "adsbygoogle", "ad-"]),
-    ("content", &["content", "article", "post", "entry", "story", "body", "text", "detail", "main"]),
+    (
+        "comment",
+        &["comment", "reply", "disqus", "discussion", "respond"],
+    ),
+    (
+        "share",
+        &["share", "social", "follow", "subscribe", "newsletter"],
+    ),
+    (
+        "related",
+        &[
+            "related",
+            "recommend",
+            "more-",
+            "popular",
+            "trending",
+            "also",
+        ],
+    ),
+    (
+        "ad",
+        &[
+            "advert",
+            "banner",
+            "promo",
+            "sponsor",
+            "-ad-",
+            "_ad_",
+            "adsbygoogle",
+            "ad-",
+        ],
+    ),
+    (
+        "content",
+        &[
+            "content", "article", "post", "entry", "story", "body", "text", "detail", "main",
+        ],
+    ),
     ("title", &["title", "headline", "heading"]),
     ("header", &["header", "masthead", "top"]),
-    ("popup", &["cookie", "consent", "popup", "modal", "overlay", "dialog"]),
-    ("meta", &["meta", "author", "byline", "date", "time", "tag", "category", "info"]),
-    ("product", &["price", "product", "spec", "buy", "cart", "sku"]),
+    (
+        "popup",
+        &["cookie", "consent", "popup", "modal", "overlay", "dialog"],
+    ),
+    (
+        "meta",
+        &[
+            "meta", "author", "byline", "date", "time", "tag", "category", "info",
+        ],
+    ),
+    (
+        "product",
+        &["price", "product", "spec", "buy", "cart", "sku"],
+    ),
     ("pager", &["pagination", "pager", "paging", "page-"]),
 ];
-
 
 /// Column names of `Block::feats`.
 pub fn feature_names() -> Vec<String> {
@@ -217,18 +372,65 @@ pub(crate) fn names_cached() -> &'static [String] {
 
 fn build_names() -> Vec<String> {
     let mut v: Vec<String> = [
-        "log_chars", "log_tokens", "link_ratio", "punct_end", "punct_comma", "digit_ratio", "upper_ratio", "cjk_ratio",
-        "space_ratio", "depth", "pos_idx", "pos_chars_before", "pos_chars_after", "n_blocks_log", "page_chars_log",
-        "rel_to_max", "rank_pct", "title_overlap", "in_h1", "first_h1", "has_role_nav", "has_role_main", "aria_hidden",
-        "display_none", "itemprop_body", "tag_class_repeat",
+        "log_chars",
+        "log_tokens",
+        "link_ratio",
+        "punct_end",
+        "punct_comma",
+        "digit_ratio",
+        "upper_ratio",
+        "cjk_ratio",
+        "space_ratio",
+        "depth",
+        "pos_idx",
+        "pos_chars_before",
+        "pos_chars_after",
+        "n_blocks_log",
+        "page_chars_log",
+        "rel_to_max",
+        "rank_pct",
+        "title_overlap",
+        "in_h1",
+        "first_h1",
+        "has_role_nav",
+        "has_role_main",
+        "aria_hidden",
+        "display_none",
+        "itemprop_body",
+        "tag_class_repeat",
     ]
     .iter()
     .map(|s| s.to_string())
     .collect();
-    for t in ["p", "div", "li", "td", "h1", "h2", "h3", "h456", "pre", "blockquote", "other"] {
+    for t in [
+        "p",
+        "div",
+        "li",
+        "td",
+        "h1",
+        "h2",
+        "h3",
+        "h456",
+        "pre",
+        "blockquote",
+        "other",
+    ] {
         v.push(format!("tag_{t}"));
     }
-    for t in ["nav", "header", "footer", "aside", "article", "main", "form", "ul_ol", "table", "section", "figure", "button_select"] {
+    for t in [
+        "nav",
+        "header",
+        "footer",
+        "aside",
+        "article",
+        "main",
+        "form",
+        "ul_ol",
+        "table",
+        "section",
+        "figure",
+        "button_select",
+    ] {
         v.push(format!("anc_{t}"));
     }
     for (k, _) in KEYWORDS {
@@ -244,17 +446,57 @@ fn build_names() -> Vec<String> {
         v.push(format!("nb_{off}_logchars"));
         v.push(format!("nb_{off}_link"));
     }
-    for n in ["has_price", "has_datetime", "has_cta", "has_forum_word", "nb_p1_datetime", "nb_n1_datetime"] {
+    for n in [
+        "has_price",
+        "has_datetime",
+        "has_cta",
+        "has_forum_word",
+        "nb_p1_datetime",
+        "nb_n1_datetime",
+    ] {
         v.push(n.to_string());
     }
     v
 }
 
 fn is_inline(name: &str) -> bool {
-    matches!(name,
-        "a" | "span" | "strong" | "b" | "em" | "i" | "u" | "small" | "sup" | "sub" | "code" | "kbd" | "abbr" | "time" | "mark"
-        | "label" | "font" | "cite" | "q" | "s" | "del" | "ins" | "bdi" | "bdo" | "data" | "dfn" | "var" | "samp" | "big" | "tt"
-        | "strike" | "nobr" | "wbr" | "marked" | "img")
+    matches!(
+        name,
+        "a" | "span"
+            | "strong"
+            | "b"
+            | "em"
+            | "i"
+            | "u"
+            | "small"
+            | "sup"
+            | "sub"
+            | "code"
+            | "kbd"
+            | "abbr"
+            | "time"
+            | "mark"
+            | "label"
+            | "font"
+            | "cite"
+            | "q"
+            | "s"
+            | "del"
+            | "ins"
+            | "bdi"
+            | "bdo"
+            | "data"
+            | "dfn"
+            | "var"
+            | "samp"
+            | "big"
+            | "tt"
+            | "strike"
+            | "nobr"
+            | "wbr"
+            | "marked"
+            | "img"
+    )
 }
 
 fn elem_name(n: NodeRef<'_, Node>) -> Option<&str> {
@@ -262,15 +504,26 @@ fn elem_name(n: NodeRef<'_, Node>) -> Option<&str> {
 }
 
 fn kw_mask(n: NodeRef<Node>) -> u32 {
-    let Some(e) = n.value().as_element() else { return 0 };
+    let Some(e) = n.value().as_element() else {
+        return 0;
+    };
     let mut s = String::new();
-    if let Some(c) = e.attr("class") { s.push_str(c); s.push(' '); }
-    if let Some(c) = e.attr("id") { s.push_str(c); }
-    if s.is_empty() { return 0; }
+    if let Some(c) = e.attr("class") {
+        s.push_str(c);
+        s.push(' ');
+    }
+    if let Some(c) = e.attr("id") {
+        s.push_str(c);
+    }
+    if s.is_empty() {
+        return 0;
+    }
     let s = s.to_ascii_lowercase();
     let mut m = 0u32;
     for (i, (_, kws)) in KEYWORDS.iter().enumerate() {
-        if kws.iter().any(|k| s.contains(k)) { m |= 1 << i; }
+        if kws.iter().any(|k| s.contains(k)) {
+            m |= 1 << i;
+        }
     }
     m
 }
@@ -287,16 +540,47 @@ struct Info {
 }
 
 fn info_of(a: NodeRef<Node>) -> Info {
-    let Some(e) = a.value().as_element() else { return Info { attr: 0, anc: 0, kw: 0 } };
+    let Some(e) = a.value().as_element() else {
+        return Info {
+            attr: 0,
+            anc: 0,
+            kw: 0,
+        };
+    };
     let mut attr = 0u32;
     if let Some(v) = e.attr("role") {
-        for (i, w) in ["navigation", "banner", "contentinfo", "complementary", "main"].iter().enumerate() { if v.contains(w) { attr |= 1 << i; } }
+        for (i, w) in [
+            "navigation",
+            "banner",
+            "contentinfo",
+            "complementary",
+            "main",
+        ]
+        .iter()
+        .enumerate()
+        {
+            if v.contains(w) {
+                attr |= 1 << i;
+            }
+        }
     }
-    if e.attr("aria-hidden").is_some_and(|v| v.contains("true")) { attr |= 1 << 5; }
-    if e.attr("style").is_some_and(|v| v.contains("display:none") || v.contains("display: none")) { attr |= 1 << 6; }
-    if e.attr("itemprop").is_some_and(|v| v.contains("articleBody")) { attr |= 1 << 7; }
+    if e.attr("aria-hidden").is_some_and(|v| v.contains("true")) {
+        attr |= 1 << 5;
+    }
+    if e.attr("style")
+        .is_some_and(|v| v.contains("display:none") || v.contains("display: none"))
+    {
+        attr |= 1 << 6;
+    }
+    if e.attr("itemprop")
+        .is_some_and(|v| v.contains("articleBody"))
+    {
+        attr |= 1 << 7;
+    }
     let mut anc = 0u32;
-    if e.attr("hidden").is_some() { anc |= 1; }
+    if e.attr("hidden").is_some() {
+        anc |= 1;
+    }
     match e.name() {
         "h1" => anc |= 1 << 1,
         "nav" => anc |= 1 << 2,
@@ -313,11 +597,19 @@ fn info_of(a: NodeRef<Node>) -> Info {
         "button" | "select" => anc |= 1 << 13,
         _ => {}
     }
-    Info { attr, anc, kw: kw_mask(a) }
+    Info {
+        attr,
+        anc,
+        kw: kw_mask(a),
+    }
 }
 
 #[derive(Default, Clone, Copy)]
-struct Sub { chars: usize, link: usize, blocks: usize }
+struct Sub {
+    chars: usize,
+    link: usize,
+    blocks: usize,
+}
 
 struct Raw {
     id: NodeId,
@@ -327,17 +619,39 @@ struct Raw {
     pos_chars: usize,
 }
 
-const CTA: &[&str] = &["add to cart", "buy now", "add to bag", "checkout", "in stock", "sold out", "加入购物车", "立即购买", "库存", "加购"];
-const FORUM_WORDS: &[&str] = &["reply", "replies", "wrote:", "posted", "quote", "joined", "posts:", "回复", "发表", "楼主", "引用", "沙发"];
+const CTA: &[&str] = &[
+    "add to cart",
+    "buy now",
+    "add to bag",
+    "checkout",
+    "in stock",
+    "sold out",
+    "加入购物车",
+    "立即购买",
+    "库存",
+    "加购",
+];
+const FORUM_WORDS: &[&str] = &[
+    "reply", "replies", "wrote:", "posted", "quote", "joined", "posts:", "回复", "发表", "楼主",
+    "引用", "沙发",
+];
 
 fn has_price(t: &str) -> bool {
-    t.chars().any(|c| matches!(c, '$' | '€' | '£' | '¥' | '￥' | '₹' | '元')) && t.chars().any(|c| c.is_ascii_digit())
+    t.chars()
+        .any(|c| matches!(c, '$' | '€' | '£' | '¥' | '￥' | '₹' | '元'))
+        && t.chars().any(|c| c.is_ascii_digit())
 }
 
 fn has_datetime(lower: &str) -> bool {
     let digits = lower.chars().filter(|c| c.is_ascii_digit()).count();
-    (digits >= 3 && lower.contains(':')) || (lower.contains('年') && lower.contains('月')) || lower.contains(" ago") || lower.contains("分钟前") || lower.contains("小时前")
-        || (digits >= 4 && (lower.contains('/') || lower.contains('-')) && lower.chars().count() < 40)
+    (digits >= 3 && lower.contains(':'))
+        || (lower.contains('年') && lower.contains('月'))
+        || lower.contains(" ago")
+        || lower.contains("分钟前")
+        || lower.contains("小时前")
+        || (digits >= 4
+            && (lower.contains('/') || lower.contains('-'))
+            && lower.chars().count() < 40)
 }
 
 /// Append one text node to a block's Markdown, wrapped by the inline elements between it and the block.
@@ -351,7 +665,9 @@ fn push_md(md: &mut String, raw: &str, node: NodeRef<Node>) {
     let mut piece = core.split_whitespace().collect::<Vec<_>>().join(" ");
     for a in node.ancestors() {
         let Some(name) = elem_name(a) else { continue };
-        if !is_inline(name) { break; }
+        if !is_inline(name) {
+            break;
+        }
         match name {
             "sup" => piece = script(&piece, true),
             "sub" => piece = script(&piece, false),
@@ -361,15 +677,21 @@ fn push_md(md: &mut String, raw: &str, node: NodeRef<Node>) {
             "a" => {
                 if let Some(h) = a.value().as_element().and_then(|e| e.attr("href")) {
                     let h = clean_href(h);
-                    if !h.is_empty() && !h.starts_with('#') && !h.starts_with("javascript:") { piece = format!("[{piece}]({h})"); }
+                    if !h.is_empty() && !h.starts_with('#') && !h.starts_with("javascript:") {
+                        piece = format!("[{piece}]({h})");
+                    }
                 }
             }
             _ => {}
         }
     }
-    if raw.starts_with(char::is_whitespace) && !md.is_empty() && !md.ends_with(' ') { md.push(' '); }
+    if raw.starts_with(char::is_whitespace) && !md.is_empty() && !md.ends_with(' ') {
+        md.push(' ');
+    }
     md.push_str(&piece);
-    if raw.ends_with(char::is_whitespace) { md.push(' '); }
+    if raw.ends_with(char::is_whitespace) {
+        md.push(' ');
+    }
 }
 
 /// Some CMSs write Markdown into the attribute itself (`//[www.x.com](https://www.x.com)`): keep the
@@ -390,12 +712,17 @@ fn render_md(block: NodeRef<Node>, body: &str) -> String {
     }
     let body = body.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut out = match tag {
-        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => format!("{} {body}", "#".repeat(tag[1..].parse::<usize>().unwrap_or(2))),
+        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => format!(
+            "{} {body}",
+            "#".repeat(tag[1..].parse::<usize>().unwrap_or(2))
+        ),
         "li" => format!("- {body}"),
         _ if in_anc("li") => format!("- {body}"),
         _ => body,
     };
-    if tag == "blockquote" || in_anc("blockquote") { out = format!("> {out}"); }
+    if tag == "blockquote" || in_anc("blockquote") {
+        out = format!("> {out}");
+    }
     out
 }
 
@@ -422,31 +749,53 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
     let mut sub: HashMap<NodeId, Sub> = HashMap::default();
     // One traversal carries link / marked-region / nearest-block state down and subtree text totals up,
     // instead of walking the ancestor chain for every text node.
-    struct Frame { id: NodeId, chars: usize, link: usize, is_link: bool, pos: bool, block: Option<NodeId> }
+    struct Frame {
+        id: NodeId,
+        chars: usize,
+        link: usize,
+        is_link: bool,
+        pos: bool,
+        block: Option<NodeId>,
+    }
     let mut stack: Vec<Frame> = Vec::new();
     let mut skip = 0usize;
     for edge in root.traverse() {
         match edge {
             Edge::Open(node) => match node.value() {
                 Node::Element(e) => {
-                    if skip > 0 || SKIP.contains(&e.name()) { skip += 1; continue; }
+                    if skip > 0 || SKIP.contains(&e.name()) {
+                        skip += 1;
+                        continue;
+                    }
                     let name = e.name();
-                    let (pl, pp, pb) = stack.last().map_or((false, false, None), |f| (f.is_link, f.pos, f.block));
+                    let (pl, pp, pb) = stack
+                        .last()
+                        .map_or((false, false, None), |f| (f.is_link, f.pos, f.block));
                     stack.push(Frame {
-                        id: node.id(), chars: 0, link: 0,
+                        id: node.id(),
+                        chars: 0,
+                        link: 0,
                         is_link: pl || name == "a",
                         pos: pp || e.attr("cc-select") == Some("true"),
                         block: if is_inline(name) { pb } else { Some(node.id()) },
                     });
                 }
                 Node::Text(t) => {
-                    if skip > 0 { continue; }
-                    let (is_link, pos, block) = stack.last().map_or((false, false, None), |f| (f.is_link, f.pos, f.block));
+                    if skip > 0 {
+                        continue;
+                    }
+                    let (is_link, pos, block) = stack
+                        .last()
+                        .map_or((false, false, None), |f| (f.is_link, f.pos, f.block));
                     let txt = t.trim();
                     if txt.is_empty() {
                         // whitespace between inline elements still separates words in the Markdown
                         if let Some(b) = block {
-                            if let Some(r) = raws.get_mut(&b) { if !r.md.ends_with(' ') && !r.md.is_empty() { r.md.push(' '); } }
+                            if let Some(r) = raws.get_mut(&b) {
+                                if !r.md.ends_with(' ') && !r.md.is_empty() {
+                                    r.md.push(' ');
+                                }
+                            }
                         }
                         continue;
                     }
@@ -454,23 +803,42 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
                     let block = block.unwrap_or(root.id());
                     let r = raws.entry(block).or_insert_with(|| {
                         order.push(block);
-                        Raw { id: block, text: String::new(), md: String::new(), link_chars: 0, pos_chars: 0 }
+                        Raw {
+                            id: block,
+                            text: String::new(),
+                            md: String::new(),
+                            link_chars: 0,
+                            pos_chars: 0,
+                        }
                     });
                     push_md(&mut r.md, t, node);
-                    if !r.text.is_empty() { r.text.push(' '); }
+                    if !r.text.is_empty() {
+                        r.text.push(' ');
+                    }
                     r.text.push_str(txt);
-                    if is_link { r.link_chars += chars; }
-                    if pos { r.pos_chars += chars; }
+                    if is_link {
+                        r.link_chars += chars;
+                    }
+                    if pos {
+                        r.pos_chars += chars;
+                    }
                     if let Some(f) = stack.last_mut() {
                         f.chars += chars;
-                        if is_link { f.link += chars; }
+                        if is_link {
+                            f.link += chars;
+                        }
                     }
                 }
                 _ => {}
             },
             Edge::Close(node) => {
-                if !node.value().is_element() { continue; }
-                if skip > 0 { skip -= 1; continue; }
+                if !node.value().is_element() {
+                    continue;
+                }
+                if skip > 0 {
+                    skip -= 1;
+                    continue;
+                }
                 let f = stack.pop().expect("balanced traversal");
                 let s = sub.entry(f.id).or_default();
                 s.chars = f.chars;
@@ -484,10 +852,16 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
     }
     for id in &order {
         let n = doc.tree.get(*id).unwrap();
-        for a in n.ancestors() { sub.entry(a.id()).or_default().blocks += 1; }
+        for a in n.ancestors() {
+            sub.entry(a.id()).or_default().blocks += 1;
+        }
         sub.entry(*id).or_default().blocks += 1;
     }
-    let page_chars: usize = raws.values().map(|r| r.text.chars().count()).sum::<usize>().max(1);
+    let page_chars: usize = raws
+        .values()
+        .map(|r| r.text.chars().count())
+        .sum::<usize>()
+        .max(1);
     let n_blocks = order.len();
     let mut info_cache: HashMap<NodeId, Info> = HashMap::default();
     let mut seen_h1 = false;
@@ -498,12 +872,27 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
     let mut repeat: HashMap<(Option<NodeId>, String), usize> = HashMap::default();
     let key_of = |n: NodeRef<Node>| -> (Option<NodeId>, String) {
         let e = n.value().as_element();
-        (n.parent().map(|p| p.id()), format!("{}|{}", e.map(|e| e.name()).unwrap_or(""), e.and_then(|e| e.attr("class")).unwrap_or("")))
+        (
+            n.parent().map(|p| p.id()),
+            format!(
+                "{}|{}",
+                e.map(|e| e.name()).unwrap_or(""),
+                e.and_then(|e| e.attr("class")).unwrap_or("")
+            ),
+        )
     };
-    let repeat_keys: Vec<(Option<NodeId>, String)> = order.iter().map(|id| key_of(doc.tree.get(*id).unwrap())).collect();
-    for k in &repeat_keys { *repeat.entry(k.clone()).or_default() += 1; }
+    let repeat_keys: Vec<(Option<NodeId>, String)> = order
+        .iter()
+        .map(|id| key_of(doc.tree.get(*id).unwrap()))
+        .collect();
+    for k in &repeat_keys {
+        *repeat.entry(k.clone()).or_default() += 1;
+    }
 
-    let chars_list: Vec<usize> = order.iter().map(|id| raws[id].text.chars().count()).collect();
+    let chars_list: Vec<usize> = order
+        .iter()
+        .map(|id| raws[id].text.chars().count())
+        .collect();
     let max_chars = *chars_list.iter().max().unwrap_or(&1) as f32;
     let mut sorted = chars_list.clone();
     sorted.sort_unstable();
@@ -511,7 +900,10 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
     let mut before = 0usize;
     let mut blocks: Vec<Block> = Vec::with_capacity(n_blocks);
     let names_len = names_cached().len();
-    let lowers: Vec<String> = order.iter().map(|id| raws[id].text.to_lowercase()).collect();
+    let lowers: Vec<String> = order
+        .iter()
+        .map(|id| raws[id].text.to_lowercase())
+        .collect();
     let datetimes: Vec<bool> = lowers.iter().map(|l| has_datetime(l)).collect();
 
     for (idx, id) in order.iter().enumerate() {
@@ -522,14 +914,28 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
         let tokens = tokenize(&text);
         let mut f: Vec<f32> = Vec::with_capacity(names_len);
         let c = chars.max(1) as f32;
-        let (mut n_end, mut n_comma, mut n_digit, mut n_upper, mut n_cjk, mut n_space) = (0f32, 0f32, 0f32, 0f32, 0f32, 0f32);
+        let (mut n_end, mut n_comma, mut n_digit, mut n_upper, mut n_cjk, mut n_space) =
+            (0f32, 0f32, 0f32, 0f32, 0f32, 0f32);
         for ch in text.chars() {
-            if matches!(ch, '.' | '!' | '?' | '。' | '！' | '？' | '；' | ';') { n_end += 1.0; }
-            if matches!(ch, ',' | '，' | '、') { n_comma += 1.0; }
-            if ch.is_ascii_digit() { n_digit += 1.0; }
-            if ch.is_uppercase() { n_upper += 1.0; }
-            if matches!(ch as u32, 0x3040..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xAC00..=0xD7AF) { n_cjk += 1.0; }
-            if ch.is_whitespace() { n_space += 1.0; }
+            if matches!(ch, '.' | '!' | '?' | '。' | '！' | '？' | '；' | ';') {
+                n_end += 1.0;
+            }
+            if matches!(ch, ',' | '，' | '、') {
+                n_comma += 1.0;
+            }
+            if ch.is_ascii_digit() {
+                n_digit += 1.0;
+            }
+            if ch.is_uppercase() {
+                n_upper += 1.0;
+            }
+            if matches!(ch as u32, 0x3040..=0x30FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xAC00..=0xD7AF)
+            {
+                n_cjk += 1.0;
+            }
+            if ch.is_whitespace() {
+                n_space += 1.0;
+            }
         }
         let tag = elem_name(node).unwrap_or("");
         // one walk over the block and its ancestors ORs together per-element signals (computed once per element)
@@ -537,23 +943,44 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
         let (mut self_mask, mut anc_mask, mut depth) = (0u32, 0u32, 0usize);
         ancestors.clear();
         for (k, a) in std::iter::once(node).chain(node.ancestors()).enumerate() {
-            if k > 0 { depth += 1; }
-            if !a.value().is_element() { continue; }
+            if k > 0 {
+                depth += 1;
+            }
+            if !a.value().is_element() {
+                continue;
+            }
             ancestors.push(a);
             let i = *info_cache.entry(a.id()).or_insert_with(|| info_of(a));
             attr_bits |= i.attr;
-            if k == 0 { self_mask = i.kw; } else { anc_bits |= i.anc; anc_mask |= i.kw; }
+            if k == 0 {
+                self_mask = i.kw;
+            } else {
+                anc_bits |= i.anc;
+                anc_mask |= i.kw;
+            }
         }
         let bit = |bits: u32, n: u32| (bits >> n) & 1 == 1;
-        let role = [bit(attr_bits, 0), bit(attr_bits, 1), bit(attr_bits, 2), bit(attr_bits, 3), bit(attr_bits, 4)];
-        let (aria_hidden, display_none, itemprop_body) = (bit(attr_bits, 5), bit(attr_bits, 6), bit(attr_bits, 7));
+        let role = [
+            bit(attr_bits, 0),
+            bit(attr_bits, 1),
+            bit(attr_bits, 2),
+            bit(attr_bits, 3),
+            bit(attr_bits, 4),
+        ];
+        let (aria_hidden, display_none, itemprop_body) =
+            (bit(attr_bits, 5), bit(attr_bits, 6), bit(attr_bits, 7));
         let (hidden_attr, h1_anc) = (bit(anc_bits, 0), bit(anc_bits, 1));
         let anc_tags: [bool; 12] = std::array::from_fn(|t| bit(anc_bits, 2 + t as u32));
         let in_h1 = tag == "h1" || h1_anc;
         let first_h1 = in_h1 && !seen_h1;
-        if in_h1 { seen_h1 = true; }
-        let overlap = if title_set.is_empty() || tokens.is_empty() { 0.0 } else {
-            tokens.iter().filter(|t| title_set.contains(*t)).count() as f32 / tokens.len().max(1) as f32
+        if in_h1 {
+            seen_h1 = true;
+        }
+        let overlap = if title_set.is_empty() || tokens.is_empty() {
+            0.0
+        } else {
+            tokens.iter().filter(|t| title_set.contains(*t)).count() as f32
+                / tokens.len().max(1) as f32
         };
         let depth = depth as f32;
 
@@ -577,25 +1004,50 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
         f.push(overlap);
         f.push(in_h1 as u8 as f32);
         f.push(first_h1 as u8 as f32);
-        f.push(role[0] as u8 as f32 + role[1] as u8 as f32 + role[2] as u8 as f32 + role[3] as u8 as f32);
+        f.push(
+            role[0] as u8 as f32
+                + role[1] as u8 as f32
+                + role[2] as u8 as f32
+                + role[3] as u8 as f32,
+        );
         f.push(role[4] as u8 as f32);
         f.push(aria_hidden as u8 as f32);
         f.push((display_none || hidden_attr) as u8 as f32);
         f.push(itemprop_body as u8 as f32);
         f.push((*repeat.get(&repeat_keys[idx]).unwrap_or(&1) as f32).ln_1p());
-        for t in ["p", "div", "li", "td", "h1", "h2", "h3"] { f.push((tag == t) as u8 as f32); }
+        for t in ["p", "div", "li", "td", "h1", "h2", "h3"] {
+            f.push((tag == t) as u8 as f32);
+        }
         f.push(matches!(tag, "h4" | "h5" | "h6") as u8 as f32);
         f.push((tag == "pre") as u8 as f32);
         f.push((tag == "blockquote") as u8 as f32);
-        f.push(!matches!(tag, "p" | "div" | "li" | "td" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "pre" | "blockquote") as u8 as f32);
-        for flag in anc_tags { f.push(flag as u8 as f32); }
+        f.push(!matches!(
+            tag,
+            "p" | "div"
+                | "li"
+                | "td"
+                | "h1"
+                | "h2"
+                | "h3"
+                | "h4"
+                | "h5"
+                | "h6"
+                | "pre"
+                | "blockquote"
+        ) as u8 as f32);
+        for flag in anc_tags {
+            f.push(flag as u8 as f32);
+        }
         for i in 0..KEYWORDS.len() {
             f.push(((self_mask >> i) & 1) as f32);
             f.push(((anc_mask >> i) & 1) as f32);
         }
         for lvl in [1usize, 2, 3, 5] {
             let a = ancestors.get(lvl).or(ancestors.last());
-            let s = a.and_then(|a| sub.get(&a.id())).copied().unwrap_or_default();
+            let s = a
+                .and_then(|a| sub.get(&a.id()))
+                .copied()
+                .unwrap_or_default();
             f.push(s.chars as f32 / page_chars as f32);
             f.push(s.link as f32 / s.chars.max(1) as f32);
             f.push((s.blocks as f32).ln_1p());
@@ -626,8 +1078,22 @@ pub fn segment_doc(doc: &Html) -> Vec<Block> {
         debug_assert_eq!(f.len(), names_len);
         before += chars;
         let md = render_md(node, &r.md);
-        let cell = table_of(node).map(|t| Cell { table: t, markdown: if seen_tables.insert(t) { render_table(doc.tree.get(t).expect("table node")) } else { None } });
-        blocks.push(Block { text, md, tokens, pos_frac: r.pos_chars as f32 / c, feats: f, cell });
+        let cell = table_of(node).map(|t| Cell {
+            table: t,
+            markdown: if seen_tables.insert(t) {
+                render_table(doc.tree.get(t).expect("table node"))
+            } else {
+                None
+            },
+        });
+        blocks.push(Block {
+            text,
+            md,
+            tokens,
+            pos_frac: r.pos_chars as f32 / c,
+            feats: f,
+            cell,
+        });
     }
     blocks
 }
@@ -637,6 +1103,9 @@ trait TextAll {
 }
 impl TextAll for NodeRef<'_, Node> {
     fn text_value_all(&self) -> String {
-        self.descendants().filter_map(|n| n.value().as_text().map(|t| t.to_string())).collect::<Vec<_>>().join(" ")
+        self.descendants()
+            .filter_map(|n| n.value().as_text().map(|t| t.to_string()))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }

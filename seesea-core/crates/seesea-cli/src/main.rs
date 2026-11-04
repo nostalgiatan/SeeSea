@@ -2,10 +2,10 @@
 
 use clap::{Args, Parser, Subcommand};
 use seesea_cli::config::{Settings, build_pipeline};
-use seesea_cli::userconfig::{self, FileConfig};
 use seesea_cli::models;
 use seesea_cli::server::{self, AppState, parse_scope};
 use seesea_cli::sources::SourceSettings;
+use seesea_cli::userconfig::{self, FileConfig};
 use seesea_mcp::McpServer;
 use seesea_pipeline::render::{extract_markdown, search_markdown};
 use seesea_pipeline::{Error, Mode, Pipeline, SearchRequest, SearchResponse, TimeRange};
@@ -320,7 +320,9 @@ enum Command {
 #[derive(Subcommand)]
 enum FeedsAction {
     /// Register a feed address as it is (trusted at once).
-    Add { url: String },
+    Add {
+        url: String,
+    },
     /// Find the feeds a site offers and register them; `--dry-run` only lists them.
     Discover {
         site: String,
@@ -329,9 +331,13 @@ enum FeedsAction {
     },
     /// Every feed with its state.
     List,
-    Remove { url: String },
+    Remove {
+        url: String,
+    },
     /// Turn a switched-off feed back on (on probation).
-    Revive { url: String },
+    Revive {
+        url: String,
+    },
     /// Add the built-in English and Chinese starter feeds (on probation).
     Seed,
 }
@@ -370,10 +376,17 @@ enum UsersAction {
     },
     List,
     /// Refuse every key of this user until `enable`.
-    Disable { name: String },
-    Enable { name: String },
+    Disable {
+        name: String,
+    },
+    Enable {
+        name: String,
+    },
     /// Move a user to another plan.
-    Plan { name: String, plan: String },
+    Plan {
+        name: String,
+        plan: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -415,9 +428,13 @@ enum KeysAction {
         #[arg(long)]
         expires_days: Option<u32>,
     },
-    List { user: String },
+    List {
+        user: String,
+    },
     /// Revoke a key by its public id (`ss_xxxxxxxx`, shown by `keys list`).
-    Revoke { id: String },
+    Revoke {
+        id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -502,7 +519,11 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         spool_dir: None,
         journal_dir: (!net.no_journal).then(userconfig::default_journal_dir),
         explore: net.explore.unwrap_or(0.0),
-        index_dir: (!net.no_index).then(|| net.index_dir.clone().unwrap_or_else(userconfig::default_index_dir)),
+        index_dir: (!net.no_index).then(|| {
+            net.index_dir
+                .clone()
+                .unwrap_or_else(userconfig::default_index_dir)
+        }),
         retention_days: net.retention_days,
         index_quota_mb: net.index_quota_mb,
     }
@@ -511,7 +532,10 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
 /// This node's key pair and its list of trusted peers, when configured.
 fn load_mesh(file: &FileConfig) -> Result<Option<seesea_cli::wire::Mesh>, String> {
     match (&file.node_cert, &file.node_key, &file.cluster_peers) {
-        (Some(c), Some(k), Some(p)) => Ok(Some(seesea_cli::wire::Mesh { identity: seesea_cli::wire::Identity::load(c, k)?, peers: seesea_cli::wire::Peers::from_file(p)? })),
+        (Some(c), Some(k), Some(p)) => Ok(Some(seesea_cli::wire::Mesh {
+            identity: seesea_cli::wire::Identity::load(c, k)?,
+            peers: seesea_cli::wire::Peers::from_file(p)?,
+        })),
         (None, None, None) => Ok(None),
         _ => Err("node_cert, node_key and cluster_peers go together".into()),
     }
@@ -520,15 +544,27 @@ fn load_mesh(file: &FileConfig) -> Result<Option<seesea_cli::wire::Mesh>, String
 /// `seesea cluster keygen`: write a key pair and say what to tell the other nodes.
 fn keygen(name: &str, role: &str, out: &std::path::Path) -> Result<(), Error> {
     let role: seesea_cli::wire::PeerRole = role.parse().map_err(Error::Config)?;
-    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.') {
-        return Err(Error::Config("the name may use letters, digits, - _ and . only".into()));
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
+    {
+        return Err(Error::Config(
+            "the name may use letters, digits, - _ and . only".into(),
+        ));
     }
     let (cert, key) = seesea_cli::wire::Identity::generate(name).map_err(Error::Config)?;
     std::fs::create_dir_all(out).map_err(|e| Error::Config(format!("{}: {e}", out.display())))?;
-    let (cert_path, key_path) = (out.join(format!("{name}.pem")), out.join(format!("{name}.key")));
+    let (cert_path, key_path) = (
+        out.join(format!("{name}.pem")),
+        out.join(format!("{name}.key")),
+    );
     for p in [&cert_path, &key_path] {
         if p.exists() {
-            return Err(Error::Config(format!("{} exists already; not overwriting a node's key", p.display())));
+            return Err(Error::Config(format!(
+                "{} exists already; not overwriting a node's key",
+                p.display()
+            )));
         }
     }
     std::fs::write(&cert_path, cert).map_err(|e| Error::Config(e.to_string()))?;
@@ -541,7 +577,11 @@ fn keygen(name: &str, role: &str, out: &std::path::Path) -> Result<(), Error> {
     let id = seesea_cli::wire::Identity::load(&cert_path, &key_path).map_err(Error::Config)?;
     println!("wrote {} and {}", cert_path.display(), key_path.display());
     println!("add this line to cluster_peers on every node that should talk to {name}:");
-    println!("{} {} {name}", id.fingerprint, format!("{role:?}").to_lowercase());
+    println!(
+        "{} {} {name}",
+        id.fingerprint,
+        format!("{role:?}").to_lowercase()
+    );
     Ok(())
 }
 
@@ -549,12 +589,18 @@ fn keygen(name: &str, role: &str, out: &std::path::Path) -> Result<(), Error> {
 fn parse_interval(s: &str) -> Result<std::time::Duration, Error> {
     let s = s.trim();
     let (num, unit) = s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
-    let n: u64 = num.parse().map_err(|_| Error::InvalidRequest(format!("not an interval: {s}")))?;
+    let n: u64 = num
+        .parse()
+        .map_err(|_| Error::InvalidRequest(format!("not an interval: {s}")))?;
     let mult = match unit {
         "" | "s" => 1,
         "m" => 60,
         "h" => 3600,
-        _ => return Err(Error::InvalidRequest(format!("not an interval: {s} (use 90s, 15m or 2h)"))),
+        _ => {
+            return Err(Error::InvalidRequest(format!(
+                "not an interval: {s} (use 90s, 15m or 2h)"
+            )));
+        }
     };
     Ok(std::time::Duration::from_secs(n * mult))
 }
@@ -563,7 +609,9 @@ async fn run_index_command(cli: &Cli, long_lived: bool, use_model: bool) -> Resu
     let settings = settings(&cli.net, long_lived, use_model);
     let json = cli.net.json;
     let Some(dir) = settings.index_dir.clone() else {
-        return Err(Error::Config("the index is turned off (--no-index / no_index)".into()));
+        return Err(Error::Config(
+            "the index is turned off (--no-index / no_index)".into(),
+        ));
     };
     let index = seesea_index::Index::open(dir.clone());
     fn db(e: impl std::fmt::Display) -> Error {
@@ -572,23 +620,48 @@ async fn run_index_command(cli: &Cli, long_lived: bool, use_model: bool) -> Resu
     match &cli.command {
         Command::Feeds { action } => match action {
             FeedsAction::Add { url } => {
-                let new = index.registry.add(url, "user", seesea_index::Status::Active).map_err(db)?;
+                let new = index
+                    .registry
+                    .add(url, "user", seesea_index::Status::Active)
+                    .map_err(db)?;
                 println!("{url}: {}", if new { "added" } else { "already known" });
             }
             FeedsAction::Remove { url } => {
-                println!("{url}: {}", if index.registry.remove(url).map_err(db)? { "removed" } else { "not known" });
+                println!(
+                    "{url}: {}",
+                    if index.registry.remove(url).map_err(db)? {
+                        "removed"
+                    } else {
+                        "not known"
+                    }
+                );
             }
             FeedsAction::Revive { url } => {
                 index.registry.revive(url).map_err(db)?;
                 println!("{url}: back on probation");
             }
             FeedsAction::Seed => {
-                let n = seesea_cli::seeds::SEEDS.iter().filter(|u| index.registry.add(u, "seed", seesea_index::Status::Probation).unwrap_or(false)).count();
-                println!("added {n} of {} starter feeds (they are polled by `seesea poll`)", seesea_cli::seeds::SEEDS.len());
+                let n = seesea_cli::seeds::SEEDS
+                    .iter()
+                    .filter(|u| {
+                        index
+                            .registry
+                            .add(u, "seed", seesea_index::Status::Probation)
+                            .unwrap_or(false)
+                    })
+                    .count();
+                println!(
+                    "added {n} of {} starter feeds (they are polled by `seesea poll`)",
+                    seesea_cli::seeds::SEEDS.len()
+                );
             }
             FeedsAction::Discover { site, dry_run } => {
                 let poller = seesea_cli::config::build_poller(&settings, Arc::clone(&index))?;
-                let site = if site.contains("://") { site.clone() } else { format!("https://{site}/") };
+                let site = if site.contains("://") {
+                    site.clone()
+                } else {
+                    format!("https://{site}/")
+                };
                 if *dry_run {
                     let found = poller.discover(&site).await;
                     for (url, p) in &found {
@@ -613,8 +686,20 @@ async fn run_index_command(cli: &Cli, long_lived: bool, use_model: bool) -> Resu
                     return print_json(&feeds);
                 }
                 for f in feeds {
-                    let when = |t: Option<i64>| t.and_then(|t| chrono::DateTime::from_timestamp(t, 0)).map(|d| d.format("%m-%d %H:%M").to_string()).unwrap_or_else(|| "never".into());
-                    println!("{:<9} fails {} items {:>5} last ok {}  {}  {}", format!("{:?}", f.status).to_lowercase(), f.fails, f.total, when(f.last_ok), f.url, f.title);
+                    let when = |t: Option<i64>| {
+                        t.and_then(|t| chrono::DateTime::from_timestamp(t, 0))
+                            .map(|d| d.format("%m-%d %H:%M").to_string())
+                            .unwrap_or_else(|| "never".into())
+                    };
+                    println!(
+                        "{:<9} fails {} items {:>5} last ok {}  {}  {}",
+                        format!("{:?}", f.status).to_lowercase(),
+                        f.fails,
+                        f.total,
+                        when(f.last_ok),
+                        f.url,
+                        f.title
+                    );
                     if let Some(e) = &f.last_error {
                         println!("          ↳ {e}");
                     }
@@ -631,7 +716,13 @@ async fn run_index_command(cli: &Cli, long_lived: bool, use_model: bool) -> Resu
                 } else {
                     println!(
                         "polled {} feeds ({} failed): {} new items, {} already known; looked at {} sites and found {} feeds; {} old days dropped",
-                        r.polled, r.failed, r.added, r.duplicates, r.sites_searched, r.feeds_found, r.shards_pruned
+                        r.polled,
+                        r.failed,
+                        r.added,
+                        r.duplicates,
+                        r.sites_searched,
+                        r.feeds_found,
+                        r.shards_pruned
                     );
                 }
                 match every {
@@ -644,30 +735,50 @@ async fn run_index_command(cli: &Cli, long_lived: bool, use_model: bool) -> Resu
             if let Some(IndexAction::Embed) = action {
                 let poller = seesea_cli::config::build_poller(&settings, Arc::clone(&index))?;
                 if settings.model_dir.is_none() {
-                    return Err(Error::Config("no embedding model: run `seesea models download` or set --model-dir".into()));
+                    return Err(Error::Config(
+                        "no embedding model: run `seesea models download` or set --model-dir"
+                            .into(),
+                    ));
                 }
                 let n = poller.embed_pending(usize::MAX).await;
                 println!("embedded {n} items");
             }
             if let Some(IndexAction::Near { query, k }) = action {
-                let m = settings.model_dir.clone().ok_or_else(|| Error::Config("no embedding model".into()))?;
+                let m = settings
+                    .model_dir
+                    .clone()
+                    .ok_or_else(|| Error::Config("no embedding model".into()))?;
                 let embedder = seesea_cli::embedding::shared_embedder(&m);
                 let bits = seesea_index::vectors::query_bits(&index, &*embedder, query)
-                    .ok_or_else(|| Error::Config("the index has no vectors yet (`seesea index embed`)".into()))?;
+                    .ok_or_else(|| {
+                        Error::Config("the index has no vectors yet (`seesea index embed`)".into())
+                    })?;
                 for (s, d) in index.store.nearest(&bits, None, *k, u32::MAX).map_err(db)? {
                     println!("{d:>4}  {}  {}", s.host, s.title);
                 }
                 return Ok(());
             }
             if let Some(IndexAction::Prune) = action {
-                let n = index.store.prune(settings.retention_days.unwrap_or(30), settings.index_quota_mb.unwrap_or(512) * 1024 * 1024);
+                let n = index.store.prune(
+                    settings.retention_days.unwrap_or(30),
+                    settings.index_quota_mb.unwrap_or(512) * 1024 * 1024,
+                );
                 println!("dropped {n} days");
             }
             let st = index.store.stats();
             if json {
                 return print_json(&st);
             }
-            println!("{} items ({} with vectors) in {} days ({} .. {}), {:.1} MB, {}", st.items, st.embedded, st.shards, st.oldest_day.as_deref().unwrap_or("-"), st.newest_day.as_deref().unwrap_or("-"), st.bytes as f64 / 1e6, dir.display());
+            println!(
+                "{} items ({} with vectors) in {} days ({} .. {}), {:.1} MB, {}",
+                st.items,
+                st.embedded,
+                st.shards,
+                st.oldest_day.as_deref().unwrap_or("-"),
+                st.newest_day.as_deref().unwrap_or("-"),
+                st.bytes as f64 / 1e6,
+                dir.display()
+            );
         }
         _ => unreachable!(),
     }
@@ -675,23 +786,34 @@ async fn run_index_command(cli: &Cli, long_lived: bool, use_model: bool) -> Resu
 }
 
 fn open_auth(net: &NetArgs) -> Result<seesea_auth::Store, Error> {
-    let path = net.auth_db.clone().unwrap_or_else(userconfig::default_auth_db);
-    seesea_auth::Store::open(&path)
-        .map_err(|e| Error::Config(format!("{}: {e}", path.display())))
+    let path = net
+        .auth_db
+        .clone()
+        .unwrap_or_else(userconfig::default_auth_db);
+    seesea_auth::Store::open(&path).map_err(|e| Error::Config(format!("{}: {e}", path.display())))
 }
 
 fn account_error(e: seesea_auth::AuthError) -> Error {
     match e {
-        seesea_auth::AuthError::NotFound(_) | seesea_auth::AuthError::Exists(_) => Error::InvalidRequest(e.to_string()),
+        seesea_auth::AuthError::NotFound(_) | seesea_auth::AuthError::Exists(_) => {
+            Error::InvalidRequest(e.to_string())
+        }
         other => Error::Config(other.to_string()),
     }
 }
 
 fn when(t: i64) -> String {
-    chrono::DateTime::from_timestamp(t, 0).map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default()
+    chrono::DateTime::from_timestamp(t, 0)
+        .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
+        .unwrap_or_default()
 }
 
-fn manage_accounts(command: &Command, store: &seesea_auth::Store, file: &FileConfig, json: bool) -> Result<(), Error> {
+fn manage_accounts(
+    command: &Command,
+    store: &seesea_auth::Store,
+    file: &FileConfig,
+    json: bool,
+) -> Result<(), Error> {
     let known_plans = {
         let mut p = seesea_auth::default_plans();
         p.extend(file.plans.clone());
@@ -703,10 +825,16 @@ fn manage_accounts(command: &Command, store: &seesea_auth::Store, file: &FileCon
                 if !known_plans.contains_key(plan) {
                     let mut names: Vec<_> = known_plans.keys().cloned().collect();
                     names.sort();
-                    return Err(Error::InvalidRequest(format!("unknown plan '{plan}' (defined: {})", names.join(", "))));
+                    return Err(Error::InvalidRequest(format!(
+                        "unknown plan '{plan}' (defined: {})",
+                        names.join(", ")
+                    )));
                 }
                 let u = store.create_user(name, plan).map_err(account_error)?;
-                println!("created user {} (plan {}); `seesea keys create {}` makes a key", u.name, u.plan, u.name);
+                println!(
+                    "created user {} (plan {}); `seesea keys create {}` makes a key",
+                    u.name, u.plan, u.name
+                );
             }
             UsersAction::List => {
                 let users = store.users().map_err(account_error)?;
@@ -715,7 +843,13 @@ fn manage_accounts(command: &Command, store: &seesea_auth::Store, file: &FileCon
                     return print_json(&rows);
                 }
                 for u in users {
-                    println!("{:<20} plan {:<12} {}  created {}", u.name, u.plan, if u.disabled { "DISABLED" } else { "active  " }, when(u.created));
+                    println!(
+                        "{:<20} plan {:<12} {}  created {}",
+                        u.name,
+                        u.plan,
+                        if u.disabled { "DISABLED" } else { "active  " },
+                        when(u.created)
+                    );
                 }
             }
             UsersAction::Disable { name } => {
@@ -735,12 +869,21 @@ fn manage_accounts(command: &Command, store: &seesea_auth::Store, file: &FileCon
             }
         },
         Command::Keys { action } => match action {
-            KeysAction::Create { user, name, expires_days } => {
-                let (info, key) = store.create_key(user, name, *expires_days).map_err(account_error)?;
+            KeysAction::Create {
+                user,
+                name,
+                expires_days,
+            } => {
+                let (info, key) = store
+                    .create_key(user, name, *expires_days)
+                    .map_err(account_error)?;
                 if json {
                     return print_json(&serde_json::json!({"id": info.public_id, "key": key}));
                 }
-                println!("{key}\n\nkey {} for {user}: this is the only time it is shown. Send it as `Authorization: Bearer <key>`.", info.public_id);
+                println!(
+                    "{key}\n\nkey {} for {user}: this is the only time it is shown. Send it as `Authorization: Bearer <key>`.",
+                    info.public_id
+                );
             }
             KeysAction::List { user } => {
                 for k in store.keys(user).map_err(account_error)? {
@@ -748,7 +891,16 @@ fn manage_accounts(command: &Command, store: &seesea_auth::Store, file: &FileCon
                         "{}  {:<16} {}  created {}  last used {}",
                         k.public_id,
                         k.name,
-                        if k.revoked { "REVOKED" } else if k.expires.is_some_and(|e| e <= chrono::Utc::now().timestamp()) { "EXPIRED" } else { "active " },
+                        if k.revoked {
+                            "REVOKED"
+                        } else if k
+                            .expires
+                            .is_some_and(|e| e <= chrono::Utc::now().timestamp())
+                        {
+                            "EXPIRED"
+                        } else {
+                            "active "
+                        },
                         when(k.created),
                         k.last_used.map(when).unwrap_or_else(|| "never".into())
                     );
@@ -762,11 +914,16 @@ fn manage_accounts(command: &Command, store: &seesea_auth::Store, file: &FileCon
         Command::Usage { user, days } => {
             let history = store.usage_history(user, *days).map_err(account_error)?;
             if json {
-                let rows: Vec<_> = history.iter().map(|(d, c)| serde_json::json!({"day": d, "credits": c})).collect();
+                let rows: Vec<_> = history
+                    .iter()
+                    .map(|(d, c)| serde_json::json!({"day": d, "credits": c}))
+                    .collect();
                 return print_json(&rows);
             }
             for (day, credits) in history {
-                let date = chrono::DateTime::from_timestamp(day as i64 * 86400, 0).map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default();
+                let date = chrono::DateTime::from_timestamp(day as i64 * 86400, 0)
+                    .map(|d| d.format("%Y-%m-%d").to_string())
+                    .unwrap_or_default();
                 println!("{date}  {credits} credits");
             }
         }
@@ -801,16 +958,25 @@ async fn append_log(path: &PathBuf, resp: &SearchResponse) -> Result<(), Error> 
 
 async fn run(mut cli: Cli) -> Result<(), Error> {
     let json = cli.net.json;
-    let config_path = cli.net.config.clone().unwrap_or_else(userconfig::default_path);
+    let config_path = cli
+        .net
+        .config
+        .clone()
+        .unwrap_or_else(userconfig::default_path);
     let file = userconfig::load(&config_path)?.unwrap_or_default();
-    let long_lived = matches!(cli.command, Command::Serve { .. } | Command::Desk { .. } | Command::Mcp);
+    let long_lived = matches!(
+        cli.command,
+        Command::Serve { .. } | Command::Desk { .. } | Command::Mcp
+    );
     // The model is only loaded (in the background) for commands that rerank page content.
     let use_model = match &cli.command {
         Command::Search { mode, .. } | Command::Eval { mode, .. } => {
             !mode.eq_ignore_ascii_case("fast")
         }
         Command::Serve { .. } | Command::Desk { .. } | Command::Mcp | Command::Poll { .. } => true,
-        Command::Index { action: Some(IndexAction::Embed | IndexAction::Near { .. }) } => true,
+        Command::Index {
+            action: Some(IndexAction::Embed | IndexAction::Near { .. }),
+        } => true,
         // Models only help `extract` choose sections for a query.
         Command::Extract { query, .. } => query.is_some(),
         _ => false,
@@ -819,7 +985,11 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
     match file.device.as_deref() {
         None | Some("gpu" | "auto") => {}
         Some("cpu") => seesea_embed::set_accelerator(seesea_embed::Accelerator::Cpu),
-        Some(other) => return Err(Error::Config(format!("device must be gpu or cpu, not '{other}'"))),
+        Some(other) => {
+            return Err(Error::Config(format!(
+                "device must be gpu or cpu, not '{other}'"
+            )));
+        }
     }
     if let Some(m) = file.model_idle_minutes {
         seesea_cli::embedding::set_model_idle_secs(m * 60);
@@ -840,7 +1010,11 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                 println!(
                     "{} ({})",
                     config_path.display(),
-                    if exists { "in use" } else { "not there; `seesea config --init` writes a template" }
+                    if exists {
+                        "in use"
+                    } else {
+                        "not there; `seesea config --init` writes a template"
+                    }
                 );
             }
             return Ok(());
@@ -854,9 +1028,17 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                         return print_json(&st);
                     }
                     println!("models directory: {}", models::models_dir(&file).display());
-                    match seesea_fetch::render::Renderer::discover_with(cli.net.lightpanda.as_deref(), Some(&crate::userconfig::managed_renderer())) {
-                        Some(r) => println!("renderer   ok       {}  Lightpanda renders pages that need JavaScript", r.binary().display()),
-                        None => println!("renderer   missing  Lightpanda not found: run `seesea models download renderer`, or put `lightpanda` on PATH (optional)"),
+                    match seesea_fetch::render::Renderer::discover_with(
+                        cli.net.lightpanda.as_deref(),
+                        Some(&crate::userconfig::managed_renderer()),
+                    ) {
+                        Some(r) => println!(
+                            "renderer   ok       {}  Lightpanda renders pages that need JavaScript",
+                            r.binary().display()
+                        ),
+                        None => println!(
+                            "renderer   missing  Lightpanda not found: run `seesea models download renderer`, or put `lightpanda` on PATH (optional)"
+                        ),
                     }
                     for s in &st {
                         println!(
@@ -867,7 +1049,10 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                                 (true, false) => "BROKEN",
                                 _ => "missing",
                             },
-                            s.path.as_deref().map(|p| p.display().to_string()).unwrap_or_default(),
+                            s.path
+                                .as_deref()
+                                .map(|p| p.display().to_string())
+                                .unwrap_or_default(),
                             s.note
                         );
                     }
@@ -875,13 +1060,22 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                 }
             };
             if wanted.iter().any(|n| n == "renderer") {
-                match seesea_fetch::render::Renderer::discover_with(cli.net.lightpanda.as_deref(), Some(&userconfig::managed_renderer())) {
+                match seesea_fetch::render::Renderer::discover_with(
+                    cli.net.lightpanda.as_deref(),
+                    Some(&userconfig::managed_renderer()),
+                ) {
                     Some(r) => println!("renderer: already at {}", r.binary().display()),
-                    None => println!("renderer: saved {}", models::download_renderer(cli.net.proxy.as_deref()).await?.display()),
+                    None => println!(
+                        "renderer: saved {}",
+                        models::download_renderer(cli.net.proxy.as_deref())
+                            .await?
+                            .display()
+                    ),
                 }
             }
             let wanted: Vec<String> = wanted.into_iter().filter(|n| n != "renderer").collect();
-            let only_renderer = wanted.is_empty() && matches!(action, Some(ModelsAction::Download { names }) if !names.is_empty());
+            let only_renderer = wanted.is_empty()
+                && matches!(action, Some(ModelsAction::Download { names }) if !names.is_empty());
             if only_renderer {
                 return Ok(());
             }
@@ -898,7 +1092,15 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                     continue;
                 }
                 if state.valid {
-                    println!("{}: already at {}", spec.key, state.path.as_deref().map(|p| p.display().to_string()).unwrap_or_default());
+                    println!(
+                        "{}: already at {}",
+                        spec.key,
+                        state
+                            .path
+                            .as_deref()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_default()
+                    );
                     continue;
                 }
                 let path = models::download(spec, &file, cli.net.proxy.as_deref()).await?;
@@ -910,23 +1112,42 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
     }
     if let Command::Report { since, out } = &cli.command {
         let secs = match since.strip_suffix('d') {
-            Some(n) => n.parse::<u64>().map(|n| n * 86400).map_err(|_| Error::InvalidRequest(format!("not an interval: {since}")))?,
+            Some(n) => n
+                .parse::<u64>()
+                .map(|n| n * 86400)
+                .map_err(|_| Error::InvalidRequest(format!("not an interval: {since}")))?,
             None => parse_interval(since)?.as_secs(),
         };
         let from = chrono::Utc::now().timestamp() - secs as i64;
         let events = seesea_pipeline::Journal::read(&userconfig::default_journal_dir(), from);
         let report = seesea_pipeline::report::build(&events);
         let dir = out.clone().unwrap_or_else(|| {
-            userconfig::data_dir().join("reports").join(chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string())
+            userconfig::data_dir()
+                .join("reports")
+                .join(chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string())
         });
         std::fs::create_dir_all(&dir)?;
-        let lines = |v: &[serde_json::Value]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("\n") + "\n";
-        std::fs::write(dir.join("report.md"), seesea_pipeline::report::markdown(&report))?;
-        std::fs::write(dir.join("report.json"), serde_json::to_string_pretty(&report)?)?;
+        let lines = |v: &[serde_json::Value]| {
+            v.iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n"
+        };
+        std::fs::write(
+            dir.join("report.md"),
+            seesea_pipeline::report::markdown(&report),
+        )?;
+        std::fs::write(
+            dir.join("report.json"),
+            serde_json::to_string_pretty(&report)?,
+        )?;
         std::fs::write(dir.join("suspects.jsonl"), lines(&report.suspects))?;
         std::fs::write(dir.join("candidates.jsonl"), lines(&report.candidates))?;
         if json {
-            return print_json(&serde_json::json!({"dir": dir, "searches": report.searches, "suspects": report.suspects.len(), "candidates": report.candidates.len()}));
+            return print_json(
+                &serde_json::json!({"dir": dir, "searches": report.searches, "suspects": report.suspects.len(), "candidates": report.candidates.len()}),
+            );
         }
         print!("{}", seesea_pipeline::report::markdown(&report));
         println!("\nFiles written to {}", dir.display());
@@ -944,20 +1165,31 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                     }
                     learner.feedback(&host, verdict == "good");
                     if !cli.net.no_journal {
-                        seesea_pipeline::Journal::new(userconfig::default_journal_dir()).feedback(url, verdict == "good");
+                        seesea_pipeline::Journal::new(userconfig::default_journal_dir())
+                            .feedback(url, verdict == "good");
                     }
                     println!("{host}: marked {verdict}");
                 }
-                Command::Learn { action: LearnAction::Reset } => {
+                Command::Learn {
+                    action: LearnAction::Reset,
+                } => {
                     learner.reset();
                     println!("forgot everything ({})", path.display());
                 }
-                Command::Learn { action: LearnAction::Show { top } } => {
+                Command::Learn {
+                    action: LearnAction::Show { top },
+                } => {
                     let r = learner.report(*top);
                     if json {
                         return print_json(&r);
                     }
-                    println!("{} pages judged, average value {:.2}, {} hosts ({})", r.observations.round(), r.average_value, r.hosts, path.display());
+                    println!(
+                        "{} pages judged, average value {:.2}, {} hosts ({})",
+                        r.observations.round(),
+                        r.average_value,
+                        r.hosts,
+                        path.display()
+                    );
                     let show = |title: &str, rows: &[seesea_pipeline::learn::Standing]| {
                         println!("\n{title}");
                         for h in rows {
@@ -979,10 +1211,18 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
     }
     if let Command::Cluster { action } = &cli.command {
         let dirs = seesea_cli::cluster::Dirs {
-            auth_db: cli.net.auth_db.clone().unwrap_or_else(userconfig::default_auth_db),
+            auth_db: cli
+                .net
+                .auth_db
+                .clone()
+                .unwrap_or_else(userconfig::default_auth_db),
             learn_file: userconfig::default_learn_file(),
             journal_dir: userconfig::default_journal_dir(),
-            index_dir: cli.net.index_dir.clone().unwrap_or_else(userconfig::default_index_dir),
+            index_dir: cli
+                .net
+                .index_dir
+                .clone()
+                .unwrap_or_else(userconfig::default_index_dir),
         };
         if let ClusterAction::Keygen { name, role, out } = action {
             return keygen(name, role, out);
@@ -1003,7 +1243,12 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         }
         println!(
             "accounts: {} users, {} keys; index items: {}; journal lines: {} ({} files already there); learned standings: {}",
-            counts.users, counts.keys, counts.items, counts.journal_lines, counts.journal_files_skipped, if counts.learner { "yes" } else { "none" }
+            counts.users,
+            counts.keys,
+            counts.items,
+            counts.journal_lines,
+            counts.journal_files_skipped,
+            if counts.learner { "yes" } else { "none" }
         );
         return Ok(());
     }
@@ -1017,7 +1262,10 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
     let mut pipeline_settings = settings(&cli.net, long_lived, use_model);
     // The node's job in a cluster; only `serve` takes one, every other command works on its own data.
     let cluster = if matches!(cli.command, Command::Serve { .. }) {
-        let role = std::env::var("SEESEA_ROLE").ok().or_else(|| file.role.clone()).unwrap_or_default();
+        let role = std::env::var("SEESEA_ROLE")
+            .ok()
+            .or_else(|| file.role.clone())
+            .unwrap_or_default();
         let c = seesea_cli::cluster::Cluster {
             role: role.parse().map_err(Error::Config)?,
             search_nodes: file.search_nodes.clone(),
@@ -1026,7 +1274,14 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             standby_of: file.standby_of.clone(),
             partner: file.partner.clone(),
             witness: file.witness.clone(),
-            listen: file.cluster_listen.as_deref().map(|l| l.parse().map_err(|e| Error::Config(format!("cluster_listen '{l}': {e}")))).transpose()?,
+            listen: file
+                .cluster_listen
+                .as_deref()
+                .map(|l| {
+                    l.parse()
+                        .map_err(|e| Error::Config(format!("cluster_listen '{l}': {e}")))
+                })
+                .transpose()?,
             state_dir: Some(userconfig::data_dir()),
             mesh: load_mesh(&file).map_err(Error::Config)?,
         };
@@ -1290,35 +1545,77 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             public_url,
         } => {
             // A gateway keeps no accounts: they live with the flywheel node, so any number of gateways can run.
-            let is_gateway = cluster.as_ref().is_some_and(|c| c.role == seesea_cli::cluster::Role::Gateway);
-            let is_witness = cluster.as_ref().is_some_and(|c| c.role == seesea_cli::cluster::Role::Witness);
-            let store = if is_gateway || is_witness { None } else { Some(open_auth(&cli.net)?) };
+            let is_gateway = cluster
+                .as_ref()
+                .is_some_and(|c| c.role == seesea_cli::cluster::Role::Gateway);
+            let is_witness = cluster
+                .as_ref()
+                .is_some_and(|c| c.role == seesea_cli::cluster::Role::Witness);
+            let store = if is_gateway || is_witness {
+                None
+            } else {
+                Some(open_auth(&cli.net)?)
+            };
             // The write lease: a flywheel node with a partner and a witness, or the witness itself.
             let lease = match cluster.as_ref() {
-                Some(c) if c.role == seesea_cli::cluster::Role::Witness => Some(seesea_cli::cluster::Lease::new(c.mesh.as_ref().expect("checked").identity.fingerprint.clone(), vec![])),
+                Some(c) if c.role == seesea_cli::cluster::Role::Witness => {
+                    Some(seesea_cli::cluster::Lease::new(
+                        c.mesh
+                            .as_ref()
+                            .expect("checked")
+                            .identity
+                            .fingerprint
+                            .clone(),
+                        vec![],
+                    ))
+                }
                 Some(c) if c.partner.is_some() => {
                     let mesh = c.mesh.as_ref().expect("checked");
-                    let voters = [(c.partner.as_deref().unwrap(), seesea_cli::wire::PeerRole::Flywheel), (c.witness.as_deref().unwrap(), seesea_cli::wire::PeerRole::Witness)]
+                    let voters = [
+                        (
+                            c.partner.as_deref().unwrap(),
+                            seesea_cli::wire::PeerRole::Flywheel,
+                        ),
+                        (
+                            c.witness.as_deref().unwrap(),
+                            seesea_cli::wire::PeerRole::Witness,
+                        ),
+                    ]
+                    .into_iter()
+                    .map(|(u, r)| seesea_cli::wire::Client::new(mesh, u, r))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(Error::Config)?;
+                    let l =
+                        seesea_cli::cluster::Lease::new(mesh.identity.fingerprint.clone(), voters);
+                    let other = mesh
+                        .peers
+                        .with_role(seesea_cli::wire::PeerRole::Flywheel)
                         .into_iter()
-                        .map(|(u, r)| seesea_cli::wire::Client::new(mesh, u, r))
-                        .collect::<Result<Vec<_>, _>>()
-                        .map_err(Error::Config)?;
-                    let l = seesea_cli::cluster::Lease::new(mesh.identity.fingerprint.clone(), voters);
-                    let other = mesh.peers.with_role(seesea_cli::wire::PeerRole::Flywheel).into_iter().map(|p| p.fingerprint).find(|f| *f != mesh.identity.fingerprint);
+                        .map(|p| p.fingerprint)
+                        .find(|f| *f != mesh.identity.fingerprint);
                     l.run(other);
                     Some(l)
                 }
                 _ => None,
             };
-            let follows = cluster.as_ref().is_some_and(|c| c.standby_of.is_some() || c.partner.is_some());
-            let standby_flag = follows.then(|| seesea_cli::cluster::Standby::new(lease.clone().filter(|_| cluster.as_ref().is_some_and(|c| c.role == seesea_cli::cluster::Role::Flywheel))));
+            let follows = cluster
+                .as_ref()
+                .is_some_and(|c| c.standby_of.is_some() || c.partner.is_some());
+            let standby_flag = follows.then(|| {
+                seesea_cli::cluster::Standby::new(lease.clone().filter(|_| {
+                    cluster
+                        .as_ref()
+                        .is_some_and(|c| c.role == seesea_cli::cluster::Role::Flywheel)
+                }))
+            });
             let mut state_index = None;
             if let Some(dir) = pipeline_settings.index_dir.clone() {
                 let index = seesea_index::Index::open(dir);
                 state_index = Some(Arc::clone(&index));
                 let every = parse_interval(&poll_every)?;
                 if !every.is_zero() {
-                    let poller = seesea_cli::config::build_poller(&pipeline_settings, Arc::clone(&index))?;
+                    let poller =
+                        seesea_cli::config::build_poller(&pipeline_settings, Arc::clone(&index))?;
                     match standby_flag.clone() {
                         // A standby reads feeds only while its primary is away: the primary's items reach it by copying.
                         Some(st) => {
@@ -1341,7 +1638,8 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                         tokio::spawn(async move {
                             loop {
                                 seesea_index::websub::subscribe_due(&index, &hub, &public).await;
-                                tokio::time::sleep(every.min(std::time::Duration::from_secs(3600))).await;
+                                tokio::time::sleep(every.min(std::time::Duration::from_secs(3600)))
+                                    .await;
                             }
                         });
                     }
@@ -1356,7 +1654,12 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                 eprintln!("seesea node: role {:?}", c.role);
                 if c.role == seesea_cli::cluster::Role::Gateway {
                     let gw = seesea_cli::cluster::Gateway::new(c).map_err(Error::Config)?;
-                    state.access = Arc::new(Arc::try_unwrap(state.access).ok().expect("access is not shared yet").with_remote(gw.accounts.clone()));
+                    state.access = Arc::new(
+                        Arc::try_unwrap(state.access)
+                            .ok()
+                            .expect("access is not shared yet")
+                            .with_remote(gw.accounts.clone()),
+                    );
                     state.gateway = Some(gw);
                 }
             }
@@ -1364,50 +1667,102 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             state.standby = standby_flag;
             state.trust_forwarded = file.trust_forwarded_for == Some(true);
             state.index = state_index;
-            state.embedder = pipeline_settings.model_dir.as_ref().map(|m| seesea_cli::embedding::shared_embedder(m) as Arc<dyn seesea_pipeline::semantic::TextEmbedder>);
+            state.embedder = pipeline_settings.model_dir.as_ref().map(|m| {
+                seesea_cli::embedding::shared_embedder(m)
+                    as Arc<dyn seesea_pipeline::semantic::TextEmbedder>
+            });
             let tls = match (&file.tls_cert, &file.tls_key) {
                 (Some(cert), Some(key)) => Some(
-                    seesea_cli::tls::server_config(&seesea_cli::tls::ServerTls { cert: cert.clone(), key: key.clone(), client_ca: file.tls_client_ca.clone() })
-                        .map_err(Error::Config)?,
+                    seesea_cli::tls::server_config(&seesea_cli::tls::ServerTls {
+                        cert: cert.clone(),
+                        key: key.clone(),
+                        client_ca: file.tls_client_ca.clone(),
+                    })
+                    .map_err(Error::Config)?,
                 ),
                 (None, None) => None,
                 _ => return Err(Error::Config("tls_cert and tls_key go together".into())),
             };
-            if let Some(c) = cluster.as_ref().filter(|c| matches!(c.role, seesea_cli::cluster::Role::Search | seesea_cli::cluster::Role::Flywheel | seesea_cli::cluster::Role::Witness)) {
-                let wire = seesea_cli::cluster::start_wire(state.clone(), max_concurrent, c, lease.clone()).map_err(Error::Config)?;
+            if let Some(c) = cluster.as_ref().filter(|c| {
+                matches!(
+                    c.role,
+                    seesea_cli::cluster::Role::Search
+                        | seesea_cli::cluster::Role::Flywheel
+                        | seesea_cli::cluster::Role::Witness
+                )
+            }) {
+                let wire = seesea_cli::cluster::start_wire(
+                    state.clone(),
+                    max_concurrent,
+                    c,
+                    lease.clone(),
+                )
+                .map_err(Error::Config)?;
                 eprintln!("seesea-wire listening on quic udp {}", wire.addr);
                 if let Some(primary) = c.standby_of.as_ref().or(c.partner.as_ref()) {
-                    let link = seesea_cli::cluster::Link::new(c.mesh.as_ref().expect("checked"), primary).map_err(Error::Config)?;
+                    let link =
+                        seesea_cli::cluster::Link::new(c.mesh.as_ref().expect("checked"), primary)
+                            .map_err(Error::Config)?;
                     seesea_cli::cluster::run_standby(state.clone(), link);
                 }
             }
-            let served = server::serve(addr, state, max_concurrent, allow_open, tls, file.behind_tls_proxy == Some(true)).await;
+            let served = server::serve(
+                addr,
+                state,
+                max_concurrent,
+                allow_open,
+                tls,
+                file.behind_tls_proxy == Some(true),
+            )
+            .await;
             // A clean stop hands the write lease over at once.
             if let Some(l) = &lease {
                 l.release().await;
             }
             served
         }
-        Command::Desk { addr, no_open, poll_every } => {
+        Command::Desk {
+            addr,
+            no_open,
+            poll_every,
+        } => {
             if !addr.ip().is_loopback() {
                 return Err(Error::Config("the workbench manages this machine and listens on loopback only; run `seesea serve` for a network address".into()));
             }
-            let auth_db = cli.net.auth_db.clone().unwrap_or_else(userconfig::default_auth_db);
+            let auth_db = cli
+                .net
+                .auth_db
+                .clone()
+                .unwrap_or_else(userconfig::default_auth_db);
             let mut state_index = None;
             if let Some(dir) = pipeline_settings.index_dir.clone() {
                 let index = seesea_index::Index::open(dir);
                 state_index = Some(Arc::clone(&index));
                 let every = parse_interval(&poll_every)?;
                 if !every.is_zero() {
-                    let poller = seesea_cli::config::build_poller(&pipeline_settings, Arc::clone(&index))?;
+                    let poller =
+                        seesea_cli::config::build_poller(&pipeline_settings, Arc::clone(&index))?;
                     tokio::spawn(async move { poller.run(every).await });
                 }
             }
             // The workbench itself needs no key: it answers this machine only, and the services it starts have their own.
-            let mut state = AppState::with_access(pipeline, seesea_cli::access::Access::new(None, file.plans.clone(), None));
+            let mut state = AppState::with_access(
+                pipeline,
+                seesea_cli::access::Access::new(None, file.plans.clone(), None),
+            );
             state.index = state_index;
-            state.embedder = pipeline_settings.model_dir.as_ref().map(|m| seesea_cli::embedding::shared_embedder(m) as Arc<dyn seesea_pipeline::semantic::TextEmbedder>);
-            let desk = seesea_cli::desk::Desk::new(userconfig::data_dir().join("desk.json"), auth_db, seesea_auth::default_plans().into_iter().chain(file.plans.clone()).collect());
+            state.embedder = pipeline_settings.model_dir.as_ref().map(|m| {
+                seesea_cli::embedding::shared_embedder(m)
+                    as Arc<dyn seesea_pipeline::semantic::TextEmbedder>
+            });
+            let desk = seesea_cli::desk::Desk::new(
+                userconfig::data_dir().join("desk.json"),
+                auth_db,
+                seesea_auth::default_plans()
+                    .into_iter()
+                    .chain(file.plans.clone())
+                    .collect(),
+            );
             desk.attach(state.clone());
             desk.autostart().await;
             state.desk = Some(Arc::clone(&desk));

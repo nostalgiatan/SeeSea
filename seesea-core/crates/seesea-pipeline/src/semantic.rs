@@ -156,7 +156,10 @@ impl TextEmbedder for CachedEmbedder {
                 out[i] = Some(v);
             }
         }
-        Ok(out.into_iter().map(|v| v.expect("filled above").as_ref().clone()).collect())
+        Ok(out
+            .into_iter()
+            .map(|v| v.expect("filled above").as_ref().clone())
+            .collect())
     }
 
     fn wake(&self) {
@@ -463,38 +466,59 @@ mod tests {
             Ok(topic(text))
         }
         fn embed_passages(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
-            self.0.fetch_add(texts.len(), std::sync::atomic::Ordering::SeqCst);
+            self.0
+                .fetch_add(texts.len(), std::sync::atomic::Ordering::SeqCst);
             Ok(texts.iter().map(|t| topic(t)).collect())
         }
     }
 
     #[test]
-    fn repeated_texts_are_not_embedded_again_and_preparing_a_page_gives_a_head_start_without_changing_scores() {
+    fn repeated_texts_are_not_embedded_again_and_preparing_a_page_gives_a_head_start_without_changing_scores()
+     {
         let inner = Arc::new(Counting(0.into()));
         let cached = Arc::new(CachedEmbedder::new(inner.clone(), 100));
         let r = SemanticReranker::new(cached.clone(), SemanticConfig::default());
         let query = "tokio scheduler thread pool";
         let page = "Tokio schedules async tasks on a work-stealing thread pool.\n\nThe runtime drives timers and sockets.";
-        let docs = [doc("Tokio", page), doc("Cheap watches", "Discount watches and handbags with free shipping.")];
+        let docs = [
+            doc("Tokio", page),
+            doc(
+                "Cheap watches",
+                "Discount watches and handbags with free shipping.",
+            ),
+        ];
         let cold = r.rerank(query, &docs);
         let after_cold = inner.0.load(std::sync::atomic::Ordering::SeqCst);
-        assert!(after_cold >= 3, "query and passages reached the model: {after_cold}");
+        assert!(
+            after_cold >= 3,
+            "query and passages reached the model: {after_cold}"
+        );
         // The same pages again: nothing reaches the model, and the scores are the same.
         let warm = r.rerank(query, &docs);
-        assert_eq!(inner.0.load(std::sync::atomic::Ordering::SeqCst), after_cold);
+        assert_eq!(
+            inner.0.load(std::sync::atomic::Ordering::SeqCst),
+            after_cold
+        );
         assert_eq!(cold, warm);
         let (hits, _) = cached.stats();
         assert!(hits >= 3);
 
         // `prepare` does the embedding ahead of time; the later rerank finds everything cached.
         let fresh = Arc::new(Counting(0.into()));
-        let r2 = SemanticReranker::new(Arc::new(CachedEmbedder::new(fresh.clone(), 100)), SemanticConfig::default());
+        let r2 = SemanticReranker::new(
+            Arc::new(CachedEmbedder::new(fresh.clone(), 100)),
+            SemanticConfig::default(),
+        );
         for d in &docs {
             r2.prepare(query, d);
         }
         let prepared = fresh.0.load(std::sync::atomic::Ordering::SeqCst);
         assert_eq!(r2.rerank(query, &docs), cold);
-        assert_eq!(fresh.0.load(std::sync::atomic::Ordering::SeqCst), prepared, "rerank needed nothing more");
+        assert_eq!(
+            fresh.0.load(std::sync::atomic::Ordering::SeqCst),
+            prepared,
+            "rerank needed nothing more"
+        );
     }
 
     #[test]

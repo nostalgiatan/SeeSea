@@ -39,7 +39,12 @@ impl Default for ReqLog {
 
 impl ReqLog {
     pub fn new() -> Self {
-        Self { started: Instant::now(), total: AtomicU64::new(0), by_class: Default::default(), recent: Mutex::new(VecDeque::with_capacity(KEEP)) }
+        Self {
+            started: Instant::now(),
+            total: AtomicU64::new(0),
+            by_class: Default::default(),
+            recent: Mutex::new(VecDeque::with_capacity(KEEP)),
+        }
     }
 
     pub fn push(&self, method: &str, path: &str, status: u16, ms: u32, who: Option<String>) {
@@ -50,7 +55,14 @@ impl ReqLog {
         if q.len() == KEEP {
             q.pop_front();
         }
-        q.push_back(Entry { ts: seesea_auth::now_secs(), method: method.to_string(), path, status, ms, who });
+        q.push_back(Entry {
+            ts: seesea_auth::now_secs(),
+            method: method.to_string(),
+            path,
+            status,
+            ms,
+            who,
+        });
     }
 
     pub fn summary(&self) -> serde_json::Value {
@@ -64,6 +76,13 @@ impl ReqLog {
 
     /// Newest first.
     pub fn recent(&self, n: usize) -> Vec<Entry> {
-        self.recent.lock().unwrap_or_else(|e| e.into_inner()).iter().rev().take(n).cloned().collect()
+        self.recent
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .rev()
+            .take(n)
+            .cloned()
+            .collect()
     }
 }

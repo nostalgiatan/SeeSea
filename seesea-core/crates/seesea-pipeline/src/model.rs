@@ -134,7 +134,9 @@ impl SearchRequest {
             && t != "general"
             && t != "news"
         {
-            return Err(Error::InvalidRequest(format!("unknown topic '{t}', expected general or news")));
+            return Err(Error::InvalidRequest(format!(
+                "unknown topic '{t}', expected general or news"
+            )));
         }
         if self.max_chars_per_result == 0 {
             return Err(Error::InvalidRequest(

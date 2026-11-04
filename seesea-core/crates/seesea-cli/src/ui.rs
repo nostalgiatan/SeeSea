@@ -5,10 +5,10 @@
 //! loading or sending anything else.
 
 use crate::server::AppState;
+use axum::Router;
 use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 
 const INDEX: &str = include_str!("../web/index.html");
 const STYLE: &str = include_str!("../web/app.css");
@@ -26,7 +26,11 @@ pub fn is_navigation(req: &axum::extract::Request) -> bool {
     let p = req.uri().path();
     req.method() == axum::http::Method::GET
         && !(p.starts_with("/v1/") || p.starts_with("/desk/") || p == "/mcp" || p == "/health")
-        && req.headers().get(header::ACCEPT).and_then(|v| v.to_str().ok()).is_some_and(|a| a.starts_with("text/html"))
+        && req
+            .headers()
+            .get(header::ACCEPT)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|a| a.starts_with("text/html"))
 }
 
 pub fn not_found_page() -> Response {
@@ -40,8 +44,14 @@ fn asset(content_type: &'static str, body: &'static str) -> Response {
     let h = r.headers_mut();
     h.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
-    h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
-    h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    h.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    h.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
     h.insert(
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static(
@@ -54,8 +64,20 @@ fn asset(content_type: &'static str, body: &'static str) -> Response {
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/", get(|| async { asset("text/html; charset=utf-8", INDEX) }))
-        .route("/ui/app.css", get(|| async { asset("text/css; charset=utf-8", STYLE) }))
-        .route("/ui/app.js", get(|| async { asset("text/javascript; charset=utf-8", SCRIPT) }))
-        .route("/ui/mark.svg", get(|| async { asset("image/svg+xml", MARK) }))
+        .route(
+            "/",
+            get(|| async { asset("text/html; charset=utf-8", INDEX) }),
+        )
+        .route(
+            "/ui/app.css",
+            get(|| async { asset("text/css; charset=utf-8", STYLE) }),
+        )
+        .route(
+            "/ui/app.js",
+            get(|| async { asset("text/javascript; charset=utf-8", SCRIPT) }),
+        )
+        .route(
+            "/ui/mark.svg",
+            get(|| async { asset("image/svg+xml", MARK) }),
+        )
 }

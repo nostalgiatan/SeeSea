@@ -1,8 +1,8 @@
 //! The HTTP server: JSON endpoints for search, extract and sources, plus MCP over `POST /mcp`.
 
-use axum::body::Bytes;
 use crate::access::{Access, Grant, Refusal, base_cost, mode_extra};
-use axum::extract::{Path, ConnectInfo, DefaultBodyLimit, Extension, Query, Request, State};
+use axum::body::Bytes;
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Extension, Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -110,7 +110,12 @@ fn refusal_response(r: Refusal) -> Response {
             Json(json!({"code": "unauthorized", "message": message})),
         )
             .into_response(),
-        Refusal::Limited { denied, code, message, retry_after } => {
+        Refusal::Limited {
+            denied,
+            code,
+            message,
+            retry_after,
+        } => {
             let status = if code == "internal_error" {
                 StatusCode::INTERNAL_SERVER_ERROR
             } else {
@@ -122,7 +127,12 @@ fn refusal_response(r: Refusal) -> Response {
                 headers.insert("x-ratelimit-limit", d.limit_per_minute.into());
                 headers.insert("x-ratelimit-remaining", 0.into());
             }
-            (status, headers, Json(json!({"code": code, "message": message, "retry_after": retry_after}))).into_response()
+            (
+                status,
+                headers,
+                Json(json!({"code": code, "message": message, "retry_after": retry_after})),
+            )
+                .into_response()
         }
     }
 }
@@ -154,7 +164,11 @@ fn host_is_local(host: &str) -> bool {
         host.rsplit_once(':').map_or(host, |(h, _)| h)
     };
     let name = name.trim_end_matches('.').to_ascii_lowercase();
-    name == "localhost" || name.ends_with(".localhost") || name.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+    name == "localhost"
+        || name.ends_with(".localhost")
+        || name
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
 }
 
 /// Whether the request body is declared as JSON.
@@ -162,7 +176,13 @@ fn declares_json(headers: &HeaderMap) -> bool {
     headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .map(|v| v.split(';').next().unwrap_or("").trim().to_ascii_lowercase())
+        .map(|v| {
+            v.split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase()
+        })
         .is_some_and(|t| t == "application/json" || t.ends_with("+json"))
 }
 
@@ -173,23 +193,41 @@ fn declares_json(headers: &HeaderMap) -> bool {
 /// `Host` stops the second; requiring a JSON content type, which browsers only send after a preflight that
 /// this server never answers, stops the first. A server that needs a key does not need the second check,
 /// since a page cannot add the `Authorization` header either.
-async fn local_guard(State(state): State<AppState>, headers: HeaderMap, req: Request, next: Next) -> Response {
-    if req.extensions().get::<crate::cluster::Trusted>().is_some() || req.uri().path().starts_with("/v1/websub/") {
+async fn local_guard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    req: Request,
+    next: Next,
+) -> Response {
+    if req.extensions().get::<crate::cluster::Trusted>().is_some()
+        || req.uri().path().starts_with("/v1/websub/")
+    {
         return next.run(req).await;
     }
     if state.local_only {
-        let local = headers.get(header::HOST).and_then(|v| v.to_str().ok()).is_some_and(host_is_local);
+        let local = headers
+            .get(header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(host_is_local);
         if !local {
             return (StatusCode::FORBIDDEN, Json(json!({"code": "forbidden_host", "message": "this server answers only for localhost; use http://127.0.0.1:<port>"}))).into_response();
         }
-        if req.method() == axum::http::Method::POST && !state.access.required() && !declares_json(&headers) {
+        if req.method() == axum::http::Method::POST
+            && !state.access.required()
+            && !declares_json(&headers)
+        {
             return (StatusCode::UNSUPPORTED_MEDIA_TYPE, Json(json!({"code": "unsupported_media_type", "message": "send the body with Content-Type: application/json"}))).into_response();
         }
     }
     next.run(req).await
 }
 
-async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Request, next: Next) -> Response {
+async fn auth(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    mut req: Request,
+    next: Next,
+) -> Response {
     // A request that came over the wire from a gateway was checked there.
     if req.extensions().get::<crate::cluster::Trusted>().is_some() {
         return next.run(req).await;
@@ -197,19 +235,30 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Reques
     if let Some(c) = &state.cluster {
         // A search node answers its gateway and nobody else.
         if c.role == crate::cluster::Role::Search && req.uri().path() != "/health" {
-            return refusal_response(Refusal::Unauthorized("this node only answers the cluster's gateway".into()));
+            return refusal_response(Refusal::Unauthorized(
+                "this node only answers the cluster's gateway".into(),
+            ));
         }
     }
     // WebSub hubs cannot send API keys: those requests are checked by challenge and signature instead.
     // The workbench page itself is static and holds no data: it has to load before a key can be typed into it.
-    if req.uri().path() == "/health" || crate::ui::is_asset(req.uri().path()) || crate::ui::is_navigation(&req) || req.uri().path().starts_with("/v1/websub/") || !state.access.required() {
+    if req.uri().path() == "/health"
+        || crate::ui::is_asset(req.uri().path())
+        || crate::ui::is_navigation(&req)
+        || req.uri().path().starts_with("/v1/websub/")
+        || !state.access.required()
+    {
         return next.run(req).await;
     }
     let mut ip = req
         .extensions()
         .get::<ConnectInfo<std::net::SocketAddr>>()
         .map(|c| c.0.ip())
-        .or_else(|| req.extensions().get::<ConnectInfo<crate::tls::PeerAddr>>().map(|c| c.0.0.ip()));
+        .or_else(|| {
+            req.extensions()
+                .get::<ConnectInfo<crate::tls::PeerAddr>>()
+                .map(|c| c.0.0.ip())
+        });
     if state.trust_forwarded
         && let Some(client) = headers
             .get("x-forwarded-for")
@@ -223,7 +272,12 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Reques
     if state.gateway.is_some() && crate::cluster::is_accounts_path(req.uri().path()) {
         // Wrong keys are counted here, per client address, since the node behind does not see the address.
         if state.access.blocked(ip) {
-            return refusal_response(Refusal::Limited { denied: None, code: "too_many_failures", message: "too many failed attempts to authenticate; wait a minute".into(), retry_after: 60 });
+            return refusal_response(Refusal::Limited {
+                denied: None,
+                code: "too_many_failures",
+                message: "too many failed attempts to authenticate; wait a minute".into(),
+                retry_after: 60,
+            });
         }
         let response = next.run(req).await;
         if response.status() == StatusCode::UNAUTHORIZED {
@@ -233,7 +287,10 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Reques
     }
     let cost = base_cost(req.uri().path());
     let admitted = if state.access.is_remote() {
-        state.access.admit_remote(presented_key(&headers), ip, cost).await
+        state
+            .access
+            .admit_remote(presented_key(&headers), ip, cost)
+            .await
     } else {
         state.access.admit(presented_key(&headers), ip, cost)
     };
@@ -245,11 +302,15 @@ async fn auth(State(state): State<AppState>, headers: HeaderMap, mut req: Reques
     let mut response = next.run(req).await;
     for (k, v) in allowed.headers {
         if let Ok(v) = header::HeaderValue::from_str(&v) {
-            response.headers_mut().insert(header::HeaderName::from_static(k), v);
+            response
+                .headers_mut()
+                .insert(header::HeaderName::from_static(k), v);
         }
     }
     drop(allowed.permit);
-    response.extensions_mut().insert(crate::reqlog::Who(allowed.grant.name.clone()));
+    response
+        .extensions_mut()
+        .insert(crate::reqlog::Who(allowed.grant.name.clone()));
     response
 }
 
@@ -318,7 +379,13 @@ impl SearchParams {
             .unwrap_or(req.max_chars_per_result);
         req.full_content = self.full_content.unwrap_or(false);
         let list = |s: Option<String>| -> Vec<String> {
-            s.map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default()
+            s.map(|s| {
+                s.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
         };
         req.include_domains = list(self.include_domains);
         req.exclude_domains = list(self.exclude_domains);
@@ -362,10 +429,16 @@ async fn search_batch(
     let queries: Vec<String> = template
         .get("queries")
         .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(|q| q.as_str().map(str::to_string)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|q| q.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
     if queries.is_empty() || queries.len() > 10 {
-        return Err(Error::InvalidRequest("queries must hold between 1 and 10 strings".into()).into());
+        return Err(
+            Error::InvalidRequest("queries must hold between 1 and 10 strings".into()).into(),
+        );
     }
     if let Some(o) = template.as_object_mut() {
         o.remove("queries");
@@ -374,7 +447,8 @@ async fn search_batch(
     for q in queries {
         let mut t = template.clone();
         t["query"] = json!(q);
-        let req: SearchRequest = serde_json::from_value(t).map_err(|e| Error::InvalidRequest(e.to_string()))?;
+        let req: SearchRequest =
+            serde_json::from_value(t).map_err(|e| Error::InvalidRequest(e.to_string()))?;
         req.validate()?;
         meter_search(&s, &grant, req.mode)?;
         reqs.push(req);
@@ -391,16 +465,21 @@ async fn search_batch(
     let mut out: Vec<(usize, Value)> = Vec::new();
     while let Some(done) = set.join_next().await {
         let Ok((i, query, r)) = done else { continue };
-        out.push((i, match r {
-            Ok(resp) => {
-                remember_sites(&s, &resp);
-                json!({"query": query, "ok": true, "response": resp})
-            }
-            Err(e) => json!({"query": query, "ok": false, "error": e.body()}),
-        }));
+        out.push((
+            i,
+            match r {
+                Ok(resp) => {
+                    remember_sites(&s, &resp);
+                    json!({"query": query, "ok": true, "response": resp})
+                }
+                Err(e) => json!({"query": query, "ok": false, "error": e.body()}),
+            },
+        ));
     }
     out.sort_by_key(|(i, _)| *i);
-    Ok(Json(json!({"results": out.into_iter().map(|(_, v)| v).collect::<Vec<_>>()})))
+    Ok(Json(
+        json!({"results": out.into_iter().map(|(_, v)| v).collect::<Vec<_>>()}),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -423,7 +502,10 @@ fn default_similar() -> usize {
 async fn similar(State(s): State<AppState>, body: Bytes) -> ApiResult<Value> {
     let b: SimilarBody = parse_body(&body)?;
     let (Some(index), Some(embedder)) = (s.index.clone(), s.embedder.clone()) else {
-        return Err(Error::InvalidRequest("similar search needs the local index and an embedding model".into()).into());
+        return Err(Error::InvalidRequest(
+            "similar search needs the local index and an embedding model".into(),
+        )
+        .into());
     };
     let text = match (&b.text, &b.url) {
         (Some(t), _) if !t.trim().is_empty() => t.clone(),
@@ -432,7 +514,11 @@ async fn similar(State(s): State<AppState>, body: Bytes) -> ApiResult<Value> {
             format!(
                 "{}\n{}",
                 page.meta.title.clone().unwrap_or_default(),
-                page.sections.iter().map(|x| x.markdown.as_str()).collect::<Vec<_>>().join("\n")
+                page.sections
+                    .iter()
+                    .map(|x| x.markdown.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n")
             )
         }
         _ => return Err(Error::InvalidRequest("give a url or some text".into()).into()),
@@ -460,7 +546,13 @@ async fn similar(State(s): State<AppState>, body: Bytes) -> ApiResult<Value> {
 /// Sites of the best results are queued so the poller can look for feeds there.
 fn remember_sites(s: &AppState, resp: &seesea_pipeline::SearchResponse) {
     let Some(index) = s.index.clone() else { return };
-    let hosts: Vec<String> = resp.hits.iter().take(5).map(|h| seesea_pipeline::host_of(&h.url)).filter(|h| !h.is_empty()).collect();
+    let hosts: Vec<String> = resp
+        .hits
+        .iter()
+        .take(5)
+        .map(|h| seesea_pipeline::host_of(&h.url))
+        .filter(|h| !h.is_empty())
+        .collect();
     tokio::task::spawn_blocking(move || {
         for h in hosts {
             let _ = index.registry.queue_host(&h);
@@ -518,10 +610,18 @@ struct FeedbackBody {
 }
 
 /// Tell stage 1 whether a result was worth reading; it shifts how that host ranks later.
-async fn feedback(State(s): State<AppState>, grant: Option<Extension<Grant>>, trusted: Option<Extension<crate::cluster::Trusted>>, body: Bytes) -> Result<Json<Value>, Response> {
+async fn feedback(
+    State(s): State<AppState>,
+    grant: Option<Extension<Grant>>,
+    trusted: Option<Extension<crate::cluster::Trusted>>,
+    body: Bytes,
+) -> Result<Json<Value>, Response> {
     // The learned standing of a host changes the ranking for every account, so a judgement is the operator's call.
     // (From a gateway, the root key was checked there.)
-    if trusted.is_none() && s.access.required() && !grant.as_ref().is_some_and(|Extension(g)| g.is_root()) {
+    if trusted.is_none()
+        && s.access.required()
+        && !grant.as_ref().is_some_and(|Extension(g)| g.is_root())
+    {
         return Err((StatusCode::FORBIDDEN, Json(json!({"code": "admin_only", "message": "this needs the server's root key (--api-key)"}))).into_response());
     }
     feedback_inner(s, body).await.map_err(|e| e.into_response())
@@ -532,7 +632,9 @@ async fn feedback_inner(s: AppState, body: Bytes) -> ApiResult<Value> {
     let good = match b.verdict.as_str() {
         "good" => true,
         "bad" => false,
-        _ => return Err(Error::InvalidRequest("verdict must be \"good\" or \"bad\"".into()).into()),
+        _ => {
+            return Err(Error::InvalidRequest("verdict must be \"good\" or \"bad\"".into()).into());
+        }
     };
     let host = seesea_pipeline::host_of(&b.url);
     let Some(learner) = s.pipeline.learner_handle().filter(|_| !host.is_empty()) else {
@@ -551,10 +653,18 @@ struct IngestBody {
 }
 
 /// Push articles into the local index; at most 1000 per call.
-async fn ingest(State(s): State<AppState>, grant: Option<Extension<Grant>>, trusted: Option<Extension<crate::cluster::Trusted>>, body: Bytes) -> Result<Json<Value>, Response> {
+async fn ingest(
+    State(s): State<AppState>,
+    grant: Option<Extension<Grant>>,
+    trusted: Option<Extension<crate::cluster::Trusted>>,
+    body: Bytes,
+) -> Result<Json<Value>, Response> {
     // Items go into the index every search reads from: whoever may push them decides what the index says.
     // (From a gateway, the root key was checked there.)
-    if trusted.is_none() && s.access.required() && !grant.as_ref().is_some_and(|Extension(g)| g.is_root()) {
+    if trusted.is_none()
+        && s.access.required()
+        && !grant.as_ref().is_some_and(|Extension(g)| g.is_root())
+    {
         return Err((StatusCode::FORBIDDEN, Json(json!({"code": "admin_only", "message": "this needs the server's root key (--api-key)"}))).into_response());
     }
     ingest_items(s, body).await.map_err(|e| e.into_response())
@@ -588,10 +698,23 @@ struct WebSubQuery {
 }
 
 /// The hub asks whether we really subscribed: echo its challenge if we did.
-async fn websub_verify(State(s): State<AppState>, Path(id): Path<String>, Query(q): Query<WebSubQuery>) -> Response {
-    let Some(index) = s.index.clone() else { return StatusCode::NOT_FOUND.into_response() };
+async fn websub_verify(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+    Query(q): Query<WebSubQuery>,
+) -> Response {
+    let Some(index) = s.index.clone() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
     let answer = tokio::task::spawn_blocking(move || {
-        seesea_index::websub::verify_intent(&index, &id, q.mode.as_deref().unwrap_or(""), q.topic.as_deref().unwrap_or(""), q.challenge.as_deref().unwrap_or(""), q.lease)
+        seesea_index::websub::verify_intent(
+            &index,
+            &id,
+            q.mode.as_deref().unwrap_or(""),
+            q.topic.as_deref().unwrap_or(""),
+            q.challenge.as_deref().unwrap_or(""),
+            q.lease,
+        )
     })
     .await
     .ok()
@@ -603,11 +726,24 @@ async fn websub_verify(State(s): State<AppState>, Path(id): Path<String>, Query(
 }
 
 /// The hub pushes new entries, signed with the secret we gave it.
-async fn websub_deliver(State(s): State<AppState>, Path(id): Path<String>, headers: HeaderMap, body: Bytes) -> StatusCode {
+async fn websub_deliver(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> StatusCode {
     use seesea_index::websub::DeliveryError;
-    let Some(index) = s.index.clone() else { return StatusCode::NOT_FOUND };
-    let sig = headers.get("x-hub-signature").and_then(|v| v.to_str().ok()).map(String::from);
-    let r = tokio::task::spawn_blocking(move || seesea_index::websub::receive(&index, &id, sig.as_deref(), &body)).await;
+    let Some(index) = s.index.clone() else {
+        return StatusCode::NOT_FOUND;
+    };
+    let sig = headers
+        .get("x-hub-signature")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
+    let r = tokio::task::spawn_blocking(move || {
+        seesea_index::websub::receive(&index, &id, sig.as_deref(), &body)
+    })
+    .await;
     match r {
         Ok(Ok(_)) => StatusCode::NO_CONTENT,
         Ok(Err(DeliveryError::UnknownSubscription)) => StatusCode::NOT_FOUND,
@@ -623,7 +759,10 @@ async fn index_info(State(s): State<AppState>) -> ApiResult<Value> {
     };
     let feeds = tokio::task::spawn_blocking(move || {
         let list = index.registry.list().unwrap_or_default();
-        let active = list.iter().filter(|f| f.status == seesea_index::Status::Active).count();
+        let active = list
+            .iter()
+            .filter(|f| f.status == seesea_index::Status::Active)
+            .count();
         json!({"store": index.store.stats(), "feeds": {"total": list.len(), "active": active}})
     })
     .await
@@ -663,7 +802,9 @@ async fn sources_check(State(s): State<AppState>, Query(p): Query<CheckParams>) 
 /// The plan applies to searches made through MCP too: a `search` tool call costs and is allowed like
 /// `GET /v1/search` with the same mode.
 pub fn meter_mcp(access: &Access, g: &Grant, body: &[u8]) -> Result<(), String> {
-    let Ok(v) = serde_json::from_slice::<Value>(body) else { return Ok(()) };
+    let Ok(v) = serde_json::from_slice::<Value>(body) else {
+        return Ok(());
+    };
     let messages: Vec<&Value> = match &v {
         Value::Array(a) => a.iter().collect(),
         one => vec![one],
@@ -700,26 +841,46 @@ fn host_of(value: &str) -> String {
 /// must not be able to call the tools, so an `Origin` is accepted only when it names the host the request
 /// was addressed to (and a local name, when the server is local only).
 fn origin_ok(headers: &HeaderMap, local_only: bool) -> bool {
-    let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else { return true };
+    let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else {
+        return true;
+    };
     let origin_host = host_of(origin);
-    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(host_of).unwrap_or_default();
+    let host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(host_of)
+        .unwrap_or_default();
     origin_host == host && (!local_only || host_is_local(&origin_host))
 }
 
 /// `GET` and `DELETE` on `/mcp`: this endpoint answers each POST with one JSON reply, it has no stream
 /// to open and no session to end (the 405 the Streamable HTTP transport allows for both).
 async fn mcp_other() -> Response {
-    (StatusCode::METHOD_NOT_ALLOWED, [(header::ALLOW, "POST")], Json(json!({"code": "method_not_allowed", "message": "send MCP messages with POST"}))).into_response()
+    (
+        StatusCode::METHOD_NOT_ALLOWED,
+        [(header::ALLOW, "POST")],
+        Json(json!({"code": "method_not_allowed", "message": "send MCP messages with POST"})),
+    )
+        .into_response()
 }
 
-async fn mcp(State(s): State<AppState>, headers: HeaderMap, grant: Option<Extension<Grant>>, body: Bytes) -> Response {
+async fn mcp(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    grant: Option<Extension<Grant>>,
+    body: Bytes,
+) -> Response {
     if !origin_ok(&headers, s.local_only) {
         return (StatusCode::FORBIDDEN, Json(json!({"code": "forbidden_origin", "message": "this endpoint does not answer web pages from another site"}))).into_response();
     }
     if let Some(Extension(g)) = &grant
         && let Err(m) = meter_mcp(&s.access, g, &body)
     {
-        return (StatusCode::BAD_REQUEST, Json(json!({"code": "invalid_request", "message": m}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"code": "invalid_request", "message": m})),
+        )
+            .into_response();
     }
     let Ok(text) = std::str::from_utf8(&body) else {
         return (
@@ -755,10 +916,18 @@ pub fn router(state: AppState, max_concurrent: usize) -> Router {
             .route("/mcp", post(mcp).get(mcp_other).delete(mcp_other))
             .merge(crate::ui::routes())
     };
-    let routes = if state.desk.is_some() { routes.merge(crate::desk::routes()) } else { routes };
+    let routes = if state.desk.is_some() {
+        routes.merge(crate::desk::routes())
+    } else {
+        routes
+    };
     layered(
         routes
-            .merge(if state.gateway.is_some() { Router::new() } else { crate::account::routes() })
+            .merge(if state.gateway.is_some() {
+                Router::new()
+            } else {
+                crate::account::routes()
+            })
             .route("/v1/cluster/status", get(crate::cluster::status))
             .fallback(crate::cluster::forward),
         state,
@@ -779,15 +948,26 @@ pub fn mcp_router(state: AppState, max_concurrent: usize) -> Router {
 
 /// Count what this listener answers, when it keeps a log (only the workbench's services do).
 async fn record(State(state): State<AppState>, req: Request, next: Next) -> Response {
-    let Some(log) = state.reqlog.clone() else { return next.run(req).await };
+    let Some(log) = state.reqlog.clone() else {
+        return next.run(req).await;
+    };
     let (method, path) = (req.method().to_string(), req.uri().path().to_string());
     if crate::ui::is_asset(&path) || path == "/health" {
         return next.run(req).await;
     }
     let t0 = std::time::Instant::now();
     let response = next.run(req).await;
-    let who = response.extensions().get::<crate::reqlog::Who>().map(|w| w.0.clone());
-    log.push(&method, &path, response.status().as_u16(), t0.elapsed().as_millis().min(u32::MAX as u128) as u32, who);
+    let who = response
+        .extensions()
+        .get::<crate::reqlog::Who>()
+        .map(|w| w.0.clone());
+    log.push(
+        &method,
+        &path,
+        response.status().as_u16(),
+        t0.elapsed().as_millis().min(u32::MAX as u128) as u32,
+        who,
+    );
     response
 }
 
@@ -834,12 +1014,18 @@ impl Running {
         if let Some(tx) = self.stop.take() {
             let _ = tx.send(());
         }
-        self.task.await.map_err(|e| Error::Config(format!("listener task: {e}")))?
+        self.task
+            .await
+            .map_err(|e| Error::Config(format!("listener task: {e}")))?
     }
 }
 
 /// Check that this address may be served as set up, and bind it.
-async fn bind(addr: std::net::SocketAddr, state: &mut AppState, o: &ListenOpts) -> Result<tokio::net::TcpListener, Error> {
+async fn bind(
+    addr: std::net::SocketAddr,
+    state: &mut AppState,
+    o: &ListenOpts,
+) -> Result<tokio::net::TcpListener, Error> {
     // Keys, queries and results must not cross a network in clear text.
     if !addr.ip().is_loopback() && o.tls.is_none() && !o.behind_tls_proxy {
         return Err(Error::Config(format!(
@@ -852,7 +1038,9 @@ async fn bind(addr: std::net::SocketAddr, state: &mut AppState, o: &ListenOpts) 
         )));
     }
     state.local_only = addr.ip().is_loopback() && !o.behind_tls_proxy && !state.trust_forwarded;
-    tokio::net::TcpListener::bind(addr).await.map_err(|e| Error::Config(format!("cannot listen on {addr}: {e}")))
+    tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|e| Error::Config(format!("cannot listen on {addr}: {e}")))
 }
 
 /// Serve `app` on `listener` until `shutdown` completes, writing usage counters to disk every 30 seconds
@@ -876,14 +1064,20 @@ async fn run(
     let served = match tls {
         Some(config) => {
             let tls_listener = crate::tls::TlsListener::new(listener, config)?;
-            axum::serve(tls_listener, app.into_make_service_with_connect_info::<crate::tls::PeerAddr>())
-                .with_graceful_shutdown(shutdown)
-                .await
+            axum::serve(
+                tls_listener,
+                app.into_make_service_with_connect_info::<crate::tls::PeerAddr>(),
+            )
+            .with_graceful_shutdown(shutdown)
+            .await
         }
         None => {
-            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-                .with_graceful_shutdown(shutdown)
-                .await
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .with_graceful_shutdown(shutdown)
+            .await
         }
     };
     flusher.abort();
@@ -893,17 +1087,30 @@ async fn run(
 }
 
 /// Start a listener in the background and return the handle that stops it.
-pub async fn listen(addr: std::net::SocketAddr, mut state: AppState, o: ListenOpts) -> Result<Running, Error> {
+pub async fn listen(
+    addr: std::net::SocketAddr,
+    mut state: AppState,
+    o: ListenOpts,
+) -> Result<Running, Error> {
     let listener = bind(addr, &mut state, &o).await?;
     let bound = listener.local_addr()?;
     let access = Arc::clone(&state.access);
-    let app = if o.mcp_only { mcp_router(state, o.max_concurrent) } else { router(state, o.max_concurrent) };
+    let app = if o.mcp_only {
+        mcp_router(state, o.max_concurrent)
+    } else {
+        router(state, o.max_concurrent)
+    };
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
     let tls = o.tls.clone();
     let task = tokio::spawn(run(listener, app, o.tls, access, async move {
         let _ = stopped.await;
     }));
-    Ok(Running { addr: bound, tls: tls.is_some(), stop: Some(stop), task })
+    Ok(Running {
+        addr: bound,
+        tls: tls.is_some(),
+        stop: Some(stop),
+        task,
+    })
 }
 
 /// Serve until Ctrl-C.
@@ -915,7 +1122,13 @@ pub async fn serve(
     tls: Option<Arc<rustls::ServerConfig>>,
     behind_tls_proxy: bool,
 ) -> Result<(), Error> {
-    let o = ListenOpts { max_concurrent, allow_open, tls: tls.clone(), behind_tls_proxy, mcp_only: false };
+    let o = ListenOpts {
+        max_concurrent,
+        allow_open,
+        tls: tls.clone(),
+        behind_tls_proxy,
+        mcp_only: false,
+    };
     let listener = bind(addr, &mut state, &o).await?;
     eprintln!(
         "seesea listening on {}://{}",
@@ -923,7 +1136,14 @@ pub async fn serve(
         listener.local_addr()?
     );
     let access = Arc::clone(&state.access);
-    run(listener, router(state, max_concurrent), tls, access, shutdown_signal()).await
+    run(
+        listener,
+        router(state, max_concurrent),
+        tls,
+        access,
+        shutdown_signal(),
+    )
+    .await
 }
 
 /// Ctrl-C, or SIGTERM which is what systemd, Docker and Kubernetes send: either one lets requests finish and
@@ -956,10 +1176,26 @@ mod tests {
 
     #[test]
     fn only_local_names_count_as_local() {
-        for ok in ["localhost", "localhost:8080", "127.0.0.1:8080", "127.0.0.1", "[::1]:8080", "[::1]", "app.localhost:1", "LOCALHOST."] {
+        for ok in [
+            "localhost",
+            "localhost:8080",
+            "127.0.0.1:8080",
+            "127.0.0.1",
+            "[::1]:8080",
+            "[::1]",
+            "app.localhost:1",
+            "LOCALHOST.",
+        ] {
             assert!(host_is_local(ok), "{ok}");
         }
-        for bad in ["evil.example", "evil.example:8080", "127.0.0.1.evil.example", "10.0.0.5:8080", "0.0.0.0:8080", ""] {
+        for bad in [
+            "evil.example",
+            "evil.example:8080",
+            "127.0.0.1.evil.example",
+            "10.0.0.5:8080",
+            "0.0.0.0:8080",
+            "",
+        ] {
             assert!(!host_is_local(bad), "{bad}");
         }
     }

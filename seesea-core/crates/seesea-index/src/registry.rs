@@ -66,7 +66,14 @@ pub struct Sub {
 }
 
 fn sub_row(r: &rusqlite::Row) -> Result<Sub> {
-    Ok(Sub { id: r.get(0)?, topic: r.get(1)?, hub: r.get(2)?, secret: r.get(3)?, status: r.get(4)?, lease_until: r.get(5)? })
+    Ok(Sub {
+        id: r.get(0)?,
+        topic: r.get(1)?,
+        hub: r.get(2)?,
+        secret: r.get(3)?,
+        status: r.get(4)?,
+        lease_until: r.get(5)?,
+    })
 }
 
 fn random_hex(bytes: usize) -> String {
@@ -83,7 +90,10 @@ pub struct Registry {
 
 impl Registry {
     pub fn new(path: PathBuf) -> Self {
-        Self { path, conn: Mutex::new(None) }
+        Self {
+            path,
+            conn: Mutex::new(None),
+        }
     }
 
     fn with<T>(&self, create: bool, f: impl FnOnce(&Connection) -> Result<T>) -> Result<Option<T>> {
@@ -133,7 +143,12 @@ impl Registry {
 
     /// Give a lease up early (a clean shutdown), so another server need not wait for it to run out.
     pub fn release_lease(&self, name: &str, holder: &str) {
-        let _ = self.with(false, |c| Ok(c.execute("DELETE FROM leases WHERE name=?1 AND holder=?2", params![name, holder])?));
+        let _ = self.with(false, |c| {
+            Ok(c.execute(
+                "DELETE FROM leases WHERE name=?1 AND holder=?2",
+                params![name, holder],
+            )?)
+        });
     }
 
     /// Register a feed unless it is known. Returns whether it was new.
@@ -149,7 +164,11 @@ impl Registry {
     }
 
     pub fn remove(&self, url: &str) -> Result<bool> {
-        Ok(self.with(false, |c| Ok(c.execute("DELETE FROM feeds WHERE url=?", [url])? > 0))?.unwrap_or(false))
+        Ok(self
+            .with(false, |c| {
+                Ok(c.execute("DELETE FROM feeds WHERE url=?", [url])? > 0)
+            })?
+            .unwrap_or(false))
     }
 
     pub fn list(&self) -> Result<Vec<Feed>> {
@@ -177,18 +196,27 @@ impl Registry {
 
     /// Feeds whose turn has come, the longest-waiting first.
     pub fn due(&self, now: i64, limit: usize) -> Result<Vec<Feed>> {
-        Ok(self.list()?.into_iter().filter(|f| f.status != Status::Disabled && f.next_due <= now).take_while({
-            let mut n = 0;
-            move |_| {
-                n += 1;
-                n <= limit
-            }
-        }).collect())
+        Ok(self
+            .list()?
+            .into_iter()
+            .filter(|f| f.status != Status::Disabled && f.next_due <= now)
+            .take_while({
+                let mut n = 0;
+                move |_| {
+                    n += 1;
+                    n <= limit
+                }
+            })
+            .collect())
     }
 
     /// Record a poll. Success resets the failure count and speeds up or slows down the next poll
     /// with how much was new; failure backs off exponentially and eventually switches the feed off.
-    pub fn record(&self, url: &str, outcome: std::result::Result<(usize, Option<&str>), &str>) -> Result<()> {
+    pub fn record(
+        &self,
+        url: &str,
+        outcome: std::result::Result<(usize, Option<&str>), &str>,
+    ) -> Result<()> {
         let now = crate::now();
         let (ok, new_items, title, error) = match outcome {
             Ok((n, t)) => (true, n, t, None),
@@ -229,8 +257,14 @@ impl Registry {
     /// Remember that a feed announces a WebSub hub.
     pub fn set_hub(&self, url: &str, hub: &str) -> Result<()> {
         self.with(true, |c| {
-            c.execute("INSERT OR IGNORE INTO subs(id,topic,hub,secret,status) VALUES(?,?,?,?,'new')", params![random_hex(12), url, hub, random_hex(24)])?;
-            c.execute("UPDATE subs SET hub=? WHERE topic=? AND hub<>?", params![hub, url, hub])?;
+            c.execute(
+                "INSERT OR IGNORE INTO subs(id,topic,hub,secret,status) VALUES(?,?,?,?,'new')",
+                params![random_hex(12), url, hub, random_hex(24)],
+            )?;
+            c.execute(
+                "UPDATE subs SET hub=? WHERE topic=? AND hub<>?",
+                params![hub, url, hub],
+            )?;
             Ok(())
         })?;
         Ok(())
@@ -258,14 +292,24 @@ impl Registry {
 
     pub fn sub(&self, id: &str) -> Result<Option<Sub>> {
         Ok(self
-            .with(false, |c| c.query_row("SELECT id,topic,hub,secret,status,lease_until FROM subs WHERE id=?", [id], sub_row).optional())?
+            .with(false, |c| {
+                c.query_row(
+                    "SELECT id,topic,hub,secret,status,lease_until FROM subs WHERE id=?",
+                    [id],
+                    sub_row,
+                )
+                .optional()
+            })?
             .flatten())
     }
 
     /// The hub confirmed the subscription for `lease` seconds.
     pub fn sub_confirmed(&self, id: &str, lease: i64) -> Result<()> {
         self.with(true, |c| {
-            c.execute("UPDATE subs SET status='active', lease_until=? WHERE id=?", params![crate::now() + lease, id])?;
+            c.execute(
+                "UPDATE subs SET status='active', lease_until=? WHERE id=?",
+                params![crate::now() + lease, id],
+            )?;
             Ok(())
         })?;
         Ok(())
@@ -283,7 +327,8 @@ impl Registry {
     pub fn pushed_topics(&self, now: i64) -> Result<Vec<String>> {
         Ok(self
             .with(false, |c| {
-                let mut st = c.prepare("SELECT topic FROM subs WHERE status='active' AND lease_until > ?")?;
+                let mut st =
+                    c.prepare("SELECT topic FROM subs WHERE status='active' AND lease_until > ?")?;
                 let rows = st.query_map([now], |r| r.get(0))?;
                 rows.collect()
             })?
@@ -293,7 +338,10 @@ impl Registry {
     /// Re-enable a feed switched off earlier.
     pub fn revive(&self, url: &str) -> Result<()> {
         self.with(false, |c| {
-            c.execute("UPDATE feeds SET status='probation',fails=0,next_due=0 WHERE url=?", [url])?;
+            c.execute(
+                "UPDATE feeds SET status='probation',fails=0,next_due=0 WHERE url=?",
+                [url],
+            )?;
             Ok(())
         })?;
         Ok(())
@@ -305,7 +353,10 @@ impl Registry {
             return Ok(());
         }
         self.with(true, |c| {
-            c.execute("INSERT OR IGNORE INTO hosts(host,queued) VALUES(?,?)", params![host, crate::now()])?;
+            c.execute(
+                "INSERT OR IGNORE INTO hosts(host,queued) VALUES(?,?)",
+                params![host, crate::now()],
+            )?;
             Ok(())
         })?;
         Ok(())
@@ -315,7 +366,9 @@ impl Registry {
     pub fn pending_hosts(&self, limit: usize) -> Result<Vec<String>> {
         Ok(self
             .with(false, |c| {
-                let mut st = c.prepare("SELECT host FROM hosts WHERE tried IS NULL ORDER BY queued LIMIT ?")?;
+                let mut st = c.prepare(
+                    "SELECT host FROM hosts WHERE tried IS NULL ORDER BY queued LIMIT ?",
+                )?;
                 let rows = st.query_map([limit as i64], |r| r.get(0))?;
                 rows.collect()
             })?
@@ -324,7 +377,10 @@ impl Registry {
 
     pub fn host_done(&self, host: &str, found: usize) -> Result<()> {
         self.with(true, |c| {
-            c.execute("UPDATE hosts SET tried=?,found=? WHERE host=?", params![crate::now(), found as i64, host])?;
+            c.execute(
+                "UPDATE hosts SET tried=?,found=? WHERE host=?",
+                params![crate::now(), found as i64, host],
+            )?;
             Ok(())
         })?;
         Ok(())
@@ -344,26 +400,53 @@ mod tests {
     #[test]
     fn a_lease_has_one_holder_until_it_runs_out_or_is_released() {
         let d = tempfile::tempdir().unwrap();
-        let (a, b) = (Registry::new(d.path().join("feeds.db")), Registry::new(d.path().join("feeds.db")));
+        let (a, b) = (
+            Registry::new(d.path().join("feeds.db")),
+            Registry::new(d.path().join("feeds.db")),
+        );
         assert!(a.try_lease("poll", "a", 100, 1000).unwrap());
-        assert!(a.try_lease("poll", "a", 100, 1050).unwrap(), "the holder renews");
-        assert!(!b.try_lease("poll", "b", 100, 1100).unwrap(), "held until 1150");
-        assert!(b.try_lease("poll", "b", 100, 1150).unwrap(), "taken over once it runs out");
+        assert!(
+            a.try_lease("poll", "a", 100, 1050).unwrap(),
+            "the holder renews"
+        );
+        assert!(
+            !b.try_lease("poll", "b", 100, 1100).unwrap(),
+            "held until 1150"
+        );
+        assert!(
+            b.try_lease("poll", "b", 100, 1150).unwrap(),
+            "taken over once it runs out"
+        );
         assert!(!a.try_lease("poll", "a", 100, 1200).unwrap());
         b.release_lease("poll", "b");
-        assert!(a.try_lease("poll", "a", 100, 1201).unwrap(), "released leases are free at once");
-        assert!(b.try_lease("other", "b", 100, 1201).unwrap(), "leases are per name");
+        assert!(
+            a.try_lease("poll", "a", 100, 1201).unwrap(),
+            "released leases are free at once"
+        );
+        assert!(
+            b.try_lease("other", "b", 100, 1201).unwrap(),
+            "leases are per name"
+        );
     }
 
     #[test]
     fn feeds_are_added_once_listed_and_removed() {
         let (d, r) = reg();
         assert!(r.list().unwrap().is_empty());
-        assert!(!d.path().join("feeds.db").exists(), "reading creates nothing");
+        assert!(
+            !d.path().join("feeds.db").exists(),
+            "reading creates nothing"
+        );
         assert!(r.add("https://a.org/feed", "user", Status::Active).unwrap());
-        assert!(!r.add("https://a.org/feed", "seed", Status::Probation).unwrap());
+        assert!(
+            !r.add("https://a.org/feed", "seed", Status::Probation)
+                .unwrap()
+        );
         let l = r.list().unwrap();
-        assert_eq!((l.len(), l[0].origin.as_str(), l[0].status), (1, "user", Status::Active));
+        assert_eq!(
+            (l.len(), l[0].origin.as_str(), l[0].status),
+            (1, "user", Status::Active)
+        );
         assert_eq!(r.due(crate::now(), 10).unwrap().len(), 1);
         assert!(r.remove("https://a.org/feed").unwrap());
         assert!(r.list().unwrap().is_empty());
@@ -372,25 +455,54 @@ mod tests {
     #[test]
     fn success_promotes_and_adapts_the_interval_failure_backs_off_and_disables() {
         let (_d, r) = reg();
-        r.add("https://a.org/f", "discovered", Status::Probation).unwrap();
+        r.add("https://a.org/f", "discovered", Status::Probation)
+            .unwrap();
         r.record("https://a.org/f", Ok((5, Some("A")))).unwrap();
         let f = &r.list().unwrap()[0];
-        assert_eq!((f.status, f.total, f.title.as_str()), (Status::Active, 5, "A"));
+        assert_eq!(
+            (f.status, f.total, f.title.as_str()),
+            (Status::Active, 5, "A")
+        );
         assert!(f.interval < DEFAULT_INTERVAL, "new items speed polling up");
-        assert!(r.due(crate::now(), 10).unwrap().is_empty(), "not due again yet");
+        assert!(
+            r.due(crate::now(), 10).unwrap().is_empty(),
+            "not due again yet"
+        );
         r.record("https://a.org/f", Ok((0, None))).unwrap();
         r.record("https://a.org/f", Ok((0, None))).unwrap();
-        assert!(r.list().unwrap()[0].interval > f.interval / 2, "quiet feeds slow down");
+        assert!(
+            r.list().unwrap()[0].interval > f.interval / 2,
+            "quiet feeds slow down"
+        );
 
         r.add("https://b.org/f", "seed", Status::Probation).unwrap();
         for _ in 0..3 {
             r.record("https://b.org/f", Err("boom")).unwrap();
         }
-        let b = r.list().unwrap().into_iter().find(|f| f.url == "https://b.org/f").unwrap();
-        assert_eq!((b.status, b.fails, b.last_error.as_deref()), (Status::Disabled, 3, Some("boom")));
-        assert!(r.due(i64::MAX, 10).unwrap().iter().all(|f| f.url != b.url), "disabled feeds are never due");
+        let b = r
+            .list()
+            .unwrap()
+            .into_iter()
+            .find(|f| f.url == "https://b.org/f")
+            .unwrap();
+        assert_eq!(
+            (b.status, b.fails, b.last_error.as_deref()),
+            (Status::Disabled, 3, Some("boom"))
+        );
+        assert!(
+            r.due(i64::MAX, 10).unwrap().iter().all(|f| f.url != b.url),
+            "disabled feeds are never due"
+        );
         r.revive(&b.url).unwrap();
-        assert_eq!(r.list().unwrap().iter().find(|f| f.url == b.url).unwrap().status, Status::Probation);
+        assert_eq!(
+            r.list()
+                .unwrap()
+                .iter()
+                .find(|f| f.url == b.url)
+                .unwrap()
+                .status,
+            Status::Probation
+        );
     }
 
     #[test]

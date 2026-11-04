@@ -11,6 +11,7 @@ pub mod error;
 pub mod eval;
 pub mod fusion;
 pub mod journal;
+pub mod learn;
 pub mod model;
 pub mod pipeline;
 pub mod rank;
@@ -20,18 +21,17 @@ pub mod report;
 pub mod rerank;
 pub mod sections;
 pub mod semantic;
-pub mod learn;
 pub mod source;
 pub mod store;
 pub mod text;
 
 pub use error::{Error, ErrorBody, FailureKind, Result, SourceError, SourceFailure};
-pub use model::{Related, 
-    Attribution, Content, Hit, Mode, ScoreParts, SearchRequest, SearchResponse, SelectedSection,
-    StageTiming, TimeRange,
-};
-pub use rank::Recency;
 pub use journal::Journal;
 pub use learn::{LearnConfig, Learner, Observation};
-pub use pipeline::{host_of, ExtractedPage, Pipeline, PipelineConfig, SourceProbe};
+pub use model::{
+    Attribution, Content, Hit, Mode, Related, ScoreParts, SearchRequest, SearchResponse,
+    SelectedSection, StageTiming, TimeRange,
+};
+pub use pipeline::{ExtractedPage, Pipeline, PipelineConfig, SourceProbe, host_of};
+pub use rank::Recency;
 pub use source::{RawHit, Remembered, Sink, Source, SourceQuery};

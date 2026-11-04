@@ -80,7 +80,9 @@ impl Health {
 
     fn blocked_for(&self) -> Option<Duration> {
         let until = (*self.open_until.lock().unwrap_or_else(|e| e.into_inner()))?;
-        until.checked_duration_since(Instant::now()).filter(|d| !d.is_zero())
+        until
+            .checked_duration_since(Instant::now())
+            .filter(|d| !d.is_zero())
     }
 }
 
@@ -154,8 +156,17 @@ impl Renderer {
     }
 
     /// One browser process for one page.
-    async fn run(&self, url: &str, allow_private: bool, proxy: Option<&str>) -> Result<String, Failure> {
-        let _slot = self.slots.acquire().await.map_err(|e| Failure::Browser(e.to_string()))?;
+    async fn run(
+        &self,
+        url: &str,
+        allow_private: bool,
+        proxy: Option<&str>,
+    ) -> Result<String, Failure> {
+        let _slot = self
+            .slots
+            .acquire()
+            .await
+            .map_err(|e| Failure::Browser(e.to_string()))?;
         let child = tokio::process::Command::new(&self.binary)
             .args(self.args(url, allow_private, proxy))
             .stdin(Stdio::null())
@@ -163,11 +174,16 @@ impl Renderer {
             .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
-            .map_err(|e| Failure::Browser(format!("cannot start {}: {e}", self.binary.display())))?;
-        let out = tokio::time::timeout(Duration::from_secs(self.timeout_secs.max(1)), child.wait_with_output())
-            .await
-            .map_err(|_| Failure::Browser(format!("rendering took over {} s", self.timeout_secs)))?
-            .map_err(|e| Failure::Browser(e.to_string()))?;
+            .map_err(|e| {
+                Failure::Browser(format!("cannot start {}: {e}", self.binary.display()))
+            })?;
+        let out = tokio::time::timeout(
+            Duration::from_secs(self.timeout_secs.max(1)),
+            child.wait_with_output(),
+        )
+        .await
+        .map_err(|_| Failure::Browser(format!("rendering took over {} s", self.timeout_secs)))?
+        .map_err(|e| Failure::Browser(e.to_string()))?;
         let html = String::from_utf8_lossy(&out.stdout).into_owned();
         let log = String::from_utf8_lossy(&out.stderr);
         if !out.status.success() {
@@ -181,13 +197,21 @@ impl Renderer {
     /// finishes in time and executes JavaScript. Updates the breaker either way.
     pub async fn probe(&self) -> Result<(), String> {
         use tokio::io::AsyncWriteExt;
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.map_err(|e| e.to_string())?;
-        let url = format!("http://{}/", listener.local_addr().map_err(|e| e.to_string())?);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|e| e.to_string())?;
+        let url = format!(
+            "http://{}/",
+            listener.local_addr().map_err(|e| e.to_string())?
+        );
         let server = tokio::spawn(async move {
             // The browser may open more than one connection (favicon, retries).
             while let Ok((mut sock, _)) = listener.accept().await {
                 let body = PROBE_PAGE;
-                let reply = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
                 let _ = sock.write_all(reply.as_bytes()).await;
                 let _ = sock.shutdown().await;
             }
@@ -228,7 +252,9 @@ impl Renderer {
             loop {
                 let r = me.probe().await;
                 match (&r, was_ok) {
-                    (Err(e), true) => eprintln!("seesea: the headless browser failed its health check: {e}"),
+                    (Err(e), true) => {
+                        eprintln!("seesea: the headless browser failed its health check: {e}")
+                    }
                     (Ok(()), false) => eprintln!("seesea: the headless browser works again"),
                     _ => {}
                 }
@@ -263,7 +289,10 @@ impl Renderer {
                 wait.as_secs() + 1
             )));
         }
-        let mut html = match self.run(url.as_str(), opts.allow_private, proxy_url.as_deref()).await {
+        let mut html = match self
+            .run(url.as_str(), opts.allow_private, proxy_url.as_deref())
+            .await
+        {
             Ok(h) => {
                 self.health.ok();
                 h
@@ -275,7 +304,9 @@ impl Renderer {
             }
             Err(Failure::Browser(m)) => {
                 if self.health.fail() {
-                    eprintln!("seesea: the headless browser is failing ({m}); rendering is paused and will be probed again");
+                    eprintln!(
+                        "seesea: the headless browser is failing ({m}); rendering is paused and will be probed again"
+                    );
                 }
                 return Err(FetchError::Network(m));
             }
@@ -385,11 +416,17 @@ mod tests {
         assert!(!r.available(), "three failures in a row pause rendering");
         // A render now fails at once instead of starting the browser.
         let t = Instant::now();
-        let e = r.render("https://example.com/", &FetchOptions::default()).await.unwrap_err();
+        let e = r
+            .render("https://example.com/", &FetchOptions::default())
+            .await
+            .unwrap_err();
         assert!(t.elapsed() < Duration::from_secs(5), "{e}");
 
         // The binary is fixed (a probe is allowed through the open breaker).
-        script(dir.path(), "echo '<html><body><div id=x>probe-ok-7</div><p>enough text to count as a document</p></body></html>'");
+        script(
+            dir.path(),
+            "echo '<html><body><div id=x>probe-ok-7</div><p>enough text to count as a document</p></body></html>'",
+        );
         r.probe().await.unwrap();
         assert!(r.available());
     }
@@ -398,7 +435,10 @@ mod tests {
     #[tokio::test]
     async fn a_browser_that_does_not_run_scripts_fails_the_probe() {
         let dir = tempfile::tempdir().unwrap();
-        let p = script(dir.path(), "echo '<html><body><div id=x>waiting</div><p>enough text to count as a document</p></body></html>'");
+        let p = script(
+            dir.path(),
+            "echo '<html><body><div id=x>waiting</div><p>enough text to count as a document</p></body></html>'",
+        );
         let e = Renderer::new(&p).probe().await.unwrap_err();
         assert!(e.contains("did not run its script"), "{e}");
     }
@@ -407,7 +447,10 @@ mod tests {
     #[tokio::test]
     async fn a_page_that_fails_to_load_does_not_count_against_the_browser() {
         let dir = tempfile::tempdir().unwrap();
-        let p = script(dir.path(), "echo 'msg=\"page failed\" err=CouldntConnect' >&2; echo '<html></html>'");
+        let p = script(
+            dir.path(),
+            "echo 'msg=\"page failed\" err=CouldntConnect' >&2; echo '<html></html>'",
+        );
         let r = Renderer::new(&p);
         for _ in 0..5 {
             let _ = r.run("http://127.0.0.1:1/", true, None).await;

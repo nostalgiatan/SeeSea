@@ -88,7 +88,10 @@ pub struct DeskConfig {
 
 impl Default for DeskConfig {
     fn default() -> Self {
-        Self { api: ServiceConfig::at("127.0.0.1:8080"), mcp: ServiceConfig::at("127.0.0.1:8090") }
+        Self {
+            api: ServiceConfig::at("127.0.0.1:8080"),
+            mcp: ServiceConfig::at("127.0.0.1:8090"),
+        }
     }
 }
 
@@ -98,7 +101,11 @@ impl DeskConfig {
     }
 
     fn get_mut(&mut self, id: &str) -> &mut ServiceConfig {
-        if id == "mcp" { &mut self.mcp } else { &mut self.api }
+        if id == "mcp" {
+            &mut self.mcp
+        } else {
+            &mut self.api
+        }
     }
 }
 
@@ -163,7 +170,8 @@ impl Desk {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| e.to_string())?;
         }
         std::fs::rename(&tmp, &self.file).map_err(|e| format!("{}: {e}", self.file.display()))
     }
@@ -181,10 +189,17 @@ impl Desk {
         let cfg = self.config();
         let mut live = self.live.lock().unwrap_or_else(|e| e.into_inner());
         // A listener that ended by itself is not running any more.
-        let ended: Vec<String> = live.iter().filter(|(_, r)| r.finished()).map(|(k, _)| k.clone()).collect();
+        let ended: Vec<String> = live
+            .iter()
+            .filter(|(_, r)| r.finished())
+            .map(|(k, _)| k.clone())
+            .collect();
         for id in ended {
             live.remove(&id);
-            self.problem(&id, Some("the listener stopped by itself; see the terminal for the reason".into()));
+            self.problem(
+                &id,
+                Some("the listener stopped by itself; see the terminal for the reason".into()),
+            );
         }
         let problems = self.problems.lock().unwrap_or_else(|e| e.into_inner());
         let logs = self.logs.lock().unwrap_or_else(|e| e.into_inner());
@@ -217,14 +232,22 @@ impl Desk {
         live.get(id).filter(|r| !r.finished()).map(|r| {
             let mut a = r.addr;
             if a.ip().is_unspecified() {
-                a.set_ip(if a.is_ipv4() { std::net::Ipv4Addr::LOCALHOST.into() } else { std::net::Ipv6Addr::LOCALHOST.into() });
+                a.set_ip(if a.is_ipv4() {
+                    std::net::Ipv4Addr::LOCALHOST.into()
+                } else {
+                    std::net::Ipv6Addr::LOCALHOST.into()
+                });
             }
             (a, r.tls)
         })
     }
 
     fn check(c: &ServiceConfig) -> Result<SocketAddr, String> {
-        let addr: SocketAddr = c.addr.trim().parse().map_err(|_| format!("'{}' is not an address like 127.0.0.1:8080", c.addr))?;
+        let addr: SocketAddr = c
+            .addr
+            .trim()
+            .parse()
+            .map_err(|_| format!("'{}' is not an address like 127.0.0.1:8080", c.addr))?;
         if !(1..=4096).contains(&c.max_concurrent) {
             return Err("the concurrency limit is between 1 and 4096".into());
         }
@@ -245,7 +268,8 @@ impl Desk {
 
     /// Replace the settings of a service; they apply the next time it starts.
     pub fn save(&self, id: &str, body: &[u8]) -> Result<(), String> {
-        let mut new: ServiceConfig = serde_json::from_slice(body).map_err(|e| format!("invalid settings: {e}"))?;
+        let mut new: ServiceConfig =
+            serde_json::from_slice(body).map_err(|e| format!("invalid settings: {e}"))?;
         new.root_key = new.root_key.filter(|k| !k.is_empty());
         Self::check(&new)?;
         if matches!(new.auth, Auth::Key | Auth::Both) && new.root_key.is_none() {
@@ -254,7 +278,11 @@ impl Desk {
         if matches!(new.auth, Auth::Open | Auth::Accounts) {
             new.root_key = None;
         }
-        self.cfg.lock().unwrap_or_else(|e| e.into_inner()).get_mut(id).clone_from(&new);
+        self.cfg
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_mut(id)
+            .clone_from(&new);
         self.persist()
     }
 
@@ -278,7 +306,13 @@ impl Desk {
     }
 
     async fn start_inner(&self, id: &str) -> Result<(), String> {
-        if self.live.lock().unwrap_or_else(|e| e.into_inner()).get(id).is_some_and(|r| !r.finished()) {
+        if self
+            .live
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(id)
+            .is_some_and(|r| !r.finished())
+        {
             return Err("it is already running".into());
         }
         let c = self.config().get(id).clone();
@@ -286,9 +320,12 @@ impl Desk {
         let template = self.template.get().ok_or("the workbench is not ready")?;
         let store = match c.auth {
             Auth::Accounts | Auth::Both => {
-                let s = Store::open(&self.auth_db).map_err(|e| format!("{}: {e}", self.auth_db.display()))?;
+                let s = Store::open(&self.auth_db)
+                    .map_err(|e| format!("{}: {e}", self.auth_db.display()))?;
                 if !s.has_users() && c.auth == Auth::Accounts {
-                    return Err("no user exists yet: add one under Accounts, or choose a shared key".into());
+                    return Err(
+                        "no user exists yet: add one under Accounts, or choose a shared key".into(),
+                    );
                 }
                 Some(s)
             }
@@ -299,23 +336,49 @@ impl Desk {
             _ => None,
         };
         let tls = match (&c.tls_cert, &c.tls_key) {
-            (Some(cert), Some(key)) => Some(crate::tls::server_config(&crate::tls::ServerTls { cert: cert.clone(), key: key.clone(), client_ca: None })?),
+            (Some(cert), Some(key)) => Some(crate::tls::server_config(&crate::tls::ServerTls {
+                cert: cert.clone(),
+                key: key.clone(),
+                client_ca: None,
+            })?),
             _ => None,
         };
         let mut state = template.clone();
         let log = Arc::new(crate::reqlog::ReqLog::new());
         state.reqlog = Some(Arc::clone(&log));
         state.access = Arc::new(Access::new(store, self.plans.clone(), root));
-        let opts = ListenOpts { max_concurrent: c.max_concurrent, allow_open: c.allow_open, tls, behind_tls_proxy: c.behind_tls_proxy, mcp_only: id == "mcp" };
-        let running = crate::server::listen(addr, state, opts).await.map_err(|e| e.to_string())?;
-        eprintln!("seesea {id} service on {}://{}", if running.tls { "https" } else { "http" }, running.addr);
-        self.live.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_string(), running);
-        self.logs.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_string(), log);
+        let opts = ListenOpts {
+            max_concurrent: c.max_concurrent,
+            allow_open: c.allow_open,
+            tls,
+            behind_tls_proxy: c.behind_tls_proxy,
+            mcp_only: id == "mcp",
+        };
+        let running = crate::server::listen(addr, state, opts)
+            .await
+            .map_err(|e| e.to_string())?;
+        eprintln!(
+            "seesea {id} service on {}://{}",
+            if running.tls { "https" } else { "http" },
+            running.addr
+        );
+        self.live
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id.to_string(), running);
+        self.logs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id.to_string(), log);
         Ok(())
     }
 
     pub async fn stop(&self, id: &str) -> Result<(), String> {
-        let running = self.live.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+        let running = self
+            .live
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(id);
         match running {
             Some(r) => r.stop().await.map_err(|e| e.to_string()),
             None => Ok(()),
@@ -350,7 +413,10 @@ impl Desk {
     }
 
     fn grades(&self) -> Grades {
-        std::fs::read(self.grades_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+        std::fs::read(self.grades_path())
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default()
     }
 
     /// Record (or with `None` clear) the grade of one result, and rewrite both files.
@@ -359,7 +425,9 @@ impl Desk {
         let mut all = self.grades();
         match grade {
             Some(g) => {
-                all.entry(query.to_string()).or_default().insert(url.to_string(), g);
+                all.entry(query.to_string())
+                    .or_default()
+                    .insert(url.to_string(), g);
             }
             None => {
                 if let Some(m) = all.get_mut(query) {
@@ -378,10 +446,17 @@ impl Desk {
             std::fs::write(&tmp, bytes).map_err(|e| format!("{}: {e}", tmp.display()))?;
             std::fs::rename(&tmp, &path).map_err(|e| format!("{}: {e}", path.display()))
         };
-        write(self.grades_path(), serde_json::to_vec_pretty(&all).map_err(|e| e.to_string())?)?;
+        write(
+            self.grades_path(),
+            serde_json::to_vec_pretty(&all).map_err(|e| e.to_string())?,
+        )?;
         let mut lines = String::new();
         for (q, m) in &all {
-            let relevant: Vec<Value> = m.iter().filter(|(_, g)| **g > 0).map(|(u, g)| json!({"url": u, "grade": g})).collect();
+            let relevant: Vec<Value> = m
+                .iter()
+                .filter(|(_, g)| **g > 0)
+                .map(|(u, g)| json!({"url": u, "grade": g}))
+                .collect();
             if !relevant.is_empty() {
                 lines.push_str(&json!({"query": q, "relevant": relevant}).to_string());
                 lines.push('\n');
@@ -391,18 +466,32 @@ impl Desk {
     }
 
     fn store(&self) -> Result<Store, Response> {
-        Store::open(&self.auth_db).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", format!("{}: {e}", self.auth_db.display())))
+        Store::open(&self.auth_db).map_err(|e| {
+            fail(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal_error",
+                format!("{}: {e}", self.auth_db.display()),
+            )
+        })
     }
 }
 
 fn fail(status: StatusCode, code: &str, message: impl std::fmt::Display) -> Response {
-    (status, Json(json!({"code": code, "message": message.to_string()}))).into_response()
+    (
+        status,
+        Json(json!({"code": code, "message": message.to_string()})),
+    )
+        .into_response()
 }
 
 fn auth_fail(e: AuthError) -> Response {
     match e {
         AuthError::NotFound(w) => fail(StatusCode::NOT_FOUND, "not_found", format!("no such {w}")),
-        AuthError::Exists(w) => fail(StatusCode::CONFLICT, "exists", format!("{w} already exists")),
+        AuthError::Exists(w) => fail(
+            StatusCode::CONFLICT,
+            "exists",
+            format!("{w} already exists"),
+        ),
         other => fail(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", other),
     }
 }
@@ -445,21 +534,42 @@ async fn review(State(s): State<AppState>, Query(q): Query<ReviewQuery>) -> Resp
     let run = || -> Result<Value, Response> {
         let d = desk_of(&s)?;
         let since = q.since.as_deref().unwrap_or("7d");
-        let secs = parse_since(since).ok_or_else(|| fail(StatusCode::BAD_REQUEST, "invalid_request", "since is a number of hours or days, like 36h or 7d (1 hour to 366 days)"))?;
-        let events = seesea_pipeline::Journal::read(&crate::userconfig::default_journal_dir(), chrono::Utc::now().timestamp() - secs);
-        let mut report = serde_json::to_value(seesea_pipeline::report::build(&events)).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", e))?;
+        let secs = parse_since(since).ok_or_else(|| {
+            fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "since is a number of hours or days, like 36h or 7d (1 hour to 366 days)",
+            )
+        })?;
+        let events = seesea_pipeline::Journal::read(
+            &crate::userconfig::default_journal_dir(),
+            chrono::Utc::now().timestamp() - secs,
+        );
+        let mut report = serde_json::to_value(seesea_pipeline::report::build(&events))
+            .map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", e))?;
         let grades = d.grades();
         if let Some(groups) = report["candidates"].as_array_mut() {
             for g in groups {
-                let known = g["query"].as_str().and_then(|q| grades.get(q)).cloned().unwrap_or_default();
+                let known = g["query"]
+                    .as_str()
+                    .and_then(|q| grades.get(q))
+                    .cloned()
+                    .unwrap_or_default();
                 if let Some(list) = g["candidates"].as_array_mut() {
                     for c in list {
-                        c["grade"] = c["url"].as_str().and_then(|u| known.get(u)).map_or(Value::Null, |g| json!(g));
+                        c["grade"] = c["url"]
+                            .as_str()
+                            .and_then(|u| known.get(u))
+                            .map_or(Value::Null, |g| json!(g));
                     }
                 }
             }
         }
-        let learn = seesea_pipeline::Learner::open(Default::default(), crate::userconfig::default_learn_file()).report(10);
+        let learn = seesea_pipeline::Learner::open(
+            Default::default(),
+            crate::userconfig::default_learn_file(),
+        )
+        .report(10);
         Ok(json!({
             "since": since,
             "report": report,
@@ -485,32 +595,64 @@ struct Grade {
 async fn grade(State(s): State<AppState>, body: Bytes) -> Response {
     let run = || -> Result<Value, Response> {
         let d = desk_of(&s)?;
-        let g: Grade = serde_json::from_slice(&body).map_err(|e| fail(StatusCode::BAD_REQUEST, "invalid_request", format!("invalid JSON body: {e}")))?;
-        if g.query.is_empty() || g.query.len() > 1000 || g.url.is_empty() || g.url.len() > 4000 || g.grade.is_some_and(|n| n > 3) {
-            return Err(fail(StatusCode::BAD_REQUEST, "invalid_request", "a query, a URL, and a grade from 0 to 3 (or null)"));
+        let g: Grade = serde_json::from_slice(&body).map_err(|e| {
+            fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                format!("invalid JSON body: {e}"),
+            )
+        })?;
+        if g.query.is_empty()
+            || g.query.len() > 1000
+            || g.url.is_empty()
+            || g.url.len() > 4000
+            || g.grade.is_some_and(|n| n > 3)
+        {
+            return Err(fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "a query, a URL, and a grade from 0 to 3 (or null)",
+            ));
         }
-        d.grade(&g.query, &g.url, g.grade).map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, "io_error", e))?;
+        d.grade(&g.query, &g.url, g.grade)
+            .map_err(|e| fail(StatusCode::INTERNAL_SERVER_ERROR, "io_error", e))?;
         let grades = d.grades();
-        Ok(json!({"graded": grades.values().map(|m| m.len()).sum::<usize>(), "queries": grades.values().filter(|m| m.values().any(|g| *g > 0)).count()}))
+        Ok(
+            json!({"graded": grades.values().map(|m| m.len()).sum::<usize>(), "queries": grades.values().filter(|m| m.values().any(|g| *g > 0)).count()}),
+        )
     };
     run().map_or_else(|r| r, |v| Json(v).into_response())
 }
 
 fn desk_of(s: &AppState) -> Result<Arc<Desk>, Response> {
-    s.desk.clone().ok_or_else(|| fail(StatusCode::NOT_FOUND, "not_found", "this server is not a workbench"))
+    s.desk.clone().ok_or_else(|| {
+        fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "this server is not a workbench",
+        )
+    })
 }
 
 async fn desk_state(State(s): State<AppState>) -> Response {
     desk_of(&s).map_or_else(|r| r, |d| Json(d.snapshot()).into_response())
 }
 
-async fn service_action(State(s): State<AppState>, Path((id, action)): Path<(String, String)>, body: Bytes) -> Response {
+async fn service_action(
+    State(s): State<AppState>,
+    Path((id, action)): Path<(String, String)>,
+    body: Bytes,
+) -> Response {
     let d = match desk_of(&s) {
         Ok(d) => d,
         Err(r) => return r,
     };
     if !SERVICES.contains(&id.as_str()) {
-        return fail(StatusCode::NOT_FOUND, "not_found", format!("no service '{id}'"));
+        return fail(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            format!("no service '{id}'"),
+        );
     }
     let done = match action.as_str() {
         "config" => d.save(&id, &body),
@@ -521,7 +663,13 @@ async fn service_action(State(s): State<AppState>, Path((id, action)): Path<(Str
             Ok(()) => d.start(&id).await,
             e => e,
         },
-        other => return fail(StatusCode::NOT_FOUND, "not_found", format!("no action '{other}'")),
+        other => {
+            return fail(
+                StatusCode::NOT_FOUND,
+                "not_found",
+                format!("no action '{other}'"),
+            );
+        }
     };
     match done {
         Ok(()) => Json(d.snapshot()).into_response(),
@@ -547,7 +695,9 @@ async fn users(State(s): State<AppState>) -> Response {
         let d = desk_of(&s)?;
         let st = d.store()?;
         let users = st.users().map_err(auth_fail)?;
-        Ok(json!({"users": users.iter().map(|u| user_json(&st, u)).collect::<Vec<_>>(), "plans": d.plans.keys().collect::<Vec<_>>(), "plan_table": d.plans}))
+        Ok(
+            json!({"users": users.iter().map(|u| user_json(&st, u)).collect::<Vec<_>>(), "plans": d.plans.keys().collect::<Vec<_>>(), "plan_table": d.plans}),
+        )
     };
     run().map_or_else(|r| r, |v| Json(v).into_response())
 }
@@ -562,14 +712,28 @@ struct NewUser {
 async fn user_new(State(s): State<AppState>, body: Bytes) -> Response {
     let run = || -> Result<Value, Response> {
         let d = desk_of(&s)?;
-        let req: NewUser = serde_json::from_slice(&body).map_err(|e| fail(StatusCode::BAD_REQUEST, "invalid_request", format!("invalid JSON body: {e}")))?;
+        let req: NewUser = serde_json::from_slice(&body).map_err(|e| {
+            fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                format!("invalid JSON body: {e}"),
+            )
+        })?;
         let name = req.name.trim();
         if name.is_empty() || name.len() > 64 || name.chars().any(|c| c.is_control()) {
-            return Err(fail(StatusCode::BAD_REQUEST, "invalid_request", "name must be 1 to 64 characters without control characters"));
+            return Err(fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "name must be 1 to 64 characters without control characters",
+            ));
         }
         let plan = req.plan.unwrap_or_else(|| "default".into());
         if !d.plans.contains_key(&plan) {
-            return Err(fail(StatusCode::BAD_REQUEST, "invalid_request", format!("no plan named '{plan}'")));
+            return Err(fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                format!("no plan named '{plan}'"),
+            ));
         }
         let st = d.store()?;
         let u = st.create_user(name, &plan).map_err(auth_fail)?;
@@ -588,11 +752,29 @@ struct NewKey {
 async fn key_new(State(s): State<AppState>, Path(user): Path<String>, body: Bytes) -> Response {
     let run = || -> Result<Value, Response> {
         let d = desk_of(&s)?;
-        let req: NewKey = if body.is_empty() { NewKey::default() } else { serde_json::from_slice(&body).map_err(|e| fail(StatusCode::BAD_REQUEST, "invalid_request", format!("invalid JSON body: {e}")))? };
+        let req: NewKey = if body.is_empty() {
+            NewKey::default()
+        } else {
+            serde_json::from_slice(&body).map_err(|e| {
+                fail(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    format!("invalid JSON body: {e}"),
+                )
+            })?
+        };
         let st = d.store()?;
-        let name = if req.name.is_empty() { "key".to_string() } else { req.name };
-        let (info, key) = st.create_key(&user, &name, req.expires_days).map_err(auth_fail)?;
-        Ok(json!({"key": key, "id": info.public_id, "note": "this is the only time the key is shown"}))
+        let name = if req.name.is_empty() {
+            "key".to_string()
+        } else {
+            req.name
+        };
+        let (info, key) = st
+            .create_key(&user, &name, req.expires_days)
+            .map_err(auth_fail)?;
+        Ok(
+            json!({"key": key, "id": info.public_id, "note": "this is the only time the key is shown"}),
+        )
     };
     run().map_or_else(|r| r, |v| (StatusCode::CREATED, Json(v)).into_response())
 }
@@ -602,10 +784,20 @@ struct Disabled {
     disabled: bool,
 }
 
-async fn user_disabled(State(s): State<AppState>, Path(name): Path<String>, body: Bytes) -> Response {
+async fn user_disabled(
+    State(s): State<AppState>,
+    Path(name): Path<String>,
+    body: Bytes,
+) -> Response {
     let run = || -> Result<Value, Response> {
         let d = desk_of(&s)?;
-        let req: Disabled = serde_json::from_slice(&body).map_err(|e| fail(StatusCode::BAD_REQUEST, "invalid_request", format!("invalid JSON body: {e}")))?;
+        let req: Disabled = serde_json::from_slice(&body).map_err(|e| {
+            fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                format!("invalid JSON body: {e}"),
+            )
+        })?;
         let st = d.store()?;
         st.set_disabled(&name, req.disabled).map_err(auth_fail)?;
         Ok(user_json(&st, &st.user(&name).map_err(auth_fail)?))
@@ -614,9 +806,8 @@ async fn user_disabled(State(s): State<AppState>, Path(name): Path<String>, body
 }
 
 async fn key_revoke(State(s): State<AppState>, Path(id): Path<String>) -> Response {
-    let run = || -> Result<(), Response> {
-        desk_of(&s)?.store()?.revoke_key(&id).map_err(auth_fail)
-    };
+    let run =
+        || -> Result<(), Response> { desk_of(&s)?.store()?.revoke_key(&id).map_err(auth_fail) };
     run().map_or_else(|r| r, |()| StatusCode::NO_CONTENT.into_response())
 }
 
@@ -636,7 +827,11 @@ pub fn open_browser(url: &str) {
         c.arg(url);
         c
     };
-    let _ = cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    let _ = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
 }
 
 async fn service_log(State(s): State<AppState>, Path(id): Path<String>) -> Response {
@@ -644,10 +839,21 @@ async fn service_log(State(s): State<AppState>, Path(id): Path<String>) -> Respo
         Ok(d) => d,
         Err(r) => return r,
     };
-    let log = d.logs.lock().unwrap_or_else(|e| e.into_inner()).get(&id).cloned();
+    let log = d
+        .logs
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&id)
+        .cloned();
     match (log, d.reach(&id)) {
-        (Some(l), Some(_)) => Json(json!({"summary": l.summary(), "recent": l.recent(100)})).into_response(),
-        _ => fail(StatusCode::NOT_FOUND, "not_running", format!("'{id}' is not running")),
+        (Some(l), Some(_)) => {
+            Json(json!({"summary": l.summary(), "recent": l.recent(100)})).into_response()
+        }
+        _ => fail(
+            StatusCode::NOT_FOUND,
+            "not_running",
+            format!("'{id}' is not running"),
+        ),
     }
 }
 
@@ -659,9 +865,19 @@ struct SetPlan {
 async fn user_plan(State(s): State<AppState>, Path(name): Path<String>, body: Bytes) -> Response {
     let run = || -> Result<Value, Response> {
         let d = desk_of(&s)?;
-        let req: SetPlan = serde_json::from_slice(&body).map_err(|e| fail(StatusCode::BAD_REQUEST, "invalid_request", format!("invalid JSON body: {e}")))?;
+        let req: SetPlan = serde_json::from_slice(&body).map_err(|e| {
+            fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                format!("invalid JSON body: {e}"),
+            )
+        })?;
         if !d.plans.contains_key(&req.plan) {
-            return Err(fail(StatusCode::BAD_REQUEST, "invalid_request", format!("no plan named '{}'", req.plan)));
+            return Err(fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                format!("no plan named '{}'", req.plan),
+            ));
         }
         let st = d.store()?;
         st.set_plan(&name, &req.plan).map_err(auth_fail)?;
@@ -690,26 +906,66 @@ async fn service_try(State(s): State<AppState>, Path(id): Path<String>, body: By
     };
     let req: Try = match serde_json::from_slice(&body) {
         Ok(r) => r,
-        Err(e) => return fail(StatusCode::BAD_REQUEST, "invalid_request", format!("invalid JSON body: {e}")),
+        Err(e) => {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                format!("invalid JSON body: {e}"),
+            );
+        }
     };
-    let Some((addr, tls)) = d.reach(&id) else { return fail(StatusCode::NOT_FOUND, "not_running", format!("'{id}' is not running")) };
+    let Some((addr, tls)) = d.reach(&id) else {
+        return fail(
+            StatusCode::NOT_FOUND,
+            "not_running",
+            format!("'{id}' is not running"),
+        );
+    };
     let method = match req.method.to_ascii_uppercase().as_str() {
         "GET" => reqwest::Method::GET,
         "POST" => reqwest::Method::POST,
-        _ => return fail(StatusCode::BAD_REQUEST, "invalid_request", "method is GET or POST"),
+        _ => {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "method is GET or POST",
+            );
+        }
     };
-    let ok_path = req.path.len() < 1024 && !req.path.chars().any(|c| c.is_control() || c.is_whitespace()) && (req.path.starts_with("/v1/") || req.path == "/mcp" || req.path == "/health");
+    let ok_path = req.path.len() < 1024
+        && !req
+            .path
+            .chars()
+            .any(|c| c.is_control() || c.is_whitespace())
+        && (req.path.starts_with("/v1/") || req.path == "/mcp" || req.path == "/health");
     if !ok_path {
-        return fail(StatusCode::BAD_REQUEST, "invalid_request", "the path starts with /v1/, or is /mcp or /health");
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "the path starts with /v1/, or is /mcp or /health",
+        );
     }
     let key = match req.auth.as_str() {
         "shared" => d.config().get(&id).root_key.clone(),
         "key" => req.key.clone().filter(|k| !k.is_empty()),
         _ => None,
     };
-    let host = if addr.is_ipv6() { format!("[{}]:{}", addr.ip(), addr.port()) } else { addr.to_string() };
-    let url = format!("{}://{host}{}", if tls { "https" } else { "http" }, req.path);
-    let client = match reqwest::Client::builder().danger_accept_invalid_certs(tls).timeout(std::time::Duration::from_secs(60)).redirect(reqwest::redirect::Policy::none()).build() {
+    let host = if addr.is_ipv6() {
+        format!("[{}]:{}", addr.ip(), addr.port())
+    } else {
+        addr.to_string()
+    };
+    let url = format!(
+        "{}://{host}{}",
+        if tls { "https" } else { "http" },
+        req.path
+    );
+    let client = match reqwest::Client::builder()
+        .danger_accept_invalid_certs(tls)
+        .timeout(std::time::Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    {
         Ok(c) => c,
         Err(e) => return fail(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string()),
     };
@@ -720,7 +976,11 @@ async fn service_try(State(s): State<AppState>, Path(id): Path<String>, body: By
     if method == reqwest::Method::POST {
         let b = req.body.unwrap_or_default();
         if b.len() > 64 * 1024 {
-            return fail(StatusCode::BAD_REQUEST, "invalid_request", "the body is at most 64 KB");
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "the body is at most 64 KB",
+            );
         }
         rb = rb.header("content-type", "application/json").body(b);
     }
@@ -728,8 +988,14 @@ async fn service_try(State(s): State<AppState>, Path(id): Path<String>, body: By
     match rb.send().await {
         Ok(r) => {
             let status = r.status().as_u16();
-            let headers: Vec<(String, String)> = r.headers().iter()
-                .filter(|(k, _)| k.as_str() == "content-type" || k.as_str() == "retry-after" || k.as_str().starts_with("x-"))
+            let headers: Vec<(String, String)> = r
+                .headers()
+                .iter()
+                .filter(|(k, _)| {
+                    k.as_str() == "content-type"
+                        || k.as_str() == "retry-after"
+                        || k.as_str().starts_with("x-")
+                })
                 .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.to_string(), v.to_string())))
                 .collect();
             let bytes = r.bytes().await.unwrap_or_default();

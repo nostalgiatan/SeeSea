@@ -44,7 +44,11 @@ async fn scripts_run_before_the_document_is_returned() {
         ..Default::default()
     };
     let page = r.render(&url, &opts).await.unwrap();
-    assert!(page.html.contains("<h1>Rendered Heading</h1>"), "{}", page.html);
+    assert!(
+        page.html.contains("<h1>Rendered Heading</h1>"),
+        "{}",
+        page.html
+    );
 }
 
 #[tokio::test]

@@ -113,7 +113,9 @@ pub struct Store {
 }
 
 pub fn now_secs() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 pub fn day_number(unix_secs: i64) -> u64 {
@@ -121,7 +123,10 @@ pub fn day_number(unix_secs: i64) -> u64 {
 }
 
 fn hash(key: &str) -> String {
-    Sha256::digest(key.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(key.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// `len` random lowercase hex digits, for keys and other secrets.
@@ -131,11 +136,17 @@ pub fn random_hex(len: usize) -> String {
 
 fn hex(len: usize) -> String {
     let mut rng = rand::rng();
-    (0..len).map(|_| char::from_digit(rng.random_range(0..16u32), 16).unwrap()).collect()
+    (0..len)
+        .map(|_| char::from_digit(rng.random_range(0..16u32), 16).unwrap())
+        .collect()
 }
 
 fn same(a: &str, b: &str) -> bool {
-    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
 }
 
 const SCHEMA: &str = "
@@ -158,13 +169,25 @@ CREATE TABLE IF NOT EXISTS buckets (
 ";
 
 fn user_from(r: &rusqlite::Row) -> rusqlite::Result<User> {
-    Ok(User { id: r.get(0)?, name: r.get(1)?, plan: r.get(2)?, disabled: r.get::<_, i64>(3)? != 0, created: r.get(4)? })
+    Ok(User {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        plan: r.get(2)?,
+        disabled: r.get::<_, i64>(3)? != 0,
+        created: r.get(4)?,
+    })
 }
 
 fn key_from(r: &rusqlite::Row) -> rusqlite::Result<KeyInfo> {
     Ok(KeyInfo {
-        id: r.get(0)?, user_id: r.get(1)?, name: r.get(2)?, public_id: r.get(3)?,
-        created: r.get(4)?, expires: r.get(5)?, revoked: r.get::<_, i64>(6)? != 0, last_used: r.get(7)?,
+        id: r.get(0)?,
+        user_id: r.get(1)?,
+        name: r.get(2)?,
+        public_id: r.get(3)?,
+        created: r.get(4)?,
+        expires: r.get(5)?,
+        revoked: r.get::<_, i64>(6)? != 0,
+        last_used: r.get(7)?,
     })
 }
 
@@ -189,9 +212,20 @@ impl Store {
     pub fn create_user(&self, name: &str, plan: &str) -> Result<User, AuthError> {
         let db = self.db.lock().unwrap();
         let created = now_secs();
-        match db.execute("INSERT INTO users (name, plan, created) VALUES (?1, ?2, ?3)", params![name, plan, created]) {
-            Ok(_) => Ok(User { id: db.last_insert_rowid(), name: name.into(), plan: plan.into(), disabled: false, created }),
-            Err(rusqlite::Error::SqliteFailure(e, _)) if e.code == rusqlite::ErrorCode::ConstraintViolation => {
+        match db.execute(
+            "INSERT INTO users (name, plan, created) VALUES (?1, ?2, ?3)",
+            params![name, plan, created],
+        ) {
+            Ok(_) => Ok(User {
+                id: db.last_insert_rowid(),
+                name: name.into(),
+                plan: plan.into(),
+                disabled: false,
+                created,
+            }),
+            Err(rusqlite::Error::SqliteFailure(e, _))
+                if e.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
                 Err(AuthError::Exists(format!("user '{name}'")))
             }
             Err(e) => Err(e.into()),
@@ -202,7 +236,11 @@ impl Store {
         self.db
             .lock()
             .unwrap()
-            .query_row("SELECT id, name, plan, disabled, created FROM users WHERE name = ?1", [name], user_from)
+            .query_row(
+                "SELECT id, name, plan, disabled, created FROM users WHERE name = ?1",
+                [name],
+                user_from,
+            )
             .optional()?
             .ok_or_else(|| AuthError::NotFound(format!("user '{name}'")))
     }
@@ -210,27 +248,46 @@ impl Store {
     /// Whether any user exists (cheap: the server asks on every request).
     pub fn has_users(&self) -> bool {
         let db = self.db.lock().unwrap();
-        db.query_row("SELECT EXISTS(SELECT 1 FROM users)", [], |r| r.get::<_, i64>(0)).map_or(false, |n| n != 0)
+        db.query_row("SELECT EXISTS(SELECT 1 FROM users)", [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .map_or(false, |n| n != 0)
     }
 
     pub fn users(&self) -> Result<Vec<User>, AuthError> {
         let db = self.db.lock().unwrap();
-        let mut st = db.prepare("SELECT id, name, plan, disabled, created FROM users ORDER BY id")?;
+        let mut st =
+            db.prepare("SELECT id, name, plan, disabled, created FROM users ORDER BY id")?;
         Ok(st.query_map([], user_from)?.collect::<Result<_, _>>()?)
     }
 
     pub fn set_disabled(&self, name: &str, disabled: bool) -> Result<(), AuthError> {
-        let n = self.db.lock().unwrap().execute("UPDATE users SET disabled = ?1 WHERE name = ?2", params![disabled as i64, name])?;
-        (n > 0).then_some(()).ok_or_else(|| AuthError::NotFound(format!("user '{name}'")))
+        let n = self.db.lock().unwrap().execute(
+            "UPDATE users SET disabled = ?1 WHERE name = ?2",
+            params![disabled as i64, name],
+        )?;
+        (n > 0)
+            .then_some(())
+            .ok_or_else(|| AuthError::NotFound(format!("user '{name}'")))
     }
 
     pub fn set_plan(&self, name: &str, plan: &str) -> Result<(), AuthError> {
-        let n = self.db.lock().unwrap().execute("UPDATE users SET plan = ?1 WHERE name = ?2", params![plan, name])?;
-        (n > 0).then_some(()).ok_or_else(|| AuthError::NotFound(format!("user '{name}'")))
+        let n = self.db.lock().unwrap().execute(
+            "UPDATE users SET plan = ?1 WHERE name = ?2",
+            params![plan, name],
+        )?;
+        (n > 0)
+            .then_some(())
+            .ok_or_else(|| AuthError::NotFound(format!("user '{name}'")))
     }
 
     /// Issue a key. The returned string is the only time it can be seen.
-    pub fn create_key(&self, user: &str, name: &str, expires_in_days: Option<u32>) -> Result<(KeyInfo, String), AuthError> {
+    pub fn create_key(
+        &self,
+        user: &str,
+        name: &str,
+        expires_in_days: Option<u32>,
+    ) -> Result<(KeyInfo, String), AuthError> {
         let owner = self.user(user)?;
         let public = format!("{PREFIX}{}", hex(8));
         let secret = hex(40);
@@ -242,7 +299,16 @@ impl Store {
             "INSERT INTO keys (user_id, name, public_id, secret_hash, created, expires) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![owner.id, name, public, hash(&key), created, expires],
         )?;
-        let info = KeyInfo { id: db.last_insert_rowid(), user_id: owner.id, name: name.into(), public_id: public, created, expires, revoked: false, last_used: None };
+        let info = KeyInfo {
+            id: db.last_insert_rowid(),
+            user_id: owner.id,
+            name: name.into(),
+            public_id: public,
+            created,
+            expires,
+            revoked: false,
+            last_used: None,
+        };
         Ok((info, key))
     }
 
@@ -250,18 +316,28 @@ impl Store {
         let owner = self.user(user)?;
         let db = self.db.lock().unwrap();
         let mut st = db.prepare("SELECT id, user_id, name, public_id, created, expires, revoked, last_used FROM keys WHERE user_id = ?1 ORDER BY id")?;
-        Ok(st.query_map([owner.id], key_from)?.collect::<Result<_, _>>()?)
+        Ok(st
+            .query_map([owner.id], key_from)?
+            .collect::<Result<_, _>>()?)
     }
 
     pub fn revoke_key(&self, public_id: &str) -> Result<(), AuthError> {
-        let n = self.db.lock().unwrap().execute("UPDATE keys SET revoked = 1 WHERE public_id = ?1", [public_id])?;
-        (n > 0).then_some(()).ok_or_else(|| AuthError::NotFound(format!("key '{public_id}'")))
+        let n = self.db.lock().unwrap().execute(
+            "UPDATE keys SET revoked = 1 WHERE public_id = ?1",
+            [public_id],
+        )?;
+        (n > 0)
+            .then_some(())
+            .ok_or_else(|| AuthError::NotFound(format!("key '{public_id}'")))
     }
 
     /// Check a key presented by a client.
     pub fn authenticate(&self, key: &str) -> Result<Principal, AuthError> {
         // `ss_` + 8 hex + `_` + 40 hex
-        let public = key.get(..PREFIX.len() + 8).filter(|p| p.starts_with(PREFIX)).ok_or(AuthError::Invalid)?;
+        let public = key
+            .get(..PREFIX.len() + 8)
+            .filter(|p| p.starts_with(PREFIX))
+            .ok_or(AuthError::Invalid)?;
         if key.len() != PREFIX.len() + 8 + 1 + 40 {
             return Err(AuthError::Invalid);
         }
@@ -302,7 +378,11 @@ impl Store {
         self.db
             .lock()
             .unwrap()
-            .query_row("SELECT credits FROM usage WHERE user_id = ?1 AND day = ?2", params![user_id, day as i64], |r| r.get::<_, i64>(0))
+            .query_row(
+                "SELECT credits FROM usage WHERE user_id = ?1 AND day = ?2",
+                params![user_id, day as i64],
+                |r| r.get::<_, i64>(0),
+            )
             .optional()
             .ok()
             .flatten()
@@ -321,7 +401,9 @@ impl Store {
 
     pub fn dump(&self) -> Result<Dump, AuthError> {
         let db = self.db.lock().unwrap();
-        let all = |sql: &str, f: &mut dyn FnMut(&rusqlite::Row) -> rusqlite::Result<()>| -> Result<(), AuthError> {
+        let all = |sql: &str,
+                   f: &mut dyn FnMut(&rusqlite::Row) -> rusqlite::Result<()>|
+         -> Result<(), AuthError> {
             let mut st = db.prepare(sql)?;
             let mut rows = st.query([])?;
             while let Some(r) = rows.next()? {
@@ -330,18 +412,44 @@ impl Store {
             Ok(())
         };
         let mut d = Dump::default();
-        all("SELECT name, plan, disabled, created FROM users ORDER BY id", &mut |r| {
-            d.users.push(UserRecord { name: r.get(0)?, plan: r.get(1)?, disabled: r.get::<_, i64>(2)? != 0, created: r.get(3)? });
-            Ok(())
-        })?;
-        all("SELECT u.name, k.name, k.public_id, k.secret_hash, k.created, k.expires, k.revoked FROM keys k JOIN users u ON u.id = k.user_id ORDER BY k.id", &mut |r| {
-            d.keys.push(KeyRecord { user: r.get(0)?, name: r.get(1)?, public_id: r.get(2)?, secret_hash: r.get(3)?, created: r.get(4)?, expires: r.get(5)?, revoked: r.get::<_, i64>(6)? != 0 });
-            Ok(())
-        })?;
-        all("SELECT u.name, g.day, g.credits FROM usage g JOIN users u ON u.id = g.user_id ORDER BY g.user_id, g.day", &mut |r| {
-            d.usage.push(UsageRecord { user: r.get(0)?, day: r.get(1)?, credits: r.get(2)? });
-            Ok(())
-        })?;
+        all(
+            "SELECT name, plan, disabled, created FROM users ORDER BY id",
+            &mut |r| {
+                d.users.push(UserRecord {
+                    name: r.get(0)?,
+                    plan: r.get(1)?,
+                    disabled: r.get::<_, i64>(2)? != 0,
+                    created: r.get(3)?,
+                });
+                Ok(())
+            },
+        )?;
+        all(
+            "SELECT u.name, k.name, k.public_id, k.secret_hash, k.created, k.expires, k.revoked FROM keys k JOIN users u ON u.id = k.user_id ORDER BY k.id",
+            &mut |r| {
+                d.keys.push(KeyRecord {
+                    user: r.get(0)?,
+                    name: r.get(1)?,
+                    public_id: r.get(2)?,
+                    secret_hash: r.get(3)?,
+                    created: r.get(4)?,
+                    expires: r.get(5)?,
+                    revoked: r.get::<_, i64>(6)? != 0,
+                });
+                Ok(())
+            },
+        )?;
+        all(
+            "SELECT u.name, g.day, g.credits FROM usage g JOIN users u ON u.id = g.user_id ORDER BY g.user_id, g.day",
+            &mut |r| {
+                d.usage.push(UsageRecord {
+                    user: r.get(0)?,
+                    day: r.get(1)?,
+                    credits: r.get(2)?,
+                });
+                Ok(())
+            },
+        )?;
         Ok(d)
     }
 
@@ -349,7 +457,8 @@ impl Store {
     /// usage only ever goes up. Returns `(users added, keys added)`.
     pub fn load(&self, d: &Dump) -> Result<(usize, usize), AuthError> {
         let db = self.db.lock().unwrap();
-        let tx = rusqlite::Transaction::new_unchecked(&db, rusqlite::TransactionBehavior::Immediate)?;
+        let tx =
+            rusqlite::Transaction::new_unchecked(&db, rusqlite::TransactionBehavior::Immediate)?;
         let (mut users, mut keys) = (0, 0);
         for u in &d.users {
             users += tx.execute(
@@ -381,7 +490,10 @@ impl Store {
     pub fn sync(&self, d: &Dump) -> Result<(), AuthError> {
         {
             let db = self.db.lock().unwrap();
-            let tx = rusqlite::Transaction::new_unchecked(&db, rusqlite::TransactionBehavior::Immediate)?;
+            let tx = rusqlite::Transaction::new_unchecked(
+                &db,
+                rusqlite::TransactionBehavior::Immediate,
+            )?;
             for u in &d.users {
                 tx.execute(
                     "INSERT INTO users (name, plan, disabled, created) VALUES (?1, ?2, ?3, ?4)
@@ -410,16 +522,30 @@ impl Store {
         f: impl FnOnce(&mut Account) -> T,
     ) -> Result<T, AuthError> {
         let db = self.db.lock().unwrap();
-        let tx = rusqlite::Transaction::new_unchecked(&db, rusqlite::TransactionBehavior::Immediate)?;
+        let tx =
+            rusqlite::Transaction::new_unchecked(&db, rusqlite::TransactionBehavior::Immediate)?;
         let day = crate::store::day_number(now as i64);
         let mut acct = tx
-            .query_row("SELECT tokens, updated, day, used FROM buckets WHERE user_id = ?1", [user_id], |r| {
-                Ok(Account { tokens: r.get(0)?, updated: r.get(1)?, day: r.get::<_, i64>(2)? as u64, used_today: r.get::<_, i64>(3)? as u64 })
-            })
+            .query_row(
+                "SELECT tokens, updated, day, used FROM buckets WHERE user_id = ?1",
+                [user_id],
+                |r| {
+                    Ok(Account {
+                        tokens: r.get(0)?,
+                        updated: r.get(1)?,
+                        day: r.get::<_, i64>(2)? as u64,
+                        used_today: r.get::<_, i64>(3)? as u64,
+                    })
+                },
+            )
             .optional()?
             .unwrap_or_else(|| {
                 let used = tx
-                    .query_row("SELECT credits FROM usage WHERE user_id = ?1 AND day = ?2", params![user_id, day as i64], |r| r.get::<_, i64>(0))
+                    .query_row(
+                        "SELECT credits FROM usage WHERE user_id = ?1 AND day = ?2",
+                        params![user_id, day as i64],
+                        |r| r.get::<_, i64>(0),
+                    )
                     .optional()
                     .ok()
                     .flatten()
@@ -443,15 +569,33 @@ impl Store {
     }
 
     /// [`Limiter::check`](crate::Limiter::check), but with the bucket kept in this file.
-    pub fn spend(&self, user_id: i64, plan: &Plan, cost: u32, now: f64) -> Result<Result<Decision, Denied>, AuthError> {
+    pub fn spend(
+        &self,
+        user_id: i64,
+        plan: &Plan,
+        cost: u32,
+        now: f64,
+    ) -> Result<Result<Decision, Denied>, AuthError> {
         self.with_bucket(user_id, plan, now, |a| a.spend(plan, cost, now))
     }
 
-    pub fn spend_more(&self, user_id: i64, plan: &Plan, extra: u32, now: f64) -> Result<(), AuthError> {
+    pub fn spend_more(
+        &self,
+        user_id: i64,
+        plan: &Plan,
+        extra: u32,
+        now: f64,
+    ) -> Result<(), AuthError> {
         self.with_bucket(user_id, plan, now, |a| a.charge(extra))
     }
 
-    pub fn give_back(&self, user_id: i64, plan: &Plan, cost: u32, now: f64) -> Result<(), AuthError> {
+    pub fn give_back(
+        &self,
+        user_id: i64,
+        plan: &Plan,
+        cost: u32,
+        now: f64,
+    ) -> Result<(), AuthError> {
         self.with_bucket(user_id, plan, now, |a| a.refund(cost, plan.burst))
     }
 
@@ -459,8 +603,14 @@ impl Store {
     pub fn usage_history(&self, user: &str, days: u32) -> Result<Vec<(u64, u64)>, AuthError> {
         let owner = self.user(user)?;
         let db = self.db.lock().unwrap();
-        let mut st = db.prepare("SELECT day, credits FROM usage WHERE user_id = ?1 ORDER BY day DESC LIMIT ?2")?;
-        Ok(st.query_map(params![owner.id, days], |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64)))?.collect::<Result<_, _>>()?)
+        let mut st = db.prepare(
+            "SELECT day, credits FROM usage WHERE user_id = ?1 ORDER BY day DESC LIMIT ?2",
+        )?;
+        Ok(st
+            .query_map(params![owner.id, days], |r| {
+                Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64))
+            })?
+            .collect::<Result<_, _>>()?)
     }
 }
 
@@ -473,11 +623,21 @@ mod tests {
         let s = Store::in_memory().unwrap();
         s.create_user("ann", "default").unwrap();
         let (info, key) = s.create_key("ann", "laptop", None).unwrap();
-        assert!(key.starts_with("ss_") && key.len() == 3 + 8 + 1 + 40, "{key}");
+        assert!(
+            key.starts_with("ss_") && key.len() == 3 + 8 + 1 + 40,
+            "{key}"
+        );
         let p = s.authenticate(&key).unwrap();
         assert_eq!((p.user.name.as_str(), p.key_id), ("ann", info.id));
-        let stored: String = s.db.lock().unwrap().query_row("SELECT secret_hash FROM keys", [], |r| r.get(0)).unwrap();
-        assert!(!stored.contains(&key[13..]), "the secret must not be stored");
+        let stored: String =
+            s.db.lock()
+                .unwrap()
+                .query_row("SELECT secret_hash FROM keys", [], |r| r.get(0))
+                .unwrap();
+        assert!(
+            !stored.contains(&key[13..]),
+            "the secret must not be stored"
+        );
         s.revoke_key(&info.public_id).unwrap();
         assert!(matches!(s.authenticate(&key), Err(AuthError::Revoked)));
     }
@@ -489,8 +649,18 @@ mod tests {
         let (_, key) = s.create_key("ann", "k", None).unwrap();
         let mut wrong = key.clone();
         wrong.replace_range(key.len() - 1.., if key.ends_with('0') { "1" } else { "0" });
-        for bad in [wrong.as_str(), "", "ss_", "ss_deadbeef_x", "sk-123", "ss_00000000_0000000000000000000000000000000000000000"] {
-            assert!(matches!(s.authenticate(bad), Err(AuthError::Invalid)), "{bad}");
+        for bad in [
+            wrong.as_str(),
+            "",
+            "ss_",
+            "ss_deadbeef_x",
+            "sk-123",
+            "ss_00000000_0000000000000000000000000000000000000000",
+        ] {
+            assert!(
+                matches!(s.authenticate(bad), Err(AuthError::Invalid)),
+                "{bad}"
+            );
         }
     }
 
@@ -504,7 +674,10 @@ mod tests {
         s.set_disabled("ann", false).unwrap();
         assert!(s.authenticate(&key).is_ok());
         let (_, old) = s.create_key("ann", "old", Some(1)).unwrap();
-        s.db.lock().unwrap().execute("UPDATE keys SET expires = 1 WHERE name = 'old'", []).unwrap();
+        s.db.lock()
+            .unwrap()
+            .execute("UPDATE keys SET expires = 1 WHERE name = 'old'", [])
+            .unwrap();
         assert!(matches!(s.authenticate(&old), Err(AuthError::Expired)));
     }
 
@@ -512,9 +685,18 @@ mod tests {
     fn duplicate_users_and_missing_names_are_reported() {
         let s = Store::in_memory().unwrap();
         s.create_user("ann", "default").unwrap();
-        assert!(matches!(s.create_user("ann", "default"), Err(AuthError::Exists(_))));
-        assert!(matches!(s.create_key("bob", "k", None), Err(AuthError::NotFound(_))));
-        assert!(matches!(s.revoke_key("ss_nope"), Err(AuthError::NotFound(_))));
+        assert!(matches!(
+            s.create_user("ann", "default"),
+            Err(AuthError::Exists(_))
+        ));
+        assert!(matches!(
+            s.create_key("bob", "k", None),
+            Err(AuthError::NotFound(_))
+        ));
+        assert!(matches!(
+            s.revoke_key("ss_nope"),
+            Err(AuthError::NotFound(_))
+        ));
         assert_eq!(s.users().unwrap().len(), 1);
     }
 
@@ -525,7 +707,10 @@ mod tests {
         let (_, key) = a.create_key("ann", "laptop", None).unwrap();
         a.set_usage(u.id, 9, 12).unwrap();
         let dump = a.dump().unwrap();
-        assert!(!serde_json::to_string(&dump).unwrap().contains(&key[13..]), "a dump holds no secret");
+        assert!(
+            !serde_json::to_string(&dump).unwrap().contains(&key[13..]),
+            "a dump holds no secret"
+        );
         assert_eq!(b.load(&dump).unwrap(), (1, 1));
         assert_eq!(b.authenticate(&key).unwrap().user.plan, "pro");
         assert_eq!(b.usage_history("ann", 5).unwrap(), vec![(9, 12)]);
@@ -541,7 +726,13 @@ mod tests {
         let path = dir.path().join("auth.db");
         let (a, b) = (Store::open(&path).unwrap(), Store::open(&path).unwrap());
         let u = a.create_user("ann", "p").unwrap();
-        let plan = Plan { per_minute: 60, burst: 4, per_day: 5, max_concurrent: 1, deep: true };
+        let plan = Plan {
+            per_minute: 60,
+            burst: 4,
+            per_day: 5,
+            max_concurrent: 1,
+            deep: true,
+        };
         // Two processes spend alternately from the same bucket of 4.
         a.spend(u.id, &plan, 1, 100.0).unwrap().unwrap();
         b.spend(u.id, &plan, 1, 100.0).unwrap().unwrap();

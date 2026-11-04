@@ -28,7 +28,12 @@ impl Model {
     pub fn from_json(json: &str) -> Result<Model, String> {
         let f: ModelFile = serde_json::from_str(json).map_err(|e| e.to_string())?;
         let booster = GradientBooster::from_json(&f.booster).map_err(|e| e.to_string())?;
-        Ok(Model { booster, n_features: f.n_features, thr_core: f.thr_core, thr_extended: f.thr_extended })
+        Ok(Model {
+            booster,
+            n_features: f.n_features,
+            thr_core: f.thr_core,
+            thr_extended: f.thr_extended,
+        })
     }
 
     /// Same as `predict`, building the column-major matrix straight from block features plus the
@@ -43,13 +48,21 @@ impl Model {
         let mut data = vec![0.0f64; n * d];
         for (i, f) in feats.iter().enumerate() {
             debug_assert_eq!(f.len(), w);
-            for (j, v) in f.iter().enumerate() { data[j * n + i] = *v as f64; }
-            for (j, v) in page.iter().enumerate() { data[(w + j) * n + i] = *v as f64; }
+            for (j, v) in f.iter().enumerate() {
+                data[j * n + i] = *v as f64;
+            }
+            for (j, v) in page.iter().enumerate() {
+                data[(w + j) * n + i] = *v as f64;
+            }
             data[(d - 1) * n + i] = flag as f64;
         }
         let m = Matrix::new(&data, n, d);
         // tiny pages: threads cost more than they save
-        self.booster.predict(&m, n >= 2000).into_iter().map(|z| (1.0 / (1.0 + (-z).exp())) as f32).collect()
+        self.booster
+            .predict(&m, n >= 2000)
+            .into_iter()
+            .map(|z| (1.0 / (1.0 + (-z).exp())) as f32)
+            .collect()
     }
 
     /// Probability that each row (one per block) is main content.
@@ -66,6 +79,10 @@ impl Model {
             }
         }
         let m = Matrix::new(&data, n, d);
-        self.booster.predict(&m, false).into_iter().map(|z| (1.0 / (1.0 + (-z).exp())) as f32).collect()
+        self.booster
+            .predict(&m, false)
+            .into_iter()
+            .map(|z| (1.0 / (1.0 + (-z).exp())) as f32)
+            .collect()
     }
 }

@@ -1,7 +1,9 @@
 use seesea_extract::{Extractor, Options};
 
 fn core(html: &str) -> String {
-    Extractor::new().extract(html, "http://example.com/a", &Options::default()).core
+    Extractor::new()
+        .extract(html, "http://example.com/a", &Options::default())
+        .core
 }
 
 const PROSE: &str = "The base units of the SI are listed below and are used everywhere in science and engineering, from physics laboratories to the shop floor.";
@@ -14,7 +16,10 @@ fn a_data_table_becomes_a_markdown_table() {
          <p>{PROSE} Each unit has a precise definition.</p></article></body></html>"
     );
     let md = core(&html);
-    assert!(md.contains("| Quantity | Unit |\n| --- | --- |\n| Length | metre \\| m |"), "{md}");
+    assert!(
+        md.contains("| Quantity | Unit |\n| --- | --- |\n| Length | metre \\| m |"),
+        "{md}"
+    );
 }
 
 #[test]
@@ -49,7 +54,10 @@ fn a_href_that_contains_markdown_keeps_the_real_address() {
          <p>{PROSE} A third paragraph keeps the article long enough to be kept.</p></article></body></html>"
     );
     let md = core(&html);
-    assert!(md.contains("[institute home page](https://www.example.com/?a=1)"), "{md}");
+    assert!(
+        md.contains("[institute home page](https://www.example.com/?a=1)"),
+        "{md}"
+    );
 }
 
 #[test]
@@ -84,6 +92,12 @@ fn superscripts_and_subscripts_become_unicode() {
          <p>{PROSE} A closing paragraph keeps the article long enough.</p></article></body></html>"
     );
     let md = core(&html);
-    assert!(md.contains("m² ") && md.contains("10⁻¹") && md.contains("H₂O"), "{md}");
-    assert!(md.contains("| Area | m² |") && md.contains("| Volume | m³ |"), "{md}");
+    assert!(
+        md.contains("m² ") && md.contains("10⁻¹") && md.contains("H₂O"),
+        "{md}"
+    );
+    assert!(
+        md.contains("| Area | m² |") && md.contains("| Volume | m³ |"),
+        "{md}"
+    );
 }

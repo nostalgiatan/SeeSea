@@ -53,7 +53,8 @@ pub enum Accelerator {
     Gpu,
 }
 
-static ACCELERATOR: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(Accelerator::Gpu as u8);
+static ACCELERATOR: std::sync::atomic::AtomicU8 =
+    std::sync::atomic::AtomicU8::new(Accelerator::Gpu as u8);
 
 /// Choose the device for models loaded from now on. `SEESEA_EMBED_DEVICE` (`cpu` or `gpu`) still wins.
 pub fn set_accelerator(a: Accelerator) {

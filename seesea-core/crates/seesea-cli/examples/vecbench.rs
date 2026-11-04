@@ -35,7 +35,10 @@ fn embed_all(e: &Embedder, texts: &[&str], kind: Kind, cache: &Path) -> Vec<Vec<
     let dim = e.dim();
     if let Ok(bytes) = std::fs::read(cache) {
         if bytes.len() == texts.len() * dim * 4 {
-            let flat: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+            let flat: Vec<f32> = bytes
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                .collect();
             return flat.chunks(dim).map(<[f32]>::to_vec).collect();
         }
     }
@@ -44,7 +47,12 @@ fn embed_all(e: &Embedder, texts: &[&str], kind: Kind, cache: &Path) -> Vec<Vec<
     for (i, chunk) in texts.chunks(32).enumerate() {
         out.extend(e.embed(chunk, kind).unwrap());
         if i % 20 == 0 {
-            eprintln!("  embedded {}/{} ({:.0}s)", out.len(), texts.len(), started.elapsed().as_secs_f32());
+            eprintln!(
+                "  embedded {}/{} ({:.0}s)",
+                out.len(),
+                texts.len(),
+                started.elapsed().as_secs_f32()
+            );
         }
     }
     let bytes: Vec<u8> = out.iter().flatten().flat_map(|f| f.to_le_bytes()).collect();
@@ -71,16 +79,29 @@ impl Bm25 {
                 *tf.entry(t).or_default() += 1.0;
             }
             for (t, f) in tf {
-                postings.entry(t.to_string()).or_default().push((i as u32, f));
+                postings
+                    .entry(t.to_string())
+                    .or_default()
+                    .push((i as u32, f));
             }
         }
         let n = docs.len() as f32;
         let idf = postings
             .iter()
-            .map(|(t, p)| (t.clone(), ((n - p.len() as f32 + 0.5) / (p.len() as f32 + 0.5) + 1.0).ln()))
+            .map(|(t, p)| {
+                (
+                    t.clone(),
+                    ((n - p.len() as f32 + 0.5) / (p.len() as f32 + 0.5) + 1.0).ln(),
+                )
+            })
             .collect();
         let avg = len.iter().sum::<f32>() / n;
-        Bm25 { postings, idf, len, avg }
+        Bm25 {
+            postings,
+            idf,
+            len,
+            avg,
+        }
     }
 
     fn scores(&self, query: &str) -> Vec<f32> {
@@ -90,7 +111,9 @@ impl Bm25 {
             if !seen.insert(t.clone()) {
                 continue;
             }
-            let (Some(p), Some(idf)) = (self.postings.get(&t), self.idf.get(&t)) else { continue };
+            let (Some(p), Some(idf)) = (self.postings.get(&t), self.idf.get(&t)) else {
+                continue;
+            };
             for &(d, f) in p {
                 let norm = 1.2 * (0.25 + 0.75 * self.len[d as usize] / self.avg);
                 s[d as usize] += idf * f * 2.2 / (f + norm);
@@ -111,7 +134,14 @@ fn bits(v: &[f32], center: &[f32]) -> Vec<u64> {
 }
 
 fn hamming_scores(q: &[u64], docs: &[Vec<u64>]) -> Vec<f32> {
-    docs.iter().map(|d| -(q.iter().zip(d).map(|(a, b)| (a ^ b).count_ones()).sum::<u32>() as f32)).collect()
+    docs.iter()
+        .map(|d| {
+            -(q.iter()
+                .zip(d)
+                .map(|(a, b)| (a ^ b).count_ones())
+                .sum::<u32>() as f32)
+        })
+        .collect()
 }
 
 /// Documents best first. Ties keep the lower index, which is arbitrary but fixed.
@@ -124,7 +154,11 @@ fn order(scores: &[f32]) -> Vec<usize> {
 /// Rank of `target` counting every document that scores at least as well as a loss.
 fn pessimistic_rank(scores: &[f32], target: usize) -> usize {
     let t = scores[target];
-    1 + scores.iter().enumerate().filter(|&(i, &s)| i != target && s >= t).count()
+    1 + scores
+        .iter()
+        .enumerate()
+        .filter(|&(i, &s)| i != target && s >= t)
+        .count()
 }
 
 fn rrf(lists: &[&[usize]], n: usize) -> Vec<f32> {
@@ -173,13 +207,24 @@ fn main() {
     let qv = embed_all(&e, &qtexts, Kind::Query, &dir.join("queries.f32"));
     let dim = e.dim();
 
-    let mean: Vec<f32> = (0..dim).map(|i| dv.iter().map(|v| v[i]).sum::<f32>() / dv.len() as f32).collect();
+    let mean: Vec<f32> = (0..dim)
+        .map(|i| dv.iter().map(|v| v[i]).sum::<f32>() / dv.len() as f32)
+        .collect();
     let zero = vec![0.0f32; dim];
     let dbits_c: Vec<Vec<u64>> = dv.iter().map(|v| bits(v, &mean)).collect();
     let dbits_z: Vec<Vec<u64>> = dv.iter().map(|v| bits(v, &zero)).collect();
     let bm = Bm25::new(&docs);
 
-    let methods = ["bm25", "dense f32", "binary (centred)", "binary (sign only)", "binary200 -> f32 rescore", "bm25 + dense f32", "bm25 + binary", "bm25 + binary200->f32"];
+    let methods = [
+        "bm25",
+        "dense f32",
+        "binary (centred)",
+        "binary (sign only)",
+        "binary200 -> f32 rescore",
+        "bm25 + dense f32",
+        "bm25 + binary",
+        "bm25 + binary200->f32",
+    ];
     let mut tallies: HashMap<(String, &str), Tally> = HashMap::new();
     let mut overlap: HashMap<(String, &str), (f64, f64)> = HashMap::new();
     for (qi, q) in queries.iter().enumerate() {
@@ -200,10 +245,16 @@ fn main() {
         let s_h3 = rrf(&[&o_bm, &o_re[..200]], n);
         let all = [&s_bm, &s_f, &s_bc, &s_bz, &s_re, &s_h1, &s_h2, &s_h3];
         for (m, s) in methods.iter().zip(all) {
-            tallies.entry((q.kind.clone(), m)).or_default().add(pessimistic_rank(s, q.target));
+            tallies
+                .entry((q.kind.clone(), m))
+                .or_default()
+                .add(pessimistic_rank(s, q.target));
         }
         let top10_f: std::collections::HashSet<usize> = o_f.iter().take(10).copied().collect();
-        for (m, o) in [("binary (centred)", &o_bc), ("binary200 -> f32 rescore", &o_re)] {
+        for (m, o) in [
+            ("binary (centred)", &o_bc),
+            ("binary200 -> f32 rescore", &o_re),
+        ] {
             let hit = o.iter().take(10).filter(|d| top10_f.contains(d)).count() as f64 / 10.0;
             let e = overlap.entry((q.kind.clone(), m)).or_default();
             e.0 += hit;
@@ -212,12 +263,30 @@ fn main() {
     }
 
     for kind in ["title", "sentence"] {
-        println!("\nquery kind: {kind}   ({} documents to choose from)", docs.len());
-        println!("{:<28} {:>6} {:>6} {:>6} {:>6} {:>7}  {:>14}", "method", "R@1", "R@10", "R@50", "R@200", "MRR", "top10 = f32's");
+        println!(
+            "\nquery kind: {kind}   ({} documents to choose from)",
+            docs.len()
+        );
+        println!(
+            "{:<28} {:>6} {:>6} {:>6} {:>6} {:>7}  {:>14}",
+            "method", "R@1", "R@10", "R@50", "R@200", "MRR", "top10 = f32's"
+        );
         for m in methods {
             let t = &tallies[&(kind.to_string(), m)];
-            let ov = overlap.get(&(kind.to_string(), m)).map(|(a, b)| format!("{:.3}", a / b)).unwrap_or_default();
-            println!("{:<28} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>7.3}  {:>14}", m, t.r1 / t.n, t.r10 / t.n, t.r50 / t.n, t.r200 / t.n, t.mrr / t.n, ov);
+            let ov = overlap
+                .get(&(kind.to_string(), m))
+                .map(|(a, b)| format!("{:.3}", a / b))
+                .unwrap_or_default();
+            println!(
+                "{:<28} {:>6.3} {:>6.3} {:>6.3} {:>6.3} {:>7.3}  {:>14}",
+                m,
+                t.r1 / t.n,
+                t.r10 / t.n,
+                t.r50 / t.n,
+                t.r200 / t.n,
+                t.mrr / t.n,
+                ov
+            );
         }
     }
 }

@@ -127,7 +127,9 @@ pub struct Report {
 }
 
 fn now_secs() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 impl Learner {
@@ -146,8 +148,19 @@ impl Learner {
     }
 
     fn build(cfg: LearnConfig, path: Option<PathBuf>, state: State) -> Self {
-        let seed = SystemTime::now().duration_since(UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64) | 1;
-        Self { tap: Mutex::new(None), cfg, path, state: Mutex::new(state), last_flush: Mutex::new(now_secs()), rng: AtomicU64::new(seed), dirty: false.into() }
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(1, |d| d.as_nanos() as u64)
+            | 1;
+        Self {
+            tap: Mutex::new(None),
+            cfg,
+            path,
+            state: Mutex::new(state),
+            last_flush: Mutex::new(now_secs()),
+            rng: AtomicU64::new(seed),
+            dirty: false.into(),
+        }
     }
 
     pub fn config(&self) -> &LearnConfig {
@@ -158,7 +171,8 @@ impl Learner {
     fn estimate(&self, s: &Stat, now: i64, prior: f64) -> Option<f64> {
         let mut s = s.clone();
         s.decay(now, self.cfg.half_life_days);
-        (s.n >= self.cfg.min_observations).then(|| (s.sum + self.cfg.shrink * prior) / (s.n + self.cfg.shrink))
+        (s.n >= self.cfg.min_observations)
+            .then(|| (s.sum + self.cfg.shrink * prior) / (s.n + self.cfg.shrink))
     }
 
     fn global_mean(&self, st: &State, now: i64) -> f64 {
@@ -195,23 +209,38 @@ impl Learner {
             return;
         }
         if let Some(tap) = self.tap.lock().unwrap().as_ref() {
-            tap(Observation { host: host.into(), sources: sources.iter().map(|s| s.to_string()).collect(), value, weight });
+            tap(Observation {
+                host: host.into(),
+                sources: sources.iter().map(|s| s.to_string()).collect(),
+                value,
+                weight,
+            });
         }
         self.dirty.store(true, Ordering::Relaxed);
         let (now, hl) = (now_secs(), self.cfg.half_life_days);
         let value = value.clamp(0.0, 1.0);
         {
             let mut st = self.state.lock().unwrap();
-            st.hosts.entry(host.to_string()).or_default().add(value, weight, now, hl);
+            st.hosts
+                .entry(host.to_string())
+                .or_default()
+                .add(value, weight, now, hl);
             for s in sources {
-                st.sources.entry((*s).to_string()).or_default().add(value, weight, now, hl);
+                st.sources
+                    .entry((*s).to_string())
+                    .or_default()
+                    .add(value, weight, now, hl);
             }
             st.global.add(value, weight, now, hl);
             if st.hosts.len() > self.cfg.max_hosts {
                 // Forget the hosts we know least about.
-                let mut by_n: Vec<(String, f64)> = st.hosts.iter().map(|(h, s)| (h.clone(), s.n)).collect();
+                let mut by_n: Vec<(String, f64)> =
+                    st.hosts.iter().map(|(h, s)| (h.clone(), s.n)).collect();
                 by_n.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-                for (h, _) in by_n.into_iter().take(st.hosts.len() - self.cfg.max_hosts * 9 / 10) {
+                for (h, _) in by_n
+                    .into_iter()
+                    .take(st.hosts.len() - self.cfg.max_hosts * 9 / 10)
+                {
                     st.hosts.remove(&h);
                 }
             }
@@ -239,7 +268,9 @@ impl Learner {
 
     /// Replace what is known with an exported picture. Unreadable bytes change nothing.
     pub fn import(&self, bytes: &[u8]) -> bool {
-        let Ok(st) = serde_json::from_slice::<State>(bytes) else { return false };
+        let Ok(st) = serde_json::from_slice::<State>(bytes) else {
+            return false;
+        };
         *self.state.lock().unwrap() = st;
         self.dirty.store(true, Ordering::Relaxed);
         true
@@ -248,7 +279,9 @@ impl Learner {
     /// Add the counts of an exported picture to this one (moving a node's history into the merged
     /// picture). Both sides are aged to now first, so old counts weigh what they would anyway.
     pub fn merge(&self, bytes: &[u8]) -> bool {
-        let Ok(other) = serde_json::from_slice::<State>(bytes) else { return false };
+        let Ok(other) = serde_json::from_slice::<State>(bytes) else {
+            return false;
+        };
         let (now, hl) = (now_secs(), self.cfg.half_life_days);
         let add = |into: &mut Stat, mut from: Stat| {
             into.decay(now, hl);
@@ -310,7 +343,9 @@ impl Learner {
     pub fn flush(&self) {
         let Some(path) = &self.path else { return };
         self.dirty.store(false, Ordering::Relaxed);
-        let Ok(bytes) = serde_json::to_vec(&*self.state.lock().unwrap()) else { return };
+        let Ok(bytes) = serde_json::to_vec(&*self.state.lock().unwrap()) else {
+            return;
+        };
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
@@ -333,12 +368,29 @@ impl Learner {
         let standing = |(name, s): (&String, &Stat)| {
             let mut d = s.clone();
             d.decay(now, self.cfg.half_life_days);
-            Standing { name: name.clone(), observations: d.n, value: (d.sum + self.cfg.shrink * mean) / (d.n + self.cfg.shrink) }
+            Standing {
+                name: name.clone(),
+                observations: d.n,
+                value: (d.sum + self.cfg.shrink * mean) / (d.n + self.cfg.shrink),
+            }
         };
-        let mut hosts: Vec<Standing> = st.hosts.iter().map(standing).filter(|h| h.observations >= self.cfg.min_observations).collect();
-        hosts.sort_by(|a, b| b.value.partial_cmp(&a.value).unwrap_or(std::cmp::Ordering::Equal));
+        let mut hosts: Vec<Standing> = st
+            .hosts
+            .iter()
+            .map(standing)
+            .filter(|h| h.observations >= self.cfg.min_observations)
+            .collect();
+        hosts.sort_by(|a, b| {
+            b.value
+                .partial_cmp(&a.value)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let mut sources: Vec<Standing> = st.sources.iter().map(standing).collect();
-        sources.sort_by(|a, b| b.value.partial_cmp(&a.value).unwrap_or(std::cmp::Ordering::Equal));
+        sources.sort_by(|a, b| {
+            b.value
+                .partial_cmp(&a.value)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let worst: Vec<Standing> = hosts.iter().rev().take(top).cloned().collect();
         Report {
             observations: st.global.n,
@@ -369,7 +421,10 @@ mod tests {
 
     #[test]
     fn observations_from_another_node_and_merged_histories_add_up() {
-        let (a, b) = (Learner::new(LearnConfig::default()), Learner::new(LearnConfig::default()));
+        let (a, b) = (
+            Learner::new(LearnConfig::default()),
+            Learner::new(LearnConfig::default()),
+        );
         let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
         let sink = seen.clone();
         a.tap(move |o| sink.lock().unwrap().push(o));
@@ -389,7 +444,11 @@ mod tests {
         // History moves by merge; a snapshot replaces.
         let c = Learner::new(LearnConfig::default());
         assert!(c.merge(&b.export()) && c.merge(&a.export()));
-        assert!((c.report(5).observations - 3.0).abs() < 0.01, "{}", c.report(5).observations);
+        assert!(
+            (c.report(5).observations - 3.0).abs() < 0.01,
+            "{}",
+            c.report(5).observations
+        );
         let d = Learner::new(LearnConfig::default());
         assert!(d.import(&c.export()) && !d.import(b"nonsense"));
         assert!((d.report(5).observations - 3.0).abs() < 0.01);
@@ -406,9 +465,15 @@ mod tests {
             l.observe("good.example", &[], 0.9, 1.0);
             l.observe("farm.example", &[], 0.1, 1.0);
         }
-        let (good, farm) = (l.adjustment("good.example", &[]), l.adjustment("farm.example", &[]));
+        let (good, farm) = (
+            l.adjustment("good.example", &[]),
+            l.adjustment("farm.example", &[]),
+        );
         assert!(good > 0.02 && farm < -0.02, "{good} {farm}");
-        assert!(good.abs() <= 0.15 * 0.5 + 1e-9, "bounded by the weight: {good}");
+        assert!(
+            good.abs() <= 0.15 * 0.5 + 1e-9,
+            "bounded by the weight: {good}"
+        );
         assert_eq!(l.adjustment("never-seen.example", &[]), 0.0);
     }
 
@@ -452,7 +517,10 @@ mod tests {
 
     #[test]
     fn old_observations_fade() {
-        let l = Learner::new(LearnConfig { half_life_days: 1.0, ..Default::default() });
+        let l = Learner::new(LearnConfig {
+            half_life_days: 1.0,
+            ..Default::default()
+        });
         for _ in 0..10 {
             l.observe("a.example", &[], 0.9, 1.0);
             l.observe("b.example", &[], 0.1, 1.0);
@@ -465,7 +533,11 @@ mod tests {
             }
             st.global.at -= 10 * 86_400;
         }
-        assert_eq!(l.adjustment("a.example", &[]), 0.0, "ten half-lives later it no longer counts");
+        assert_eq!(
+            l.adjustment("a.example", &[]),
+            0.0,
+            "ten half-lives later it no longer counts"
+        );
     }
 
     #[test]
@@ -482,16 +554,25 @@ mod tests {
         assert!(again.adjustment("a.example", &[]) > 0.0);
         assert_eq!(again.report(5).hosts, 2);
         again.reset();
-        assert_eq!(Learner::open(LearnConfig::default(), path).report(5).hosts, 0);
+        assert_eq!(
+            Learner::open(LearnConfig::default(), path).report(5).hosts,
+            0
+        );
         // A damaged file is not fatal.
         let bad = dir.path().join("bad.json");
         std::fs::write(&bad, b"{not json").unwrap();
-        assert_eq!(Learner::open(LearnConfig::default(), bad).report(5).hosts, 0);
+        assert_eq!(
+            Learner::open(LearnConfig::default(), bad).report(5).hosts,
+            0
+        );
     }
 
     #[test]
     fn the_host_table_is_bounded() {
-        let l = Learner::new(LearnConfig { max_hosts: 50, ..Default::default() });
+        let l = Learner::new(LearnConfig {
+            max_hosts: 50,
+            ..Default::default()
+        });
         for i in 0..500 {
             l.observe(&format!("h{i}.example"), &[], 0.5, 1.0);
         }
@@ -501,7 +582,10 @@ mod tests {
     #[test]
     fn exploring_picks_beyond_the_fetched_slots_and_only_when_enabled() {
         assert_eq!(learner().explore_index(5, 20), None);
-        let l = Learner::new(LearnConfig { explore: 1.0, ..Default::default() });
+        let l = Learner::new(LearnConfig {
+            explore: 1.0,
+            ..Default::default()
+        });
         for _ in 0..50 {
             let j = l.explore_index(5, 20).unwrap();
             assert!((5..20).contains(&j), "{j}");

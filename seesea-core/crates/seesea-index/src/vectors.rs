@@ -15,7 +15,11 @@ fn mean_path(index: &Index) -> std::path::PathBuf {
 
 fn load_mean(index: &Index) -> Option<Vec<f32>> {
     let b = std::fs::read(mean_path(index)).ok()?;
-    (b.len() % 4 == 0 && !b.is_empty()).then(|| b.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect())
+    (b.len() % 4 == 0 && !b.is_empty()).then(|| {
+        b.chunks_exact(4)
+            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .collect()
+    })
 }
 
 pub fn binarise(v: &[f32], mean: &[f32]) -> Vec<u8> {
@@ -41,13 +45,22 @@ pub fn embed_pending(index: &Index, embedder: &Arc<dyn TextEmbedder>, max: usize
     let mut done = 0;
     while done < max {
         let have_mean = load_mean(index);
-        let want = if have_mean.is_some() { BATCH } else { FIRST_BATCH }.min(max - done);
-        let Ok(pending) = index.store.unembedded(want) else { break };
+        let want = if have_mean.is_some() {
+            BATCH
+        } else {
+            FIRST_BATCH
+        }
+        .min(max - done);
+        let Ok(pending) = index.store.unembedded(want) else {
+            break;
+        };
         if pending.is_empty() || (have_mean.is_none() && pending.len() < FIRST_BATCH.min(max)) {
             break; // not enough items yet to estimate a mean
         }
         let texts: Vec<&str> = pending.iter().map(|(_, _, t)| t.as_str()).collect();
-        let Ok(vectors) = embedder.embed_passages(&texts) else { break };
+        let Ok(vectors) = embedder.embed_passages(&texts) else {
+            break;
+        };
         if vectors.len() != pending.len() {
             break;
         }
@@ -69,7 +82,12 @@ pub fn embed_pending(index: &Index, embedder: &Arc<dyn TextEmbedder>, max: usize
                 m
             }
         };
-        let rows: Vec<(i64, i64, Vec<u8>)> = pending.iter().zip(&vectors).filter(|(_, v)| v.len() == mean.len()).map(|((d, id, _), v)| (*d, *id, binarise(v, &mean))).collect();
+        let rows: Vec<(i64, i64, Vec<u8>)> = pending
+            .iter()
+            .zip(&vectors)
+            .filter(|(_, v)| v.len() == mean.len())
+            .map(|((d, id, _), v)| (*d, *id, binarise(v, &mean)))
+            .collect();
         if index.store.set_vectors(&rows).is_err() {
             break;
         }
@@ -98,7 +116,9 @@ mod tests {
                 .map(|t| {
                     let mut v = vec![0f32; 256];
                     for w in t.to_lowercase().split_whitespace() {
-                        let h = w.bytes().fold(7usize, |a, b| a.wrapping_mul(31).wrapping_add(b as usize));
+                        let h = w
+                            .bytes()
+                            .fold(7usize, |a, b| a.wrapping_mul(31).wrapping_add(b as usize));
                         v[h % 256] += 1.0;
                         v[(h / 7) % 256] += 0.5;
                     }
@@ -114,9 +134,21 @@ mod tests {
         let index = Index::open(dir.path());
         let now = crate::now();
         let mut items: Vec<Item> = (0..40)
-            .map(|i| Item { url: format!("https://f.com/{i}"), title: format!("filler story number {i} about cooking pasta"), lead: format!("recipe {i}"), published: Some(now), source: "t".into() })
+            .map(|i| Item {
+                url: format!("https://f.com/{i}"),
+                title: format!("filler story number {i} about cooking pasta"),
+                lead: format!("recipe {i}"),
+                published: Some(now),
+                source: "t".into(),
+            })
             .collect();
-        items.push(Item { url: "https://q.com/1".into(), title: "Strong earthquake damages coastal harbour".into(), lead: "seismologists measured magnitude".into(), published: Some(now), source: "t".into() });
+        items.push(Item {
+            url: "https://q.com/1".into(),
+            title: "Strong earthquake damages coastal harbour".into(),
+            lead: "seismologists measured magnitude".into(),
+            published: Some(now),
+            source: "t".into(),
+        });
         index.store.ingest(&items).unwrap();
         let embedder: Arc<dyn TextEmbedder> = Arc::new(Toy);
         assert_eq!(index.store.stats().embedded, 0);
@@ -124,19 +156,44 @@ mod tests {
         assert_eq!(n, 41);
         assert_eq!(index.store.stats().embedded, 41);
         assert_eq!(embed_pending(&index, &embedder, 100), 0, "nothing left");
-        let q = query_bits(&index, &*embedder, "strong earthquake damages coastal harbour").unwrap();
+        let q = query_bits(
+            &index,
+            &*embedder,
+            "strong earthquake damages coastal harbour",
+        )
+        .unwrap();
         assert_eq!(q.len(), 32);
         let near = index.store.nearest(&q, None, 3, u32::MAX).unwrap();
-        assert_eq!(near[0].0.url, "https://q.com/1", "{:?}", near.iter().map(|(s, d)| (&s.title, d)).collect::<Vec<_>>());
-        assert!(index.store.nearest(&q, None, 3, 0).unwrap().is_empty(), "the distance cut-off applies");
+        assert_eq!(
+            near[0].0.url,
+            "https://q.com/1",
+            "{:?}",
+            near.iter().map(|(s, d)| (&s.title, d)).collect::<Vec<_>>()
+        );
+        assert!(
+            index.store.nearest(&q, None, 3, 0).unwrap().is_empty(),
+            "the distance cut-off applies"
+        );
     }
 
     #[test]
     fn too_few_items_do_not_fix_a_mean_yet() {
         let dir = tempfile::tempdir().unwrap();
         let index = Index::open(dir.path());
-        index.store.ingest(&[Item { url: "https://a.com/1".into(), title: "one".into(), lead: String::new(), published: None, source: "t".into() }]).unwrap();
-        assert_eq!(embed_pending(&index, &(Arc::new(Toy) as Arc<dyn TextEmbedder>), 10), 0);
+        index
+            .store
+            .ingest(&[Item {
+                url: "https://a.com/1".into(),
+                title: "one".into(),
+                lead: String::new(),
+                published: None,
+                source: "t".into(),
+            }])
+            .unwrap();
+        assert_eq!(
+            embed_pending(&index, &(Arc::new(Toy) as Arc<dyn TextEmbedder>), 10),
+            0
+        );
         assert!(!dir.path().join("mean.f32").exists());
     }
 }

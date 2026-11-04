@@ -38,7 +38,8 @@ pub fn server_config(t: &ServerTls) -> Result<Arc<rustls::ServerConfig>, String>
     if chain.is_empty() {
         return Err(format!("{} holds no certificate", t.cert.display()));
     }
-    let key = PrivateKeyDer::from_pem_file(&t.key).map_err(|e| format!("{}: {e}", t.key.display()))?;
+    let key =
+        PrivateKeyDer::from_pem_file(&t.key).map_err(|e| format!("{}: {e}", t.key.display()))?;
     let builder = rustls::ServerConfig::builder_with_provider(provider.clone())
         .with_safe_default_protocol_versions()
         .map_err(|e| e.to_string())?;
@@ -48,14 +49,19 @@ pub fn server_config(t: &ServerTls) -> Result<Arc<rustls::ServerConfig>, String>
             for c in certs(ca)? {
                 roots.add(c).map_err(|e| format!("{}: {e}", ca.display()))?;
             }
-            let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider)
-                .build()
-                .map_err(|e| e.to_string())?;
+            let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
+                Arc::new(roots),
+                provider,
+            )
+            .build()
+            .map_err(|e| e.to_string())?;
             builder.with_client_cert_verifier(verifier)
         }
         None => builder.with_no_client_auth(),
     };
-    let mut config = builder.with_single_cert(chain, key).map_err(|e| format!("certificate and key do not fit: {e}"))?;
+    let mut config = builder
+        .with_single_cert(chain, key)
+        .map_err(|e| format!("certificate and key do not fit: {e}"))?;
     config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     Ok(Arc::new(config))
 }
@@ -64,7 +70,9 @@ pub fn server_config(t: &ServerTls) -> Result<Arc<rustls::ServerConfig>, String>
 #[derive(Debug, Clone, Copy)]
 pub struct PeerAddr(pub SocketAddr);
 
-impl axum::extract::connect_info::Connected<axum::serve::IncomingStream<'_, TlsListener>> for PeerAddr {
+impl axum::extract::connect_info::Connected<axum::serve::IncomingStream<'_, TlsListener>>
+    for PeerAddr
+{
     fn connect_info(stream: axum::serve::IncomingStream<'_, TlsListener>) -> Self {
         *stream.remote_addr()
     }
@@ -78,7 +86,10 @@ pub struct TlsListener {
 }
 
 impl TlsListener {
-    pub fn new(tcp: tokio::net::TcpListener, config: Arc<rustls::ServerConfig>) -> std::io::Result<Self> {
+    pub fn new(
+        tcp: tokio::net::TcpListener,
+        config: Arc<rustls::ServerConfig>,
+    ) -> std::io::Result<Self> {
         let local = tcp.local_addr()?;
         let (tx, rx) = mpsc::channel(64);
         let acceptor = TlsAcceptor::from(config);
@@ -89,11 +100,15 @@ impl TlsListener {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     continue;
                 };
-                let Ok(permit) = handshakes.clone().acquire_owned().await else { return };
+                let Ok(permit) = handshakes.clone().acquire_owned().await else {
+                    return;
+                };
                 let (acceptor, tx) = (acceptor.clone(), tx.clone());
                 tokio::spawn(async move {
                     let _permit = permit;
-                    if let Ok(Ok(tls)) = tokio::time::timeout(Duration::from_secs(10), acceptor.accept(stream)).await {
+                    if let Ok(Ok(tls)) =
+                        tokio::time::timeout(Duration::from_secs(10), acceptor.accept(stream)).await
+                    {
                         let _ = tx.send((tls, PeerAddr(peer))).await;
                     }
                 });
