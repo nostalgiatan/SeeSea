@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-win-hide"
+description = "Enables the win_hide command without any pre-configured scope."
+commands.allow = ["win_hide"]
+
+[[permission]]
+identifier = "deny-win-hide"
+description = "Denies the win_hide command without any pre-configured scope."
+commands.deny = ["win_hide"]
