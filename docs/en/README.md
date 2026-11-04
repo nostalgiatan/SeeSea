@@ -27,6 +27,7 @@ Server and clients:
 - [Run the HTTP server and issue keys](how-to/run-the-server.md)
 - [Connect an MCP client](how-to/connect-an-mcp-client.md)
 - [Use the workbench](how-to/use-the-workbench.md)
+- [Use the desktop app](how-to/use-the-desktop-app.md)
 
 Multiple nodes:
 

@@ -59,6 +59,7 @@ seesea desk        # 打开工作台：搜索、读网页，并能启动 HTTP �
 | 第一次用 | [教程：第一次搜索](docs/tutorials/first-search.md) |
 | 接入 SearXNG 或 Brave | [配置搜索来源](docs/how-to/configure-sources.md) |
 | 在浏览器里搜索、启停服务 | [使用工作台](docs/how-to/use-the-workbench.md) |
+| 桌面窗口、托盘和快捷键 | [使用桌面版](docs/how-to/use-the-desktop-app.md) |
 | 给 MCP 客户端用 | [接入 MCP 客户端](docs/how-to/connect-an-mcp-client.md) |
 | 对外提供服务 | [运行 HTTP 服务并发放密钥](docs/how-to/run-the-server.md) |
 | 部署集群 | [部署多节点集群](docs/how-to/deploy-a-cluster.md) |

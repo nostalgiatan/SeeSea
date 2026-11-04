@@ -27,6 +27,7 @@
 - [运行 HTTP 服务并发放密钥](how-to/run-the-server.md)
 - [接入 MCP 客户端](how-to/connect-an-mcp-client.md)
 - [使用工作台](how-to/use-the-workbench.md)
+- [使用桌面版](how-to/use-the-desktop-app.md)
 
 多节点：
 

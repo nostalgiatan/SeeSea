@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SeeSea</title>
+<style>
+  html { color-scheme: dark light; }
+  body { margin: 0; height: 100vh; display: grid; place-items: center; background: #0a1a22; color: #dbe8ea; font: 15px/1.6 system-ui, sans-serif; }
+  main { max-width: 520px; padding: 24px; text-align: center; }
+  h1 { font: 600 24px Georgia, serif; margin: 0 0 8px; }
+  p { color: #84a1a9; margin: 0 0 8px; overflow-wrap: anywhere; }
+  code { font: 13px ui-monospace, monospace; color: #3fd0c0; }
+</style>
+<main>
+  <h1 id="t">SeeSea</h1>
+  <p id="m"></p>
+</main>
+<script>
+  const e = window.__err || {};
+  document.getElementById('t').textContent = e.title || 'SeeSea';
+  document.getElementById('m').textContent = e.message || '';
+</script>
