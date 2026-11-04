@@ -1,0 +1,100 @@
+name: Release
+
+# Push a tag such as v3.0.0 to publish the command line program and the desktop installers.
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, ext: "" }
+          - { os: macos-latest, target: aarch64-apple-darwin, ext: "" }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, ext: ".exe" }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: seesea-core
+      - run: cargo build --release -p seesea-cli --target ${{ matrix.target }}
+        working-directory: seesea-core
+      - name: Package
+        run: |
+          name="seesea-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir "$name"
+          cp "seesea-core/target/${{ matrix.target }}/release/seesea${{ matrix.ext }}" LICENSE NOTICE "$name/"
+          if [ "${{ matrix.ext }}" = ".exe" ]; then 7z a "$name.zip" "$name" >/dev/null; else tar czf "$name.tar.gz" "$name"; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: |
+            seesea-*.tar.gz
+            seesea-*.zip
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            seesea-core
+            desktop
+      - name: System libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: cargo install tauri-cli --locked --version "^2"
+      # Builds `seesea`, puts it next to the shell as a sidecar and bundles the installers.
+      - run: desktop/scripts/bundle.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            desktop/target/release/bundle/deb/*.deb
+            desktop/target/release/bundle/appimage/*.AppImage
+            desktop/target/release/bundle/rpm/*.rpm
+            desktop/target/release/bundle/dmg/*.dmg
+            desktop/target/release/bundle/msi/*.msi
+            desktop/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  publish:
+    needs: [cli, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "SeeSea $GITHUB_REF_NAME" --generate-notes
