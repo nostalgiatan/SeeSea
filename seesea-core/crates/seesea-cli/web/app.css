@@ -63,16 +63,17 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .mark .m-eye { fill: none; stroke: var(--ink); stroke-width: 6; stroke-linejoin: round; }
 .mark .m-iris { fill: var(--buoy); }
 .mark .m-wave { fill: none; stroke: var(--sunk); stroke-width: 3.6; stroke-linecap: round; }
-.nav { display: flex; flex-direction: column; padding: 0 12px; overflow-y: auto; }
+.nav { position: relative; display: flex; flex-direction: column; padding: 0 12px; overflow-y: auto; }
+.nav-ind { position: absolute; left: 0; top: 0; width: 3px; height: 0; background: var(--ink); opacity: 0; transition: transform .34s cubic-bezier(.3,.8,.2,1), height .34s cubic-bezier(.3,.8,.2,1), opacity .2s; }
 .grp { margin: 18px 10px 6px; font-size: 10px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: var(--faint); }
 .grp:first-child { margin-top: 0; }
 .nav a { position: relative; display: grid; grid-template-columns: 22px auto 1fr; align-items: center; gap: 0 10px; padding: 8px 10px; text-decoration: none; color: var(--mute); transition: color .15s, background .15s; }
 .nav a span { font-size: 13.5px; letter-spacing: .03em; color: inherit; }
 .nav a em { font-style: normal; text-align: right; font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
-.nav a::before { content: ""; position: absolute; left: -12px; top: 50%; width: 3px; height: 0; margin-top: 0; background: var(--ink); transition: height .18s, margin .18s; }
 .nav a:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 5%, transparent); }
 .nav a.on { color: var(--ink); background: var(--panel); box-shadow: 0 0 0 1px var(--line); }
-.nav a.on::before { height: 22px; margin-top: -11px; }
+.nav a .ic { transition: color .2s, transform .25s cubic-bezier(.3,.8,.2,1); }
+.nav a:hover .ic { transform: translateX(2px); }
 .nav a.on .ic { color: var(--buoy); }
 .rail-foot { margin-top: auto; padding: 14px 22px 0; border-top: 1px solid var(--line); display: grid; gap: 4px; }
 .chip { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--mute); overflow: hidden; }
@@ -397,9 +398,9 @@ dialog .fld { margin-bottom: 4px; }
   .nav { flex-direction: row; flex: 1; padding: 0; overflow-x: auto; justify-content: space-around; }
   .nav a { grid-template-columns: auto; justify-items: center; gap: 2px; padding: 6px 10px; }
   .nav a span { font-size: 10.5px; letter-spacing: 0; }
-  .nav a::before { left: 50%; top: auto; bottom: -4px; width: 0; height: 3px; margin: 0; transform: translateX(-50%); }
-  .nav a.on::before { width: 22px; height: 3px; margin-top: 0; }
-  .nav a.on { box-shadow: none; background: none; }
+  .nav-ind { display: none; }
+  .nav a.on { box-shadow: inset 0 -3px 0 var(--ink); }
+  .nav a.on { background: none; }
   .topbar { height: 48px; gap: 8px; }
   .crumbs i, .crumbs span { display: none; }
   .cmdk kbd { display: none; }
@@ -409,4 +410,100 @@ dialog .fld { margin-bottom: 4px; }
   .hit { grid-template-columns: 1fr; } .gauge { display: none; }
   .stat { padding: 10px 14px; }
 }
-@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---- motion: short, eased, and off when the system asks for less ---- */
+:root { --ease: cubic-bezier(.2,.7,.2,1); --spring: cubic-bezier(.3,1.4,.5,1); }
+html { scroll-behavior: smooth; }
+@keyframes viewIn { from { opacity: 0; transform: translateY(10px); } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } }
+@keyframes fadeIn { from { opacity: 0; } }
+@keyframes pop { from { opacity: 0; transform: scale(.96) translateY(-4px); } }
+@keyframes growX { from { transform: scaleX(0); } }
+@keyframes growY { from { transform: scaleY(0); } }
+@keyframes slideIn { from { opacity: 0; transform: translateX(14px); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 55%, transparent); } 100% { box-shadow: 0 0 0 7px transparent; } }
+@keyframes shake { 20% { transform: translateX(-5px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+@keyframes bump { 40% { transform: scale(1.12); color: var(--buoy); } }
+@keyframes wave { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-3px); } }
+
+/* pages and the things inside them */
+.view.enter { animation: viewIn .34s var(--ease) both; }
+.view.enter .head h1 { animation: fadeUp .4s .04s var(--ease) both; }
+.crumbs b.swap { animation: fadeUp .26s var(--ease); }
+main.langfade { animation: fadeIn .26s ease; }
+.hit { transition: border-color .18s, background .18s, transform .18s var(--ease), box-shadow .18s; }
+.hit:hover { transform: translateY(-1px); }
+.hit.sel::before { transform-origin: top; animation: growY .24s var(--ease); }
+.hit > .detail { animation: fadeUp .26s var(--ease); }
+.inspector.swap > * { animation: slideIn .28s var(--ease) both; }
+.inspector:not([hidden]) { animation: slideIn .32s var(--ease); }
+.view.enter :is(.panel, .svc, .user, .plans, .group, .tile, .errbox) { animation: fadeUp .34s var(--ease) both; }
+.view.enter .users .user:nth-child(2) { animation-delay: .05s; } .view.enter .users .user:nth-child(3) { animation-delay: .1s; } .view.enter .users .user:nth-child(n+4) { animation-delay: .14s; }
+.view.enter .grid2 > :nth-child(2) { animation-delay: .06s; } .view.enter .grid2 > :nth-child(3) { animation-delay: .12s; }
+.tabbody > * { animation: fadeUp .26s var(--ease) both; }
+.errbox { animation: shake .4s .05s !important; }
+.errpage > * { animation: fadeUp .4s var(--ease) both; }
+.errpage h1 { animation-delay: .08s; } .errpage p { animation-delay: .14s; } .errpage .row { animation-delay: .2s; }
+
+/* bars grow into place */
+.part .t i, .lat .t i, .stand .t i, .quota .t i { transform-origin: left; animation: growX .7s var(--ease) both; }
+.gauge .col i { transform-origin: bottom; animation: growY .6s .1s var(--ease) both; }
+.voyage div { transform-origin: left; animation: growX .6s var(--ease) both; }
+.voyage div:nth-child(2) { animation-delay: .06s; } .voyage div:nth-child(3) { animation-delay: .12s; } .voyage div:nth-child(4) { animation-delay: .18s; } .voyage div:nth-child(5) { animation-delay: .24s; }
+.spark rect { transform-box: fill-box; transform-origin: bottom; animation: growY .5s var(--ease) both; }
+.spark rect:nth-child(2) { animation-delay: .04s; } .spark rect:nth-child(3) { animation-delay: .08s; } .spark rect:nth-child(4) { animation-delay: .12s; } .spark rect:nth-child(5) { animation-delay: .16s; } .spark rect:nth-child(6) { animation-delay: .2s; } .spark rect:nth-child(7) { animation-delay: .24s; }
+.stat b.bump, .tile b.bump { display: inline-block; animation: bump .5s var(--ease); }
+
+/* controls: hover is a colour change, press is a small push */
+.go, .quiet, .icon, .seg button, .chipbtn, .tabs button, .grades button, .cmdk { transition: background .18s, color .18s, border-color .18s, transform .12s var(--ease), box-shadow .18s; }
+.go:active, .quiet:active, .icon:active, .seg button:active, .chipbtn:active, .grades button:active { transform: translateY(1px) scale(.97); }
+.act { transition: color .15s, text-decoration-color .15s, transform .12s; }
+.act:active { transform: scale(.96); }
+.go:disabled { position: relative; color: transparent; }
+.go:disabled::after { content: ""; position: absolute; width: 14px; height: 14px; border: 2px solid var(--bg); border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+.act.copied { color: var(--good); }
+.icon:hover .ic { transform: rotate(-8deg) scale(1.08); }
+.icon .ic { transition: transform .25s var(--spring); }
+.tabs button.on::after { transform-origin: left; animation: growX .28s var(--ease); }
+.seg button.on { animation: fadeIn .2s; }
+input, select, textarea { transition: border-color .18s, background .18s, box-shadow .18s; }
+.opts input:focus, .opts select:focus, .form input:focus, .form select:focus, dialog input:focus, dialog select:focus, .console input:focus, .console select:focus, .console textarea:focus, .fld input:focus, .fld select:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--buoy) 18%, transparent); }
+.bar { position: relative; }
+.bar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--buoy); transform: scaleX(0); transition: transform .35s var(--ease); }
+.bar:focus-within::after { transform: scaleX(1); }
+.bar:focus-within { border-color: var(--ink); }
+
+/* status lights breathe while something is up */
+.lamp.ok { outline: 0; animation: ring 2.2s ease-out infinite; }
+.chip.up b { outline: 0; animation: ring 2.4s ease-out infinite; }
+
+/* brand: the eye draws itself once, the wave moves on hover */
+.mark .m-eye { stroke-dasharray: 100; animation: draw 1.1s .1s var(--ease) both; }
+.mark .m-iris { transform-box: fill-box; transform-origin: center; animation: pop .5s .7s var(--spring) both; }
+.brand:hover .m-wave { animation: wave .9s ease-in-out infinite; }
+
+/* overlays */
+dialog { transition: opacity .2s var(--ease), transform .22s var(--ease), overlay .22s allow-discrete, display .22s allow-discrete; }
+dialog:not([open]) { opacity: 0; transform: translateY(10px) scale(.98); }
+dialog[open]::backdrop { animation: fadeIn .22s; }
+@starting-style { dialog[open] { opacity: 0; transform: translateY(10px) scale(.98); } }
+dialog::backdrop { transition: opacity .2s, display .2s allow-discrete, overlay .2s allow-discrete; }
+#ctx:not([hidden]) { animation: pop .14s var(--ease); transform-origin: top left; }
+#ctx li[role=menuitem] { transition: background .1s, color .1s, padding-left .15s; }
+#ctx li[role=menuitem]:hover { padding-left: 18px; }
+.toast { animation: slideIn .28s var(--ease) both; transition: opacity .22s, transform .22s; }
+.toast.out { opacity: 0; transform: translateX(14px); }
+.pal li { transition: background .08s, color .08s; }
+
+/* theme change: the new theme is revealed as a circle from the button */
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 2; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .mark .m-eye { stroke-dasharray: none; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

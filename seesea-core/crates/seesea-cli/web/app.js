@@ -4,6 +4,24 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
+const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* Restart a CSS animation class on an element. */
+function replay(el, cls, ms) {
+  if (!el) return;
+  el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls);
+  if (ms) setTimeout(() => el.classList.remove(cls), ms);
+}
+function moveInd() {
+  const ind = $('#nav-ind'), on = $('#nav a.on');
+  if (!ind) return;
+  if (!on || !on.offsetHeight) { ind.style.opacity = '0'; return; }
+  const h = Math.round(on.offsetHeight * .62);
+  ind.style.height = h + 'px';
+  ind.style.transform = `translateY(${on.offsetTop + Math.round((on.offsetHeight - h) / 2)}px)`;
+  ind.style.opacity = '1';
+}
+addEventListener('resize', moveInd);
+
 function h(tag, attrs, ...kids) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -165,12 +183,23 @@ function applyLang() {
   updateChip();
   if (S.view && $('#crumb') && S.view !== 'error') $('#crumb').textContent = t('nav.' + S.view);
 }
+function themeSwitch(change, from) {
+  if (!document.startViewTransition || reduceMotion()) return change();
+  const r = from ? from.getBoundingClientRect() : { left: innerWidth - 40, top: 26, width: 0, height: 0 };
+  const x = r.left + r.width / 2, y = r.top + r.height / 2, rad = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  const vt = document.startViewTransition(change);
+  vt.ready.then(() => document.documentElement.animate({ clipPath: [`circle(0 at ${x}px ${y}px)`, `circle(${rad}px at ${x}px ${y}px)`] }, { duration: 520, easing: 'cubic-bezier(.3,.7,.2,1)', pseudoElement: '::view-transition-new(root)' })).catch(() => {});
+}
 function applyTheme(next) {
   const root = document.documentElement;
   if (next) { root.dataset.theme = next; store.set('ss_theme', next); }
   else if (store.get('ss_theme')) root.dataset.theme = store.get('ss_theme');
 }
-function toggleTheme() {
+function toggleTheme(e) {
+  const from = e && e.currentTarget && e.currentTarget.id === 'btn-theme' ? e.currentTarget : $('#btn-theme');
+  themeSwitch(() => flipTheme(), from);
+}
+function flipTheme() {
   const dark = document.documentElement.dataset.theme
     ? document.documentElement.dataset.theme === 'dark'
     : matchMedia('(prefers-color-scheme: dark)').matches;
@@ -181,7 +210,9 @@ function toggleTheme() {
 function toast(msg, bad) {
   const el = h('div', { class: 'toast' + (bad ? ' err' : ''), text: msg });
   $('#toasts').append(el);
-  setTimeout(() => el.remove(), bad ? 6000 : 2600);
+  const life = bad ? 6000 : 2600;
+  setTimeout(() => el.classList.add('out'), life - 240);
+  setTimeout(() => el.remove(), life);
 }
 function errBox(e, retry) {
   const st = e.status || 0;
@@ -241,7 +272,12 @@ async function api(path, { method = 'GET', body, noAuth } = {}) {
 }
 
 function copy(text) {
-  navigator.clipboard.writeText(text).then(() => toast(t('copied')), () => toast(text, true));
+  const btn = document.activeElement && document.activeElement.closest ? document.activeElement.closest('button') : null;
+  navigator.clipboard.writeText(text).then(() => {
+    toast(t('copied'));
+    const use = btn && $('use', btn);
+    if (use) { const was = use.getAttribute('href'); use.setAttribute('href', '#i-check'); btn.classList.add('copied'); setTimeout(() => { use.setAttribute('href', was); btn.classList.remove('copied'); }, 1300); }
+  }, () => toast(text, true));
 }
 
 /* ---------- small renderers ---------- */
@@ -407,6 +443,7 @@ function showInspector(i) {
   const x = S.hits[i];
   if (!x) { box.replaceChildren(h('div', { class: 'ins-empty' }, icon('search'), h('div', { text: t('ins.empty') }))); return; }
   const href = safeHref(x.url);
+  replay(box, 'swap', 400);
   box.replaceChildren(
     h('div', { class: 'ins-h' }, h('h3', { text: x.title || x.url }), h('div', { class: 'where', text: hostOf(x.url) + (x.published ? '  ·  ' + ago(x.published) : '') }),
       h('div', { class: 'ins-act' },
@@ -569,7 +606,7 @@ function statsRow(s) {
 }
 function paintStats(s) {
   const st = s.stats; if (!st) return;
-  const set = (k, v, bad) => { const c = $(`.stat[data-k="${s.id}.${k}"]`); if (c) { $('b', c).textContent = v; c.classList.toggle('bad', !!bad); } };
+  const set = (k, v, bad) => { const c = $(`.stat[data-k="${s.id}.${k}"]`); if (c) { const b = $('b', c); if (b.textContent !== String(v) && k !== 'up') replay(b, 'bump', 600); b.textContent = v; c.classList.toggle('bad', !!bad); } };
   const e = (st.client_error || 0) + (st.server_error || 0);
   set('total', st.total); set('ok', st.ok); set('err', e, e); set('up', fmtUp(st.up_secs));
 }
@@ -842,8 +879,11 @@ function route() {
   if (location.pathname !== '/') return errorPage(404, 'err.nf', t('err.nf.d', { p: location.pathname }));
   if (!VIEWS[v]) return errorPage(404, 'err.nf', t('err.nf.d', { p: location.hash || '#' }));
   if (deskOnly && !S.desk) return errorPage(404, 'err.na', t('err.na.d'));
+  const changed = S.view !== v;
   for (const el of $$('.view')) el.hidden = el.id !== 'v-' + v;
   for (const a of $$('#nav a')) a.classList.toggle('on', a.dataset.view === v);
+  moveInd();
+  if (changed) { replay($('#v-' + v), 'enter', 1000); replay($('#crumb'), 'swap', 400); }
   S.view = v;
   stopTimer();
   $('#crumb').textContent = t('nav.' + v);
@@ -853,6 +893,7 @@ function errorPage(code, titleKey, msg) {
   for (const el of $$('.view')) el.hidden = el.id !== 'v-error';
   for (const a of $$('#nav a')) a.classList.remove('on');
   S.view = 'error';
+  replay($('#v-error'), 'enter', 1000); moveInd();
   stopTimer();
   $('#crumb').textContent = code;
   $('#err-code').textContent = code;
@@ -905,7 +946,7 @@ function openPalette() {
   dlg.showModal(); input.focus();
 }
 function toggleLang() {
-  S.lang = S.lang === 'zh' ? 'en' : 'zh'; store.set('ss_lang', S.lang); applyLang();
+  S.lang = S.lang === 'zh' ? 'en' : 'zh'; store.set('ss_lang', S.lang); applyLang(); replay($('main'), 'langfade', 400); setTimeout(moveInd, 0);
   if (S.last) renderSearch(...S.last); else { $('#search-out').replaceChildren(); emptyState(); }
   if (S.lastRead) renderRead(S.lastRead);
   route();
@@ -925,6 +966,7 @@ async function boot() {
   $$('#mode button').forEach((b) => b.classList.toggle('on', b.dataset.v === S.mode));
   emptyState();
   route();
+  if (document.fonts) document.fonts.ready.then(moveInd);
   setInterval(async () => {
     try { S.health = await api('/health', { noAuth: true }); } catch { S.health = null; }
     updateChip();
