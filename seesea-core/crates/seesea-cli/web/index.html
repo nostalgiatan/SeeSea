@@ -73,12 +73,12 @@
     <main>
       <section id="v-search" class="view">
         <header class="head"><h1><span data-i="search.title">搜索</span><em data-o="search.title"></em></h1><p data-i="search.sub">多个引擎并发，融合、抓取、抽取、重排，一次给出可直接引用的结果。</p></header>
-        <div class="cols">
+        <div class="cols noins">
           <div class="left">
             <form id="search-form" class="finder card" autocomplete="off">
               <div class="bar">
                 <svg class="ic lead"><use href="#i-search"/></svg>
-                <input id="q" name="q" type="search" spellcheck="false" data-ip="search.ph" placeholder="搜点什么  ( / )" aria-label="query">
+                <input id="q" name="q" type="search" spellcheck="false" data-ip="search.ph" placeholder="搜点什么" aria-label="query">
                 <button class="go" type="submit" data-i="search.go">搜索</button>
               </div>
               <div class="opts">
@@ -99,7 +99,7 @@
             </form>
             <div id="search-out"></div>
           </div>
-          <aside id="inspector" class="inspector" aria-label="inspector"></aside>
+          <aside id="inspector" class="inspector" aria-label="inspector" hidden></aside>
         </div>
       </section>
 

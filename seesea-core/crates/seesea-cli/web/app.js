@@ -23,7 +23,7 @@ function h(tag, attrs, ...kids) {
 const D = {
   zh: {
     'nav.search': '搜索', 'nav.read': '阅读', 'nav.review': '复盘', 'nav.status': '状态', 'nav.services': '服务', 'nav.accounts': '账号',
-    'search.ph': '搜点什么  ( / )', 'search.go': '搜索',
+    'search.ph': '搜点什么', 'search.go': '搜索',
     'mode.fast': '快', 'mode.standard': '标准', 'mode.deep': '深',
     'opt.time': '时间', 'opt.any': '不限', 'opt.day': '一天', 'opt.week': '一周', 'opt.month': '一月', 'opt.year': '一年',
     'opt.topic': '类型', 'opt.general': '综合', 'opt.news': '新闻', 'opt.limit': '条数', 'opt.include': '只看', 'opt.exclude': '排除',
@@ -35,7 +35,7 @@ const D = {
     'svc.title': '服务', 'svc.sub': '从这个工作台启动 HTTP 接口和远程 MCP；它们和这里共用同一套模型与索引。',
     'acc.title': '账号', 'acc.sub': '服务用 “账号” 或 “两者” 认证时，这里的用户和密钥有效。',
     'key.title': '需要密钥', 'key.sub': '这个服务要求 API 密钥。它只保存在这个标签页里，关掉就没有了。', 'key.cancel': '取消', 'key.ok': '好',
-    'empty.big': '往哪个方向？', 'empty.sub': '按 / 开始输入，Enter 出海。j / k 选择，d 展开，g / b 标好坏，Ctrl K 打开命令面板。',
+    'empty.big': '往哪个方向？', 'empty.sub': '按 / 开始输入，Enter 搜索。j / k 选择，d 展开，g / b 标好坏，Ctrl K 打开命令面板。',
     'sum.hits': '{n} 条结果', 'sum.cached': '缓存', 'sum.none': '没有找到结果',
     'hit.detail': '详情', 'hit.good': '好', 'hit.bad': '差', 'hit.open': '打开', 'hit.nottext': '没有读到正文',
     'd.score': '分数构成', 'd.sections': '读到的章节', 'd.related': '同一事件的其他报道', 'd.found': '来源', 'd.layer1': '第一层', 'd.layer2': '第二层',
@@ -82,7 +82,7 @@ const D = {
   },
   en: {
     'nav.search': 'Search', 'nav.read': 'Read', 'nav.review': 'Review', 'nav.status': 'Status', 'nav.services': 'Services', 'nav.accounts': 'Accounts',
-    'search.ph': 'Search for something  ( / )', 'search.go': 'Search',
+    'search.ph': 'Search for something', 'search.go': 'Search',
     'mode.fast': 'Fast', 'mode.standard': 'Standard', 'mode.deep': 'Deep',
     'opt.time': 'Time', 'opt.any': 'Any', 'opt.day': 'Day', 'opt.week': 'Week', 'opt.month': 'Month', 'opt.year': 'Year',
     'opt.topic': 'Topic', 'opt.general': 'General', 'opt.news': 'News', 'opt.limit': 'Results', 'opt.include': 'Only', 'opt.exclude': 'Exclude',
@@ -404,7 +404,8 @@ function buildDetail(i) {
 }
 
 function showInspector(i) {
-  const box = $('#inspector');
+  const box = $('#inspector'), has = S.hits.length > 0;
+  box.hidden = !has; $('.cols').classList.toggle('noins', !has);
   const x = S.hits[i];
   if (!x) { box.replaceChildren(h('div', { class: 'ins-empty' }, icon('search'), h('div', { text: t('ins.empty') }))); return; }
   const href = safeHref(x.url);
@@ -1013,5 +1014,11 @@ $('#ctx').addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowDown') { li[(i + 1) % li.length].focus(); e.preventDefault(); }
   else if (e.key === 'ArrowUp') { li[(i - 1 + li.length) % li.length].focus(); e.preventDefault(); }
   else if (e.key === 'Enter' && i >= 0) { li[i].click(); e.preventDefault(); }
+});
+document.addEventListener('mousedown', (e) => {
+  const d = e.target;
+  if (!(d instanceof HTMLDialogElement) || !d.open) return;
+  const r = d.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) d.close('cancel');
 });
 boot();
