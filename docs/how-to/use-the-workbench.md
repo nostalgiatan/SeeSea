@@ -4,6 +4,8 @@
 
 ## 打开
 
+想要窗口和托盘图标而不是浏览器标签页时，用[桌面版](use-the-desktop-app.md)。
+
 ```bash
 seesea desk
 ```

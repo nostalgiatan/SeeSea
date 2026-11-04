@@ -4,6 +4,8 @@ The workbench is a web page built into `seesea`. In a browser you can search, re
 
 ## Open it
 
+For a window and a tray icon instead of a browser tab, use the [desktop app](use-the-desktop-app.md).
+
 ```bash
 seesea desk
 ```
