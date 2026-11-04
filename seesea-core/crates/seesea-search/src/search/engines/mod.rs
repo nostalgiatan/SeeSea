@@ -23,7 +23,7 @@
 //!
 //! - **utils**：引擎工具函数和通用引擎实现
 //! - **define_engine!**：引擎生成宏，用于简化引擎开发
-//! - 各种搜索引擎实现：包括 Bing、Baidu、Yandex 等 12+ 专业搜索引擎
+//! - 各种搜索引擎实现：包括保留的抓取型引擎 Bing
 //!
 //! ## 引擎生成宏
 //!
@@ -34,9 +34,7 @@
 //!
 //! SeeSea 支持多种类型的搜索引擎，包括：
 //!
-//! - **通用搜索**：Bing、Yandex、百度、搜狗、360 搜索
-//! - **图片搜索**：Unsplash、Bing Images
-//! - **视频搜索**：Bilibili、Bing Videos、搜狗视频
+//! - **通用搜索**：Bing、百度、搜狗
 //! - **新闻搜索**：Bing News
 //!
 //! ## 引擎开发指南
@@ -192,55 +190,19 @@ macro_rules! define_engine {
 /// Bing 搜索引擎实现
 pub mod bing;
 
-/// 百度搜索引擎实现
-pub mod baidu;
+/// SearXNG 上游来源
+pub mod searxng;
 
-/// Bing 图片搜索引擎实现
-pub mod bing_images;
-
-/// Yandex 搜索引擎实现
-pub mod yandex;
-
-/// Unsplash 图片搜索引擎实现
-pub mod unsplash;
-
-/// 搜狗搜索引擎实现
-pub mod sogou;
-
-/// 搜狗视频搜索引擎实现
-pub mod sogou_videos;
-
-/// Bilibili 视频搜索引擎实现
-pub mod bilibili;
-
-/// 360 搜索引擎实现
-pub mod so;
+/// Brave Search 官方 API 来源
+pub mod brave;
 
 // 统一导出引擎类型，方便外部使用
 
 /// Bing 搜索引擎
 pub use bing::BingEngine;
 
-/// 百度搜索引擎
-pub use baidu::BaiduEngine;
+/// SearXNG 上游来源
+pub use searxng::SearxngEngine;
 
-/// Bing 图片搜索引擎
-pub use bing_images::BingImagesEngine;
-
-/// Yandex 搜索引擎
-pub use yandex::YandexEngine;
-
-/// Unsplash 图片搜索引擎
-pub use unsplash::UnsplashEngine;
-
-/// 搜狗搜索引擎
-pub use sogou::SogouEngine;
-
-/// 搜狗视频搜索引擎
-pub use sogou_videos::SogouVideosEngine;
-
-/// Bilibili 视频搜索引擎
-pub use bilibili::BilibiliEngine;
-
-/// 360 搜索引擎
-pub use so::SoEngine;
+/// Brave Search 官方 API 来源
+pub use brave::BraveEngine;

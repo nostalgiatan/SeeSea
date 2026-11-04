@@ -1,0 +1,28 @@
+# The desktop shell of the workbench. Its own workspace, so the core's builds do not pull in a web engine.
+[workspace]
+
+[package]
+name = "seesea-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "SeeSea desktop: a window, a tray icon and a shortcut around `seesea desk`"
+license = "AGPL-3.0-or-later"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-runtime = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+serde_json = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

@@ -29,7 +29,7 @@
 //!
 //! # 单例模式使用示例
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use seesea::seesea_seesea_net::client::HttpClient;
 //! use seesea::seesea_seesea_net::seesea_seesea_config::NetworkConfig;
 //!
@@ -46,7 +46,7 @@
 //!
 //! # 普通实例使用示例
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use seesea::seesea_seesea_net::client::HttpClient;
 //! use seesea::seesea_seesea_net::seesea_seesea_config::NetworkConfig;
 //!
@@ -59,7 +59,7 @@
 //! ```
 
 use crate::metrics::MetricsCollector;
-use crate::privacy::PrivacyManager;
+use crate::privacy::{Kind, Privacy};
 use crate::retry::RetryConfig;
 use seesea_config::{NetworkConfig, RequestOptions};
 use seesea_errors::Result;
@@ -80,10 +80,12 @@ pub struct HttpClientState {
     client: Arc<Client>,
     /// 底层 reqwest 客户端（用于流式请求，不带自动解压缩）
     stream_client: Arc<Client>,
+    /// 只连公网地址的客户端（页面抓取用）：解析结果里的内网地址被滤掉，重定向到内网会被拒绝
+    guarded_client: Arc<Client>,
     /// 网络配置
     config: Arc<NetworkConfig>,
-    /// 隐私管理器
-    privacy_manager: Option<Arc<PrivacyManager>>,
+    /// 请求外观与节奏
+    privacy: Arc<Privacy>,
 }
 
 /// HTTP 客户端封装
@@ -95,6 +97,58 @@ pub struct HttpClient {
     retry_config: RetryConfig,
     /// 指标收集器
     metrics_collector: Arc<MetricsCollector>,
+}
+
+/// 构建一个 reqwest 客户端。`guarded` 为真时只连公网：解析结果里的内网地址被滤掉，重定向到内网会被拒绝。
+fn build_client(config: &NetworkConfig, enable_decompression: bool, guarded: bool) -> Result<Client> {
+    let mut builder = ClientBuilder::new();
+
+    builder = builder
+        .timeout(Duration::from_secs(config.pool.read_timeout_secs))
+        .connect_timeout(Duration::from_secs(config.pool.connect_timeout_secs));
+
+    builder = builder
+        .pool_max_idle_per_host(config.pool.max_idle_connections)
+        .pool_idle_timeout(Some(Duration::from_secs(config.pool.idle_timeout_secs)));
+
+    if config.pool.http2_only {
+        builder = builder.http2_prior_knowledge();
+    }
+
+    builder = builder.tcp_nodelay(config.pool.tcp_nodelay);
+
+    if let Some(interval) = config.pool.tcp_keepalive_interval_secs {
+        builder = builder.tcp_keepalive_interval(Duration::from_secs(interval));
+    }
+
+    if let Some(retries) = config.pool.tcp_keepalive_retries {
+        builder = builder.tcp_keepalive_retries(retries);
+    }
+
+    builder = super::tls::configure_tls(builder, &config.tls)?;
+
+    if config.proxy.enabled {
+        builder = super::proxy::configure_proxy(builder, &config.proxy)?;
+    }
+
+    // 兜底的浏览器 User-Agent（经 inner() 直接发出的请求也不带库标识）
+    builder = builder.user_agent(crate::privacy::profile_for("", 0, None).headers[0].1.clone());
+
+    if !enable_decompression {
+        // 明确禁用所有压缩算法，确保获取原始字节流
+        builder = builder.no_brotli().no_deflate().no_gzip();
+    }
+
+    if guarded {
+        // 经代理时由代理解析，这里的解析器用不上；重定向目标仍会被检查。
+        builder = builder
+            .dns_resolver(Arc::new(crate::guard::PublicOnly))
+            .redirect(crate::guard::redirect_policy());
+    }
+
+    builder.build().map_err(|e| {
+        seesea_errors::http_error(0, &format!("Failed to build HTTP client: {e}"))
+    })
 }
 
 /// 全局 HttpClient 单例
@@ -138,79 +192,23 @@ impl HttpClient {
     /// 成功返回配置好的 HttpClient，失败返回错误
     fn new_with_config(config: NetworkConfig) -> Result<Self> {
         // 创建基础配置构建器
-        let create_client = |enable_decompression, config: &NetworkConfig| -> Result<Client> {
-            let mut builder = ClientBuilder::new();
+        let create_client = |enable_decompression, config: &NetworkConfig| -> Result<Client> { build_client(config, enable_decompression, false) };
 
-            // 配置超时
-            builder = builder
-                .timeout(Duration::from_secs(config.pool.read_timeout_secs))
-                .connect_timeout(Duration::from_secs(config.pool.connect_timeout_secs));
-
-            // 配置连接池
-            builder = builder
-                .pool_max_idle_per_host(config.pool.max_idle_connections)
-                .pool_idle_timeout(Some(Duration::from_secs(config.pool.idle_timeout_secs)));
-
-            // 配置 HTTP/2
-            if config.pool.http2_only {
-                builder = builder.http2_prior_knowledge();
-            }
-
-            // 配置 TCP_NODELAY
-            builder = builder.tcp_nodelay(config.pool.tcp_nodelay);
-
-            // 配置 TCP 保活
-            if let Some(interval) = config.pool.tcp_keepalive_interval_secs {
-                builder = builder.tcp_keepalive_interval(Duration::from_secs(interval));
-            }
-
-            if let Some(retries) = config.pool.tcp_keepalive_retries {
-                builder = builder.tcp_keepalive_retries(retries);
-            }
-
-            // 配置 TLS
-            builder = super::tls::configure_tls(builder, &config.tls)?;
-
-            // 配置代理
-            if config.proxy.enabled {
-                builder = super::proxy::configure_proxy(builder, &config.proxy)?;
-            }
-
-            // 添加隐私保护请求头
-            builder = crate::privacy::headers::configure_privacy(builder, &Default::default());
-
-            // 配置解压缩
-            if enable_decompression {
-                // reqwest 0.12+ 默认启用压缩，无需显式设置
-            } else {
-                // 明确禁用所有压缩算法，确保获取原始字节流
-                builder = builder.no_brotli().no_deflate().no_gzip();
-            }
-
-            // 构建客户端
-            builder.build().map_err(|e| {
-                seesea_errors::http_error(0, &format!("Failed to build HTTP client: {e}"))
-            })
-        };
-
-        // 创建隐私管理器
-        let privacy_manager = Arc::new(PrivacyManager::new(
-            config.privacy.clone(),
-            config.tls.clone(),
-            config.dns.clone(),
-        ));
+        let privacy = Arc::new(Privacy::from_env());
 
         // 创建普通请求客户端（带自动解压缩）
         let client = create_client(true, &config)?;
         // 创建流式请求客户端（不带自动解压缩）
         let stream_client = create_client(false, &config)?;
+        let guarded_client = build_client(&config, true, true)?;
 
         // 创建客户端状态
         let state = HttpClientState {
             client: Arc::new(client),
             stream_client: Arc::new(stream_client),
+            guarded_client: Arc::new(guarded_client),
             config: Arc::new(config),
-            privacy_manager: Some(privacy_manager),
+            privacy,
         };
 
         Ok(Self {
@@ -220,10 +218,10 @@ impl HttpClient {
         })
     }
 
-    /// 获取隐私管理器
-    pub async fn privacy_manager(&self) -> Option<Arc<PrivacyManager>> {
+    /// 获取请求外观与节奏设置
+    pub async fn privacy(&self) -> Arc<Privacy> {
         let state = self.state.read().await;
-        state.privacy_manager.clone()
+        Arc::clone(&state.privacy)
     }
 
     /// 动态更新网络配置
@@ -237,80 +235,24 @@ impl HttpClient {
     /// 成功返回 Ok，失败返回错误
     pub async fn update_config(&self, config: NetworkConfig) -> Result<()> {
         // 创建基础配置构建器
-        let create_client = |enable_decompression| -> Result<Client> {
-            let mut builder = ClientBuilder::new();
+        let create_client = |enable_decompression| -> Result<Client> { build_client(&config, enable_decompression, false) };
 
-            // 配置超时
-            builder = builder
-                .timeout(Duration::from_secs(config.pool.read_timeout_secs))
-                .connect_timeout(Duration::from_secs(config.pool.connect_timeout_secs));
-
-            // 配置连接池
-            builder = builder
-                .pool_max_idle_per_host(config.pool.max_idle_connections)
-                .pool_idle_timeout(Some(Duration::from_secs(config.pool.idle_timeout_secs)));
-
-            // 配置 HTTP/2
-            if config.pool.http2_only {
-                builder = builder.http2_prior_knowledge();
-            }
-
-            // 配置 TCP_NODELAY
-            builder = builder.tcp_nodelay(config.pool.tcp_nodelay);
-
-            // 配置 TCP 保活
-            if let Some(interval) = config.pool.tcp_keepalive_interval_secs {
-                builder = builder.tcp_keepalive_interval(Duration::from_secs(interval));
-            }
-
-            if let Some(retries) = config.pool.tcp_keepalive_retries {
-                builder = builder.tcp_keepalive_retries(retries);
-            }
-
-            // 配置 TLS
-            builder = super::tls::configure_tls(builder, &config.tls)?;
-
-            // 配置代理
-            if config.proxy.enabled {
-                builder = super::proxy::configure_proxy(builder, &config.proxy)?;
-            }
-
-            // 添加隐私保护请求头
-            builder = crate::privacy::headers::configure_privacy(builder, &Default::default());
-
-            // 配置解压缩
-            if enable_decompression {
-                // reqwest 0.12+ 默认启用压缩，无需显式设置
-            } else {
-                // 明确禁用所有压缩算法，确保获取原始字节流
-                builder = builder.no_brotli().no_deflate().no_gzip();
-            }
-
-            // 构建客户端
-            builder.build().map_err(|e| {
-                seesea_errors::http_error(0, &format!("Failed to build HTTP client: {e}"))
-            })
-        };
-
-        // 创建隐私管理器
-        let privacy_manager = Arc::new(PrivacyManager::new(
-            config.privacy.clone(),
-            config.tls.clone(),
-            config.dns.clone(),
-        ));
+        let privacy = Arc::new(Privacy::from_env());
 
         // 创建普通请求客户端（带自动解压缩）
         let client = create_client(true)?;
         // 创建流式请求客户端（不带自动解压缩）
         let stream_client = create_client(false)?;
+        let guarded_client = build_client(&config, true, true)?;
 
         // 更新客户端状态
         let mut state = self.state.write().await;
         *state = HttpClientState {
             client: Arc::new(client),
             stream_client: Arc::new(stream_client),
+            guarded_client: Arc::new(guarded_client),
             config: Arc::new(config),
-            privacy_manager: Some(privacy_manager),
+            privacy,
         };
 
         Ok(())
@@ -323,15 +265,8 @@ impl HttpClient {
     /// 返回全局 HttpClient 实例
     pub async fn instance() -> Result<Arc<Self>> {
         // 尝试从全局配置创建客户端
-        if let Some(project_config) = seesea_config::get_config().await {
-            let client = Self::from_network_config(project_config.network)?;
-            Ok(GLOBAL_HTTP_CLIENT.get_or_init(|| Arc::new(client)).clone())
-        } else {
-            // 如果全局配置未初始化，使用默认配置
-            let config = NetworkConfig::default();
-            let client = Self::new(config)?;
-            Ok(GLOBAL_HTTP_CLIENT.get_or_init(|| Arc::new(client)).clone())
-        }
+        let client = Self::new(NetworkConfig::default())?;
+        Ok(GLOBAL_HTTP_CLIENT.get_or_init(|| Arc::new(client)).clone())
     }
 
     /// 使用指定配置获取或创建全局 HttpClient 单例
@@ -411,20 +346,9 @@ impl HttpClient {
             .get(url)
             .timeout(Duration::from_secs(opts.timeout_secs.unwrap_or(30)));
 
-        // 添加隐私保护请求头
-        if let Some(ref privacy_mgr) = state.privacy_manager {
-            let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
-            for (key, value) in privacy_headers {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
-
-        // 添加自定义请求头
-        if let Some(headers_map) = &opts.headers {
-            for (key, value) in headers_map {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
+        // 请求头：浏览器画像 + 调用方自定义（同名则替换）
+        state.privacy.pace(url).await;
+        request = request.headers(state.privacy.headers(url, Kind::Navigate, 0, opts.headers.as_ref()));
         // 非流处理请求：允许服务器返回压缩数据，client会自动解压缩
 
         // 发送请求
@@ -445,6 +369,54 @@ impl HttpClient {
         }
 
         // 处理结果
+        result.map_err(|e| seesea_errors::http_error(0, &format!("GET request failed: {e}")))
+    }
+
+    /// 加载一个页面：浏览器式请求头（第 `attempt` 次尝试换一套画像）并按主机限速。
+    /// `plain` 为真时不加任何画像头、也不限速。返回原始响应，状态码由调用方判断。
+    pub async fn get_page(
+        &self,
+        url: &str,
+        timeout_secs: u64,
+        attempt: usize,
+        plain: bool,
+    ) -> Result<Response> {
+        self.fetch_page(url, timeout_secs, attempt, plain, false).await
+    }
+
+    /// 与 [`get_page`](Self::get_page) 相同，但只连公网：内网地址、解析到内网的名字和指向内网的重定向都被拒绝。
+    pub async fn get_public_page(
+        &self,
+        url: &str,
+        timeout_secs: u64,
+        attempt: usize,
+        plain: bool,
+    ) -> Result<Response> {
+        self.fetch_page(url, timeout_secs, attempt, plain, true).await
+    }
+
+    async fn fetch_page(
+        &self,
+        url: &str,
+        timeout_secs: u64,
+        attempt: usize,
+        plain: bool,
+        public_only: bool,
+    ) -> Result<Response> {
+        let start_time = self.metrics_collector.start_request();
+        let state = self.state.read().await;
+        let mut request = if public_only { &state.guarded_client } else { &state.client }
+            .get(url)
+            .timeout(Duration::from_secs(timeout_secs.max(1)));
+        if !plain {
+            state.privacy.pace(url).await;
+            request = request.headers(state.privacy.headers(url, Kind::Navigate, attempt, None));
+        }
+        let result = request.send().await;
+        match &result {
+            Ok(_) => self.metrics_collector.record_successful_request(start_time).await,
+            Err(_) => self.metrics_collector.record_failed_request(start_time).await,
+        }
         result.map_err(|e| seesea_errors::http_error(0, &format!("GET request failed: {e}")))
     }
 
@@ -476,20 +448,9 @@ impl HttpClient {
             .timeout(Duration::from_secs(opts.timeout_secs.unwrap_or(30)))
             .body(body);
 
-        // 添加隐私保护请求头
-        if let Some(ref privacy_mgr) = state.privacy_manager {
-            let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
-            for (key, value) in privacy_headers {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
-
-        // 添加自定义请求头（会覆盖隐私头）
-        if let Some(headers_map) = &opts.headers {
-            for (key, value) in headers_map {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
+        // 请求头：浏览器画像 + 调用方自定义（同名则替换）
+        state.privacy.pace(url).await;
+        request = request.headers(state.privacy.headers(url, Kind::Api, 0, opts.headers.as_ref()));
         // 非流处理请求：使用默认的Accept-Encoding设置，允许服务器返回压缩数据
         // reqwest会自动解压缩响应体
 
@@ -605,20 +566,9 @@ impl HttpClient {
             .get(url)
             .timeout(Duration::from_secs(opts.timeout_secs.unwrap_or(30)));
 
-        // 添加隐私保护请求头
-        if let Some(ref privacy_mgr) = state.privacy_manager {
-            let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
-            for (key, value) in privacy_headers {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
-
-        // 添加自定义请求头（会覆盖隐私头）
-        if let Some(headers_map) = &opts.headers {
-            for (key, value) in headers_map {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
+        // 请求头：浏览器画像 + 调用方自定义（同名则替换）
+        state.privacy.pace(url).await;
+        request = request.headers(state.privacy.headers(url, Kind::Api, 0, opts.headers.as_ref()));
 
         // 明确禁用压缩，确保获取原始二进制数据
         request = request.header("Accept-Encoding", "identity");
@@ -705,20 +655,9 @@ impl HttpClient {
             request = request.header("Content-Type", ct);
         }
 
-        // 添加隐私保护请求头
-        if let Some(ref privacy_mgr) = state.privacy_manager {
-            let privacy_headers = privacy_mgr.get_privacy_headers(url).await;
-            for (key, value) in privacy_headers {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
-
-        // 添加自定义请求头（会覆盖隐私头）
-        if let Some(headers_map) = &opts.headers {
-            for (key, value) in headers_map {
-                request = request.header(key.as_str(), value.as_str());
-            }
-        }
+        // 请求头：浏览器画像 + 调用方自定义（同名则替换）
+        state.privacy.pace(url).await;
+        request = request.headers(state.privacy.headers(url, Kind::Api, 0, opts.headers.as_ref()));
         // 流处理请求：禁用压缩，确保获取原始二进制数据
         request = request.header("Accept-Encoding", "identity");
 
@@ -939,16 +878,6 @@ mod tests {
             updated_config.pool.connect_timeout_secs,
             new_config.pool.connect_timeout_secs
         );
-    }
-
-    #[tokio::test]
-    async fn test_http_client_privacy_manager_access() {
-        let config = NetworkConfig::default();
-        let client = HttpClient::new(config).unwrap();
-
-        // 测试获取隐私管理器
-        let privacy_mgr = client.privacy_manager().await;
-        assert!(privacy_mgr.is_some());
     }
 
     #[tokio::test]

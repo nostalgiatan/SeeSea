@@ -1,0 +1,18 @@
+[package]
+name = "seesea-fetch"
+version = "3.0.0"
+edition = "2024"
+description = "Fetch a page for extraction: target validation, size cap, redirect re-check"
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+seesea-net = { path = "../seesea-net" }
+tokio = { version = "1", features = ["time", "net", "process", "sync", "rt", "io-util"] }
+seesea-config = { path = "../seesea-config" }
+url = "2"
+encoding_rs = "0.8"
+
+[dev-dependencies]
+tempfile = "3.23.0"
+seesea-extract = { path = "../seesea-extract", default-features = false }
+tokio = { version = "1", features = ["full"] }

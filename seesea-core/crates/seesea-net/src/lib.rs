@@ -22,7 +22,7 @@
 //! 网络模块采用分层设计，主要包含以下核心组件：
 //!
 //! - **client**：HTTP/HTTPS 客户端实现，支持多种隐私保护特性
-//! - **privacy**：隐私保护机制，包括 TLS 指纹混淆、请求头伪造等
+//! - **privacy**：请求外观与节奏（浏览器画像、按主机限速），不含 TLS 指纹伪造
 //! - **resolver**：DNS 解析器，支持 DNS over HTTPS (DoH)
 //! - **config**：网络配置，包括代理、超时、连接池等选项
 //! - **interface**：网络接口定义，提供统一的网络访问接口
@@ -61,24 +61,11 @@
 //!
 //! ## 使用示例
 //!
-//! ```rust,no_run
-//! use seesea_net::{HttpClient, NetworkConfig, PrivacyConfig};
-//!
-//! // 创建隐私配置
-//! let privacy_config = PrivacyConfig {
-//!     tls_fingerprint_obfuscation: true,
-//!     user_agent_rotation: true,
-//!     doh_providers: vec!["cloudflare", "google"],
-//!     ..Default::default()
-//! };
+//! ```rust,ignore
+//! use seesea_net::{HttpClient, NetworkConfig};
 //!
 //! // 创建网络配置
-//! let network_config = NetworkConfig {
-//!     timeout_secs: 30,
-//!     connection_pool_size: 50,
-//!     privacy: privacy_config,
-//!     ..Default::default()
-//! };
+//! let network_config = NetworkConfig::default();
 //!
 //! // 创建HTTP客户端
 //! let client = HttpClient::new(network_config)?;
@@ -95,7 +82,10 @@
 /// HTTP/HTTPS 客户端模块，支持多种隐私保护特性
 pub mod client;
 
-/// 隐私保护机制模块，包括 TLS 指纹混淆、请求头伪造等
+/// 页面抓取不得连接的地址
+pub mod guard;
+
+/// 请求外观与节奏：一致的浏览器画像、按主机限速、统一的请求头构建
 pub mod privacy;
 
 /// DNS 解析器模块，支持 DNS over HTTPS (DoH)
@@ -111,16 +101,16 @@ pub mod retry;
 pub mod metrics;
 
 // 重新导出错误处理模块
+pub use reqwest;
 pub use seesea_errors;
 
 // 导出核心配置类型
 pub use seesea_config::{
-    DnsConfig, FingerprintLevel, NetworkConfig, PoolConfig, PrivacyConfig, ProxyConfig, ProxyType,
+    DnsConfig, FingerprintLevel, NetworkConfig, PoolConfig, ProxyConfig, ProxyType,
     RequestOptions, TlsConfig, TlsVersion,
 };
 
 // 导出隐私配置类型
-pub use seesea_config::privacy::UaRotationStrategy;
 
 // 导出网络接口
 pub use interface::NetworkInterface;
