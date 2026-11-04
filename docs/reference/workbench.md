@@ -16,6 +16,8 @@
 
 每个服务器在 `/` 提供这个页面，页面和 `/ui/` 下的文件不需要密钥，其余数据都通过需要密钥的接口取得。响应带 `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'`，所以页面不会加载或发送到别处。
 
+工作台页面分三层：左侧是分组导航，顶部是位置、命令框和三个开关（语言、明暗、密钥），主区是内容。搜索页在宽屏上右侧有检查面板，显示选中结果的分数构成、读到的章节和相关报道。服务页每个服务有三个标签：设置、控制台（向运行中的服务发一个请求并看返回）、请求日志（每 3 秒刷新）。账号页列出套餐的限额，每个用户有今日额度条、近 7 天用量和密钥表，新建密钥可选有效期，停用和吊销会先确认。右键菜单按点到的对象给出操作，输入框里仍是浏览器自带的菜单。
+
 ## 服务设置
 
 两个服务：`api`（完整的 JSON 接口，`/mcp` 也在其中）和 `mcp`（只有 `/health` 和 `/mcp`）。
@@ -54,6 +56,9 @@
 | `POST /desk/api/users/{name}/keys` | 建密钥，体 `{"name", "expires_days"}`，返回 201 和只出现这一次的 `key` |
 | `POST /desk/api/users/{name}/disabled` | 体 `{"disabled": true}` |
 | `POST /desk/api/keys/{id}/revoke` | 吊销密钥，返回 204 |
+| `GET /desk/api/services/{id}/log` | 服务最近的请求：`summary`（总数、2xx、4xx、5xx、运行秒数）和最近 100 条 `recent`（时间、方法、路径、状态、毫秒、账号）。不含查询参数和密钥；服务没运行返回 404 |
+| `POST /desk/api/services/{id}/try` | 从工作台向运行中的服务发一个请求，体 `{"method", "path", "body", "auth", "key"}`。`method` 是 GET 或 POST，`path` 以 `/v1/` 开头或是 `/mcp`、`/health`，`auth` 是 `none`、`shared` 或 `key`。返回 `{"status", "ms", "headers", "body", "truncated"}`，正文最多 64 KB |
+| `POST /desk/api/users/{name}/plan` | 体 `{"plan"}`，换套餐 |
 
 | `GET /desk/api/review?since=7d` | 日志汇总（`report`：搜索数、缓存、耗时、来源、读不到的主机、可疑搜索、待打分的结果，结果里带已有的 `grade`）、第一层学到的主机评分（`learn`）和标注文件情况（`judgments`）。`since` 是 `1h` 到 `366d` 的小时或天数 |
 | `POST /desk/api/grade` | 体 `{"query", "url", "grade"}`，`grade` 为 0 到 3，`null` 取消；返回 `{"graded", "queries"}` |

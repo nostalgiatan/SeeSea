@@ -1131,6 +1131,19 @@ async fn the_workbench_starts_stops_and_secures_its_services() {
     assert!(tools["result"]["tools"].as_array().unwrap().iter().any(|t| t["name"] == "search"));
     assert_eq!(http.get(format!("{mcp}/v1/sources")).bearer_auth(&key).send().await.unwrap().status(), 404);
     assert_eq!(http.get(format!("{mcp}/health")).send().await.unwrap().status(), 200);
+    // The workbench can send a request to a running service and shows what the service has answered.
+    let tried: Value = act("mcp/try", json!({"method": "POST", "path": "/mcp", "auth": "shared", "body": init.to_string()})).await.json().await.unwrap();
+    assert_eq!(tried["status"], 200);
+    assert!(tried["body"].as_str().unwrap().contains("search"));
+    let tried: Value = act("mcp/try", json!({"method": "POST", "path": "/mcp", "auth": "none", "body": init.to_string()})).await.json().await.unwrap();
+    assert_eq!(tried["status"], 401);
+    assert_eq!(act("mcp/try", json!({"method": "GET", "path": "/desk/api/state", "auth": "none"})).await.status(), 400);
+    assert_eq!(act("mcp/try", json!({"method": "GET", "path": "http://evil.example/v1/x", "auth": "none"})).await.status(), 400);
+    let log: Value = http.get(format!("{wb}/desk/api/services/mcp/log")).send().await.unwrap().json().await.unwrap();
+    assert!(log["summary"]["total"].as_u64().unwrap() >= 4);
+    assert!(log["summary"]["client_error"].as_u64().unwrap() >= 2);
+    assert!(log["recent"].as_array().unwrap().iter().all(|e| e["path"].as_str().unwrap().len() < 130));
+    assert_eq!(http.get(format!("{wb}/desk/api/services/api/log")).send().await.unwrap().status(), 404);
     // A second start is refused, and stopping really closes the port.
     assert_eq!(act("mcp/start", json!(null)).await.status(), 400);
     let r = act("mcp/stop", json!(null)).await;
