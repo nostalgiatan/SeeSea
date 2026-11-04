@@ -11,28 +11,29 @@
 <body>
 <div class="shell">
   <nav class="rail" aria-label="main">
-    <a class="brand" href="#/search" title="SeeSea"><img src="/ui/mark.svg" alt="" width="28" height="28"><span>SeeSea</span></a>
+    <a class="brand" href="#/search" title="SeeSea"><img src="/ui/mark.svg" alt="" width="34" height="34"><span><b>SEESEA</b><small data-i="brand.sub">搜索数据中心</small></span></a>
     <div class="ticks" id="nav">
-      <a href="#/search" data-view="search"><i>01</i><span data-i="nav.search">搜索</span></a>
-      <a href="#/read" data-view="read"><i>02</i><span data-i="nav.read">阅读</span></a>
-      <a href="#/review" data-view="review" class="desk-only"><i>03</i><span data-i="nav.review">复盘</span></a>
-      <a href="#/status" data-view="status"><i>04</i><span data-i="nav.status">状态</span></a>
-      <a href="#/services" data-view="services" class="desk-only"><i>05</i><span data-i="nav.services">服务</span></a>
-      <a href="#/accounts" data-view="accounts" class="desk-only"><i>06</i><span data-i="nav.accounts">账号</span></a>
+      <a href="#/search" data-view="search"><i>01</i><span data-i="nav.search">搜索</span><em data-o="nav.search"></em></a>
+      <a href="#/read" data-view="read"><i>02</i><span data-i="nav.read">阅读</span><em data-o="nav.read"></em></a>
+      <a href="#/review" data-view="review" class="desk-only"><i>03</i><span data-i="nav.review">复盘</span><em data-o="nav.review"></em></a>
+      <a href="#/status" data-view="status"><i>04</i><span data-i="nav.status">状态</span><em data-o="nav.status"></em></a>
+      <a href="#/services" data-view="services" class="desk-only"><i>05</i><span data-i="nav.services">服务</span><em data-o="nav.services"></em></a>
+      <a href="#/accounts" data-view="accounts" class="desk-only"><i>06</i><span data-i="nav.accounts">账号</span><em data-o="nav.accounts"></em></a>
     </div>
     <div class="rail-foot">
       <div class="chip" id="where"><b></b><span>…</span></div>
       <div class="tools">
-        <button id="btn-palette" class="ghost" title="Ctrl/⌘ K">⌘K</button>
-        <button id="btn-lang" class="ghost" title="中 / EN">中/EN</button>
-        <button id="btn-theme" class="ghost" title="theme">◐</button>
-        <button id="btn-key" class="ghost" title="API key">⚿</button>
+        <button id="btn-palette" class="ghost" data-t="tip.palette">⌘K</button>
+        <button id="btn-lang" class="ghost" data-t="tip.lang">中/EN</button>
+        <button id="btn-theme" class="ghost" data-t="tip.theme">◐</button>
+        <button id="btn-key" class="ghost" data-t="tip.key">⚿</button>
       </div>
     </div>
   </nav>
 
   <main>
     <section id="v-search" class="view">
+      <header class="head"><h1><span data-i="search.title">搜索</span><em data-o="search.title"></em></h1><p data-i="search.sub">多个引擎并发，融合、抓取、抽取、重排，一次给出可直接引用的结果。</p></header>
       <form id="search-form" class="finder" autocomplete="off">
         <div class="bar">
           <input id="q" name="q" type="search" spellcheck="false" data-ip="search.ph" placeholder="搜点什么  ( / )" aria-label="query">
@@ -58,7 +59,7 @@
     </section>
 
     <section id="v-read" class="view" hidden>
-      <header class="head"><h1 data-i="read.title">阅读一个网页</h1><p data-i="read.sub">抓取、抽取正文；给出问题时只留下回答它的章节。</p></header>
+      <header class="head"><h1><span data-i="read.title">阅读一个网页</span><em data-o="read.title"></em></h1><p data-i="read.sub">抓取、抽取正文；给出问题时只留下回答它的章节。</p></header>
       <form id="read-form" class="finder" autocomplete="off">
         <div class="bar"><input id="r-url" type="url" placeholder="https://" aria-label="url"><button class="go" type="submit" data-i="read.go">读取</button></div>
         <div class="opts">
@@ -70,29 +71,29 @@
     </section>
 
     <section id="v-review" class="view" hidden>
-      <header class="head"><h1 data-i="rv.title">复盘</h1><p data-i="rv.sub">看最近的搜索哪里不对，给结果打分，攒成评估用的标注。</p></header>
-      <div class="row" style="margin-bottom:14px"><label class="inline"><span data-i="rv.since">范围</span>
+      <header class="head"><h1><span data-i="rv.title">复盘</span><em data-o="rv.title"></em></h1><p data-i="rv.sub">看最近的搜索哪里不对，给结果打分，攒成评估用的标注。</p></header>
+      <div class="row bar-row"><label class="inline"><span data-i="rv.since">范围</span>
         <select id="rv-since"><option value="24h" data-i="rv.24h">最近 24 小时</option><option value="7d" selected data-i="rv.7d">最近 7 天</option><option value="30d" data-i="rv.30d">最近 30 天</option></select></label>
         <button id="rv-reload" class="quiet" data-i="rv.reload">刷新</button></div>
       <div id="rv-out"></div>
     </section>
 
     <section id="v-status" class="view" hidden>
-      <header class="head"><h1 data-i="status.title">状态</h1><p data-i="status.sub">来源是否在线、缓存命中、本地索引。</p></header>
+      <header class="head"><h1><span data-i="status.title">状态</span><em data-o="status.title"></em></h1><p data-i="status.sub">来源是否在线、缓存命中、本地索引。</p></header>
       <div class="grid2">
-        <div class="panel"><div class="ph"><h2 data-i="status.sources">来源</h2><button id="btn-check" class="quiet" data-i="status.check">逐个探测</button></div><div id="st-sources"></div></div>
-        <div class="panel"><div class="ph"><h2 data-i="status.cache">缓存</h2></div><div id="st-cache"></div></div>
-        <div class="panel"><div class="ph"><h2 data-i="status.index">本地索引</h2></div><div id="st-index"></div></div>
+        <div class="panel"><div class="ph"><h2><span data-i="status.sources">来源</span><em data-o="status.sources"></em></h2><button id="btn-check" class="quiet" data-i="status.check">逐个探测</button></div><div id="st-sources"></div></div>
+        <div class="panel"><div class="ph"><h2><span data-i="status.cache">缓存</span><em data-o="status.cache"></em></h2></div><div id="st-cache"></div></div>
+        <div class="panel"><div class="ph"><h2><span data-i="status.index">本地索引</span><em data-o="status.index"></em></h2></div><div id="st-index"></div></div>
       </div>
     </section>
 
     <section id="v-services" class="view" hidden>
-      <header class="head"><h1 data-i="svc.title">服务</h1><p data-i="svc.sub">从这个工作台启动 HTTP 接口和远程 MCP；它们和这里共用同一套模型与索引。</p></header>
+      <header class="head"><h1><span data-i="svc.title">服务</span><em data-o="svc.title"></em></h1><p data-i="svc.sub">从这个工作台启动 HTTP 接口和远程 MCP；它们和这里共用同一套模型与索引。</p></header>
       <div id="svc-out" class="stack"></div>
     </section>
 
     <section id="v-accounts" class="view" hidden>
-      <header class="head"><h1 data-i="acc.title">账号</h1><p data-i="acc.sub">服务用 “账号” 或 “两者” 认证时，这里的用户和密钥有效。</p></header>
+      <header class="head"><h1><span data-i="acc.title">账号</span><em data-o="acc.title"></em></h1><p data-i="acc.sub">服务用 “账号” 或 “两者” 认证时，这里的用户和密钥有效。</p></header>
       <div id="acc-out"></div>
     </section>
   </main>
