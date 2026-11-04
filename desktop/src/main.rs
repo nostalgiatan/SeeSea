@@ -113,14 +113,22 @@ fn answers(port: u16) -> bool {
     head.contains(" 200")
 }
 
-/// Start `seesea desk` and wait for it; the error is what the window shows.
-fn start_backend(app: &AppHandle) -> Result<u16, String> {
+/// Start `seesea desk`; the error is what the window shows. This runs on the main thread: on Linux the
+/// child is told to stop when the thread that started it ends, so a short-lived thread must not start it.
+fn launch_backend(app: &AppHandle) -> Result<u16, String> {
     let w = words();
     let bin = find_seesea().ok_or(w.no_binary)?;
     let port = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).and_then(|l| l.local_addr()).map_err(|e| format!("{}{e}", w.spawn))?.port();
     let child = spawn_desk(&bin, port).map_err(|e| format!("{}{}: {e}", w.spawn, bin.display()))?;
     let backend = app.state::<Backend>();
     *backend.child.lock().unwrap() = Some(child);
+    Ok(port)
+}
+
+/// Wait until the `seesea desk` started on `port` answers.
+fn wait_backend(app: &AppHandle, port: u16) -> Result<u16, String> {
+    let w = words();
+    let backend = app.state::<Backend>();
     let started = Instant::now();
     loop {
         if answers(port) {
@@ -307,8 +315,9 @@ fn main() {
             #[cfg(unix)]
             quit_on_signals(app.handle().clone());
             let handle = app.handle().clone();
+            let launched = launch_backend(&handle);
             std::thread::spawn(move || {
-                let started = start_backend(&handle);
+                let started = launched.and_then(|port| wait_backend(&handle, port));
                 let h = handle.clone();
                 let _ = handle.run_on_main_thread(move || match started {
                     Ok(port) => build_window(&h, Some(port), None),
