@@ -51,7 +51,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .ic { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: square; stroke-linejoin: miter; }
 .ic.sm { width: 14px; height: 14px; }
 
-.shell { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100vh; }
+.shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: 100vh; }
 
 /* rail: layer 0, the darkest paper, with grouped navigation */
 .rail { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 22px 0 16px; background: var(--sunk); border-right: 1px solid var(--line); }
@@ -86,7 +86,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .stage { min-width: 0; display: flex; flex-direction: column; }
 .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 18px; padding: 0 clamp(16px, 3vw, 40px); height: 52px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
 .crumbs { display: flex; align-items: baseline; gap: 8px; font-size: 12px; letter-spacing: .08em; color: var(--mute); white-space: nowrap; }
-.crumbs i { font-style: normal; color: var(--faint); }
+.crumbs i { width: 1px; height: 12px; align-self: center; background: var(--line2); font-size: 0; }
 .crumbs b { font-weight: 700; color: var(--ink); letter-spacing: .1em; text-transform: uppercase; }
 .cmdk { margin-left: auto; display: flex; align-items: center; gap: 10px; width: min(300px, 38vw); padding: 6px 10px; background: var(--panel); border: 1px solid var(--line); color: var(--mute); cursor: pointer; text-align: left; transition: border-color .15s; }
 .cmdk:hover { border-color: var(--line2); color: var(--ink); }
@@ -101,7 +101,6 @@ main { padding: 30px clamp(16px, 3vw, 40px) 90px; min-width: 0; width: 100%; max
 .head { margin-bottom: 22px; }
 .head h1 { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 14px; margin: 0 0 6px; font: 800 28px/1.15 var(--sans); letter-spacing: .06em; text-transform: uppercase; }
 .head h1 em, h2 em { font: 400 11.5px var(--sans); letter-spacing: .16em; color: var(--mute); font-style: normal; }
-.head h1 em::before, h2 em::before { content: "/ "; }
 .head p { margin: 0; max-width: 64ch; font-size: 13px; color: var(--mute); }
 
 /* surfaces */
@@ -150,8 +149,8 @@ input[type=checkbox] { accent-color: var(--buoy); width: 15px; height: 15px; }
 
 /* search */
 .cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; align-items: start; }
-@media (min-width: 1240px) { .cols { grid-template-columns: minmax(0, 1fr) 380px; } }
-.finder { padding: 14px 18px 16px; margin-bottom: 22px; }
+@media (min-width: 1240px) { .cols { grid-template-columns: minmax(0, 1fr) 380px; } .cols.noins { grid-template-columns: minmax(0, 1fr); } }
+.finder { padding: 12px 18px 14px; margin-bottom: 18px; }
 .bar { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--ink); }
 .bar:focus-within { border-color: var(--buoy); }
 .bar .lead { color: var(--mute); width: 20px; height: 20px; }
@@ -232,8 +231,8 @@ input[type=checkbox] { accent-color: var(--buoy); width: 15px; height: 15px; }
 .meta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 13px; margin: 0; }
 .meta dt { color: var(--mute); } .meta dd { margin: 0; overflow-wrap: anywhere; }
 
-.empty { padding: 64px 4px; color: var(--mute); border-top: 1px solid var(--ink); }
-.empty .big { font: 800 24px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); margin-bottom: 6px; }
+.empty { padding: 36px 4px; color: var(--mute); }
+.empty .big { font: 700 18px var(--sans); letter-spacing: .04em; color: var(--ink); margin-bottom: 4px; }
 .wait { display: grid; gap: 10px; }
 .wait div { height: 82px; background: linear-gradient(100deg, var(--panel) 30%, var(--raised) 50%, var(--panel) 70%) 0 0 / 300% 100%; border: 1px solid var(--line); animation: sweep 1.4s linear infinite; }
 @keyframes sweep { to { background-position: -300% 0; } }
