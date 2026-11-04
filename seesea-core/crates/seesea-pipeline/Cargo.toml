@@ -1,6 +1,6 @@
 [package]
 name = "seesea-pipeline"
-version = "0.1.0"
+version = "3.0.0"
 edition = "2024"
 description = "Search pipeline: fan-out, fusion, ranking, content fetch and extraction, reranking, section selection"
 license = "AGPL-3.0-or-later"

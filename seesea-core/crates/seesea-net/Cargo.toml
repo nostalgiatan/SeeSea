@@ -1,6 +1,6 @@
 [package]
 name = "seesea-net"
-version = "2.2.2"
+version = "3.0.0"
 edition = "2024"
 authors = ["nostalgiatan"]
 description = "网络模块 - 提供隐私优先的网络通信功能"
