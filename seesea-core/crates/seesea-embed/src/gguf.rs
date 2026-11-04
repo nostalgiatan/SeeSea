@@ -479,7 +479,9 @@ impl GgufBert {
         // SAFETY: the file is only read, and model files are not rewritten while a model is loaded.
         let tok_map = unsafe { memmap2::Mmap::map(&file) }.map_err(io)?;
         if tok_offset + row_bytes * vocab > tok_map.len() {
-            return Err(bad("the token embedding table runs past the end of the file"));
+            return Err(bad(
+                "the token embedding table runs past the end of the file",
+            ));
         }
 
         let tokenizer = tokenizer_job
