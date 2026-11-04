@@ -220,6 +220,8 @@ fn build_window(app: &AppHandle, port: Option<u16>, error: Option<(String, Strin
     };
     let built = WebviewWindowBuilder::new(app, WINDOW, url)
         .title("SeeSea")
+        // The workbench draws its own title bar; the error page has none, so it keeps the system's.
+        .decorations(port.is_none())
         .inner_size(1240.0, 820.0)
         .min_inner_size(760.0, 560.0)
         .initialization_script(script)
@@ -258,6 +260,46 @@ fn summon(app: &AppHandle) {
     let _ = w.eval("if (document.querySelector('#q')) { if (location.hash !== '#/search') location.hash = '#/search'; document.querySelector('#q').focus(); }");
 }
 
+// The workbench page draws its own title bar and asks for these; see capabilities/workbench.json.
+#[tauri::command]
+fn win_minimize(window: tauri::WebviewWindow) {
+    let _ = window.minimize();
+}
+
+#[tauri::command]
+fn win_toggle_maximize(window: tauri::WebviewWindow) {
+    let _ = if window.is_maximized().unwrap_or(false) { window.unmaximize() } else { window.maximize() };
+}
+
+/// The close button hides to the tray, like closing the window always did.
+#[tauri::command]
+fn win_hide(window: tauri::WebviewWindow) {
+    let _ = window.hide();
+}
+
+#[tauri::command]
+fn win_drag(window: tauri::WebviewWindow) {
+    let _ = window.start_dragging();
+}
+
+/// `edge` is one of n, s, e, w, ne, nw, se, sw.
+#[tauri::command]
+fn win_resize(window: tauri::WebviewWindow, edge: String) {
+    use tauri::ResizeDirection::*;
+    let dir = match edge.as_str() {
+        "n" => North,
+        "s" => South,
+        "e" => East,
+        "w" => West,
+        "ne" => NorthEast,
+        "nw" => NorthWest,
+        "se" => SouthEast,
+        "sw" => SouthWest,
+        _ => return,
+    };
+    let _ = window.start_resize_dragging(dir);
+}
+
 fn main() {
     let shortcut = Shortcut::new(Some(if cfg!(target_os = "macos") { Modifiers::SUPER | Modifiers::SHIFT } else { Modifiers::CONTROL | Modifiers::SHIFT }), Code::Space);
     let app = tauri::Builder::default()
@@ -272,6 +314,7 @@ fn main() {
                 .build(),
         )
         .manage(Backend::default())
+        .invoke_handler(tauri::generate_handler![win_minimize, win_toggle_maximize, win_hide, win_drag, win_resize])
         .on_window_event(|window, event| {
             // Closing hides to the tray; Quit in the tray menu ends the program.
             if let WindowEvent::CloseRequested { api, .. } = event {

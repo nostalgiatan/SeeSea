@@ -123,6 +123,12 @@ pub struct Desk {
     grading: Mutex<()>,
     /// What each running service has answered lately.
     logs: Mutex<HashMap<String, Arc<crate::reqlog::ReqLog>>>,
+    /// The config file the settings page edits.
+    pub(crate) config_file: OnceLock<PathBuf>,
+    /// Polls the index's feeds when the page asks for it.
+    pub(crate) poller: OnceLock<Arc<seesea_index::Poller>>,
+    /// Long jobs started from the page (downloads, a poll, a source check) and how they went.
+    pub(crate) jobs: Mutex<HashMap<String, crate::deskx::Job>>,
 }
 
 /// Query, then URL, then grade: what was judged about which result.
@@ -147,6 +153,9 @@ impl Desk {
             template: OnceLock::new(),
             grading: Mutex::new(()),
             logs: Mutex::new(HashMap::new()),
+            config_file: OnceLock::new(),
+            poller: OnceLock::new(),
+            jobs: Mutex::new(HashMap::new()),
         })
     }
 
@@ -476,7 +485,7 @@ impl Desk {
     }
 }
 
-fn fail(status: StatusCode, code: &str, message: impl std::fmt::Display) -> Response {
+pub(crate) fn fail(status: StatusCode, code: &str, message: impl std::fmt::Display) -> Response {
     (
         status,
         Json(json!({"code": code, "message": message.to_string()})),
@@ -509,6 +518,7 @@ pub fn routes() -> Router<AppState> {
         .route("/desk/api/keys/{id}/revoke", post(key_revoke))
         .route("/desk/api/review", get(review))
         .route("/desk/api/grade", post(grade))
+        .merge(crate::deskx::routes())
 }
 
 #[derive(Deserialize)]
@@ -624,7 +634,7 @@ async fn grade(State(s): State<AppState>, body: Bytes) -> Response {
     run().map_or_else(|r| r, |v| Json(v).into_response())
 }
 
-fn desk_of(s: &AppState) -> Result<Arc<Desk>, Response> {
+pub(crate) fn desk_of(s: &AppState) -> Result<Arc<Desk>, Response> {
     s.desk.clone().ok_or_else(|| {
         fail(
             StatusCode::NOT_FOUND,

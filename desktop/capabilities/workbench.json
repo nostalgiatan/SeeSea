@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "workbench",
+  "description": "The workbench page draws its own title bar, so it may move, resize, minimize, maximize and hide its window. No other permission is granted.",
+  "windows": ["main"],
+  "remote": { "urls": ["http://127.0.0.1:*/*"] },
+  "permissions": ["allow-win-minimize", "allow-win-toggle-maximize", "allow-win-hide", "allow-win-drag", "allow-win-resize"]
+}
