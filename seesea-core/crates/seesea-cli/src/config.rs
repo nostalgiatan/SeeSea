@@ -64,6 +64,8 @@ pub struct Settings {
     pub index_dir: Option<PathBuf>,
     pub retention_days: Option<i64>,
     pub index_quota_mb: Option<u64>,
+    /// How pages are read in `standard` and `deep` searches (`[fetch]` in the config file).
+    pub fetch: crate::userconfig::Fetch,
     /// The extra kinds of data to collect: `dev`, `papers`, `community`, `quotes`.
     pub collect: Vec<String>,
 }
@@ -246,11 +248,13 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
     {
         r.watch();
     }
+    let mut pipeline_cfg = PipelineConfig {
+        fuzzy_cache_threshold: settings.fuzzy_cache,
+        ..Default::default()
+    };
+    settings.fetch.apply(&mut pipeline_cfg);
     let mut pipeline = Pipeline::with_net_fetcher(sources, fetch.clone())
-        .config(PipelineConfig {
-            fuzzy_cache_threshold: settings.fuzzy_cache,
-            ..Default::default()
-        })
+        .config(pipeline_cfg)
         .cache(cache);
     if let Some(sink) = sink.filter(|_| !settings.no_writeback) {
         pipeline = pipeline.sink(sink);

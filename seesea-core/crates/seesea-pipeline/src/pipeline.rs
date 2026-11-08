@@ -28,6 +28,11 @@ pub struct PipelineConfig {
     /// How many of the best candidates are fetched in standard and deep mode (never fewer than `limit`).
     pub fetch_standard: usize,
     pub fetch_deep: usize,
+    /// Stop waiting for slow pages once this many pages with text are in and `fetch_grace` has passed
+    /// since the last of them arrived (0 waits for every page, up to `page_timeout`, as before). The
+    /// pages left behind count as not read, and `degraded` says so.
+    pub fetch_enough: usize,
+    pub fetch_grace: Duration,
     pub search_cache_ttl: Duration,
     /// Starting lifetime of a cached page; it then adapts per URL between `page_ttl_min` and
     /// `page_ttl_max` depending on whether the page changed when it was last refetched.
@@ -49,6 +54,8 @@ impl Default for PipelineConfig {
             concurrency: 8,
             fetch_standard: 8,
             fetch_deep: 20,
+            fetch_enough: 0,
+            fetch_grace: Duration::from_millis(1500),
             search_cache_ttl: Duration::from_secs(600),
             page_cache_ttl: Duration::from_secs(3600),
             page_ttl_min: Duration::from_secs(300),
@@ -252,13 +259,33 @@ impl Pipeline {
         query: String,
         budget: usize,
     ) -> (Vec<SelectedSection>, bool) {
+        self.select_sections_many(vec![core], query, budget)
+            .await
+            .pop()
+            .unwrap_or_default()
+    }
+
+    /// Select sections for several pages with one scoring call for all of them.
+    async fn select_sections_many(
+        &self,
+        cores: Vec<String>,
+        query: String,
+        budget: usize,
+    ) -> Vec<(Vec<SelectedSection>, bool)> {
         let scorer = self.section_scorer.clone();
-        let lexical = (core.clone(), query.clone());
+        let lexical = (cores.clone(), query.clone());
         tokio::task::spawn_blocking(move || {
-            sections::select_with(&core, &query, budget, scorer.as_deref())
+            let pages: Vec<&str> = cores.iter().map(String::as_str).collect();
+            sections::select_many(&pages, &query, budget, scorer.as_deref())
         })
         .await
-        .unwrap_or_else(|_| sections::select(&lexical.0, &lexical.1, budget))
+        .unwrap_or_else(|_| {
+            lexical
+                .0
+                .iter()
+                .map(|core| sections::select(core, &lexical.1, budget))
+                .collect()
+        })
     }
 
     pub fn extractor(self, extractor: Arc<Extractor>) -> Self {
@@ -659,7 +686,8 @@ impl Pipeline {
         let t = Instant::now();
         let mut loaded: Vec<Option<std::result::Result<Loaded, String>>> =
             (0..scored.len()).map(|_| None).collect();
-        let (mut fetched, mut timed_out, mut failed_total) = (0usize, 0usize, 0usize);
+        let (mut fetched, mut timed_out, mut failed_total, mut left_behind) =
+            (0usize, 0usize, 0usize, 0usize);
         if fetch_k > 0 {
             let titles: Arc<Vec<String>> =
                 Arc::new(scored.iter().map(|(c, _)| c.title.clone()).collect());
@@ -702,7 +730,7 @@ impl Pipeline {
                             });
                         }) as content::OnLoaded
                     });
-                let outs = content::load_pages_then(
+                let outs = content::load_pages_until(
                     &self.fetcher,
                     self.renderer.as_ref(),
                     self.extractor_handle(),
@@ -711,10 +739,18 @@ impl Pipeline {
                     self.cfg.concurrency,
                     self.cfg.page_timeout,
                     on_loaded,
+                    // Only the first round: a replacement round is small and has no slow tail to cut.
+                    (round == 0 && self.cfg.fetch_enough > 0).then_some(content::EarlyStop {
+                        enough: self.cfg.fetch_enough,
+                        grace: self.cfg.fetch_grace,
+                    }),
                 )
                 .await;
                 fetched += outs.len();
+                let late = outs.iter().filter(|o| o.is_none()).count();
+                left_behind += late;
                 for (k, o) in outs.into_iter().enumerate() {
+                    let Some(o) = o else { continue };
                     if let Err(e) = &o {
                         failed_total += 1;
                         if matches!(e, Error::Timeout { .. }) {
@@ -724,7 +760,8 @@ impl Pipeline {
                     loaded[from + k] = Some(o.map_err(|e| e.to_string()));
                 }
                 let have = readable(&loaded);
-                if round == 1 || have >= req.limit || to >= scored.len() {
+                // Pages were left behind on purpose: reading more would only bring the wait back.
+                if round == 1 || have >= req.limit || to >= scored.len() || late > 0 {
                     break;
                 }
                 (from, to) = (to, (to + (req.limit - have)).min(scored.len()));
@@ -732,6 +769,11 @@ impl Pipeline {
             if failed_total > 0 {
                 degraded.push(format!(
                     "content: {failed_total} of {fetched} pages could not be fetched or extracted ({timed_out} timed out)"
+                ));
+            }
+            if left_behind > 0 {
+                degraded.push(format!(
+                    "content: {left_behind} of {fetched} pages were still loading when enough others were in, and were not read"
                 ));
             }
             let (mut fetch_max, mut extract_max, mut extract_sum, mut render_max) = (0, 0, 0, 0);
@@ -819,17 +861,22 @@ impl Pipeline {
         let t = Instant::now();
         let mut selections: Vec<Option<(Vec<SelectedSection>, bool)>> = Vec::new();
         if !req.full_content {
-            for &j in &ok_idx {
-                let core = loaded[j]
-                    .as_ref()
-                    .and_then(|l| l.as_ref().ok())
-                    .map(|l| l.result.core.clone())
-                    .unwrap_or_default();
-                selections.push(Some(
-                    self.select_sections(core, req.query.clone(), req.max_chars_per_result)
-                        .await,
-                ));
-            }
+            let cores: Vec<String> = ok_idx
+                .iter()
+                .map(|&j| {
+                    loaded[j]
+                        .as_ref()
+                        .and_then(|l| l.as_ref().ok())
+                        .map(|l| l.result.core.clone())
+                        .unwrap_or_default()
+                })
+                .collect();
+            selections = self
+                .select_sections_many(cores, req.query.clone(), req.max_chars_per_result)
+                .await
+                .into_iter()
+                .map(Some)
+                .collect();
         }
         for (i, (cand, mut parts)) in scored.into_iter().enumerate() {
             let s1n = parts.stage1 / max_stage1;

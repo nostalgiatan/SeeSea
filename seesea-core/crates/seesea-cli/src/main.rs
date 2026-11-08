@@ -126,6 +126,8 @@ struct NetArgs {
     #[arg(skip)]
     index_quota_mb: Option<u64>,
     #[arg(skip)]
+    fetch: userconfig::Fetch,
+    #[arg(skip)]
     collect: Vec<String>,
     #[arg(long, global = true)]
     no_cache: bool,
@@ -465,6 +467,7 @@ fn apply_file(net: &mut NetArgs, f: &FileConfig, use_model: bool) {
     fill(&mut net.index_dir, &f.index_dir);
     net.retention_days = f.retention_days;
     net.index_quota_mb = f.index_quota_mb;
+    net.fetch = f.fetch.clone();
     net.collect = f.collect.enabled();
     fill(&mut net.explore, &f.explore);
     fill(&mut net.cache_dir, &f.cache_dir);
@@ -529,6 +532,7 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         }),
         retention_days: net.retention_days,
         index_quota_mb: net.index_quota_mb,
+        fetch: net.fetch.clone(),
         collect: net.collect.clone(),
     }
 }

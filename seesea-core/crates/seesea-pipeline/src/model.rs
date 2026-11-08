@@ -173,7 +173,7 @@ pub struct ScoreParts {
     pub stage1: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SelectedSection {
     /// Heading path from the top of the page, empty for text before the first heading.
     pub path: Vec<String>,
