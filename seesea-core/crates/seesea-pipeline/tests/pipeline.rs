@@ -1179,3 +1179,109 @@ async fn without_an_early_stop_every_page_is_waited_for() {
         .unwrap();
     assert!(fetch.ms >= 400, "{}", fetch.ms);
 }
+
+fn vetted(sources: Vec<Arc<dyn Source>>, pages: Arc<FakePages>) -> Pipeline {
+    use seesea_vet::{RankTable, ThreatList, Vet, VetConfig};
+    let mut threats = ThreatList::new();
+    threats.add_url("http://kit.example/login.php");
+    let vet = Vet::new(VetConfig::default())
+        .with_ranks(RankTable::from_csv("20,paypal.com\n900,docs.rs\n"))
+        .with_threats(threats);
+    standard_pipeline(sources, pages).vet(Arc::new(vet))
+}
+
+#[tokio::test]
+async fn the_vet_removes_listed_addresses_and_never_opens_risky_ones() {
+    let listed = "http://kit.example/login.php";
+    let lookalike = "https://paypal-secure-login.example.com/verify/account";
+    let honest = "https://docs.rs/tokio";
+    let q = "tokio runtime";
+    let a = FakeSource::ok(
+        "a",
+        vec![
+            hit(listed, "Tokio runtime login", "tokio runtime"),
+            hit(lookalike, "Tokio runtime verify", "tokio runtime"),
+            hit(
+                honest,
+                "Tokio runtime",
+                "Tokio is an asynchronous runtime for Rust",
+            ),
+        ],
+    );
+    let pages = FakePages::new(&[
+        (lookalike, page("Tokio runtime verify", &SPAM)),
+        (honest, page("Tokio runtime", &RUNTIME)),
+        (listed, page("Tokio runtime login", &SPAM)),
+    ]);
+    let p = vetted(vec![a], pages.clone());
+
+    let resp = p.search(&SearchRequest::new(q)).await.unwrap();
+    let urls: Vec<&str> = resp.hits.iter().map(|h| h.url.as_str()).collect();
+    assert!(!urls.contains(&listed), "{urls:?}");
+    assert!(
+        resp.degraded.iter().any(|d| d.contains("kit.example")),
+        "{:?}",
+        resp.degraded
+    );
+    let requested = pages.requested.lock().unwrap().clone();
+    assert!(
+        !requested.iter().any(|u| u == listed || u == lookalike),
+        "{requested:?}"
+    );
+    assert!(requested.iter().any(|u| u == honest));
+    // The look-alike is still shown, flagged, below the page that was read.
+    assert_eq!(resp.hits[0].url, honest);
+    let flagged = resp.hits.iter().find(|h| h.url == lookalike).unwrap();
+    let info = flagged.vet.as_ref().expect("flagged");
+    assert!(
+        info.flags.iter().any(|f| f == "brand_in_subdomain"),
+        "{info:?}"
+    );
+    assert!(flagged.score_parts.vet < 0.0 && flagged.content.is_none());
+}
+
+#[tokio::test]
+async fn official_and_popular_sites_gain_a_little_and_say_so() {
+    let official = "https://www.paypal.com/en/home";
+    let small = "https://blog.example.org/paypal-guide";
+    let a = FakeSource::ok(
+        "a",
+        vec![
+            hit(small, "Paypal guide", "A guide to paypal accounts and fees"),
+            hit(
+                official,
+                "Paypal guide",
+                "A guide to paypal accounts and fees",
+            ),
+        ],
+    );
+    let p = vetted(vec![a], FakePages::new(&[]));
+    let mut req = SearchRequest::new("paypal guide");
+    req.mode = Mode::Fast;
+    let resp = p.search(&req).await.unwrap();
+    assert_eq!(resp.hits[0].url, official, "{:#?}", resp.hits);
+    let info = resp.hits[0]
+        .vet
+        .as_ref()
+        .expect("official sites are marked");
+    assert_eq!(info.official.as_deref(), Some("PayPal"));
+    assert!(resp.hits[0].score_parts.vet > 0.0);
+    assert!(
+        resp.hits[1].vet.is_none(),
+        "an unknown site with nothing wrong carries no mark"
+    );
+}
+
+#[tokio::test]
+async fn without_a_vet_nothing_changes() {
+    let a = FakeSource::ok(
+        "a",
+        vec![hit("http://kit.example/login.php", "t", "tokio runtime")],
+    );
+    let p = standard_pipeline(vec![a], FakePages::new(&[]));
+    let mut req = SearchRequest::new("tokio runtime");
+    req.mode = Mode::Fast;
+    let resp = p.search(&req).await.unwrap();
+    assert_eq!(resp.hits.len(), 1);
+    assert!(resp.hits[0].vet.is_none());
+}

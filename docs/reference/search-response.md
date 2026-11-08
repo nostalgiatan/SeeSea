@@ -29,8 +29,21 @@
 | `content` | 对象或空 | 读到的正文，见下；没有读到时为空 |
 | `content_error` | 字符串或空 | 没有读到正文时的原因 |
 | `related` | 数组 | 同一事件的其他报道，每项是 `{url, title, host}` |
+| `vet` | 对象或空 | 网址的可信度判断，见下；没有可说的（不知名的站点、没有问题）时为空 |
 
 `related` 里的网址由标题相近且来自不同站点的结果合并而来：标题的词重合度（Jaccard）达到 0.55，或较短标题的包含度达到 0.85 且至少共有 4 个词。每多一个独立站点，主结果加 0.03 分，最多加 0.09。
+
+### vet
+
+| 字段 | 说明 |
+|---|---|
+| `level` | `trusted`、`neutral`、`suspicious`、`risky`、`blocked` |
+| `tier` | 热门度档位：`giant`（前一万）、`well_known`（前十万）、`listed`（榜内其余）、`unranked` |
+| `rank` | 在榜单里的名次，不在榜内时没有 |
+| `official` | 这个网址属于哪个品牌自己的域名，不是时没有 |
+| `flags` | 引起怀疑的信号代码，没有时省略。常见的有 `brand_in_subdomain`、`embedded_domain`、`typosquat`、`look_alike_brand`、`homograph`、`ip_host`、`shortener`、`random_name`、`risky_tld`、`path_keywords`、`threat_url`、`threat_host`、`local_block` |
+
+被威胁列表或 `block` 命中的结果默认直接剔除，`degraded` 里会说明剔除了哪些主机。`risky` 的页面不会被读取，所以没有 `content`。
 
 ### score_parts
 
@@ -41,6 +54,7 @@
 | `title` | 第一层 | 查询与标题的匹配，已按标题是否被摘要或正文支撑打过折扣 |
 | `freshness` | 第一层 | 新鲜度 |
 | `learned` | 第一层 | 因这个主机和来源以往的表现加上的分 |
+| `vet` | 第一层 | 因网址可信度加上或减去的分：热门和官方站点加分，可疑和高风险减分 |
 | `stage1` | 第一层 | 第一层分数，归一到最高分为 1 |
 | `relevance` | 第二层 | 正文回答查询的程度，0 到 1 |
 | `title_support` | 第二层 | 正文对标题的支撑程度，0 到 1 |

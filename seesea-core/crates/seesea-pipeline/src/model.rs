@@ -170,7 +170,50 @@ pub struct ScoreParts {
     /// Stage-1 points added because of how this host and its sources delivered before.
     #[serde(default)]
     pub learned: f64,
+    /// Stage-1 points added or taken away by the vet: popular and official sites gain, sites that
+    /// look like phishing lose.
+    #[serde(default)]
+    pub vet: f64,
     pub stage1: f64,
+}
+
+/// What the vet found out about a result's address, in the few words an agent needs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VetInfo {
+    pub level: seesea_vet::Level,
+    pub tier: seesea_vet::Tier,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub rank: Option<u32>,
+    /// The brand whose own site this is.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub official: Option<String>,
+    /// Why the address is doubted: the codes of the signals that raised suspicion.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub flags: Vec<String>,
+}
+
+impl VetInfo {
+    pub fn of(v: &seesea_vet::Verdict) -> Self {
+        Self {
+            level: v.level,
+            tier: v.tier,
+            rank: v.rank,
+            official: v.official.clone(),
+            flags: v
+                .reasons
+                .iter()
+                .filter(|r| r.weight > 0)
+                .map(|r| r.code.clone())
+                .collect(),
+        }
+    }
+
+    /// Nothing worth telling the reader: an unknown site with nothing wrong.
+    pub fn is_plain(&self) -> bool {
+        self.level == seesea_vet::Level::Neutral
+            && self.tier == seesea_vet::Tier::Unranked
+            && self.flags.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -213,6 +256,9 @@ pub struct Hit {
     /// Other outlets reporting the same event, folded into this hit.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub related: Vec<Related>,
+    /// How far the address can be trusted. Absent for an unknown site with nothing wrong.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub vet: Option<VetInfo>,
 }
 
 /// A hit folded into another because it tells the same story.

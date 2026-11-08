@@ -73,6 +73,7 @@ mod tests {
             content: None,
             content_error: None,
             related: vec![],
+            vet: None,
         }
     }
 

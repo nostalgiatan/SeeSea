@@ -17,7 +17,7 @@ jobs:
       run:
         working-directory: seesea-core
     env:
-      CORE: -p seesea-pipeline -p seesea-mcp -p seesea-cli -p seesea-fetch -p seesea-extract -p seesea-auth -p seesea-index -p seesea-embed
+      CORE: -p seesea-pipeline -p seesea-mcp -p seesea-cli -p seesea-fetch -p seesea-extract -p seesea-auth -p seesea-index -p seesea-embed -p seesea-vet
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

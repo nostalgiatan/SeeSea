@@ -20,6 +20,7 @@
 - [准备本地模型](how-to/set-up-models.md)
 - [填充本地索引](how-to/fill-the-local-index.md)
 - [检查搜索质量](how-to/review-search-quality.md)
+- [把钓鱼站挡在结果之外](how-to/keep-phishing-out.md)
 - [与 Tavily 对比](how-to/compare-with-tavily.md)
 
 服务与接入：
@@ -54,6 +55,7 @@
 
 - [搜索管线如何工作](explanation/pipeline.md)
 - [排序与学习](explanation/ranking-and-learning.md)
+- [结果可信度判断](explanation/vet.md)
 - [新鲜度与本地索引](explanation/freshness-and-index.md)
 - [多节点设计](explanation/cluster-design.md)
 - [正文抽取研究](explanation/extraction-research.md)

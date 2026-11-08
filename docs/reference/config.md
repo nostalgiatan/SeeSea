@@ -66,6 +66,23 @@
 | `community` | Hacker News、Lobsters、Stack Overflow 标签、Reddit、V2EX |
 | `quotes` | 汇率、币价、天气：被问到时才向公开接口查询，不入库，结果缓存 30 秒。每种值有多个备用接口，按顺序取第一个能答的 |
 
+## `[vet]`
+
+在读取任何页面之前，先按网址本身判断结果可不可信：官方站点和访问量很大的站点加分，仿冒知名站点、裸 IP、已被举报的地址降权、不打开或直接剔除。原理见[结果可信度判断](../explanation/vet.md)，操作见[把钓鱼站挡在结果之外](../how-to/keep-phishing-out.md)。
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `enabled` | `true` | `false` 完全关闭 |
+| `allow` | 空 | 一直信任的站点（主机或上级域名）。优先于其他一切信号，包括威胁列表 |
+| `block` | 空 | 一律不显示的站点 |
+| `drop_listed` | `true` | 威胁列表里的地址直接剔除；`false` 只标记 |
+| `skip_risky` | `true` | 不打开判为高风险的页面（仍会列出，带标记，排在后面） |
+| `boost` | `1.0` | 对热门站点和官方站点的偏向强度，是系数；`0` 关闭，上限 3 |
+| `rank_list` | `latest` | 热门度榜单：`latest`、某个 Tranco 榜单编号、或一个 `排名,域名` CSV 的网址或本地路径 |
+| `feeds` | `["urlhaus"]` | 威胁订阅源：`urlhaus`、`openphish`，或一个纯网址列表的地址 |
+
+榜单和威胁列表放在数据目录的 `vet/` 下（可用 `SEESEA_VET_DIR` 改），由 `seesea vet update` 生成。没有这些文件时，仍会判断网址本身的信号，只是没有热门度分档和威胁列表。
+
 ## TLS
 
 监听非回环地址时，要么配置证书，要么声明前面有终结 TLS 的代理。`--allow-open` 不能绕过这一条。

@@ -20,6 +20,7 @@ Search:
 - [Set up local models](how-to/set-up-models.md)
 - [Fill the local index](how-to/fill-the-local-index.md)
 - [Check search quality](how-to/review-search-quality.md)
+- [Keep phishing out of results](how-to/keep-phishing-out.md)
 - [Compare with Tavily](how-to/compare-with-tavily.md)
 
 Server and clients:
@@ -54,6 +55,7 @@ Understand why it is built this way.
 
 - [How the search pipeline works](explanation/pipeline.md)
 - [Ranking and learning](explanation/ranking-and-learning.md)
+- [How results are vetted](explanation/vet.md)
 - [Freshness and the local index](explanation/freshness-and-index.md)
 - [Cluster design](explanation/cluster-design.md)
 - [Content extraction study](../explanation/extraction-research.md) (Chinese only)

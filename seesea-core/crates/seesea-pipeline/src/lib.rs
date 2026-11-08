@@ -30,8 +30,8 @@ pub use journal::Journal;
 pub use learn::{LearnConfig, Learner, Observation};
 pub use model::{
     Attribution, Content, Hit, Mode, Related, ScoreParts, SearchRequest, SearchResponse,
-    SelectedSection, StageTiming, TimeRange,
+    SelectedSection, StageTiming, TimeRange, VetInfo,
 };
-pub use pipeline::{ExtractedPage, Pipeline, PipelineConfig, SourceProbe, host_of};
+pub use pipeline::{ExtractedPage, Pipeline, PipelineConfig, SourceProbe, VetPolicy, host_of};
 pub use rank::Recency;
 pub use source::{RawHit, Remembered, Sink, Source, SourceQuery};
