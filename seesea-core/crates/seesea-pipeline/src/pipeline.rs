@@ -17,6 +17,63 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+/// What the pipeline does with the vet's verdicts. Stage-1 points are on the scale of the ranking
+/// score (the best candidate is about 1); the final score gets `final_scale` of them, because by
+/// then the page has been read and the ranking rests on what it said.
+#[derive(Debug, Clone)]
+pub struct VetPolicy {
+    /// Leave out results on the threat lists or the user's block list.
+    pub drop_blocked: bool,
+    /// Never fetch a page the vet calls risky (it still appears, flagged, below the others).
+    pub skip_fetch_risky: bool,
+    pub boost_giant: f64,
+    pub boost_known: f64,
+    /// Extra for a brand's own domain.
+    pub boost_official: f64,
+    pub penalty_suspicious: f64,
+    pub penalty_risky: f64,
+    pub final_scale: f64,
+}
+
+impl Default for VetPolicy {
+    fn default() -> Self {
+        Self {
+            drop_blocked: true,
+            skip_fetch_risky: true,
+            boost_giant: 0.06,
+            boost_known: 0.04,
+            boost_official: 0.06,
+            penalty_suspicious: 0.2,
+            penalty_risky: 0.6,
+            final_scale: 0.5,
+        }
+    }
+}
+
+impl VetPolicy {
+    /// Stage-1 points for a verdict.
+    pub fn stage1(&self, v: &seesea_vet::Verdict) -> f64 {
+        use seesea_vet::{Level, Tier};
+        let tier = match v.tier {
+            Tier::Giant => self.boost_giant,
+            Tier::WellKnown => self.boost_known,
+            _ => 0.0,
+        };
+        match v.level {
+            Level::Blocked | Level::Risky => -self.penalty_risky,
+            Level::Suspicious => -self.penalty_suspicious,
+            Level::Trusted => {
+                tier + if v.official.is_some() {
+                    self.boost_official
+                } else {
+                    0.0
+                }
+            }
+            Level::Neutral => 0.0,
+        }
+    }
+}
+
 pub struct PipelineConfig {
     pub fusion: FusionConfig,
     pub rank: RankConfig,
@@ -42,6 +99,7 @@ pub struct PipelineConfig {
     /// Serve a cached response for a query whose meaningful words overlap this much (Jaccard) with
     /// an earlier one. Off by default: similar is not the same, and `seesea replay` shows what it costs.
     pub fuzzy_cache_threshold: Option<f64>,
+    pub vet: VetPolicy,
 }
 
 impl Default for PipelineConfig {
@@ -61,6 +119,7 @@ impl Default for PipelineConfig {
             page_ttl_min: Duration::from_secs(300),
             page_ttl_max: Duration::from_secs(7 * 24 * 3600),
             fuzzy_cache_threshold: None,
+            vet: VetPolicy::default(),
         }
     }
 }
@@ -73,6 +132,8 @@ pub struct Pipeline {
     /// Nudges stage-1 scores by what hosts and sources delivered in earlier searches.
     learner: Option<Arc<crate::learn::Learner>>,
     journal: Option<Arc<crate::journal::Journal>>,
+    /// Judges every candidate's address before anything is read from it.
+    vet: Option<Arc<seesea_vet::Vet>>,
     sink: Option<Arc<dyn crate::source::Sink>>,
     extractor: OnceLock<Arc<Extractor>>,
     reranker: Arc<dyn Reranker>,
@@ -168,6 +229,7 @@ impl Pipeline {
             renderer: None,
             learner: None,
             journal: None,
+            vet: None,
             sink: None,
             extractor: OnceLock::new(),
             reranker: Arc::new(LexicalReranker),
@@ -198,6 +260,13 @@ impl Pipeline {
     /// Learn stage-1 weights per host and source from what the later stages find.
     pub fn learner(mut self, learner: Arc<crate::learn::Learner>) -> Self {
         self.learner = Some(learner);
+        self
+    }
+
+    /// Judge candidates' addresses: boost official and popular sites, demote and skip what looks
+    /// like phishing, leave out what the threat lists name.
+    pub fn vet(mut self, vet: Arc<seesea_vet::Vet>) -> Self {
+        self.vet = Some(vet);
         self
     }
 
@@ -632,6 +701,28 @@ impl Pipeline {
                     && !on(&host, &req.exclude_domains)
             });
         }
+        // Judge every address before anything is spent on it. A listed one is left out.
+        let mut verdicts: HashMap<String, seesea_vet::Verdict> = HashMap::new();
+        let mut removed: Vec<String> = Vec::new();
+        if let Some(vet) = &self.vet {
+            candidates.retain(|c| {
+                let v = vet.check(&c.url);
+                if v.level == seesea_vet::Level::Blocked && self.cfg.vet.drop_blocked {
+                    removed.push(host_of(&c.url));
+                    return false;
+                }
+                verdicts.insert(c.key.clone(), v);
+                true
+            });
+            if !removed.is_empty() {
+                removed.sort();
+                removed.dedup();
+                degraded.push(format!(
+                    "vet: left out results listed as phishing or malware ({})",
+                    removed.join(", ")
+                ));
+            }
+        }
         let mut q = QueryInfo::new(&req.query);
         q.recency = recency;
         let now = Utc::now();
@@ -644,6 +735,10 @@ impl Pipeline {
                     parts.learned = l.adjustment(&host_of(&c.url), &sources);
                     parts.stage1 += parts.learned;
                 }
+                if let Some(v) = verdicts.get(&c.key) {
+                    parts.vet = self.cfg.vet.stage1(v);
+                    parts.stage1 += parts.vet;
+                }
                 (c, parts)
             })
             .collect();
@@ -653,6 +748,15 @@ impl Pipeline {
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.0.key.cmp(&b.0.key))
         });
+        // A page the vet calls risky is not opened: reading it costs time and, for an agent, risk.
+        let risky = |c: &fusion::Candidate| {
+            self.cfg.vet.skip_fetch_risky
+                && verdicts
+                    .get(&c.key)
+                    .is_some_and(|v| v.level <= seesea_vet::Level::Risky)
+        };
+        scored.sort_by_key(|(c, _)| risky(c));
+        let fetchable = scored.iter().take_while(|(c, _)| !risky(c)).count();
         stages.push(StageTiming {
             stage: "fuse_rank".into(),
             ms: ms(t),
@@ -664,7 +768,9 @@ impl Pipeline {
                 Mode::Standard => self.cfg.fetch_standard.max(req.limit),
                 Mode::Deep => self.cfg.fetch_deep.max(req.limit),
             };
-            if let Some(j) = l.explore_index(fetch_k, scored.len()) {
+            if let Some(j) = l.explore_index(fetch_k, scored.len())
+                && j < fetchable
+            {
                 scored.swap(fetch_k - 1, j);
             }
         }
@@ -679,7 +785,7 @@ impl Pipeline {
             Mode::Standard => self.cfg.fetch_standard.max(req.limit),
             Mode::Deep => self.cfg.fetch_deep.max(req.limit),
         }
-        .min(scored.len());
+        .min(fetchable);
 
         // Stage 3: fetch and extract the best candidates. A page that cannot be read is replaced by the
         // next candidate (once), so the answer is not padded with results nobody looked at.
@@ -761,10 +867,10 @@ impl Pipeline {
                 }
                 let have = readable(&loaded);
                 // Pages were left behind on purpose: reading more would only bring the wait back.
-                if round == 1 || have >= req.limit || to >= scored.len() || late > 0 {
+                if round == 1 || have >= req.limit || to >= fetchable || late > 0 {
                     break;
                 }
-                (from, to) = (to, (to + (req.limit - have)).min(scored.len()));
+                (from, to) = (to, (to + (req.limit - have)).min(fetchable));
             }
             if failed_total > 0 {
                 degraded.push(format!(
@@ -941,6 +1047,10 @@ impl Pipeline {
                 }
             }
             parts.stage1 = s1n;
+            let verdict = verdicts.get(&cand.key);
+            let final_score = final_score
+                + verdict.map_or(0.0, |v| self.cfg.vet.stage1(v) * self.cfg.vet.final_scale);
+            let vet = verdict.map(VetInfo::of).filter(|i| !i.is_plain());
             hits.push(Hit {
                 url: cand.url,
                 title: cand.title,
@@ -952,6 +1062,7 @@ impl Pipeline {
                 content,
                 content_error,
                 related: Vec::new(),
+                vet,
             });
         }
         hits.sort_by(|a, b| {
@@ -1135,6 +1246,7 @@ mod diversity_tests {
             found_by: vec![],
             content: None,
             content_error: None,
+            vet: None,
             related: vec![],
         };
         let hits = vec![

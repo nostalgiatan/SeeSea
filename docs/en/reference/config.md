@@ -66,6 +66,23 @@ Besides news, the local index can collect other kinds of data. Every switch is o
 | `community` | Hacker News, Lobsters, Stack Overflow tags, Reddit, V2EX |
 | `quotes` | Exchange rates, coin prices, weather: asked from public APIs only when a query is about them, not stored, answers kept 30 seconds. Each value has several providers and the first that answers is used |
 
+## `[vet]`
+
+Judges every result by its address before any page is read: official and very popular sites gain, look-alikes of famous sites, raw IP hosts and reported addresses are demoted, not opened or dropped. See [How results are vetted](../explanation/vet.md) and [Keep phishing out of results](../how-to/keep-phishing-out.md).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `true` | `false` turns it off |
+| `allow` | empty | Sites that are always trusted (a host or a parent domain). Wins over everything, the threat lists included |
+| `block` | empty | Sites that are never shown |
+| `drop_listed` | `true` | Leave out addresses on the threat lists; `false` only flags them |
+| `skip_risky` | `true` | Do not open pages judged risky (they are still listed, flagged, below the others) |
+| `boost` | `1.0` | How strongly popular and official sites are favoured, as a factor; `0` turns it off, at most 3 |
+| `rank_list` | `latest` | The popularity list: `latest`, a Tranco list ID, or the address or path of a `rank,domain` CSV |
+| `feeds` | `["phishingdb"]` | Threat feeds: `phishingdb` (active phishing hosts from Phishing.Database, MIT), `openphish` (free for non-commercial use), or the address of a plain list of hosts or URLs |
+
+The list and the feeds live in the `vet/` folder of the data directory (`SEESEA_VET_DIR` moves it) and are written by `seesea vet update`. Without them the signals on the address itself still apply; only the popularity tiers and the threat lists are missing.
+
 ## TLS
 
 Listening on a non-loopback address needs a certificate, or a proxy in front that terminates TLS. `--allow-open` does not get around this.

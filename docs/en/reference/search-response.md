@@ -28,9 +28,22 @@
 | `found_by` | array | Which sources returned it, each `{source, rank}` |
 | `content` | object or null | The text that was read, see below; null when none was read |
 | `content_error` | string or null | Why no text was read |
+| `vet` | object or null | How far the address can be trusted, see below; absent for an unknown site with nothing wrong |
 | `related` | array | Other reports of the same event, each `{url, title, host}` |
 
 Items in `related` are merged from results with similar titles from different sites: a title word overlap (Jaccard) of 0.55, or the shorter title's containment of 0.85 with at least 4 shared words. Each additional independent site adds 0.03 to the main result, up to 0.09.
+
+### vet
+
+| Field | Meaning |
+|---|---|
+| `level` | `trusted`, `neutral`, `suspicious`, `risky` or `blocked` |
+| `tier` | Popularity: `giant` (top 10 000), `well_known` (top 100 000), `listed` (the rest of the list), `unranked` |
+| `rank` | Rank in the list, absent when not listed |
+| `official` | The brand whose own domain this is, absent otherwise |
+| `flags` | Codes of the signals that raised suspicion, omitted when there are none: `brand_in_subdomain`, `embedded_domain`, `typosquat`, `look_alike_brand`, `homograph`, `ip_host`, `shortener`, `random_name`, `risky_tld`, `path_keywords`, `threat_url`, `threat_host`, `local_block` and others |
+
+Results hit by a threat list or by `block` are left out by default, and `degraded` names the hosts. A `risky` page is not read, so it has no `content`.
 
 ### score_parts
 
@@ -40,6 +53,7 @@ Items in `related` are merged from results with similar titles from different si
 | `snippet_overlap` | first | Word overlap between query and snippet |
 | `title` | first | Query-title match, discounted when the snippet or page does not back the title |
 | `freshness` | first | Freshness |
+| `vet` | first | Points added or taken away for the address: popular and official sites gain, suspicious and risky ones lose |
 | `learned` | first | Points added for how this host and source delivered before |
 | `stage1` | first | The first-layer score, normalised so the best is 1 |
 | `relevance` | second | How well the text answers the query, 0 to 1 |

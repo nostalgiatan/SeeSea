@@ -24,6 +24,7 @@ Usage: `seesea [global options] <command> [options]`.
 | `poll` | Fetch the feeds that are due into the local index |
 | `index` | Size and age of the local index; `prune`, `embed`, `near` |
 | `cluster` | Multi-node: `keygen`, `export`, `import`, `push` |
+| `vet` | Judge result addresses: `check <url...>`, `update`, `status` |
 | `serve` | Run the HTTP server (JSON API, MCP on `/mcp`) |
 | `desk` | Open the workbench: search in a browser, and start the HTTP API and a remote MCP server from it; see [Workbench](workbench.md) |
 | `mcp` | Run an MCP server over standard input and output |
@@ -110,6 +111,14 @@ It prints nDCG, recall and MRR.
 | `index prune` | Apply retention now |
 | `index embed` | Give every item without a vector one now |
 | `index near <query> [-k 5]` | The items closest in meaning, with Hamming distance in bits |
+
+## vet
+
+| Command | Meaning |
+|---|---|
+| `vet check <url...>` | The judgement for each address as JSON: score, level, popularity tier, official brand and every reason |
+| `vet update` | Download the popularity list and the threat feeds and swap them in; a part that fails keeps its old file. Once a day is right |
+| `vet status` | The loaded list ID, its size and when it was updated |
 
 ## cluster
 

@@ -93,6 +93,9 @@ pub struct FileConfig {
     pub models: Models,
     #[serde(default)]
     pub fetch: Fetch,
+    /// Judging result addresses before they are read (`[vet]`).
+    #[serde(default)]
+    pub vet: Vet,
     #[serde(default)]
     pub semantic: Semantic,
     #[serde(default)]
@@ -136,6 +139,62 @@ impl Collect {
         .filter(|(_, on)| *on == Some(true))
         .map(|(n, _)| n.to_string())
         .collect()
+    }
+}
+
+/// Judging result addresses: popular and official sites gain, look-alikes and listed addresses lose.
+/// Works on the address alone, offline; `seesea vet update` fetches the popularity list and the
+/// threat feeds it uses.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Vet {
+    /// On unless set to false.
+    pub enabled: Option<bool>,
+    /// Sites you trust: a host or a parent domain. Wins over every other signal.
+    #[serde(default)]
+    pub allow: Vec<String>,
+    /// Sites you never want to see.
+    #[serde(default)]
+    pub block: Vec<String>,
+    /// Leave out results on the threat lists (default true); false only flags them.
+    pub drop_listed: Option<bool>,
+    /// Do not open pages the vet calls risky (default true).
+    pub skip_risky: Option<bool>,
+    /// How strongly popular and official sites are favoured, as a factor (default 1, 0 turns it off).
+    pub boost: Option<f64>,
+    /// The popularity list: `latest` (default), a Tranco list ID, or the address (or a path) of a `rank,domain` CSV.
+    pub rank_list: Option<String>,
+    /// Threat feeds: `phishingdb` (default), `openphish`, or the address of a plain list of hosts or URLs.
+    pub feeds: Option<Vec<String>>,
+}
+
+impl Vet {
+    fn check(&self) -> Result<()> {
+        if let Some(b) = self.boost
+            && !(0.0..=3.0).contains(&b)
+        {
+            return Err(Error::Config("vet.boost must be between 0 and 3".into()));
+        }
+        Ok(())
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.enabled != Some(false)
+    }
+
+    /// Put the keys that are set into the pipeline's configuration.
+    pub fn apply(&self, cfg: &mut seesea_pipeline::PipelineConfig) {
+        let p = &mut cfg.vet;
+        if let Some(v) = self.drop_listed {
+            p.drop_blocked = v;
+        }
+        if let Some(v) = self.skip_risky {
+            p.skip_fetch_risky = v;
+        }
+        let k = self.boost.unwrap_or(1.0);
+        p.boost_giant *= k;
+        p.boost_known *= k;
+        p.boost_official *= k;
     }
 }
 
@@ -365,6 +424,7 @@ pub fn parse(text: &str) -> Result<FileConfig> {
         expand(p);
     }
     c.fetch.check()?;
+    c.vet.check()?;
     Ok(c)
 }
 
@@ -481,6 +541,19 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # candidates = 8             # how many of the best results are read (never fewer than the result limit)
 # enough = 0                 # stop waiting for slow pages once this many have text (0 = wait for all)
 # grace_ms = 1500            # how long the slow ones still get after that
+
+[vet]
+# Judges every result address before anything is read: official and popular sites are favoured, look-alikes
+# of famous sites, raw IP hosts and listed addresses are demoted, skipped or left out. `seesea vet check <url>`
+# shows why. The popularity list and the threat feeds come from `seesea vet update` (run it daily).
+# enabled = true
+# allow = ["example.org"]           # always trusted, even if a feed lists them
+# block = ["content-farm.example"]  # never shown
+# drop_listed = true                # false: only flag addresses on the threat lists
+# skip_risky = true                 # do not open pages that look like phishing
+# boost = 1.0                       # strength of the favour for popular and official sites; 0 = none
+# rank_list = "latest"              # or a Tranco list ID, or the address of a rank,domain CSV
+# feeds = ["phishingdb"]           # also "openphish"; or the address of a plain list of hosts or URLs
 
 [rerank]
 # weight = 0.5

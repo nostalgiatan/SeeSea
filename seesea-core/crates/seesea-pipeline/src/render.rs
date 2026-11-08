@@ -25,6 +25,24 @@ fn hit_markdown(i: usize, h: &Hit, out: &mut String) {
         meta.push(format!("published {}", p.format("%Y-%m-%d")));
     }
     let _ = writeln!(out, "{}", meta.join(" · "));
+    if let Some(v) = &h.vet {
+        use seesea_vet::Level;
+        match v.level {
+            Level::Blocked | Level::Risky | Level::Suspicious => {
+                let _ = writeln!(
+                    out,
+                    "⚠ the address looks {}: {}",
+                    v.level.name(),
+                    v.flags.join(", ")
+                );
+            }
+            _ => {
+                if let Some(b) = &v.official {
+                    let _ = writeln!(out, "official site of {b}");
+                }
+            }
+        }
+    }
     if !h.snippet.trim().is_empty() {
         let _ = writeln!(out, "\n> {}", h.snippet.trim().replace('\n', " "));
     }
@@ -164,6 +182,7 @@ mod tests {
             }),
             content_error: None,
             related: vec![],
+            vet: None,
         }
     }
 
@@ -227,5 +246,37 @@ mod tests {
             ..resp
         };
         assert!(search_markdown(&none).contains("No results."));
+    }
+
+    #[test]
+    fn flagged_and_official_addresses_are_marked() {
+        use seesea_vet::{Level, Tier};
+        let mut h = hit();
+        h.vet = Some(VetInfo {
+            level: Level::Risky,
+            tier: Tier::Unranked,
+            rank: None,
+            official: None,
+            flags: vec!["brand_in_subdomain".into(), "path_keywords".into()],
+        });
+        let mut out = String::new();
+        hit_markdown(0, &h, &mut out);
+        assert!(
+            out.contains("⚠ the address looks risky: brand_in_subdomain, path_keywords"),
+            "{out}"
+        );
+        h.vet = Some(VetInfo {
+            level: Level::Trusted,
+            tier: Tier::Giant,
+            rank: Some(40),
+            official: Some("PayPal".into()),
+            flags: vec![],
+        });
+        let mut out = String::new();
+        hit_markdown(0, &h, &mut out);
+        assert!(
+            out.contains("official site of PayPal") && !out.contains('⚠'),
+            "{out}"
+        );
     }
 }

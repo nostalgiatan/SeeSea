@@ -129,6 +129,8 @@ struct NetArgs {
     fetch: userconfig::Fetch,
     #[arg(skip)]
     collect: Vec<String>,
+    #[arg(skip)]
+    vet: userconfig::Vet,
     #[arg(long, global = true)]
     no_cache: bool,
     /// Allow fetching loopback and private addresses.
@@ -228,6 +230,11 @@ enum Command {
     Models {
         #[command(subcommand)]
         action: Option<ModelsAction>,
+    },
+    /// Judge result addresses: popularity, official sites, phishing signals, threat lists.
+    Vet {
+        #[command(subcommand)]
+        action: VetAction,
     },
     /// Manage API users (accounts) for `seesea serve`.
     Users {
@@ -442,6 +449,16 @@ enum KeysAction {
 }
 
 #[derive(Subcommand)]
+enum VetAction {
+    /// Judge addresses and say why (the same judgement every search uses).
+    Check { urls: Vec<String> },
+    /// Download the popularity list and the threat feeds; run it daily.
+    Update,
+    /// What is loaded.
+    Status,
+}
+
+#[derive(Subcommand)]
 enum ModelsAction {
     /// Download models (embedding, reranker; all of them when none is named) unless already present.
     Download { names: Vec<String> },
@@ -469,6 +486,7 @@ fn apply_file(net: &mut NetArgs, f: &FileConfig, use_model: bool) {
     net.index_quota_mb = f.index_quota_mb;
     net.fetch = f.fetch.clone();
     net.collect = f.collect.enabled();
+    net.vet = f.vet.clone();
     fill(&mut net.explore, &f.explore);
     fill(&mut net.cache_dir, &f.cache_dir);
     fill(&mut net.fuzzy_cache, &f.fuzzy_cache);
@@ -534,6 +552,7 @@ fn settings(net: &NetArgs, memory_cache: bool, use_model: bool) -> Settings {
         index_quota_mb: net.index_quota_mb,
         fetch: net.fetch.clone(),
         collect: net.collect.clone(),
+        vet: net.vet.clone(),
     }
 }
 
@@ -1031,6 +1050,36 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
                         "not there; `seesea config --init` writes a template"
                     }
                 );
+            }
+            return Ok(());
+        }
+        Command::Vet { action } => {
+            match action {
+                VetAction::Check { urls } => {
+                    let vet = seesea_cli::vet::load(&file.vet).ok_or_else(|| {
+                        Error::Config("the vet is turned off ([vet] enabled = false)".into())
+                    })?;
+                    let out: Vec<_> = urls.iter().map(|u| vet.check(u)).collect();
+                    print_json(&out)?;
+                }
+                VetAction::Update => {
+                    let s = seesea_cli::vet::update(&file.vet, cli.net.proxy.as_deref()).await?;
+                    if json {
+                        print_json(&s)?;
+                    } else {
+                        for l in s.lines() {
+                            println!("{l}");
+                        }
+                    }
+                }
+                VetAction::Status => {
+                    let s = seesea_cli::vet::status();
+                    if json {
+                        print_json(&s)?;
+                    } else {
+                        println!("{}", s.line());
+                    }
+                }
             }
             return Ok(());
         }
@@ -1801,6 +1850,7 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
         }
         Command::Config { .. }
         | Command::Models { .. }
+        | Command::Vet { .. }
         | Command::Users { .. }
         | Command::Keys { .. }
         | Command::Usage { .. }

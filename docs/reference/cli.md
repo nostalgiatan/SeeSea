@@ -24,6 +24,7 @@
 | `poll` | 拉取到期的订阅源写入本地索引 |
 | `index` | 本地索引的大小和日期；`prune`、`embed`、`near` |
 | `cluster` | 多节点：`keygen`、`export`、`import`、`push` |
+| `vet` | 判断结果网址：`check <网址...>`、`update`、`status` |
 | `serve` | 运行 HTTP 服务（JSON 接口，MCP 在 `/mcp`） |
 | `desk` | 打开工作台：浏览器里搜索，并能启动 HTTP 接口和远程 MCP，见[工作台](workbench.md) |
 | `mcp` | 通过标准输入输出运行 MCP 服务 |
@@ -110,6 +111,14 @@
 | `index prune` | 立即执行保留策略 |
 | `index embed` | 给还没有向量的条目生成向量 |
 | `index near <问题> [-k 5]` | 语义上最近的条目及汉明距离（位） |
+
+## vet
+
+| 命令 | 说明 |
+|---|---|
+| `vet check <网址...>` | 输出每个网址的判断（JSON）：分数、等级、热门度档位、官方品牌和每条原因 |
+| `vet update` | 下载热门度榜单和威胁订阅源并换入；某一项失败时保留旧文件。建议每天一次 |
+| `vet status` | 已加载的榜单编号、条数和更新时间 |
 
 ## cluster
 

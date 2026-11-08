@@ -157,6 +157,7 @@ impl Journal {
                             "content_chars": h.content.as_ref().map(|c| c.sections.iter().map(|s| s.markdown.chars().count()).sum::<usize>()),
                             "content_error": h.content_error,
                             "related": h.related.len(),
+                            "vet": h.vet,
                         })
                     })
                     .collect::<Vec<_>>()

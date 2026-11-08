@@ -18,4 +18,5 @@ pub mod sources;
 pub mod tls;
 pub mod ui;
 pub mod userconfig;
+pub mod vet;
 pub mod wire;

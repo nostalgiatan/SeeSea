@@ -68,6 +68,8 @@ pub struct Settings {
     pub fetch: crate::userconfig::Fetch,
     /// The extra kinds of data to collect: `dev`, `papers`, `community`, `quotes`.
     pub collect: Vec<String>,
+    /// Judging result addresses (`[vet]` in the config file).
+    pub vet: crate::userconfig::Vet,
 }
 
 pub use crate::userconfig::default_cache_dir;
@@ -253,9 +255,13 @@ pub fn build_pipeline(settings: &Settings) -> Result<Pipeline> {
         ..Default::default()
     };
     settings.fetch.apply(&mut pipeline_cfg);
+    settings.vet.apply(&mut pipeline_cfg);
     let mut pipeline = Pipeline::with_net_fetcher(sources, fetch.clone())
         .config(pipeline_cfg)
         .cache(cache);
+    if let Some(vet) = crate::vet::load(&settings.vet) {
+        pipeline = pipeline.vet(vet);
+    }
     if let Some(sink) = sink.filter(|_| !settings.no_writeback) {
         pipeline = pipeline.sink(sink);
     }
