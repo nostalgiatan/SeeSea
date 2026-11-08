@@ -58,6 +58,7 @@ htmlcov/
 
 # Data directory
 data/
+!seesea-core/crates/seesea-vet/data/
 
 # Building directory
 building/
