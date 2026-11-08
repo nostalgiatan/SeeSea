@@ -205,20 +205,18 @@ async fn extract_blocking(
 ) -> Result<(ExtractResult, seesea_vet::PageFacts)> {
     let extractor = Arc::clone(extractor);
     tokio::task::spawn_blocking(move || {
-        // Read the page's own facts first, from the same cleaned parse extraction uses.
-        let facts = seesea_vet::PageFacts::from_document(
-            &seesea_extract::parse_document(&html),
-            html.contains("saved from url=("),
-            &url,
-        );
-        let result = extractor.extract(
+        // The page's own facts come from the parse extraction already made.
+        let saved = html.contains("saved from url=(");
+        let (result, facts) = extractor.extract_with(
             &html,
             &url,
             &Options {
                 scope,
                 ..Options::default()
             },
+            |doc| seesea_vet::PageFacts::from_document(doc, saved, &url),
         );
+        let facts = facts.unwrap_or_default();
         (result, facts)
     })
     .await
