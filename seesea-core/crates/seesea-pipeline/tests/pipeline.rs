@@ -1396,3 +1396,56 @@ async fn the_section_model_only_reads_pages_that_are_shown() {
             .all(|h| !h.content.as_ref().unwrap().sections.is_empty())
     );
 }
+
+/// Many searches at once over the same pipeline: `cargo test -p seesea-pipeline --release
+/// --test pipeline concurrent_searches -- --ignored --nocapture`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 16)]
+#[ignore]
+async fn concurrent_searches_scale() {
+    let urls: Vec<String> = (0..12)
+        .map(|i| format!("https://site{i}.example/tokio"))
+        .collect();
+    let src = FakeSource::ok(
+        "a",
+        urls.iter()
+            .map(|u| {
+                hit(
+                    u,
+                    "Tokio runtime",
+                    "Tokio is an asynchronous runtime for Rust",
+                )
+            })
+            .collect(),
+    );
+    let pages: Vec<(&str, String)> = urls
+        .iter()
+        .map(|u| (u.as_str(), page("Tokio runtime", &RUNTIME)))
+        .collect();
+    let p = Arc::new(standard_pipeline(vec![src], FakePages::new(&pages)));
+    let run = |n: usize| {
+        let p = p.clone();
+        async move {
+            let t = std::time::Instant::now();
+            let mut set = tokio::task::JoinSet::new();
+            for i in 0..n {
+                let p = p.clone();
+                set.spawn(async move {
+                    // A different query each time, so nothing is answered from the cache.
+                    p.search(&SearchRequest::new(format!("tokio runtime {i}")))
+                        .await
+                        .unwrap()
+                });
+            }
+            while set.join_next().await.is_some() {}
+            t.elapsed()
+        }
+    };
+    run(4).await;
+    for n in [1usize, 8, 32, 128] {
+        let d = run(n).await;
+        println!(
+            "{n:4} concurrent searches: {d:?} total, {:?} per search",
+            d / n as u32
+        );
+    }
+}
