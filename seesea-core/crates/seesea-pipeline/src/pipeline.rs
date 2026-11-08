@@ -1047,7 +1047,12 @@ impl Pipeline {
                 }
             }
             parts.stage1 = s1n;
-            let verdict = verdicts.get(&cand.key);
+            // The page itself, when it was read, confirms or clears what the address suggested.
+            let page_verdict = match (&self.vet, verdicts.get(&cand.key), &loaded[i]) {
+                (Some(vet), Some(addr), Some(Ok(l))) => Some(vet.check_page(addr, &l.page)),
+                _ => None,
+            };
+            let verdict = page_verdict.as_ref().or_else(|| verdicts.get(&cand.key));
             let final_score = final_score
                 + verdict.map_or(0.0, |v| self.cfg.vet.stage1(v) * self.cfg.vet.final_scale);
             let vet = verdict.map(VetInfo::of).filter(|i| !i.is_plain());
@@ -1186,6 +1191,7 @@ impl Pipeline {
             result,
             rendered: false,
             timing: Default::default(),
+            page: Default::default(),
         };
         let selection = self.selection_for(&loaded, query, max_chars).await;
         Ok(Self::page_from(url, loaded, selection))

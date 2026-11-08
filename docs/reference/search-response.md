@@ -41,9 +41,9 @@
 | `tier` | 热门度档位：`giant`（前一万）、`well_known`（前十万）、`listed`（榜内其余）、`unranked` |
 | `rank` | 在榜单里的名次，不在榜内时没有 |
 | `official` | 这个网址属于哪个品牌自己的域名，不是时没有 |
-| `flags` | 引起怀疑的信号代码，没有时省略。常见的有 `brand_in_subdomain`、`embedded_domain`、`typosquat`、`look_alike_brand`、`homograph`、`ip_host`、`shortener`、`random_name`、`risky_tld`、`path_keywords`、`threat_url`、`threat_host`、`local_block` |
+| `flags` | 引起怀疑的信号代码，没有时省略。常见的有 `brand_in_subdomain`、`embedded_domain`、`typosquat`、`look_alike_brand`、`homograph`、`ip_host`、`shortener`、`random_name`、`risky_tld`、`path_keywords`、`threat_url`、`threat_host`、`local_block`。读到页面后还可能有 `form_elsewhere`、`brand_login_page`、`saved_copy`、`hidden_iframe`、`refresh_elsewhere`、`host_warning` |
 
-被威胁列表或 `block` 命中的结果默认直接剔除，`degraded` 里会说明剔除了哪些主机。`risky` 的页面不会被读取，所以没有 `content`。
+被威胁列表或 `block` 命中的结果默认直接剔除，`degraded` 里会说明剔除了哪些主机。`risky` 的页面不会被读取，所以没有 `content`。读完页面才发现有问题的结果不会被剔除，只是排到后面并带上标记。
 
 ### score_parts
 

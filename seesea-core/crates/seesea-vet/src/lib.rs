@@ -14,10 +14,12 @@
 //! found and fixed and the journal can say which signal was behind which result.
 
 pub mod lists;
+pub mod page;
 pub mod rank;
 pub mod threat;
 pub mod typo;
 
+pub use page::PageFacts;
 pub use rank::RankTable;
 pub use threat::ThreatList;
 
@@ -168,7 +170,22 @@ fn stem<'a>(site: &'a str, suffix: &str) -> &'a str {
 }
 
 fn looks_random(s: &str) -> bool {
-    if s.len() < 8 || !s.is_ascii() || s.contains('-') {
+    if s.contains('-') {
+        // Generated project names: 2r8p2e-qw444a-2p1k8z2m4s. Most of the pieces mix digits into
+        // letters or have hardly a vowel, which words do not.
+        let parts: Vec<&str> = s.split('-').filter(|p| p.len() >= 4).collect();
+        let odd = |p: &&str| {
+            let digits = p.chars().filter(char::is_ascii_digit).count();
+            let letters = p.chars().filter(char::is_ascii_alphabetic).count();
+            let vowels = p.chars().filter(|c| "aeiou".contains(*c)).count();
+            p.is_ascii()
+                && ((digits >= 1 && letters >= 2 && p.len() >= 5) || (letters >= 4 && vowels == 0))
+        };
+        return s.split('-').count() >= 3
+            && parts.len() >= 3
+            && parts.iter().filter(|p| odd(p)).count() * 3 >= parts.len() * 2;
+    }
+    if s.len() < 8 || !s.is_ascii() {
         return false;
     }
     let vowels = s.chars().filter(|c| "aeiou".contains(*c)).count();
@@ -597,26 +614,9 @@ impl Vet {
             room -= r.weight;
         }
 
-        let risk: i32 = reasons
-            .iter()
-            .map(|r| r.weight.max(0))
-            .sum::<i32>()
-            .min(100);
-        let trust: i32 = -reasons.iter().map(|r| r.weight.min(0)).sum::<i32>();
-        let score = (50 + trust - risk).clamp(0, 100) as u8;
-        let level = if blocked {
-            Level::Blocked
-        } else if score <= 25 {
-            Level::Risky
-        } else if score <= 42 {
-            Level::Suspicious
-        } else if score >= 65 {
-            Level::Trusted
-        } else {
-            Level::Neutral
-        };
+        let (score, level) = settle(&reasons, blocked);
         Verdict {
-            score: if blocked { 0 } else { score },
+            score,
             level,
             tier,
             rank,
@@ -625,4 +625,100 @@ impl Vet {
             reasons,
         }
     }
+
+    /// Weigh what the fetched page shows against the verdict of its address. A big site or a
+    /// brand's own domain is left alone: its login form is its own. Everywhere else a page that
+    /// asks for a password or a card gets the address's doubts confirmed or its calm backed up.
+    pub fn check_page(&self, address: &Verdict, page: &PageFacts) -> Verdict {
+        let mut v = address.clone();
+        let own = v.tier <= Tier::WellKnown
+            || v.official.is_some()
+            || v.has("local_allow")
+            || v.has("local_block");
+        if own {
+            return v;
+        }
+        let l = lists::get();
+        let secrets = page.asks_for_secrets();
+        // Already doubtful by address: the page only has to agree. Otherwise it needs to say more.
+        let doubted = v.score <= 42;
+        let mut add = |code: &str, weight: i32, detail: String| {
+            v.reasons.push(Reason {
+                code: code.into(),
+                weight,
+                detail,
+            });
+        };
+
+        // The password or card goes to another site, and not a big one (that would be a sign-in
+        // with a provider, not a collection point).
+        let foreign: Vec<&String> = page
+            .sensitive_form_hosts
+            .iter()
+            .filter(|h| {
+                let (s, _, _) = self.site_of(h.strip_prefix("www.").unwrap_or(h), l);
+                s != v.site && self.tier(self.ranks.rank(&s)) > Tier::WellKnown
+            })
+            .collect();
+        if let Some(h) = foreign.first() {
+            add("form_elsewhere", 30, (*h).clone());
+        }
+
+        // A sign-in page that names a brand on a site that is not the brand's.
+        if secrets {
+            let named = tokens(&page.title)
+                .chain(tokens(&page.heading))
+                .map(str::to_ascii_lowercase)
+                .find_map(|t| l.words.get(&t).map(|i| l.brands[*i].name.clone()));
+            if let Some(b) = named {
+                add("brand_login_page", 35, b);
+            }
+        }
+        if page.host_warning {
+            add("host_warning", 60, String::new());
+        }
+        if page.saved_copy {
+            add("saved_copy", if secrets { 25 } else { 6 }, String::new());
+        }
+        if secrets && doubted {
+            add("secret_form", 8, String::new());
+        }
+        if page.hidden_iframes > 0 && (secrets || doubted) {
+            add("hidden_iframe", 8, page.hidden_iframes.to_string());
+        }
+        if let Some(h) = &page.refresh_host
+            && doubted
+        {
+            add("refresh_elsewhere", 6, h.clone());
+        }
+
+        let blocked = v.level == Level::Blocked;
+        let (score, level) = settle(&v.reasons, blocked);
+        v.score = score;
+        v.level = level;
+        v
+    }
+}
+
+/// Risk adds, trust adds, and 50 is the middle.
+fn settle(reasons: &[Reason], blocked: bool) -> (u8, Level) {
+    let risk: i32 = reasons
+        .iter()
+        .map(|r| r.weight.max(0))
+        .sum::<i32>()
+        .min(100);
+    let trust: i32 = -reasons.iter().map(|r| r.weight.min(0)).sum::<i32>();
+    let score = (50 + trust - risk).clamp(0, 100) as u8;
+    let level = if blocked {
+        Level::Blocked
+    } else if score <= 25 {
+        Level::Risky
+    } else if score <= 42 {
+        Level::Suspicious
+    } else if score >= 65 {
+        Level::Trusted
+    } else {
+        Level::Neutral
+    };
+    (if blocked { 0 } else { score }, level)
 }

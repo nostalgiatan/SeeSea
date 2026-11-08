@@ -21,7 +21,16 @@ Everything is local.
 - A famous domain written into a subdomain: `accounts.google.com.session-check.example`.
 - A brand name in a domain that is not the brand's: `paypal-secure-login.example.com`, `binanceuz.co`.
 - One or two letters away from a top-5000 name, or look-alike characters (`g00gle`).
-- Mixed scripts in one name (Latin with Cyrillic), a raw IP as host, a domain before an `@`, link shorteners, random-looking names, abused top-level domains.
+- Mixed scripts in one name (Latin with Cyrillic), a raw IP as host, a domain before an `@`, link shorteners, random-looking names (including free-hosting project names strung from random pieces, like `2r8p2e-qw444a-2p1k8z2m4s`), abused top-level domains.
+
+**Page content.** Standard mode already downloads the pages, so once a page is read the vet looks at what it shows about itself, with no extra request:
+
+- A password or card field whose form posts to another site (`form_elsewhere`).
+- A title or first heading that presents a brand's sign-in page on an address that is not the brand's (`brand_login_page`).
+- A browser's "save page as" copy (`saved_copy`), a hidden iframe (`hidden_iframe`), a redirect to another site (`refresh_elsewhere`).
+- The host's own takedown page, such as Cloudflare's "Suspected Phishing" (`host_warning`).
+
+Big sites and a brand's own domain skip this step: their login forms are their own. A page whose address was already doubtful is marked down further when it asks for a password. A page whose address looked fine is only marked down when the form posts to a stranger or the title imitates a brand, so an ordinary site's login page is not touched. The verdict after reading replaces the one from the address, so `level` and `flags` in the result are the two combined.
 
 Two lists sit beside these: locally held threat lists (Phishing.Database by default, OpenPhish optional), where a match is dropped, and your own `allow` and `block`, which win over everything.
 
@@ -82,7 +91,7 @@ So it mainly stops known sites and obvious impersonation, and does little agains
 
 ## Limits
 
-- It judges the address, not the page. A page that looks like phishing (a password form, a copied title) can only be recognised after reading, which is not built yet and is the next thing to add.
+- Page content means the static HTML the server returned. Many phishing pages are single-page apps whose form is built by script, so the static HTML shows nothing; a rendered page is only seen when it went through the headless browser. In a sample of 45 OpenPhish pages only a little over half had a form in the static HTML, and some of those were a host's takedown page.
 - A freshly registered phishing domain is neither on the list nor on the feeds, so only the name signals apply. Feeds lag the first sighting by hours to days.
 - The brand table leans toward the English-speaking world; Chinese brands are thinly covered. Use `block` to fill gaps.
 - The default Tranco list includes Cloudflare Radar data, which is licensed for non-commercial use. A commercial service should use a custom list without it (put its ID in `rank_list`) or ask Tranco first. The threat feeds have their own terms: Phishing.Database is MIT, OpenPhish's free feed is non-commercial. URLhaus's public downloads are gone and now need an abuse.ch key, so it is not a built-in choice.

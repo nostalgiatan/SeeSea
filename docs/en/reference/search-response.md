@@ -41,9 +41,9 @@ Items in `related` are merged from results with similar titles from different si
 | `tier` | Popularity: `giant` (top 10 000), `well_known` (top 100 000), `listed` (the rest of the list), `unranked` |
 | `rank` | Rank in the list, absent when not listed |
 | `official` | The brand whose own domain this is, absent otherwise |
-| `flags` | Codes of the signals that raised suspicion, omitted when there are none: `brand_in_subdomain`, `embedded_domain`, `typosquat`, `look_alike_brand`, `homograph`, `ip_host`, `shortener`, `random_name`, `risky_tld`, `path_keywords`, `threat_url`, `threat_host`, `local_block` and others |
+| `flags` | Codes of the signals that raised suspicion, omitted when there are none: `brand_in_subdomain`, `embedded_domain`, `typosquat`, `look_alike_brand`, `homograph`, `ip_host`, `shortener`, `random_name`, `risky_tld`, `path_keywords`, `threat_url`, `threat_host`, `local_block` and others. After a page is read also `form_elsewhere`, `brand_login_page`, `saved_copy`, `hidden_iframe`, `refresh_elsewhere`, `host_warning` |
 
-Results hit by a threat list or by `block` are left out by default, and `degraded` names the hosts. A `risky` page is not read, so it has no `content`.
+Results hit by a threat list or by `block` are left out by default, and `degraded` names the hosts. A `risky` page is not read, so it has no `content`. A result found to be bad only after it was read is not left out; it is moved down and marked.
 
 ### score_parts
 

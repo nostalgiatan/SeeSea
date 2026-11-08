@@ -217,3 +217,68 @@ fn a_phishing_kit_on_a_hacked_school_site_does_not_borrow_the_trust_of_its_endin
     let honest = vet().check("https://cs.example.edu/courses/databases/login");
     assert!(!honest.has("kit_on_trusted_tld"), "{honest:?}");
 }
+
+mod page {
+    use seesea_vet::{Level, PageFacts, Vet, VetConfig};
+
+    const KIT: &str = r#"<html><head><title>PayPal - Log in</title></head><body><h1>Log in to PayPal</h1>
+<form action="https://collect.example/p.php"><input name="e"><input type="password" name="p"></form></body></html>"#;
+
+    #[test]
+    fn a_brand_login_on_a_stranger_site_is_caught() {
+        let vet = Vet::new(VetConfig::default());
+        let url = "https://camp-7.pages.dev/signin";
+        let a = vet.check(url);
+        let p = vet.check_page(&a, &PageFacts::from_html(KIT, url));
+        assert!(
+            p.has("brand_login_page") && p.has("form_elsewhere"),
+            "{:?}",
+            p.codes()
+        );
+        assert!(
+            p.score < a.score && p.level == Level::Risky,
+            "{:?} {}",
+            p.level,
+            p.score
+        );
+    }
+
+    #[test]
+    fn an_ordinary_login_page_is_not_doubted() {
+        let vet = Vet::new(VetConfig::default());
+        let url = "https://notes.example/login";
+        let html = r#"<title>Sign in - Notes</title><h1>Sign in</h1><form action="/session"><input name="u"><input type="password"></form>"#;
+        let a = vet.check(url);
+        let p = vet.check_page(&a, &PageFacts::from_html(html, url));
+        assert_eq!(p.score, a.score, "{:?}", p.codes());
+    }
+
+    #[test]
+    fn the_brands_own_domain_and_blocked_addresses_are_left_alone() {
+        let vet = Vet::new(VetConfig::default());
+        let url = "https://www.paypal.com/signin";
+        let a = vet.check(url);
+        let p = vet.check_page(&a, &PageFacts::from_html(KIT, url));
+        assert_eq!(p, a);
+    }
+}
+
+#[test]
+fn generated_project_names_on_free_hosting_are_doubted_and_ordinary_ones_are_not() {
+    use seesea_vet::{Vet, VetConfig};
+    let vet = Vet::new(VetConfig::default());
+    for u in [
+        "http://2r8p2e-qw444a-2p1k8z2m4s-8m1p.pages.dev/",
+        "https://dzkpm54lpmn-myktr91lpw-2k1i6d-nl387m.pages.dev/",
+    ] {
+        assert!(vet.check(u).has("random_name"), "{u}");
+    }
+    for u in [
+        "https://my-cool-project.pages.dev/",
+        "https://covid-19-info-site.pages.dev/",
+        "https://e2e-tests-v2-api.vercel.app/",
+        "https://react-todo-app-2024.netlify.app/",
+    ] {
+        assert!(!vet.check(u).has("random_name"), "{u}");
+    }
+}

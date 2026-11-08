@@ -11,7 +11,16 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let path = args.next().expect("path to a rank,domain CSV");
     let step: usize = args.next().and_then(|s| s.parse().ok()).unwrap_or(10);
-    let text = std::fs::read_to_string(&path).expect("read the list");
+    // A packed table (ranks.bin from `seesea vet update`) works as well as the CSV.
+    let text = if path.ends_with(".bin") {
+        let t = RankTable::load(std::path::Path::new(&path)).expect("read the table");
+        t.top(t.len() as u32)
+            .iter()
+            .map(|(r, d)| format!("{r},{d}\n"))
+            .collect::<String>()
+    } else {
+        std::fs::read_to_string(&path).expect("read the list")
+    };
     let t = Instant::now();
     let ranks = RankTable::from_csv(&text);
     println!("{} domains packed in {:?}", ranks.len(), t.elapsed());
