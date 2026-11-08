@@ -110,6 +110,26 @@ deep = false
 
 Without a path, seesea looks in the models directory for fixed file names. Take the names from the output of `seesea models`; the case must match.
 
+## [fetch]
+
+How `standard` searches read pages. Every key is optional; without them the behaviour is the one shown as the default.
+
+| Key | Default | Description |
+|---|---|---|
+| `page_timeout_secs` | 10 | Longest wait for one page, 1 to 120 seconds. A page that is slower counts as not read |
+| `candidates` | 8 | How many of the best results `standard` reads, 1 to 50. Never fewer than the number of results asked for (default 10), so with the default `limit` the value only matters above 10 |
+| `enough` | 0 (off) | Stop waiting for slow pages once this many pages with text are in, 0 to 50. 0 waits for every page |
+| `grace_ms` | 1500 | With `enough` set: how long the pages still loading get after that, 0 to 60000 milliseconds |
+
+Pages that are left behind count as not read, like pages that failed: they rank behind the pages that were read, carry no error, do not count against their host in the learned weights, and no replacement round is run for them. The response says how many in `degraded` (`content: N of M pages were still loading when enough others were in, and were not read`). Which pages are left behind depends on who answers first, not on rank, so a search with `enough` set can return different content from one without. `deep` keeps reading 20 candidates and is not changed by `candidates`.
+
+```toml
+[fetch]
+page_timeout_secs = 6
+enough = 6
+grace_ms = 1000
+```
+
 ## [rerank] and [semantic]
 
 | Key | Default | Matching option |

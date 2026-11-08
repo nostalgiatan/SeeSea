@@ -92,6 +92,8 @@ pub struct FileConfig {
     #[serde(default)]
     pub models: Models,
     #[serde(default)]
+    pub fetch: Fetch,
+    #[serde(default)]
     pub semantic: Semantic,
     #[serde(default)]
     pub rerank: Rerank,
@@ -134,6 +136,51 @@ impl Collect {
         .filter(|(_, on)| *on == Some(true))
         .map(|(n, _)| n.to_string())
         .collect()
+    }
+}
+
+/// How `standard` searches read pages. Unset keys keep the pipeline's own defaults.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Fetch {
+    /// Longest wait for one page, in seconds (default 10).
+    pub page_timeout_secs: Option<u64>,
+    /// How many of the best candidates `standard` reads (default 8; never fewer than the result limit).
+    pub candidates: Option<usize>,
+    /// Stop waiting for slow pages once this many pages with text are in (default 0: wait for all).
+    pub enough: Option<usize>,
+    /// How long the slow pages still get after that, in milliseconds (default 1500).
+    pub grace_ms: Option<u64>,
+}
+
+impl Fetch {
+    fn check(&self) -> Result<()> {
+        let range = |name: &str, v: Option<u64>, lo: u64, hi: u64| match v {
+            Some(v) if !(lo..=hi).contains(&v) => Err(Error::Config(format!(
+                "fetch.{name} must be between {lo} and {hi}"
+            ))),
+            _ => Ok(()),
+        };
+        range("page_timeout_secs", self.page_timeout_secs, 1, 120)?;
+        range("candidates", self.candidates.map(|v| v as u64), 1, 50)?;
+        range("enough", self.enough.map(|v| v as u64), 0, 50)?;
+        range("grace_ms", self.grace_ms, 0, 60_000)
+    }
+
+    /// Put the keys that are set into the pipeline's configuration.
+    pub fn apply(&self, cfg: &mut seesea_pipeline::PipelineConfig) {
+        if let Some(s) = self.page_timeout_secs {
+            cfg.page_timeout = std::time::Duration::from_secs(s);
+        }
+        if let Some(n) = self.candidates {
+            cfg.fetch_standard = n;
+        }
+        if let Some(n) = self.enough {
+            cfg.fetch_enough = n;
+        }
+        if let Some(ms) = self.grace_ms {
+            cfg.fetch_grace = std::time::Duration::from_millis(ms);
+        }
     }
 }
 
@@ -317,6 +364,7 @@ pub fn parse(text: &str) -> Result<FileConfig> {
     {
         expand(p);
     }
+    c.fetch.check()?;
     Ok(c)
 }
 
@@ -427,6 +475,13 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # embedding = "/path/to/bge-m3-Q4_0.gguf"
 # reranker = "/path/to/bge-reranker-v2-m3-Q4_K_M.gguf"
 
+[fetch]
+# How `standard` searches read pages. The values shown are the defaults, except `enough`, which is off.
+# page_timeout_secs = 10     # longest wait for one page
+# candidates = 8             # how many of the best results are read (never fewer than the result limit)
+# enough = 0                 # stop waiting for slow pages once this many have text (0 = wait for all)
+# grace_ms = 1500            # how long the slow ones still get after that
+
 [rerank]
 # weight = 0.5
 # passages = 3
@@ -447,6 +502,38 @@ mod tests {
     fn the_template_is_valid_and_empty_of_settings() {
         let c = parse(TEMPLATE).unwrap();
         assert!(c.proxy.is_none() && c.models.dir.is_none() && c.rerank.weight.is_none());
+    }
+
+    #[test]
+    fn fetch_keys_reach_the_pipeline_and_are_range_checked() {
+        let c =
+            parse("[fetch]\npage_timeout_secs = 4\ncandidates = 12\nenough = 6\ngrace_ms = 800")
+                .unwrap();
+        let mut cfg = seesea_pipeline::PipelineConfig::default();
+        let before = (cfg.fetch_deep, cfg.concurrency);
+        c.fetch.apply(&mut cfg);
+        assert_eq!(cfg.page_timeout, std::time::Duration::from_secs(4));
+        assert_eq!((cfg.fetch_standard, cfg.fetch_enough), (12, 6));
+        assert_eq!(cfg.fetch_grace, std::time::Duration::from_millis(800));
+        assert_eq!((cfg.fetch_deep, cfg.concurrency), before);
+        // Nothing set: today's behaviour.
+        let (mut plain, fresh) = (
+            seesea_pipeline::PipelineConfig::default(),
+            seesea_pipeline::PipelineConfig::default(),
+        );
+        parse("").unwrap().fetch.apply(&mut plain);
+        assert_eq!(plain.page_timeout, fresh.page_timeout);
+        assert_eq!(plain.fetch_standard, fresh.fetch_standard);
+        assert_eq!(plain.fetch_enough, 0);
+        for bad in [
+            "[fetch]\npage_timeout_secs = 0",
+            "[fetch]\ncandidates = 0",
+            "[fetch]\nenough = 99",
+            "[fetch]\ngrace_ms = 600000",
+            "[fetch]\npage_timeout = 3",
+        ] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

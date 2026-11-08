@@ -1049,3 +1049,133 @@ async fn a_blocked_source_is_left_alone_for_a_while() {
         again.degraded
     );
 }
+
+/// Serves pages like `FakePages`, each after its own delay.
+struct DelayedPages {
+    inner: Arc<FakePages>,
+    delays: HashMap<String, Duration>,
+}
+
+#[async_trait]
+impl PageFetcher for DelayedPages {
+    async fn fetch(&self, url: &str) -> Result<FetchedPage, FetchError> {
+        if let Some(d) = self.delays.get(url) {
+            tokio::time::sleep(*d).await;
+        }
+        self.inner.fetch(url).await
+    }
+}
+
+fn two_fast_two_slow(wait_for_all: bool) -> (Pipeline, [&'static str; 4]) {
+    let urls = [
+        "https://fast.example/a",
+        "https://fast.example/b",
+        "https://slow.example/c",
+        "https://slow.example/d",
+    ];
+    let titles = [
+        "Tokio scheduler internals",
+        "Getting started with async Rust",
+        "Work stealing explained",
+        "Timers and sockets in the runtime",
+    ];
+    let hits: Vec<RawHit> = urls
+        .iter()
+        .zip(titles)
+        .map(|(u, t)| hit(u, t, &format!("{t}: asynchronous runtime for Rust")))
+        .collect();
+    let pages: Vec<(&str, String)> = urls
+        .iter()
+        .zip(titles)
+        .map(|(u, t)| (*u, page(t, &RUNTIME)))
+        .collect();
+    let fetcher = Arc::new(DelayedPages {
+        inner: FakePages::new(&pages),
+        delays: urls[2..]
+            .iter()
+            .map(|u| (u.to_string(), Duration::from_secs(5)))
+            .collect(),
+    });
+    let p = Pipeline::new(vec![FakeSource::ok("a", hits)], fetcher).config(PipelineConfig {
+        fetch_enough: if wait_for_all { 0 } else { 2 },
+        fetch_grace: Duration::from_millis(100),
+        ..Default::default()
+    });
+    (p, urls)
+}
+
+#[tokio::test]
+async fn slow_pages_are_left_behind_once_enough_others_are_in() {
+    let (p, urls) = two_fast_two_slow(false);
+    let t = std::time::Instant::now();
+    let resp = p
+        .search(&SearchRequest::new("tokio async runtime"))
+        .await
+        .unwrap();
+    assert!(
+        t.elapsed() < Duration::from_secs(3),
+        "waited for the slow pages: {:?}",
+        t.elapsed()
+    );
+    assert_eq!(resp.hits.len(), 4);
+    let read = |u: &str| {
+        resp.hits
+            .iter()
+            .find(|h| h.url == u)
+            .unwrap()
+            .content
+            .is_some()
+    };
+    assert!(read(urls[0]) && read(urls[1]));
+    assert!(!read(urls[2]) && !read(urls[3]));
+    assert!(
+        resp.degraded
+            .iter()
+            .any(|d| d.contains("2 of 4 pages") && d.contains("not read")),
+        "{:?}",
+        resp.degraded
+    );
+    // A page nobody waited for is not a failed page: it carries no error, and ranks behind the read ones.
+    assert!(resp.hits[2..].iter().all(|h| h.content_error.is_none()));
+    assert!(resp.hits[..2].iter().all(|h| h.content.is_some()));
+}
+
+#[tokio::test]
+async fn without_an_early_stop_every_page_is_waited_for() {
+    // The slow pages take 400 ms here, so the test stays quick and the default timeout covers them.
+    let urls_delay = Duration::from_millis(400);
+    let urls = [
+        "https://fast.example/a",
+        "https://fast.example/b",
+        "https://slow.example/c",
+        "https://slow.example/d",
+    ];
+    let pages: Vec<(&str, String)> = urls
+        .iter()
+        .map(|u| (*u, page("Tokio runtime notes", &RUNTIME)))
+        .collect();
+    let fetcher = Arc::new(DelayedPages {
+        inner: FakePages::new(&pages),
+        delays: urls[2..]
+            .iter()
+            .map(|u| (u.to_string(), urls_delay))
+            .collect(),
+    });
+    let hits: Vec<RawHit> = urls
+        .iter()
+        .map(|u| hit(u, "Tokio runtime notes", "runtime"))
+        .collect();
+    let p = Pipeline::new(vec![FakeSource::ok("a", hits)], fetcher);
+    let resp = p
+        .search(&SearchRequest::new("tokio async runtime"))
+        .await
+        .unwrap();
+    assert!(resp.hits.iter().all(|h| h.content.is_some()));
+    assert!(!resp.degraded.iter().any(|d| d.contains("not read")));
+    let fetch = resp
+        .stages
+        .iter()
+        .find(|s| s.stage == "fetch_extract")
+        .unwrap();
+    assert!(fetch.ms >= 400, "{}", fetch.ms);
+}
