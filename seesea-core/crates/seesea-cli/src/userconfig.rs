@@ -34,7 +34,7 @@ pub struct FileConfig {
     pub model_idle_minutes: Option<u64>,
     /// Calls that may run in one model at once (default 1).
     pub model_slots: Option<usize>,
-    /// Milliseconds a call waits for its turn before the search goes on without that model (default 400).
+    /// Milliseconds a call waits for its turn before the search goes on without that model (default 1000).
     pub model_wait_ms: Option<u64>,
     /// Do not add pages that were read and answered a search to the local index.
     pub no_writeback: Option<bool>,
@@ -478,7 +478,7 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # search goes on without that model (lexical scores) instead of queueing, so a busy service keeps
 # answering at full speed with slightly weaker ranking. Raise the wait to rank everything with the model.
 # model_slots = 1
-# model_wait_ms = 400
+# model_wait_ms = 1000
 # Pages that were read and answered a search are kept in the local index, so the next search can find them
 # even when the web is slow or down. Turn that off here.
 # no_writeback = false

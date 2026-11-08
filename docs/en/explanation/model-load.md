@@ -10,7 +10,7 @@ The model's compute is fixed. More simultaneous searches only make each one fini
 
 Three measures, aimed at making the model something a search can do without, rather than something every search queues for.
 
-**A limit and a short wait.** At most `model_slots` calls run in one model at a time (default 1). The others wait up to `model_wait_ms` (default 400 ms). If no turn comes, the search goes on without that model at that step: lexical relevance for page reranking, lexical order for section selection, and `degraded` says "the model is busy". The rest of the pipeline runs as usual, so the number of searches a machine can serve no longer depends on the model.
+**A limit and a short wait.** At most `model_slots` calls run in one model at a time (default 1). The others wait up to `model_wait_ms` (default 1000 ms). If no turn comes, the search goes on without that model at that step: lexical relevance for page reranking, lexical order for section selection, and `degraded` says "the model is busy". The rest of the pipeline runs as usual, so the number of searches a machine can serve no longer depends on the model.
 
 **Send less while busy.** If other searches are using the cross-encoder, the search sends one passage per page, the most relevant, instead of three. The same compute serves about 2.5 times as many searches, each reranked a little more coarsely, none dropped.
 

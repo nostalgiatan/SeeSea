@@ -22,7 +22,7 @@ pub fn set_model_idle_secs(secs: u64) {
 /// "busy" and the search carries on without that model (lexical scores, lexical section order), which
 /// is what keeps the rest of the pipeline, which costs milliseconds, scaling when the model is the limit.
 static MODEL_SLOTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
-static MODEL_WAIT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(400);
+static MODEL_WAIT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1000);
 static BUSY_SKIPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub fn set_model_slots(n: usize) {
@@ -655,6 +655,6 @@ mod gate_tests {
         assert!(err.contains("busy"), "{err}");
         holder.join().unwrap().unwrap();
         assert!(r.with(|_| Ok(7)).is_ok());
-        set_model_wait_ms(400);
+        set_model_wait_ms(1000);
     }
 }
