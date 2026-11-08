@@ -204,3 +204,16 @@ fn private_and_loopback_addresses_are_not_phishing_hosts() {
     }
     assert!(vet().check("http://203.0.113.9/login").has("ip_host"));
 }
+
+#[test]
+fn a_phishing_kit_on_a_hacked_school_site_does_not_borrow_the_trust_of_its_ending() {
+    let v = vet()
+        .check("https://www.college.edu.example.ac.uk/wp-content/paypal/login/verify/index.php");
+    // The ending alone would be trusted; the kit-like path takes that back.
+    let _ = v;
+    let kit = vet().check("https://cs.example.edu/wp-includes/paypal/signin/verify.php");
+    assert!(kit.has("kit_on_trusted_tld"), "{kit:?}");
+    assert!(kit.level <= Level::Neutral, "{kit:?}");
+    let honest = vet().check("https://cs.example.edu/courses/databases/login");
+    assert!(!honest.has("kit_on_trusted_tld"), "{honest:?}");
+}

@@ -11,7 +11,7 @@ seesea vet update
 seesea vet status
 ```
 
-`update` downloads the Tranco list (about 20 MB) and URLhaus's list of online addresses into the `vet/` folder of the data directory. A part that fails keeps its old file. Restart `seesea serve` to load the new data.
+`update` downloads the Tranco list (about 20 MB) and the Phishing.Database list of active phishing hosts (about 11 MB) into the `vet/` folder of the data directory. A part that fails keeps its old file. Restart `seesea serve` to load the new data.
 
 ## Update every day
 
@@ -60,7 +60,7 @@ Results still carry the `vet` field and mark suspicious addresses, but the order
 
 ```toml
 [vet]
-feeds = ["urlhaus", "openphish", "https://example.org/my-blocklist.txt"]
+feeds = ["phishingdb", "openphish", "https://example.org/my-blocklist.txt"]
 ```
 
 For a commercial service check each feed's terms first; see [Limits](../explanation/vet.md#limits).

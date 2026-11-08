@@ -23,7 +23,7 @@ Everything is local.
 - One or two letters away from a top-5000 name, or look-alike characters (`g00gle`).
 - Mixed scripts in one name (Latin with Cyrillic), a raw IP as host, a domain before an `@`, link shorteners, random-looking names, abused top-level domains.
 
-Two lists sit beside these: locally held threat lists (URLhaus by default, OpenPhish optional), where a match is dropped, and your own `allow` and `block`, which win over everything.
+Two lists sit beside these: locally held threat lists (Phishing.Database by default, OpenPhish optional), where a match is dropped, and your own `allow` and `block`, which win over everything.
 
 Every judgement carries reason codes, so any wrong call can be traced to the signal behind it.
 
@@ -68,10 +68,22 @@ The verdict goes into the search journal: each result's level, tier and reason c
 
 `examples/calibrate` reruns the distribution over the whole list; use it after changing a signal or a weight to see whether the false-alarm rate moved.
 
+## Measured effect
+
+Tested on the 300 fresh phishing addresses OpenPhish listed that day:
+
+- The signals on the address alone flagged about 13% as suspicious or risky.
+- With the Phishing.Database host list (an incomplete download, so only part of it), 5% were on the list, and about 19% in all were blocked or flagged.
+- The other 80% showed nothing wrong, and nearly half of those sit on free hosting such as `pages.dev` and `vercel.app`, with ordinary names and paths.
+
+A second sample of 3 000 addresses (from the Phishing.Database link list) came out 8% `risky`, 7% `suspicious` and 4% `trusted`, the last mostly hacked `.edu` and `.gov` sites and link shorteners themselves. A phishing kit on a hacked site now loses the trust of its ending when the path looks like a kit (`kit_on_trusted_tld`), but the address cannot sort out every such case.
+
+So it mainly stops known sites and obvious impersonation, and does little against new phishing pages on free hosting. Those need the page content, see the limits below.
+
 ## Limits
 
-- It judges the address, not the page. A page that looks like phishing (forms, a copied title) can only be recognised after reading, which is not built yet.
+- It judges the address, not the page. A page that looks like phishing (a password form, a copied title) can only be recognised after reading, which is not built yet and is the next thing to add.
 - A freshly registered phishing domain is neither on the list nor on the feeds, so only the name signals apply. Feeds lag the first sighting by hours to days.
 - The brand table leans toward the English-speaking world; Chinese brands are thinly covered. Use `block` to fill gaps.
-- The default Tranco list includes Cloudflare Radar data, which is licensed for non-commercial use. A commercial service should use a custom list without it (put its ID in `rank_list`) or ask Tranco first. The threat feeds have their own terms: URLhaus is CC0, OpenPhish's free feed is non-commercial.
+- The default Tranco list includes Cloudflare Radar data, which is licensed for non-commercial use. A commercial service should use a custom list without it (put its ID in `rank_list`) or ask Tranco first. The threat feeds have their own terms: Phishing.Database is MIT, OpenPhish's free feed is non-commercial. URLhaus's public downloads are gone and now need an abuse.ch key, so it is not a built-in choice.
 - The signals follow [url.vet](https://github.com/urlvet/urlvet) (AGPL-3.0) and the tables were converted from its own; see `seesea-core/crates/seesea-vet/NOTICE.md`.

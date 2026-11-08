@@ -171,7 +171,9 @@ async fn rank_source(
 
 fn feed_url(name: &str) -> String {
     match name {
-        "urlhaus" => "https://urlhaus.abuse.ch/downloads/text_online/".into(),
+        // MIT licensed, one host per line (about 11 MB).
+        "phishingdb" => "https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/master/phishing-domains-ACTIVE.txt".into(),
+        // Free for non-commercial use; a list of addresses.
         "openphish" => "https://openphish.com/feed.txt".into(),
         other => other.to_string(),
     }
@@ -217,7 +219,10 @@ pub async fn update(cfg: &VetConfigFile, proxy: Option<&str>) -> Result<Summary>
         }
     }
 
-    let feeds = cfg.feeds.clone().unwrap_or_else(|| vec!["urlhaus".into()]);
+    let feeds = cfg
+        .feeds
+        .clone()
+        .unwrap_or_else(|| vec!["phishingdb".into()]);
     let mut threats = ThreatList::new();
     let mut ok_feeds = Vec::new();
     for f in &feeds {
@@ -261,7 +266,7 @@ mod tests {
 
     #[test]
     fn feed_names_expand_and_addresses_pass_through() {
-        assert!(feed_url("urlhaus").contains("urlhaus.abuse.ch"));
+        assert!(feed_url("phishingdb").contains("Phishing.Database"));
         assert!(feed_url("openphish").contains("openphish.com"));
         assert_eq!(
             feed_url("https://x.example/l.txt"),

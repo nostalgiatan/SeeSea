@@ -79,7 +79,7 @@ Judges every result by its address before any page is read: official and very po
 | `skip_risky` | `true` | Do not open pages judged risky (they are still listed, flagged, below the others) |
 | `boost` | `1.0` | How strongly popular and official sites are favoured, as a factor; `0` turns it off, at most 3 |
 | `rank_list` | `latest` | The popularity list: `latest`, a Tranco list ID, or the address or path of a `rank,domain` CSV |
-| `feeds` | `["urlhaus"]` | Threat feeds: `urlhaus`, `openphish`, or the address of a plain list of URLs |
+| `feeds` | `["phishingdb"]` | Threat feeds: `phishingdb` (active phishing hosts from Phishing.Database, MIT), `openphish` (free for non-commercial use), or the address of a plain list of hosts or URLs |
 
 The list and the feeds live in the `vet/` folder of the data directory (`SEESEA_VET_DIR` moves it) and are written by `seesea vet update`. Without them the signals on the address itself still apply; only the popularity tiers and the threat lists are missing.
 

@@ -11,7 +11,7 @@ seesea vet update
 seesea vet status
 ```
 
-`update` 下载 Tranco 榜单（约 20 MB）和 URLhaus 的在线地址列表，保存在数据目录的 `vet/` 下。某一项失败时旧文件保留。重启 `seesea serve` 后生效。
+`update` 下载 Tranco 榜单（约 20 MB）和 Phishing.Database 的活跃钓鱼域名列表（约 11 MB），保存在数据目录的 `vet/` 下。某一项失败时旧文件保留。重启 `seesea serve` 后生效。
 
 ## 每天更新
 
@@ -60,7 +60,7 @@ boost = 0
 
 ```toml
 [vet]
-feeds = ["urlhaus", "openphish", "https://example.org/my-blocklist.txt"]
+feeds = ["phishingdb", "openphish", "https://example.org/my-blocklist.txt"]
 ```
 
 商用服务先确认各订阅源的条款，见[结果可信度判断](../explanation/vet.md#限制)。

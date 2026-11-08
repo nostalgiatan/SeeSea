@@ -164,7 +164,7 @@ pub struct Vet {
     pub boost: Option<f64>,
     /// The popularity list: `latest` (default), a Tranco list ID, or the address (or a path) of a `rank,domain` CSV.
     pub rank_list: Option<String>,
-    /// Threat feeds: `urlhaus` (default), `openphish`, or the address of a plain list of URLs.
+    /// Threat feeds: `phishingdb` (default), `openphish`, or the address of a plain list of hosts or URLs.
     pub feeds: Option<Vec<String>>,
 }
 
@@ -553,7 +553,7 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # skip_risky = true                 # do not open pages that look like phishing
 # boost = 1.0                       # strength of the favour for popular and official sites; 0 = none
 # rank_list = "latest"              # or a Tranco list ID, or the address of a rank,domain CSV
-# feeds = ["urlhaus"]               # also "openphish"; or the address of a plain list of URLs
+# feeds = ["phishingdb"]           # also "openphish"; or the address of a plain list of hosts or URLs
 
 [rerank]
 # weight = 0.5

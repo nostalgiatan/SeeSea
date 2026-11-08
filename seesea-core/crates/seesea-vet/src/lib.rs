@@ -550,6 +550,21 @@ impl Vet {
             }
         }
 
+        // A hacked school or government site hosting a phishing kit: the ending would earn trust
+        // that the path (several login words, or a brand name with one) takes back.
+        if trusted_tld && !known {
+            let words: Vec<String> = tokens(url.path()).map(str::to_ascii_lowercase).collect();
+            let kw = words
+                .iter()
+                .filter(|w| l.keywords.contains(w.as_str()) && !l.words.contains_key(w.as_str()))
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+            let brand = words.iter().any(|w| l.words.contains_key(w.as_str()));
+            if kw >= 2 || (kw >= 1 && brand) {
+                add("kit_on_trusted_tld", 28, format!(".{tld}"));
+            }
+        }
+
         // A site in the lower part of the list is only doubted on its name when something else
         // points the same way: the list also holds honest small sites with unlucky names.
         if tier == Tier::Listed && !corroborated && name_points > 0 {

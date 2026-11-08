@@ -79,7 +79,7 @@
 | `skip_risky` | `true` | 不打开判为高风险的页面（仍会列出，带标记，排在后面） |
 | `boost` | `1.0` | 对热门站点和官方站点的偏向强度，是系数；`0` 关闭，上限 3 |
 | `rank_list` | `latest` | 热门度榜单：`latest`、某个 Tranco 榜单编号、或一个 `排名,域名` CSV 的网址或本地路径 |
-| `feeds` | `["urlhaus"]` | 威胁订阅源：`urlhaus`、`openphish`，或一个纯网址列表的地址 |
+| `feeds` | `["phishingdb"]` | 威胁订阅源：`phishingdb`（Phishing.Database 的活跃钓鱼域名，MIT）、`openphish`（免费版限非商业），或一个纯主机或网址列表的地址 |
 
 榜单和威胁列表放在数据目录的 `vet/` 下（可用 `SEESEA_VET_DIR` 改），由 `seesea vet update` 生成。没有这些文件时，仍会判断网址本身的信号，只是没有热门度分档和威胁列表。
 
