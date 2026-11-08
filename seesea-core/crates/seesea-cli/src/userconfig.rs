@@ -32,6 +32,10 @@ pub struct FileConfig {
     pub device: Option<String>,
     /// Minutes without a search before the models are unloaded to free memory (default 10, 0 never).
     pub model_idle_minutes: Option<u64>,
+    /// Calls that may run in one model at once (default 1).
+    pub model_slots: Option<usize>,
+    /// Milliseconds a call waits for its turn before the search goes on without that model (default 400).
+    pub model_wait_ms: Option<u64>,
     /// Do not add pages that were read and answered a search to the local index.
     pub no_writeback: Option<bool>,
     /// Chance per search (0..1) of reading one lower-ranked result to keep the learning unbiased.
@@ -470,6 +474,11 @@ pub const TEMPLATE: &str = r#"# seesea configuration. Command-line flags and SEE
 # device = "gpu"
 # The models are unloaded after this many idle minutes and loaded again by the next search (0 = keep them).
 # model_idle_minutes = 10
+# Calls that may run in one model at once, and how long a call waits for its turn. Past the wait the
+# search goes on without that model (lexical scores) instead of queueing, so a busy service keeps
+# answering at full speed with slightly weaker ranking. Raise the wait to rank everything with the model.
+# model_slots = 1
+# model_wait_ms = 400
 # Pages that were read and answered a search are kept in the local index, so the next search can find them
 # even when the web is slow or down. Turn that off here.
 # no_writeback = false

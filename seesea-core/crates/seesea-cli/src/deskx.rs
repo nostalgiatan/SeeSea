@@ -143,6 +143,8 @@ const EDITABLE: &[(&str, Kind)] = &[
     ("no_journal", Kind::Bool),
     ("device", Kind::Text),
     ("model_idle_minutes", Kind::Int),
+    ("model_slots", Kind::Int),
+    ("model_wait_ms", Kind::Int),
     ("no_writeback", Kind::Bool),
     ("explore", Kind::Float),
     ("no_index", Kind::Bool),

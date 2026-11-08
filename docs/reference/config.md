@@ -44,6 +44,8 @@
 | `no_journal` | `false` | 不记录搜索 |
 | `device` | `gpu` | `cpu` 让模型完全不用 GPU |
 | `model_idle_minutes` | 10 | 模型空闲这么久后卸载；0 表示不卸载 |
+| `model_slots` | 1 | 同一个模型里同时运行的调用数 |
+| `model_wait_ms` | 400 | 调用等模型空出来的最长毫秒数，超时则这次搜索不用该模型（见[模型负载](../explanation/model-load.md)） |
 | `no_writeback` | `false` | 读过并回答了问题的页面不写回本地索引 |
 | `explore` | 无 | 每次搜索额外读一个排名靠后结果的概率 |
 | `fuzzy_cache` | 关 | 近似查询复用缓存的词重合度阈值 |
