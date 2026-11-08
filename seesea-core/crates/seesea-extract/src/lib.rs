@@ -397,29 +397,45 @@ impl Extractor {
     }
 
     pub fn extract(&self, html: &str, url: &str, opts: &Options) -> ExtractResult {
+        self.extract_with(html, url, opts, |_| ()).0
+    }
+
+    /// Extract, and let `inspect` read the parsed document too, so a caller that wants other facts
+    /// from the page does not parse it a second time. `inspect` does not run for non-text input.
+    pub fn extract_with<T>(
+        &self,
+        html: &str,
+        url: &str,
+        opts: &Options,
+        inspect: impl FnOnce(&Html) -> T,
+    ) -> (ExtractResult, Option<T>) {
         if looks_binary(html) {
-            return ExtractResult {
-                core: String::new(),
-                sections: Vec::new(),
-                meta: meta::extract(&Html::parse_document("")),
-                page_type: None,
-                confidence: 0.0,
-                needs_render: false,
-                diagnostics: Diagnostics {
-                    blocks: 0,
-                    selected_blocks: 0,
-                    selected_chars: 0,
-                    visible_chars: 0,
-                    threshold: self.threshold(opts),
-                    fallback: false,
-                    not_text: true,
-                    flags: Vec::new(),
+            return (
+                ExtractResult {
+                    core: String::new(),
+                    sections: Vec::new(),
+                    meta: meta::extract(&Html::parse_document("")),
+                    page_type: None,
+                    confidence: 0.0,
+                    needs_render: false,
+                    diagnostics: Diagnostics {
+                        blocks: 0,
+                        selected_blocks: 0,
+                        selected_chars: 0,
+                        visible_chars: 0,
+                        threshold: self.threshold(opts),
+                        fallback: false,
+                        not_text: true,
+                        flags: Vec::new(),
+                    },
                 },
-            };
+                None,
+            );
         }
         let clean = sanitize(html);
         let html: &str = &clean.html;
         let doc = Html::parse_document(html);
+        let seen = inspect(&doc);
         let meta = meta::extract(&doc);
         let blocks = blocks::segment_doc(&doc);
         let probs = self.probabilities(&blocks, html, url, opts.scope);
@@ -465,24 +481,27 @@ impl Extractor {
         };
         let needs_render = selected_chars < 150 && (visible_chars < 300 || js_app_marker(html));
 
-        ExtractResult {
-            core,
-            sections,
-            meta,
-            page_type: None,
-            confidence,
-            needs_render,
-            diagnostics: Diagnostics {
-                blocks: blocks.len(),
-                selected_blocks: selected.len(),
-                selected_chars,
-                visible_chars,
-                threshold: thr,
-                fallback,
-                not_text: false,
-                flags: clean.flags.clone(),
+        (
+            ExtractResult {
+                core,
+                sections,
+                meta,
+                page_type: None,
+                confidence,
+                needs_render,
+                diagnostics: Diagnostics {
+                    blocks: blocks.len(),
+                    selected_blocks: selected.len(),
+                    selected_chars,
+                    visible_chars,
+                    threshold: thr,
+                    fallback,
+                    not_text: false,
+                    flags: clean.flags.clone(),
+                },
             },
-        }
+            Some(seen),
+        )
     }
 }
 

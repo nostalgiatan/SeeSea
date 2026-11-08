@@ -19,6 +19,11 @@ pub trait PairScorer: Send + Sync {
     fn score(&self, query: &str, passages: &[&str]) -> Result<Vec<f32>, String>;
     /// Start loading the model if it was unloaded. Never blocks.
     fn wake(&self) {}
+    /// Other searches are using the model at this moment. The reranker then reads fewer passages per
+    /// page, so the same compute serves more searches (each is a little less exact, none is dropped).
+    fn busy(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +78,11 @@ impl CrossReranker {
     }
 
     fn cross_scores(&self, query: &str, docs: &[DocView<'_>]) -> Result<Vec<f64>, String> {
+        let keep = if self.scorer.busy() {
+            1
+        } else {
+            self.cfg.max_passages
+        };
         let mut trust = Vec::with_capacity(docs.len());
         let per_doc: Vec<Vec<String>> = docs
             .iter()
@@ -82,7 +92,7 @@ impl CrossReranker {
                 // the per-passage check.
                 trust.push(distinctness(&body.chars().take(4000).collect::<String>()));
                 let p = passages(&body, self.cfg.min_chars, self.cfg.max_chars);
-                preselect(p, query, self.cfg.max_passages)
+                preselect(p, query, keep)
             })
             .collect();
         let flat: Vec<&str> = per_doc.iter().flatten().map(String::as_str).collect();
@@ -260,5 +270,41 @@ mod tests {
             s[0].relevance,
             0.2 * LexicalReranker.rerank("anything", &docs)[0].relevance
         );
+    }
+
+    struct Counting {
+        busy: bool,
+        seen: std::sync::Mutex<usize>,
+    }
+
+    impl PairScorer for Counting {
+        fn name(&self) -> &str {
+            "counting"
+        }
+        fn score(&self, _q: &str, passages: &[&str]) -> Result<Vec<f32>, String> {
+            *self.seen.lock().unwrap() += passages.len();
+            Ok(vec![0.0; passages.len()])
+        }
+        fn busy(&self) -> bool {
+            self.busy
+        }
+    }
+
+    #[test]
+    fn while_the_model_is_busy_a_page_sends_one_passage_instead_of_several() {
+        let body = format!("{ON} {OFF}\n\n{ON}\n\n{OFF}\n\n{ON} again and again with more words");
+        let docs = [doc("Tokio", &body)];
+        let mut sent = Vec::new();
+        for busy in [false, true] {
+            let s = Arc::new(Counting {
+                busy,
+                seen: Default::default(),
+            });
+            let r =
+                CrossReranker::new(s.clone(), Arc::new(LexicalReranker), CrossConfig::default());
+            r.rerank_noted("tokio work-stealing", &docs);
+            sent.push(*s.seen.lock().unwrap());
+        }
+        assert!(sent[0] > 1 && sent[1] == 1, "{sent:?}");
     }
 }

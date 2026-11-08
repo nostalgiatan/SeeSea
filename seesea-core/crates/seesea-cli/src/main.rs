@@ -1025,6 +1025,12 @@ async fn run(mut cli: Cli) -> Result<(), Error> {
             )));
         }
     }
+    if let Some(n) = file.model_slots {
+        seesea_cli::embedding::set_model_slots(n);
+    }
+    if let Some(ms) = file.model_wait_ms {
+        seesea_cli::embedding::set_model_wait_ms(ms);
+    }
     if let Some(m) = file.model_idle_minutes {
         seesea_cli::embedding::set_model_idle_secs(m * 60);
     }

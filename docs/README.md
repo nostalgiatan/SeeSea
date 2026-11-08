@@ -56,6 +56,7 @@
 - [搜索管线如何工作](explanation/pipeline.md)
 - [排序与学习](explanation/ranking-and-learning.md)
 - [结果可信度判断](explanation/vet.md)
+- [高并发下的模型负载](explanation/model-load.md)
 - [新鲜度与本地索引](explanation/freshness-and-index.md)
 - [多节点设计](explanation/cluster-design.md)
 - [正文抽取研究](explanation/extraction-research.md)

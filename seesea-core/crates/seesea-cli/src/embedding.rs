@@ -16,6 +16,75 @@ pub fn set_model_idle_secs(secs: u64) {
     IDLE_SECS.store(secs, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// How many calls may run in one model at the same time, and how long a call waits for its turn.
+/// Inference uses every core (or the whole GPU) whatever the number of callers, so more callers at
+/// once only share the same compute and all finish later. Past a short wait a call gives up with
+/// "busy" and the search carries on without that model (lexical scores, lexical section order), which
+/// is what keeps the rest of the pipeline, which costs milliseconds, scaling when the model is the limit.
+static MODEL_SLOTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+static MODEL_WAIT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1000);
+static BUSY_SKIPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn set_model_slots(n: usize) {
+    MODEL_SLOTS.store(n.max(1), std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn set_model_wait_ms(ms: u64) {
+    MODEL_WAIT_MS.store(ms, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Calls that gave up because the model stayed busy, since the process started.
+pub fn busy_skips() -> u64 {
+    BUSY_SKIPS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// A counting semaphore with a timed wait.
+struct Gate {
+    running: Mutex<usize>,
+    freed: Condvar,
+}
+
+struct Turn<'a>(&'a Gate);
+
+impl Drop for Turn<'_> {
+    fn drop(&mut self) {
+        *self.0.running.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+        self.0.freed.notify_one();
+    }
+}
+
+impl Gate {
+    fn new() -> Self {
+        Self {
+            running: Mutex::new(0),
+            freed: Condvar::new(),
+        }
+    }
+
+    /// Someone is running in the model, or waiting for it.
+    fn busy(&self) -> bool {
+        *self.running.lock().unwrap_or_else(|e| e.into_inner()) > 0
+    }
+
+    fn enter(&self, slots: usize, wait: Duration) -> Option<Turn<'_>> {
+        let deadline = Instant::now() + wait;
+        let mut n = self.running.lock().unwrap_or_else(|e| e.into_inner());
+        while *n >= slots {
+            let left = deadline.checked_duration_since(Instant::now())?;
+            let (g, timeout) = self
+                .freed
+                .wait_timeout(n, left)
+                .unwrap_or_else(|e| e.into_inner());
+            n = g;
+            if timeout.timed_out() && *n >= slots {
+                return None;
+            }
+        }
+        *n += 1;
+        Some(Turn(self))
+    }
+}
+
 /// Hand freed memory back to the operating system (glibc keeps some of it otherwise).
 fn trim_memory() {
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -47,6 +116,7 @@ struct Resident<T> {
     load: Box<dyn Fn() -> std::result::Result<T, String> + Send + Sync>,
     slot: Mutex<Slot<T>>,
     ready: Condvar,
+    gate: Gate,
     /// Fixed idle limit and check interval, for tests; None follows the global setting.
     idle: Option<(Duration, Duration)>,
 }
@@ -74,6 +144,7 @@ impl<T: Send + Sync + 'static> Resident<T> {
                 last_used: Instant::now(),
             }),
             ready: Condvar::new(),
+            gate: Gate::new(),
         });
         let first = Arc::clone(&this);
         std::thread::spawn(move || {
@@ -163,10 +234,24 @@ impl<T: Send + Sync + 'static> Resident<T> {
         }
     }
 
+    /// Another call is using the model right now.
+    fn busy(&self) -> bool {
+        self.gate.busy()
+    }
+
     fn with<R>(
         &self,
         f: impl FnOnce(&T) -> std::result::Result<R, String>,
     ) -> std::result::Result<R, String> {
+        let wait = Duration::from_millis(MODEL_WAIT_MS.load(std::sync::atomic::Ordering::Relaxed));
+        let slots = MODEL_SLOTS.load(std::sync::atomic::Ordering::Relaxed);
+        let Some(_turn) = self.gate.enter(slots, wait) else {
+            BUSY_SKIPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            return Err(format!(
+                "the model is busy (no turn within {} ms)",
+                wait.as_millis()
+            ));
+        };
         let m = self.acquire()?;
         let out = f(&m);
         if let Ok(mut g) = self.slot.lock() {
@@ -235,6 +320,30 @@ impl TextEmbedder for EmbedderAdapter {
 pub struct CrossAdapter {
     model: Arc<Resident<CrossEncoder>>,
     name: String,
+    seen: Mutex<ScoreCache>,
+}
+
+/// Logits already computed for a (query, passage) pair: a popular query, or a page that comes up
+/// under many queries' same wording, costs the model nothing the second time. Oldest entries go first.
+struct ScoreCache {
+    map: std::collections::HashMap<(u64, u64), f32>,
+    order: std::collections::VecDeque<(u64, u64)>,
+}
+
+const SCORE_CACHE: usize = 50_000;
+
+fn pair_key(query: &str, passage: &str) -> (u64, u64) {
+    use std::hash::{Hash, Hasher};
+    let mut a = std::collections::hash_map::DefaultHasher::new();
+    let mut b = std::collections::hash_map::DefaultHasher::new();
+    (query.len(), passage.len()).hash(&mut a);
+    query.hash(&mut a);
+    0xa5a5u16.hash(&mut a);
+    passage.hash(&mut a);
+    0x5a5au16.hash(&mut b);
+    passage.hash(&mut b);
+    query.hash(&mut b);
+    (a.finish(), b.finish())
 }
 
 impl CrossAdapter {
@@ -252,6 +361,10 @@ impl CrossAdapter {
         Self {
             model,
             name: stem(path),
+            seen: Mutex::new(ScoreCache {
+                map: Default::default(),
+                order: Default::default(),
+            }),
         }
     }
 }
@@ -265,9 +378,39 @@ impl PairScorer for CrossAdapter {
         self.model.wake();
     }
 
+    fn busy(&self) -> bool {
+        self.model.busy()
+    }
+
     fn score(&self, query: &str, passages: &[&str]) -> std::result::Result<Vec<f32>, String> {
-        self.model
-            .with(|m| m.score(query, passages).map_err(|e| e.to_string()))
+        let keys: Vec<(u64, u64)> = passages.iter().map(|p| pair_key(query, p)).collect();
+        let mut out: Vec<Option<f32>> = {
+            let c = self.seen.lock().unwrap_or_else(|e| e.into_inner());
+            keys.iter().map(|k| c.map.get(k).copied()).collect()
+        };
+        let missing: Vec<usize> = (0..passages.len()).filter(|&i| out[i].is_none()).collect();
+        if !missing.is_empty() {
+            let batch: Vec<&str> = missing.iter().map(|&i| passages[i]).collect();
+            let logits = self
+                .model
+                .with(|m| m.score(query, &batch).map_err(|e| e.to_string()))?;
+            if logits.len() != batch.len() {
+                return Err("the scorer returned the wrong number of scores".into());
+            }
+            let mut c = self.seen.lock().unwrap_or_else(|e| e.into_inner());
+            for (&i, l) in missing.iter().zip(logits) {
+                out[i] = Some(l);
+                if c.map.insert(keys[i], l).is_none() {
+                    c.order.push_back(keys[i]);
+                    while c.map.len() > SCORE_CACHE {
+                        if let Some(old) = c.order.pop_front() {
+                            c.map.remove(&old);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(out.into_iter().map(|l| l.unwrap_or(0.0)).collect())
     }
 }
 
@@ -444,5 +587,74 @@ mod resident_tests {
         assert_eq!(bad.with(|v| Ok(*v)).unwrap_err(), "broken file");
         assert_eq!(bad.with(|v| Ok(*v)).unwrap_err(), "broken file");
         assert_eq!(tries.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn a_turn_is_refused_after_the_wait_and_given_back_when_released() {
+        let g = Gate::new();
+        let a = g.enter(1, Duration::from_millis(10)).expect("free");
+        let t = Instant::now();
+        assert!(g.enter(1, Duration::from_millis(60)).is_none());
+        assert!(t.elapsed() >= Duration::from_millis(50));
+        drop(a);
+        assert!(g.enter(1, Duration::from_millis(10)).is_some());
+    }
+
+    #[test]
+    fn no_more_than_the_slots_run_at_once_and_waiters_get_their_turn() {
+        let g = Arc::new(Gate::new());
+        let (now, peak, done) = (
+            Arc::new(AtomicUsize::new(0)),
+            Arc::new(AtomicUsize::new(0)),
+            Arc::new(AtomicUsize::new(0)),
+        );
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let (g, now, peak, done) = (g.clone(), now.clone(), peak.clone(), done.clone());
+                std::thread::spawn(move || {
+                    let turn = g.enter(2, Duration::from_secs(5)).expect("turn");
+                    let n = now.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(n, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_millis(20));
+                    now.fetch_sub(1, Ordering::SeqCst);
+                    drop(turn);
+                    done.fetch_add(1, Ordering::SeqCst);
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert_eq!(done.load(Ordering::SeqCst), 8);
+        assert!(peak.load(Ordering::SeqCst) <= 2);
+    }
+
+    #[test]
+    fn a_busy_model_answers_busy_instead_of_queueing() {
+        let r = Resident::spawn(|| Ok(1u32));
+        r.acquire().unwrap();
+        set_model_slots(1);
+        set_model_wait_ms(40);
+        let started = Arc::new(std::sync::Barrier::new(2));
+        let (r2, s2) = (r.clone(), started.clone());
+        let holder = std::thread::spawn(move || {
+            r2.with(|_| {
+                s2.wait();
+                std::thread::sleep(Duration::from_millis(300));
+                Ok(())
+            })
+        });
+        started.wait();
+        let err = r.with(|_| Ok(())).unwrap_err();
+        assert!(err.contains("busy"), "{err}");
+        holder.join().unwrap().unwrap();
+        assert!(r.with(|_| Ok(7)).is_ok());
+        set_model_wait_ms(1000);
     }
 }

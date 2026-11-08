@@ -44,6 +44,8 @@ The cache directory is capped at 256 MB. The local index keeps 30 days by defaul
 | `no_journal` | `false` | Do not record searches |
 | `device` | `gpu` | `cpu` keeps the models off the GPU entirely |
 | `model_idle_minutes` | 10 | Unload the models after this many idle minutes; 0 keeps them |
+| `model_slots` | 1 | Calls that may run in one model at the same time |
+| `model_wait_ms` | 1000 | Longest a call waits for the model before the search goes on without it (see [Model load](../explanation/model-load.md)) |
 | `no_writeback` | `false` | Pages that answered a search are not added to the local index |
 | `explore` | none | Chance per search of also reading one lower-ranked result |
 | `fuzzy_cache` | off | Word-overlap threshold for reusing cached results of similar queries |

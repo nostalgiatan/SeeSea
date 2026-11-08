@@ -186,6 +186,8 @@ pub struct Loaded {
     /// Milliseconds spent downloading the static HTML, extracting from it and (when it was needed)
     /// rendering the page, so the slow part of a search can be told apart.
     pub timing: PageTiming,
+    /// What the page shows about itself (password forms, hidden frames, ...), for the vet.
+    pub page: seesea_vet::PageFacts,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -200,20 +202,49 @@ async fn extract_blocking(
     html: String,
     url: String,
     scope: Scope,
-) -> Result<ExtractResult> {
+) -> Result<(ExtractResult, seesea_vet::PageFacts)> {
     let extractor = Arc::clone(extractor);
     tokio::task::spawn_blocking(move || {
-        extractor.extract(
+        // The page's own facts come from the parse extraction already made.
+        let saved = html.contains("saved from url=(");
+        let (result, facts) = extractor.extract_with(
             &html,
             &url,
             &Options {
                 scope,
                 ..Options::default()
             },
-        )
+            |doc| seesea_vet::PageFacts::from_document(doc, saved, &url),
+        );
+        let facts = facts.unwrap_or_default();
+        (result, facts)
     })
     .await
     .map_err(|e| Error::Extract(e.to_string()))
+}
+
+fn merge_facts(a: seesea_vet::PageFacts, b: seesea_vet::PageFacts) -> seesea_vet::PageFacts {
+    let mut hosts = a.sensitive_form_hosts;
+    for h in b.sensitive_form_hosts {
+        if !hosts.contains(&h) {
+            hosts.push(h);
+        }
+    }
+    seesea_vet::PageFacts {
+        title: if b.title.is_empty() { a.title } else { b.title },
+        heading: if b.heading.is_empty() {
+            a.heading
+        } else {
+            b.heading
+        },
+        password_fields: a.password_fields.max(b.password_fields),
+        card_fields: a.card_fields.max(b.card_fields),
+        sensitive_form_hosts: hosts,
+        hidden_iframes: a.hidden_iframes.max(b.hidden_iframes),
+        refresh_host: a.refresh_host.or(b.refresh_host),
+        saved_copy: a.saved_copy || b.saved_copy,
+        host_warning: a.host_warning || b.host_warning,
+    }
 }
 
 /// Fetch and extract one page. Parsing and scoring are CPU work, so they run on the blocking pool.
@@ -237,7 +268,8 @@ pub async fn load_page(
         })??;
     let fetch_ms = t.elapsed().as_millis() as u64;
     let t = std::time::Instant::now();
-    let result = extract_blocking(extractor, page.html, page.final_url.clone(), scope).await?;
+    let (result, facts) =
+        extract_blocking(extractor, page.html, page.final_url.clone(), scope).await?;
     let extract_ms = t.elapsed().as_millis() as u64;
     if result.diagnostics.not_text {
         return Err(Error::Extract(
@@ -261,6 +293,7 @@ pub async fn load_page(
             extract_ms,
             render_ms: 0,
         },
+        page: facts,
     };
     if loaded.result.needs_render
         && let Some(renderer) = renderer
@@ -271,7 +304,7 @@ pub async fn load_page(
         let render_ms = t.elapsed().as_millis() as u64;
         loaded.timing.render_ms = render_ms;
         if let Ok(Ok(page)) = rendered
-            && let Ok(result) =
+            && let Ok((result, facts)) =
                 extract_blocking(extractor, page.html, page.final_url.clone(), scope).await
             && result.diagnostics.selected_chars > loaded.result.diagnostics.selected_chars
         {
@@ -280,6 +313,9 @@ pub async fn load_page(
                 result,
                 rendered: true,
                 timing: loaded.timing,
+                // The rendered page shows what scripts built; the static one what the server sent.
+                // Either may hold the form, so the facts of both count.
+                page: merge_facts(loaded.page, facts),
             };
         }
     }

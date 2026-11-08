@@ -56,6 +56,7 @@ Understand why it is built this way.
 - [How the search pipeline works](explanation/pipeline.md)
 - [Ranking and learning](explanation/ranking-and-learning.md)
 - [How results are vetted](explanation/vet.md)
+- [Model load under high concurrency](explanation/model-load.md)
 - [Freshness and the local index](explanation/freshness-and-index.md)
 - [Cluster design](explanation/cluster-design.md)
 - [Content extraction study](../explanation/extraction-research.md) (Chinese only)
