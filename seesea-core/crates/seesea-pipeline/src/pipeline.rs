@@ -965,25 +965,9 @@ impl Pipeline {
 
         // Stage 5: assemble.
         let t = Instant::now();
-        let mut selections: Vec<Option<(Vec<SelectedSection>, bool)>> = Vec::new();
-        if !req.full_content {
-            let cores: Vec<String> = ok_idx
-                .iter()
-                .map(|&j| {
-                    loaded[j]
-                        .as_ref()
-                        .and_then(|l| l.as_ref().ok())
-                        .map(|l| l.result.core.clone())
-                        .unwrap_or_default()
-                })
-                .collect();
-            selections = self
-                .select_sections_many(cores, req.query.clone(), req.max_chars_per_result)
-                .await
-                .into_iter()
-                .map(Some)
-                .collect();
-        }
+        // Choosing the sections to show costs a model pass per page, so it waits until the ranking
+        // is final and only the pages that will be shown get one.
+        let mut cores: HashMap<String, String> = HashMap::new();
         for (i, (cand, mut parts)) in scored.into_iter().enumerate() {
             let s1n = parts.stage1 / max_stage1;
             let mut content_error = None;
@@ -998,16 +982,15 @@ impl Pipeline {
                         .as_ref()
                         .and_then(|l| l.as_ref().ok())
                         .expect("index came from the ok list");
-                    let (selected, truncated) = selections
-                        .get_mut(pos)
-                        .and_then(Option::take)
-                        .unwrap_or_default();
+                    if !req.full_content {
+                        cores.insert(cand.url.clone(), l.result.core.clone());
+                    }
                     content = Some(Content {
-                        sections: selected,
+                        sections: Vec::new(),
                         markdown: req.full_content.then(|| l.result.core.clone()),
                         confidence: l.result.confidence,
                         needs_render: l.result.needs_render,
-                        truncated,
+                        truncated: false,
                     });
                     let official = if rs.relevance >= 0.3
                         && rs.body_quality >= 0.5
@@ -1078,6 +1061,24 @@ impl Pipeline {
         let hits = crate::cluster::group_events(hits);
         let mut hits = diversify(hits);
         hits.truncate(req.limit);
+        if !cores.is_empty() {
+            let shown: Vec<usize> = (0..hits.len())
+                .filter(|&i| hits[i].content.is_some() && cores.contains_key(&hits[i].url))
+                .collect();
+            let texts: Vec<String> = shown
+                .iter()
+                .map(|&i| cores.remove(&hits[i].url).unwrap_or_default())
+                .collect();
+            let chosen = self
+                .select_sections_many(texts, req.query.clone(), req.max_chars_per_result)
+                .await;
+            for (&i, (sections, truncated)) in shown.iter().zip(chosen) {
+                if let Some(c) = hits[i].content.as_mut() {
+                    c.sections = sections;
+                    c.truncated = truncated;
+                }
+            }
+        }
         if let Some(sink) = &self.sink {
             let pages: Vec<crate::source::Remembered> = hits
                 .iter()

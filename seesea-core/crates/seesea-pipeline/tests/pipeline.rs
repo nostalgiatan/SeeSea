@@ -1324,3 +1324,75 @@ async fn a_page_that_collects_a_brand_login_falls_behind_after_it_is_read() {
     );
     assert_eq!(resp.hits[0].url, honest, "{:#?}", resp.hits);
 }
+
+struct CountingSections(Mutex<Vec<String>>);
+
+impl seesea_pipeline::sections::SectionScorer for CountingSections {
+    fn score(&self, _q: &str, texts: &[&str]) -> Result<Vec<f64>, String> {
+        self.0
+            .lock()
+            .unwrap()
+            .extend(texts.iter().map(|t| t.to_string()));
+        Ok(texts.iter().map(|_| 0.5).collect())
+    }
+}
+
+#[tokio::test]
+async fn the_section_model_only_reads_pages_that_are_shown() {
+    let long = |tag: &str| {
+        let sec = |n: usize| {
+            format!(
+                "<h2>Part {n} of {tag}</h2><p>{tag} tokio runtime part {n}. {}</p>",
+                RUNTIME[n % 3]
+            )
+        };
+        format!(
+            "<html><head><title>Tokio runtime {tag}</title></head><body><article><h1>Tokio runtime {tag}</h1>{}</article></body></html>",
+            (0..6).map(sec).collect::<String>()
+        )
+    };
+    let urls: Vec<String> = (0..4)
+        .map(|i| format!("https://site{i}.example/tokio"))
+        .collect();
+    let a = FakeSource::ok(
+        "a",
+        urls.iter()
+            .map(|u| {
+                hit(
+                    u,
+                    "Tokio runtime",
+                    "Tokio is an asynchronous runtime for Rust",
+                )
+            })
+            .collect(),
+    );
+    let pages: Vec<(&str, String)> = urls
+        .iter()
+        .enumerate()
+        .map(|(i, u)| (u.as_str(), long(&format!("zz{i}zz"))))
+        .collect();
+    let counter = Arc::new(CountingSections(Mutex::new(Vec::new())));
+    let p = standard_pipeline(vec![a], FakePages::new(&pages)).section_scorer(counter.clone());
+    let mut req = SearchRequest::new("tokio runtime");
+    req.limit = 2;
+    req.max_chars_per_result = 300;
+    let resp = p.search(&req).await.unwrap();
+    assert_eq!(resp.hits.len(), 2);
+    let shown: Vec<String> = resp.hits.iter().map(|h| h.url.clone()).collect();
+    let scored = counter.0.lock().unwrap().clone();
+    assert!(!scored.is_empty(), "the model should have been asked");
+    for (i, u) in urls.iter().enumerate() {
+        let mark = format!("zz{i}zz");
+        if !shown.contains(u) {
+            assert!(
+                !scored.iter().any(|t| t.contains(&mark)),
+                "{u} was not shown but was scored"
+            );
+        }
+    }
+    assert!(
+        resp.hits
+            .iter()
+            .all(|h| !h.content.as_ref().unwrap().sections.is_empty())
+    );
+}
