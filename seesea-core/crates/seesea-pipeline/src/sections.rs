@@ -249,35 +249,110 @@ pub fn select_with(
     budget: usize,
     scorer: Option<&dyn SectionScorer>,
 ) -> (Vec<SelectedSection>, bool) {
+    select_many(&[markdown], query, budget, scorer)
+        .pop()
+        .unwrap_or_default()
+}
+
+/// A page cut into chunks and scored by words, waiting for the model's opinion (if it needs one).
+struct Prepared {
+    origins: Vec<usize>,
+    sections: Vec<Section>,
+    scores: Vec<f64>,
+    total: usize,
+    /// The chunks the model should judge, best words first; `None` when the page needs no model
+    /// (it fits the budget, or has a single chunk).
+    cand: Option<Vec<usize>>,
+}
+
+fn prepare(markdown: &str, query: &str, budget: usize, with_model: bool) -> Option<Prepared> {
     let chunks = chunk(split(markdown), budget);
     if chunks.is_empty() {
-        return (Vec::new(), false);
+        return None;
     }
     let origins: Vec<usize> = chunks.iter().map(|(o, _)| *o).collect();
     let sections: Vec<Section> = chunks.into_iter().map(|(_, s)| s).collect();
-    let mut scores = score_sections(&sections, query);
+    let scores = score_sections(&sections, query);
     let total: usize = sections.iter().map(|s| s.markdown.chars().count()).sum();
-    if let Some(scorer) = scorer.filter(|_| total > budget && sections.len() > 1) {
+    let cand = (with_model && total > budget && sections.len() > 1).then(|| {
         // Heading-only stubs carry nothing for a model to judge.
         let mut cand: Vec<usize> = (0..sections.len())
             .filter(|&i| !sections[i].body.trim().is_empty())
             .collect();
         cand.sort_by(|a, b| scores[*b].total_cmp(&scores[*a]).then(a.cmp(b)));
         cand.truncate(MODEL_CANDIDATES);
-        let texts: Vec<&str> = cand
-            .iter()
-            .map(|&i| sections[i].markdown.as_str())
-            .collect();
-        if let Ok(sem) = scorer.score(query, &texts) {
-            if sem.len() == cand.len() {
-                // Everything the model did not see ranks below everything it did.
-                for s in scores.iter_mut() {
-                    *s *= 0.3;
-                }
-                for (&i, m) in cand.iter().zip(sem) {
-                    scores[i] += 0.7 * m.clamp(0.0, 1.0);
-                }
-            }
+        cand
+    });
+    Some(Prepared {
+        origins,
+        sections,
+        scores,
+        total,
+        cand,
+    })
+}
+
+/// [`select_with`] for several pages at once: the chunks every page sends to the model are scored in
+/// one call instead of one call per page, which is much cheaper when the model runs on a GPU. Each
+/// page is chosen exactly as `select_with` would choose it. If the scorer fails, every page keeps its
+/// lexical order (a page-by-page run would lose only the pages whose call failed).
+pub fn select_many(
+    pages: &[&str],
+    query: &str,
+    budget: usize,
+    scorer: Option<&dyn SectionScorer>,
+) -> Vec<(Vec<SelectedSection>, bool)> {
+    let prepared: Vec<Option<Prepared>> = pages
+        .iter()
+        .map(|md| prepare(md, query, budget, scorer.is_some()))
+        .collect();
+    let mut texts: Vec<&str> = Vec::new();
+    for p in prepared.iter().flatten() {
+        for &i in p.cand.iter().flatten() {
+            texts.push(p.sections[i].markdown.as_str());
+        }
+    }
+    let mut sem: Option<std::vec::IntoIter<f64>> = None;
+    if let Some(scorer) = scorer.filter(|_| !texts.is_empty())
+        && let Ok(all) = scorer.score(query, &texts)
+        && all.len() == texts.len()
+    {
+        sem = Some(all.into_iter());
+    }
+    prepared
+        .into_iter()
+        .map(|p| {
+            p.map_or((Vec::new(), false), |p| {
+                let sem: Option<Vec<f64>> = match (&p.cand, sem.as_mut()) {
+                    (Some(cand), Some(it)) => Some(it.take(cand.len()).collect()),
+                    // Nothing for the model to judge: a page-by-page run asks anyway and gets nothing back.
+                    (Some(cand), None) if cand.is_empty() && scorer.is_some() => Some(Vec::new()),
+                    _ => None,
+                };
+                finish(p, budget, sem)
+            })
+        })
+        .collect()
+}
+
+/// Choose the chunks of one prepared page, given the model's scores for its candidates.
+fn finish(p: Prepared, budget: usize, sem: Option<Vec<f64>>) -> (Vec<SelectedSection>, bool) {
+    let Prepared {
+        origins,
+        sections,
+        mut scores,
+        total,
+        cand,
+    } = p;
+    if let (Some(cand), Some(sem)) = (cand, sem)
+        && sem.len() == cand.len()
+    {
+        // Everything the model did not see ranks below everything it did.
+        for s in scores.iter_mut() {
+            *s *= 0.3;
+        }
+        for (&i, m) in cand.iter().zip(sem) {
+            scores[i] += 0.7 * m.clamp(0.0, 1.0);
         }
     }
 
@@ -500,6 +575,74 @@ mod tests {
         let plain = select(doc, query, 120);
         assert_eq!(fallback.0.len(), plain.0.len());
         assert_eq!(fallback.0[0].markdown, plain.0[0].markdown);
+    }
+
+    /// Scores a text by what it says, not by what else is in the call, and counts the calls.
+    struct Counting(std::sync::atomic::AtomicUsize);
+    impl SectionScorer for Counting {
+        fn score(&self, _q: &str, texts: &[&str]) -> Result<Vec<f64>, String> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(texts
+                .iter()
+                .map(|t| {
+                    let h = t
+                        .bytes()
+                        .fold(7u64, |a, b| a.wrapping_mul(31).wrapping_add(b as u64));
+                    (h % 1000) as f64 / 1000.0
+                })
+                .collect())
+        }
+    }
+
+    fn page(n: usize) -> String {
+        (0..14)
+            .map(|k| {
+                format!(
+                    "## Part {n}-{k}\n\nNotes {n}/{k} on the async runtime, its scheduler and thread pool, with detail {}.",
+                    "words ".repeat(10 + (n * 7 + k * 3) % 23)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
+    #[test]
+    fn many_pages_in_one_scoring_call_choose_what_page_by_page_chooses() {
+        let mut pages: Vec<String> = (0..5).map(page).collect();
+        // A page that fits the budget and one that is empty need no model.
+        pages.push("A short page about the async runtime.".into());
+        pages.push(String::new());
+        let refs: Vec<&str> = pages.iter().map(String::as_str).collect();
+        let query = "how does the async runtime scheduler work";
+        let one = Counting(Default::default());
+        let batched = select_many(&refs, query, 700, Some(&one));
+        assert_eq!(one.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let each = Counting(Default::default());
+        let separately: Vec<_> = refs
+            .iter()
+            .map(|md| select_with(md, query, 700, Some(&each)))
+            .collect();
+        assert_eq!(each.0.load(std::sync::atomic::Ordering::SeqCst), 5);
+        assert_eq!(batched, separately);
+        assert!(batched[0].1, "the long pages were cut");
+        assert!(!batched[5].1 && batched[6].0.is_empty());
+        // Without a scorer the words alone decide, as before.
+        let lexical = select_many(&refs, query, 700, None);
+        assert_eq!(lexical[0], select(refs[0], query, 700));
+    }
+
+    #[test]
+    fn a_failing_scorer_leaves_every_page_in_lexical_order() {
+        struct Broken;
+        impl SectionScorer for Broken {
+            fn score(&self, _: &str, _: &[&str]) -> Result<Vec<f64>, String> {
+                Err("down".into())
+            }
+        }
+        let pages: Vec<String> = (0..3).map(page).collect();
+        let refs: Vec<&str> = pages.iter().map(String::as_str).collect();
+        let got = select_many(&refs, "async runtime", 700, Some(&Broken));
+        assert_eq!(got, select_many(&refs, "async runtime", 700, None));
     }
 
     #[test]

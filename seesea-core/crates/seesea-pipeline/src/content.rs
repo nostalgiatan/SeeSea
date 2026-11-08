@@ -312,6 +312,14 @@ pub async fn load_pages(
 /// Called with a page's position in `urls` and the page, the moment that page is ready (not when all are).
 pub type OnLoaded = Arc<dyn Fn(usize, &Loaded) + Send + Sync>;
 
+/// When to stop waiting for slow pages: once `enough` pages with text are in, the pages still
+/// loading get `grace` more and are then given up.
+#[derive(Debug, Clone, Copy)]
+pub struct EarlyStop {
+    pub enough: usize,
+    pub grace: Duration,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn load_pages_then(
     fetcher: &Arc<dyn PageFetcher>,
@@ -323,31 +331,93 @@ pub async fn load_pages_then(
     timeout: Duration,
     on_loaded: Option<OnLoaded>,
 ) -> Vec<Result<Loaded>> {
-    futures::stream::iter(urls.iter().cloned().enumerate())
-        .map(|(i, url)| {
-            let fetcher = Arc::clone(fetcher);
-            let renderer = renderer.cloned();
-            let extractor = Arc::clone(extractor);
-            let on_loaded = on_loaded.clone();
-            async move {
-                let out = load_page(
-                    fetcher.as_ref(),
-                    renderer.as_deref(),
-                    &extractor,
-                    &url,
-                    scope,
-                    timeout,
-                )
-                .await;
-                if let (Ok(l), Some(cb)) = (&out, &on_loaded) {
-                    cb(i, l);
-                }
-                out
-            }
+    load_pages_until(
+        fetcher,
+        renderer,
+        extractor,
+        urls,
+        scope,
+        concurrency,
+        timeout,
+        on_loaded,
+        None,
+    )
+    .await
+    .into_iter()
+    .map(|o| {
+        o.unwrap_or_else(|| {
+            Err(Error::Timeout {
+                stage: "fetch",
+                ms: timeout.as_millis() as u64,
+            })
         })
-        .buffered(concurrency.max(1))
-        .collect()
-        .await
+    })
+    .collect()
+}
+
+/// Like [`load_pages_then`], but with an [`EarlyStop`] the slow pages may be left behind: their
+/// place in the result is `None` (never started or still loading when the wait ended).
+#[allow(clippy::too_many_arguments)]
+pub async fn load_pages_until(
+    fetcher: &Arc<dyn PageFetcher>,
+    renderer: Option<&Arc<dyn PageFetcher>>,
+    extractor: &Arc<Extractor>,
+    urls: &[String],
+    scope: Scope,
+    concurrency: usize,
+    timeout: Duration,
+    on_loaded: Option<OnLoaded>,
+    stop: Option<EarlyStop>,
+) -> Vec<Option<Result<Loaded>>> {
+    let mut out: Vec<Option<Result<Loaded>>> = (0..urls.len()).map(|_| None).collect();
+    let mut stream = Box::pin(
+        futures::stream::iter(urls.iter().cloned().enumerate())
+            .map(|(i, url)| {
+                let fetcher = Arc::clone(fetcher);
+                let renderer = renderer.cloned();
+                let extractor = Arc::clone(extractor);
+                let on_loaded = on_loaded.clone();
+                async move {
+                    let res = load_page(
+                        fetcher.as_ref(),
+                        renderer.as_deref(),
+                        &extractor,
+                        &url,
+                        scope,
+                        timeout,
+                    )
+                    .await;
+                    if let (Ok(l), Some(cb)) = (&res, &on_loaded) {
+                        cb(i, l);
+                    }
+                    (i, res)
+                }
+            })
+            .buffer_unordered(concurrency.max(1)),
+    );
+    let stop = stop.filter(|s| s.enough > 0);
+    let (mut readable, mut deadline) = (0usize, None::<tokio::time::Instant>);
+    loop {
+        let next = match deadline {
+            Some(d) => match tokio::time::timeout_at(d, stream.next()).await {
+                Ok(next) => next,
+                Err(_) => break,
+            },
+            None => stream.next().await,
+        };
+        let Some((i, res)) = next else { break };
+        if matches!(&res, Ok(l) if !l.result.core.trim().is_empty()) {
+            readable += 1;
+            if let Some(s) = stop
+                && deadline.is_none()
+                && readable >= s.enough
+            {
+                deadline = Some(tokio::time::Instant::now() + s.grace);
+            }
+        }
+        out[i] = Some(res);
+    }
+    out
 }
 
 #[cfg(test)]

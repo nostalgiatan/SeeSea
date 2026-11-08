@@ -110,6 +110,26 @@ deep = false
 
 没有写路径时，`seesea` 在模型目录里按固定的文件名查找。文件名以 `seesea models` 的输出为准，大小写要一致。
 
+## [fetch]
+
+`standard` 搜索读取页面的方式。每个键都可以省略；省略时行为就是表中的默认值。
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `page_timeout_secs` | 10 | 单个页面最长等待时间，1 到 120 秒。更慢的页面算作没读到 |
+| `candidates` | 8 | `standard` 读取的最优结果数，1 到 50。不会少于请求的结果数（默认 10），所以在默认 `limit` 下，只有设到 10 以上才有作用 |
+| `enough` | 0（关） | 已有这么多个有正文的页面后，不再等慢页面，0 到 50。0 表示等所有页面 |
+| `grace_ms` | 1500 | 设了 `enough` 时：达到后，仍在加载的页面还能再等多久，0 到 60000 毫秒 |
+
+被丢下的页面和失败的页面一样算作没读到：排在读到的页面之后，不带错误信息，不计入对其所在主机的学习权重，也不会为它们再补一轮。响应的 `degraded` 会写明个数（`content: N of M pages were still loading when enough others were in, and were not read`）。丢下哪些页面取决于谁先响应，而不是排名，所以设了 `enough` 的搜索可能和没设时返回不同的内容。`deep` 仍读 20 个候选，不受 `candidates` 影响。
+
+```toml
+[fetch]
+page_timeout_secs = 6
+enough = 6
+grace_ms = 1000
+```
+
 ## [rerank] 和 [semantic]
 
 | 键 | 默认 | 对应参数 |

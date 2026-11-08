@@ -14,7 +14,7 @@ This page lists what seesea cannot do yet or has not verified. Each entry descri
 - Pages are fetched with browser-like headers by default. A 403, 429 or 503 is retried as another browser profile with a search-engine Referer, at most 3 attempts in all, honouring `Retry-After`. Only headers change: there is no TLS fingerprint imitation, no script execution and no captcha solving, so sites that need these (Zhihu and Baidu Baike, for example) still refuse.
 - Pages whose static HTML holds no content are rendered with Lightpanda. The rendering browser may not connect to private addresses, including requests made by page scripts; it cannot work with a SOCKS proxy and cannot get past a server that refuses seesea.
 - Among the top candidates, pages that cannot be read are replaced by the next candidates, one round only. A page still unread after that ranks behind the read ones on the score of its title and snippet alone.
-- One page times out after 10 seconds, and 8 download at a time. If one page times out, the `fetch_extract` stage takes at least 10 seconds.
+- One page times out after 10 seconds, and 8 download at a time. If one page times out, the `fetch_extract` stage takes at least 10 seconds, unless `[fetch] enough` is set (see [config](config.md)).
 - The extractor rebuilds tables and super- and subscripts and drops short promotional blocks. Evaluation data is in the [content extraction study](../../explanation/extraction-research.md) (Chinese).
 
 ## Ranking
